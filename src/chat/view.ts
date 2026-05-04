@@ -630,13 +630,23 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (msg.type !== "reviewHunk" || !msg.key || !msg.path || !msg.action) return
     const state = await reviewHunk(msg.path, msg.action, msg.oldText ?? "", msg.newText ?? "") ? msg.action : undefined
     this.post({ type: "reviewHunkState", key: msg.key, state })
-    this.refreshReviewPanel()
+    if (!state || !this.reviewChange) {
+      this.refreshReviewPanel()
+      return
+    }
+    const nextReviewed = { ...this.reviewHunks, [msg.key]: state }
+    if (hasPendingReviewHunks(this.reviewChange, nextReviewed)) {
+      this.refreshReviewPanel(nextReviewed)
+      return
+    }
+    this.reviewPanel?.dispose()
+    await openFile(msg.path)
   }
 
-  private refreshReviewPanel() {
+  private refreshReviewPanel(reviewed = this.reviewHunks) {
     if (!this.reviewPanel || !this.reviewChange) return
-    this.reviewPanel.title = `Review ${path.basename(this.reviewChange.path)}`
-    this.reviewPanel.webview.html = reviewChangeHtml(this.reviewChange, this.reviewHunks)
+    this.reviewPanel.title = path.basename(this.reviewChange.path)
+    this.reviewPanel.webview.html = reviewChangeHtml(this.reviewChange, reviewed)
   }
 
   private async buildHtml(webview: vscode.Webview): Promise<string> {
@@ -787,14 +797,13 @@ function reviewChangeHtml(change: ReviewChange, reviewed: Record<string, ReviewH
     .filter((hunk) => !reviewed[hunk.key])
   const payload = JSON.stringify(pending.map(({ key, oldText, newText, reversible }) => ({ key, oldText, newText, reversible }))).replace(/</g, "\\u003c")
   const body = pending.length
-    ? pending.map((hunk, index) => `
+    ? pending.map((hunk) => `
       <section class="hunk" data-key="${escapeHtml(hunk.key)}">
         <div class="hunk-head">
-          <div class="hunk-title">Hunk ${index + 1}</div>
           <button class="action accept" data-action="accepted" data-key="${escapeHtml(hunk.key)}">Accept</button>
           <button class="action reject" data-action="rejected" data-key="${escapeHtml(hunk.key)}"${hunk.reversible ? "" : " disabled title=\"This patch format cannot be rejected as a hunk\""}>Reject</button>
         </div>
-        <pre class="code"><code>${[{ text: hunk.header, kind: "hunk" as const }, ...hunk.lines].map(diffLineHtml).join("")}</code></pre>
+        <pre class="code"><code>${hunk.lines.map(diffLineHtml).join("")}</code></pre>
       </section>
     `).join("")
     : `<div class="empty">All hunks in this file have been reviewed.</div>`
@@ -825,21 +834,6 @@ function reviewChangeHtml(change: ReviewChange, reviewed: Record<string, ReviewH
       border-bottom: 1px solid var(--vscode-panel-border);
       background: var(--vscode-editor-background);
     }
-    .badge {
-      flex: 0 0 auto;
-      min-width: 20px;
-      height: 20px;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: var(--vscode-button-secondaryBackground);
-      color: var(--vscode-button-secondaryForeground);
-      font-size: 11px;
-      font-weight: 700;
-      text-align: center;
-    }
-    .badge.kind-created { color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); }
-    .badge.kind-deleted { color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149); }
-    .badge.kind-moved { color: var(--vscode-gitDecoration-renamedResourceForeground, #d29922); }
     .title {
       min-width: 0;
       overflow: hidden;
@@ -866,17 +860,11 @@ function reviewChangeHtml(change: ReviewChange, reviewed: Record<string, ReviewH
     .hunk-head {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
       gap: 8px;
       padding: 7px 8px;
       border-bottom: 1px solid var(--vscode-panel-border);
       background: var(--vscode-editorWidget-background);
-    }
-    .hunk-title {
-      flex: 1 1 auto;
-      min-width: 0;
-      color: var(--vscode-descriptionForeground);
-      font-size: 12px;
-      font-weight: 650;
     }
     .action {
       flex: 0 0 auto;
@@ -929,7 +917,6 @@ function reviewChangeHtml(change: ReviewChange, reviewed: Record<string, ReviewH
 </head>
 <body>
   <div class="top">
-    <span class="badge kind-${change.kind}">${kindLetter(change.kind)}</span>
     <span class="title" title="${escapeHtml(change.path)}">${escapeHtml(change.path)}</span>
     <span class="stats"><span class="add">+${change.additions}</span> <span class="del">-${change.deletions}</span></span>
   </div>
@@ -1037,6 +1024,10 @@ function diffLineHtml(line: ReviewDiffLine) {
   return `<span class="line ${line.kind}">${escapeHtml(line.text || " ")}</span>`
 }
 
+function hasPendingReviewHunks(change: ReviewChange, reviewed: Record<string, ReviewHunkState>) {
+  return splitReviewDiff(change.patch).hunks.some((hunk) => !reviewed[reviewKey(change, hunk.id)])
+}
+
 function reviewKey(change: ReviewChange, hunkID: string) {
   return `${change.source}:${normalizePath(change.path)}:${hunkID}`
 }
@@ -1051,13 +1042,6 @@ function escapeHtml(value: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-}
-
-function kindLetter(kind: ReviewChange["kind"]) {
-  if (kind === "created") return "A"
-  if (kind === "deleted") return "D"
-  if (kind === "moved") return "R"
-  return "M"
 }
 
 async function reviewHunk(relPath: string, action: ReviewHunkState, oldText: string, newText: string): Promise<boolean> {
