@@ -69,13 +69,13 @@ class ReviewCodeLensProvider implements vscode.CodeLensProvider {
       .filter((entry) => entry.uri.toString() === uri)
       .flatMap((entry) => {
         const lenses = [new vscode.CodeLens(entry.range, {
-          title: "Accept",
+          title: "Keep",
           command: "opencui.review.acceptHunk",
           arguments: [entry.key],
         })]
         if (entry.reversible) {
           lenses.push(new vscode.CodeLens(entry.range, {
-            title: "Reject",
+            title: "Undo",
             command: "opencui.review.rejectHunk",
             arguments: [entry.key],
           }))
@@ -347,11 +347,13 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.messages = msg.messages.map((m) => ({ ...m, pending: false }))
         this.todos = msg.todos
         this.reviewHunks = msg.reviewHunks ?? {}
+        void this.syncReviewCodeLens()
         return
       case "clear":
         this.messages = []
         this.todos = []
         this.reviewHunks = {}
+        this.reviewCodeLens.clear()
         this.saveActive()
         return
       case "userMessage":
@@ -376,12 +378,14 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "tool":
         this.messages = upsertTool(this.messages, msg.id, msg.update)
         this.saveActive()
+        void this.syncReviewCodeLens()
         return
       case "patch":
         this.messages = this.messages.map((m) =>
           m.id === msg.id ? { ...m, blocks: [...m.blocks, { type: "patch", files: msg.files, diff: msg.diff }] } : m,
         )
         this.saveActive()
+        void this.syncReviewCodeLens()
         return
       case "todos":
         this.todos = msg.todos
@@ -392,6 +396,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (msg.state) this.reviewHunks[msg.key] = msg.state
         else delete this.reviewHunks[msg.key]
         this.saveActive()
+        void this.syncReviewCodeLens()
         return
       case "assistantError":
         this.messages = this.messages.map((m) =>
@@ -681,12 +686,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (!entry) return
     const state = await reviewHunk(entry.path, action, entry.oldText, entry.newText) ? action : undefined
     this.post({ type: "reviewHunkState", key, state })
-    if (!state || !this.reviewChange) {
-      this.reviewCodeLens.clear()
-      return
-    }
-    const doc = await openFileDocument(entry.path)
-    this.reviewCodeLens.setEntries(reviewLensEntries(this.reviewChange, this.reviewHunks, doc))
+    await this.syncReviewCodeLens()
   }
 
   private async onReviewPanelMessage(msg: { type?: string; key?: string; path?: string; action?: ReviewHunkState; oldText?: string; newText?: string }) {
@@ -710,6 +710,24 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (!this.reviewPanel || !this.reviewChange) return
     this.reviewPanel.title = path.basename(this.reviewChange.path)
     this.reviewPanel.webview.html = reviewChangeHtml(this.reviewChange, reviewed)
+  }
+
+  private async syncReviewCodeLens() {
+    const changes = reviewChanges(this.messages)
+    if (!changes.length) {
+      this.reviewCodeLens.clear()
+      return
+    }
+    const entries: ReviewLensEntry[] = []
+    for (const change of changes) {
+      try {
+        const doc = await openFileDocument(change.path)
+        entries.push(...reviewLensEntries(change, this.reviewHunks, doc))
+      } catch (e) {
+        log(`could not prepare review CodeLens for ${change.path}`, e)
+      }
+    }
+    this.reviewCodeLens.setEntries(entries)
   }
 
   private async buildHtml(webview: vscode.Webview): Promise<string> {
@@ -760,6 +778,123 @@ function upsertTool(messages: ChatMessage[], id: string, update: WireToolUpdate)
     }
     return { ...message, blocks: [...message.blocks, { type: "tool", update }] }
   })
+}
+
+function reviewChanges(messages: ChatMessage[]) {
+  const changes = messages.flatMap((message) =>
+    message.blocks.flatMap((block, blockIndex) => {
+      const source = `${message.id}:${blockIndex}`
+      if (block.type === "patch" && block.diff) return diffChanges(block.diff, source)
+      if (block.type !== "tool" || block.update.status !== "completed") return []
+      return toolChanges(block.update, block.update.callID || source)
+    }),
+  )
+  return changes.reduce<ReviewChange[]>((acc, change) => {
+    const existing = acc.findIndex((item) => samePath(item.path, change.path))
+    if (existing < 0) return [...acc, change]
+    const copy = acc.slice()
+    copy[existing] = change
+    return copy
+  }, [])
+}
+
+function toolChanges(update: WireToolUpdate, source: string) {
+  if (update.tool === "apply_patch") return patchChanges(update.metadata?.files, source)
+  const filediff = isRecord(update.metadata?.filediff) ? update.metadata.filediff : undefined
+  const patch = typeof filediff?.patch === "string" ? filediff.patch : typeof update.metadata?.diff === "string" ? update.metadata.diff : undefined
+  if (!patch) return []
+  return [{
+    source,
+    path: displayPath(update, filediff),
+    kind: update.tool === "write" && update.metadata?.exists === false ? "created" : "updated",
+    additions: typeof filediff?.additions === "number" ? filediff.additions : countDiff(patch, "+"),
+    deletions: typeof filediff?.deletions === "number" ? filediff.deletions : countDiff(patch, "-"),
+    patch,
+  } satisfies ReviewChange]
+}
+
+function patchChanges(files: unknown, source: string) {
+  if (!Array.isArray(files)) return []
+  return files.flatMap((file) => {
+    if (!isRecord(file) || typeof file.relativePath !== "string" || typeof file.patch !== "string") return []
+    return [{
+      source: `${source}:${file.relativePath}`,
+      path: file.relativePath,
+      kind: patchKind(file.type),
+      additions: typeof file.additions === "number" ? file.additions : countDiff(file.patch, "+"),
+      deletions: typeof file.deletions === "number" ? file.deletions : countDiff(file.patch, "-"),
+      patch: file.patch,
+    } satisfies ReviewChange]
+  })
+}
+
+function diffChanges(diff: string, source: string) {
+  const starts = diff.split("\n").reduce<number[]>((acc, line, index) => (
+    line.startsWith("diff --git ") ? [...acc, index] : acc
+  ), [])
+  if (!starts.length) return createPatchChange(diff, source)
+  const lines = diff.split("\n")
+  return starts.map((start, index) => {
+    const chunk = lines.slice(start, starts[index + 1] ?? lines.length).join("\n")
+    const header = lines[start] ?? ""
+    const match = header.match(/^diff --git a\/(.+) b\/(.+)$/)
+    const pathValue = match?.[2] ?? match?.[1] ?? patchPath(chunk)
+    return {
+      source: `${source}:${index}`,
+      path: pathValue,
+      kind: chunk.includes("\nnew file mode ") ? "created" : chunk.includes("\ndeleted file mode ") ? "deleted" : "updated",
+      additions: countDiff(chunk, "+"),
+      deletions: countDiff(chunk, "-"),
+      patch: chunk,
+    } satisfies ReviewChange
+  })
+}
+
+function createPatchChange(patch: string, source: string) {
+  return [{
+    source,
+    path: patchPath(patch),
+    kind: patch.includes("\n--- /dev/null") ? "created" : patch.includes("\n+++ /dev/null") ? "deleted" : "updated",
+    additions: countDiff(patch, "+"),
+    deletions: countDiff(patch, "-"),
+    patch,
+  } satisfies ReviewChange]
+}
+
+function patchPath(patch: string) {
+  const plus = patch.match(/\n\+\+\+\s+(?:b\/)?(.+)/)?.[1]
+  if (plus && plus !== "/dev/null") return plus
+  const minus = patch.match(/\n---\s+(?:a\/)?(.+)/)?.[1]
+  if (minus && minus !== "/dev/null") return minus
+  const index = patch.match(/^Index:\s+(.+)$/m)?.[1]
+  return index ?? "file"
+}
+
+function displayPath(update: { title?: string; input?: Record<string, unknown> }, filediff?: Record<string, unknown>) {
+  if (typeof update.title === "string" && update.title.trim()) return update.title
+  if (typeof update.input?.filePath === "string") return update.input.filePath
+  if (typeof filediff?.file === "string") return filediff.file
+  return "file"
+}
+
+function patchKind(value: unknown): ReviewChange["kind"] {
+  if (value === "add") return "created"
+  if (value === "delete") return "deleted"
+  if (value === "move") return "moved"
+  return "updated"
+}
+
+function samePath(left: string, right?: string) {
+  if (!right) return false
+  return normalizePath(left) === normalizePath(right)
+}
+
+function countDiff(patch: string, prefix: "+" | "-") {
+  return patch.split("\n").filter((line) => line.startsWith(prefix) && !line.startsWith(`${prefix}${prefix}${prefix}`)).length
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
 }
 
 function buildPrompt(userText: string, ctx: ReturnType<typeof getEditorContext>): string {
@@ -872,8 +1007,8 @@ function reviewChangeHtml(change: ReviewChange, reviewed: Record<string, ReviewH
     ? pending.map((hunk) => `
       <section class="hunk" data-key="${escapeHtml(hunk.key)}">
         <div class="hunk-head">
-          <button class="action accept" data-action="accepted" data-key="${escapeHtml(hunk.key)}">Accept</button>
-          <button class="action reject" data-action="rejected" data-key="${escapeHtml(hunk.key)}"${hunk.reversible ? "" : " disabled title=\"This patch format cannot be rejected as a hunk\""}>Reject</button>
+          <button class="action accept" data-action="accepted" data-key="${escapeHtml(hunk.key)}">Keep</button>
+          <button class="action reject" data-action="rejected" data-key="${escapeHtml(hunk.key)}"${hunk.reversible ? "" : " disabled title=\"This patch format cannot be undone as a hunk\""}>Undo</button>
         </div>
         <pre class="code"><code>${hunk.lines.map(diffLineHtml).join("")}</code></pre>
       </section>
