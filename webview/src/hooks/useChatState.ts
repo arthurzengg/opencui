@@ -7,6 +7,7 @@ import type {
   EditorContextRef,
   Outbound,
   Selection,
+  ReviewHunkState,
   Todo,
   ToolUpdate,
   UsageDelta,
@@ -25,10 +26,11 @@ export type ChatState = {
   context?: EditorContextRef
   messages: Message[]
   todos: Todo[]
+  reviewHunks: Record<string, ReviewHunkState>
   pendingPermission?: { id: string; title: string; pattern?: string | string[] }
 }
 
-type Action = Outbound | { type: "reset" } | { type: "clearPermission" }
+type Action = Outbound | { type: "reset" } | { type: "clearPermission" } | { type: "reviewHunkLocal"; key: string; state: ReviewHunkState }
 
 const initial: ChatState = {
   connected: false,
@@ -37,6 +39,7 @@ const initial: ChatState = {
   conversations: [],
   messages: [],
   todos: [],
+  reviewHunks: {},
 }
 
 function upsertMessage(messages: Message[], id: string, patch: Partial<Message>): Message[] {
@@ -108,6 +111,7 @@ function reducer(state: ChatState, action: Action): ChatState {
         conversationID: action.conversationID,
         messages: action.messages,
         todos: action.todos,
+        reviewHunks: action.reviewHunks ?? {},
         pendingPermission: undefined,
       }
     case "context":
@@ -145,6 +149,12 @@ function reducer(state: ChatState, action: Action): ChatState {
       }
     case "todos":
       return { ...state, todos: action.todos }
+    case "reviewHunkState": {
+      const reviewHunks = { ...state.reviewHunks }
+      if (action.state) reviewHunks[action.key] = action.state
+      else delete reviewHunks[action.key]
+      return { ...state, reviewHunks }
+    }
     case "assistantError":
       return {
         ...state,
@@ -183,6 +193,8 @@ function reducer(state: ChatState, action: Action): ChatState {
       }
     case "clearPermission":
       return { ...state, pendingPermission: undefined }
+    case "reviewHunkLocal":
+      return { ...state, reviewHunks: { ...state.reviewHunks, [action.key]: action.state } }
     case "clear":
       return { ...initial, selection: state.selection, context: state.context, connected: state.connected }
     default:
@@ -228,8 +240,9 @@ export function useChatState() {
     openFile(path: string) {
       vscode.post({ type: "openFile", path })
     },
-    reviewHunk(path: string, action: "accept" | "reject", oldText: string, newText: string) {
-      vscode.post({ type: "reviewHunk", path, action, oldText, newText })
+    reviewHunk(key: string, path: string, action: ReviewHunkState, oldText: string, newText: string) {
+      dispatch({ type: "reviewHunkLocal", key, state: action })
+      vscode.post({ type: "reviewHunk", key, path, action, oldText, newText })
     },
     selectAgent() {
       vscode.post({ type: "selectAgent" })

@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react"
 import type { Message } from "../hooks/useChatState"
+import type { ReviewHunkState } from "../protocol"
 
 type Change = {
+  source: string
   path: string
   kind: "created" | "updated" | "deleted" | "moved"
   additions: number
   deletions: number
   patch: string
 }
-
-type ReviewState = "accepted" | "rejected"
 
 type DiffLine = {
   text: string
@@ -28,6 +28,7 @@ export function ReviewPanel({
   messages,
   selectedPath,
   selectedKey,
+  reviewedHunks,
   onSelectPath,
   onOpenFile,
   onReviewHunk,
@@ -35,14 +36,19 @@ export function ReviewPanel({
   messages: Message[]
   selectedPath?: string
   selectedKey?: number
+  reviewedHunks: Record<string, ReviewHunkState>
   onSelectPath?: (path: string) => void
   onOpenFile?: (path: string) => void
-  onReviewHunk?: (path: string, action: "accept" | "reject", oldText: string, newText: string) => void
+  onReviewHunk?: (key: string, path: string, action: ReviewHunkState, oldText: string, newText: string) => void
 }) {
   const changes = useMemo(() => turnChanges(messages), [messages])
+  const pendingChanges = useMemo(
+    () => changes.map((change) => ({ change, diff: splitDiff(change.patch) }))
+      .filter(({ change, diff }) => diff.hunks.some((hunk) => !reviewedHunks[reviewKey(change, hunk.id)])),
+    [changes, reviewedHunks],
+  )
   const [open, setOpen] = useState(true)
   const [internalSelectedPath, setInternalSelectedPath] = useState<string>()
-  const [reviewed, setReviewed] = useState<Record<string, ReviewState>>({})
 
   useEffect(() => {
     if (!selectedPath) return
@@ -50,21 +56,22 @@ export function ReviewPanel({
     setOpen(true)
   }, [selectedPath, selectedKey])
 
-  if (!changes.length) return null
+  if (!pendingChanges.length) return null
 
   const activePath = selectedPath ?? internalSelectedPath
-  const selected = changes.find((change) => samePath(change.path, activePath)) ?? changes[0]
-  const additions = changes.reduce((total, change) => total + change.additions, 0)
-  const deletions = changes.reduce((total, change) => total + change.deletions, 0)
+  const selectedItem = pendingChanges.find(({ change }) => samePath(change.path, activePath)) ?? pendingChanges[0]
+  const selected = selectedItem.change
+  const additions = pendingChanges.reduce((total, { change }) => total + change.additions, 0)
+  const deletions = pendingChanges.reduce((total, { change }) => total + change.deletions, 0)
   const selectPath = (path: string) => {
     setInternalSelectedPath(path)
     onSelectPath?.(path)
     onOpenFile?.(path)
   }
-  const diff = selected ? splitDiff(selected.patch) : undefined
-  const reviewHunk = (hunk: DiffHunk, action: "accept" | "reject") => {
-    setReviewed((current) => ({ ...current, [reviewKey(selected.path, hunk.id)]: action === "accept" ? "accepted" : "rejected" }))
-    onReviewHunk?.(selected.path, action, hunk.oldText, hunk.newText)
+  const diff = selectedItem.diff
+  const reviewHunk = (hunk: DiffHunk, action: ReviewHunkState) => {
+    const key = reviewKey(selected, hunk.id)
+    onReviewHunk?.(key, selected.path, action, hunk.oldText, hunk.newText)
   }
 
   return (
@@ -73,7 +80,7 @@ export function ReviewPanel({
         <span className={`review-caret ${open ? "is-open" : ""}`}>›</span>
         <span className="review-title">Review changes</span>
         <span className="review-summary">
-          {changes.length} file{changes.length === 1 ? "" : "s"}
+          {pendingChanges.length} file{pendingChanges.length === 1 ? "" : "s"}
         </span>
         <span className="review-stat add">+{additions}</span>
         <span className="review-stat del">-{deletions}</span>
@@ -81,10 +88,10 @@ export function ReviewPanel({
       <div className="review-body-clip" aria-hidden={!open}>
         <div className="review-body">
           <div className="review-files">
-            {changes.map((change) => (
+            {pendingChanges.map(({ change }) => (
               <button
-                key={change.path}
-                className={`review-file ${change.path === selected.path ? "is-selected" : ""}`}
+                key={`${change.source}:${change.path}`}
+                className={`review-file ${change.source === selected.source && change.path === selected.path ? "is-selected" : ""}`}
                 onClick={() => selectPath(change.path)}
                 title={change.path}
               >
@@ -100,18 +107,16 @@ export function ReviewPanel({
             <div className="review-diff" role="region" aria-label={`Diff for ${selected.path}`}>
               <div className="review-diff-title">{selected.path}</div>
               <div key={selected.path} className="review-diff-content">
-                {diff?.header.length ? <DiffLines lines={diff.header} /> : null}
-                {diff?.hunks.map((hunk, index) => {
-                  const state = reviewed[reviewKey(selected.path, hunk.id)]
+                {diff.header.length ? <DiffLines lines={diff.header} /> : null}
+                {diff.hunks.filter((hunk) => !reviewedHunks[reviewKey(selected, hunk.id)]).map((hunk, index) => {
                   return (
-                    <div key={hunk.id} className={`review-hunk ${state ? `is-${state}` : ""}`}>
+                    <div key={hunk.id} className="review-hunk">
                       <div className="review-hunk-head">
                         <span className="review-hunk-title">Hunk {index + 1}</span>
-                        {state && <span className="review-hunk-state">{state}</span>}
-                        <button className="review-hunk-action accept" disabled={Boolean(state)} onClick={() => reviewHunk(hunk, "accept")}>
+                        <button className="review-hunk-action accept" onClick={() => reviewHunk(hunk, "accepted")}>
                           Accept
                         </button>
-                        <button className="review-hunk-action reject" disabled={Boolean(state)} onClick={() => reviewHunk(hunk, "reject")}>
+                        <button className="review-hunk-action reject" onClick={() => reviewHunk(hunk, "rejected")}>
                           Reject
                         </button>
                       </div>
@@ -141,17 +146,16 @@ function DiffLines({ lines }: { lines: DiffLine[] }) {
 }
 
 function turnChanges(messages: Message[]) {
-  const lastUser = messages.findLastIndex((message) => message.role === "user")
-  const scoped = lastUser >= 0 ? messages.slice(lastUser + 1) : messages
-  const changes = scoped.flatMap((message) =>
-    message.blocks.flatMap((block) => {
-      if (block.type === "patch" && block.diff) return diffChanges(block.diff)
+  const changes = messages.flatMap((message) =>
+    message.blocks.flatMap((block, blockIndex) => {
+      const source = `${message.id}:${blockIndex}`
+      if (block.type === "patch" && block.diff) return diffChanges(block.diff, source)
       if (block.type !== "tool" || block.update.status !== "completed") return []
-      return toolChanges(block.update)
+      return toolChanges(block.update, block.update.callID || source)
     }),
   )
   return changes.reduce<Change[]>((acc, change) => {
-    const existing = acc.findIndex((item) => item.path === change.path)
+    const existing = acc.findIndex((item) => item.source === change.source && item.path === change.path)
     if (existing < 0) return [...acc, change]
     const copy = acc.slice()
     copy[existing] = change
@@ -159,12 +163,13 @@ function turnChanges(messages: Message[]) {
   }, [])
 }
 
-function toolChanges(update: { tool: string; title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }) {
-  if (update.tool === "apply_patch") return patchChanges(update.metadata?.files)
+function toolChanges(update: { tool: string; title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, source: string) {
+  if (update.tool === "apply_patch") return patchChanges(update.metadata?.files, source)
   const filediff = isRecord(update.metadata?.filediff) ? update.metadata.filediff : undefined
   const patch = typeof filediff?.patch === "string" ? filediff.patch : typeof update.metadata?.diff === "string" ? update.metadata.diff : undefined
   if (!patch) return []
   return [{
+    source,
     path: displayPath(update, filediff),
     kind: update.tool === "write" && update.metadata?.exists === false ? "created" : "updated",
     additions: typeof filediff?.additions === "number" ? filediff.additions : countDiff(patch, "+"),
@@ -173,11 +178,12 @@ function toolChanges(update: { tool: string; title?: string; input?: Record<stri
   } satisfies Change]
 }
 
-function patchChanges(files: unknown) {
+function patchChanges(files: unknown, source: string) {
   if (!Array.isArray(files)) return []
   return files.flatMap((file) => {
     if (!isRecord(file) || typeof file.relativePath !== "string" || typeof file.patch !== "string") return []
     return [{
+      source: `${source}:${file.relativePath}`,
       path: file.relativePath,
       kind: patchKind(file.type),
       additions: typeof file.additions === "number" ? file.additions : countDiff(file.patch, "+"),
@@ -187,11 +193,11 @@ function patchChanges(files: unknown) {
   })
 }
 
-function diffChanges(diff: string) {
+function diffChanges(diff: string, source: string) {
   const starts = diff.split("\n").reduce<number[]>((acc, line, index) => (
     line.startsWith("diff --git ") ? [...acc, index] : acc
   ), [])
-  if (!starts.length) return createPatchChange(diff)
+  if (!starts.length) return createPatchChange(diff, source)
   const lines = diff.split("\n")
   return starts.map((start, index) => {
     const chunk = lines.slice(start, starts[index + 1] ?? lines.length).join("\n")
@@ -199,6 +205,7 @@ function diffChanges(diff: string) {
     const match = header.match(/^diff --git a\/(.+) b\/(.+)$/)
     const path = match?.[2] ?? match?.[1] ?? patchPath(chunk)
     return {
+      source: `${source}:${index}`,
       path,
       kind: chunk.includes("\nnew file mode ") ? "created" : chunk.includes("\ndeleted file mode ") ? "deleted" : "updated",
       additions: countDiff(chunk, "+"),
@@ -208,8 +215,9 @@ function diffChanges(diff: string) {
   })
 }
 
-function createPatchChange(patch: string) {
+function createPatchChange(patch: string, source: string) {
   return [{
+    source,
     path: patchPath(patch),
     kind: patch.includes("\n--- /dev/null") ? "created" : patch.includes("\n+++ /dev/null") ? "deleted" : "updated",
     additions: countDiff(patch, "+"),
@@ -309,8 +317,8 @@ function hunkText(lines: string[]) {
   }
 }
 
-function reviewKey(path: string, hunkID: string) {
-  return `${normalizePath(path)}:${hunkID}`
+function reviewKey(change: Change, hunkID: string) {
+  return `${change.source}:${normalizePath(change.path)}:${hunkID}`
 }
 
 function samePath(left: string, right?: string) {

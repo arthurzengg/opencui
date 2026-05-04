@@ -4,6 +4,7 @@
  */
 
 export type ToolStatus = "pending" | "running" | "completed" | "error"
+export type ReviewHunkState = "accepted" | "rejected"
 
 export type ToolUpdate = {
   callID: string
@@ -70,7 +71,7 @@ export type Outbound =
   | { type: "connected"; connected: boolean; error?: string }
   | { type: "selection"; selection: Selection }
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
-  | { type: "restore"; conversationID: string; messages: ChatMessage[]; todos: Todo[] }
+  | { type: "restore"; conversationID: string; messages: ChatMessage[]; todos: Todo[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
   | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef }
   | { type: "assistantStart"; id: string }
@@ -79,6 +80,7 @@ export type Outbound =
   | { type: "tool"; id: string; update: ToolUpdate }
   | { type: "patch"; id: string; files: string[]; diff?: string }
   | { type: "todos"; todos: Todo[] }
+  | { type: "reviewHunkState"; key: string; state?: ReviewHunkState }
   | { type: "assistantError"; id: string; message: string }
   | { type: "assistantDone"; id: string; usage?: UsageDelta }
   | { type: "aborted" }
@@ -100,7 +102,7 @@ export type Inbound =
   | { type: "deleteConversation"; id: string }
   | { type: "apply"; code: string; language?: string }
   | { type: "openFile"; path: string }
-  | { type: "reviewHunk"; path: string; action: "accept" | "reject"; oldText: string; newText: string }
+  | { type: "reviewHunk"; key: string; path: string; action: ReviewHunkState; oldText: string; newText: string }
   | { type: "selectAgent" }
   | { type: "selectModel" }
   | { type: "permissionReply"; id: string; response: "once" | "always" | "reject" }

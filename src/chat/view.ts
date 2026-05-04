@@ -18,6 +18,7 @@ import type {
   Todo,
   ToolUpdate as WireToolUpdate,
   Selection,
+  ReviewHunkState,
 } from "../protocol"
 
 const CONVERSATIONS_KEY = "opencui.conversations"
@@ -28,6 +29,7 @@ type SavedConversation = ConversationSummary & {
   sessionID?: string
   messages: ChatMessage[]
   todos: Todo[]
+  reviewHunks?: Record<string, ReviewHunkState>
 }
 
 export class ChatView implements vscode.WebviewViewProvider {
@@ -43,6 +45,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private activeConversationID: string
   private messages: ChatMessage[] = []
   private todos: Todo[] = []
+  private reviewHunks: Record<string, ReviewHunkState> = {}
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -106,6 +109,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.activeConversationID = conversation.id
     this.messages = []
     this.todos = []
+    this.reviewHunks = {}
     await this.persistConversations()
     this.sendConversationState()
   }
@@ -151,6 +155,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       conversationID: this.activeConversationID,
       messages: this.messages,
       todos: this.todos,
+      reviewHunks: this.reviewHunks,
     })
   }
 
@@ -163,6 +168,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       updatedAt: now,
       messages: [],
       todos: [],
+      reviewHunks: {},
     }
     this.conversations = [conversation, ...this.conversations]
     return conversation
@@ -179,6 +185,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.sessionID = conversation.sessionID
     this.messages = conversation.messages.map((m) => ({ ...m, pending: false }))
     this.todos = conversation.todos
+    this.reviewHunks = conversation.reviewHunks ?? {}
   }
 
   private async selectConversation(id: string) {
@@ -254,6 +261,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       sessionID: this.sessionID,
       messages: this.messages,
       todos: this.todos,
+      reviewHunks: this.reviewHunks,
       updatedAt: Date.now(),
     }))
   }
@@ -275,10 +283,12 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "restore":
         this.messages = msg.messages.map((m) => ({ ...m, pending: false }))
         this.todos = msg.todos
+        this.reviewHunks = msg.reviewHunks ?? {}
         return
       case "clear":
         this.messages = []
         this.todos = []
+        this.reviewHunks = {}
         this.saveActive()
         return
       case "userMessage":
@@ -306,12 +316,18 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       case "patch":
         this.messages = this.messages.map((m) =>
-          m.id === msg.id ? { ...m, blocks: [...m.blocks, { type: "patch", files: msg.files }] } : m,
+          m.id === msg.id ? { ...m, blocks: [...m.blocks, { type: "patch", files: msg.files, diff: msg.diff }] } : m,
         )
         this.saveActive()
         return
       case "todos":
         this.todos = msg.todos
+        this.saveActive()
+        return
+      case "reviewHunkState":
+        this.reviewHunks = { ...this.reviewHunks }
+        if (msg.state) this.reviewHunks[msg.key] = msg.state
+        else delete this.reviewHunks[msg.key]
         this.saveActive()
         return
       case "assistantError":
@@ -404,7 +420,11 @@ export class ChatView implements vscode.WebviewViewProvider {
         await openFile(msg.path)
         return
       case "reviewHunk":
-        await reviewHunk(msg.path, msg.action, msg.oldText, msg.newText)
+        this.post({
+          type: "reviewHunkState",
+          key: msg.key,
+          state: await reviewHunk(msg.path, msg.action, msg.oldText, msg.newText) ? msg.action : undefined,
+        })
         return
       case "selectAgent":
         await vscode.commands.executeCommand("opencui.selectAgent")
@@ -706,10 +726,10 @@ async function openFile(relPath: string) {
   await vscode.window.showTextDocument(doc)
 }
 
-async function reviewHunk(relPath: string, action: "accept" | "reject", oldText: string, newText: string) {
-  if (action === "accept") return
+async function reviewHunk(relPath: string, action: ReviewHunkState, oldText: string, newText: string): Promise<boolean> {
+  if (action === "accepted") return true
   const ws = vscode.workspace.workspaceFolders?.[0]
-  if (!ws) return
+  if (!ws) return false
   const uri = path.isAbsolute(relPath) ? vscode.Uri.file(relPath) : vscode.Uri.joinPath(ws.uri, relPath)
   const doc = await vscode.workspace.openTextDocument(uri)
   const current = doc.getText()
@@ -717,16 +737,17 @@ async function reviewHunk(relPath: string, action: "accept" | "reject", oldText:
   if (!match) {
     vscode.window.showWarningMessage(`OpenCUI: could not reject hunk in ${relPath}; the file changed since the diff was generated.`)
     await vscode.window.showTextDocument(doc)
-    return
+    return false
   }
   const edit = new vscode.WorkspaceEdit()
   edit.replace(uri, new vscode.Range(doc.positionAt(match.start), doc.positionAt(match.end)), oldText)
   const ok = await vscode.workspace.applyEdit(edit)
   if (!ok) {
     vscode.window.showWarningMessage(`OpenCUI: could not reject hunk in ${relPath}`)
-    return
+    return false
   }
   await vscode.window.showTextDocument(doc)
+  return true
 }
 
 function findHunkText(current: string, value: string): { start: number; end: number } | undefined {

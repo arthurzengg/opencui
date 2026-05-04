@@ -90,6 +90,7 @@ export default function App() {
         messages={state.messages}
         selectedPath={reviewRequest?.path}
         selectedKey={reviewRequest?.key}
+        reviewedHunks={state.reviewHunks}
         onSelectPath={openReviewFile}
         onOpenFile={openFile}
         onReviewHunk={reviewHunk}
