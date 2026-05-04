@@ -33,6 +33,58 @@ type SavedConversation = ConversationSummary & {
   reviewHunks?: Record<string, ReviewHunkState>
 }
 
+type ReviewLensEntry = {
+  key: string
+  path: string
+  uri: vscode.Uri
+  range: vscode.Range
+  oldText: string
+  newText: string
+  reversible: boolean
+}
+
+class ReviewCodeLensProvider implements vscode.CodeLensProvider {
+  private readonly changed = new vscode.EventEmitter<void>()
+  readonly onDidChangeCodeLenses = this.changed.event
+  private entries = new Map<string, ReviewLensEntry>()
+
+  setEntries(entries: ReviewLensEntry[]) {
+    this.entries = new Map(entries.map((entry) => [entry.key, entry]))
+    this.changed.fire()
+  }
+
+  clear() {
+    if (!this.entries.size) return
+    this.entries.clear()
+    this.changed.fire()
+  }
+
+  get(key: string) {
+    return this.entries.get(key)
+  }
+
+  provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    const uri = document.uri.toString()
+    return [...this.entries.values()]
+      .filter((entry) => entry.uri.toString() === uri)
+      .flatMap((entry) => {
+        const lenses = [new vscode.CodeLens(entry.range, {
+          title: "Accept",
+          command: "opencui.review.acceptHunk",
+          arguments: [entry.key],
+        })]
+        if (entry.reversible) {
+          lenses.push(new vscode.CodeLens(entry.range, {
+            title: "Reject",
+            command: "opencui.review.rejectHunk",
+            arguments: [entry.key],
+          }))
+        }
+        return lenses
+      })
+  }
+}
+
 export class ChatView implements vscode.WebviewViewProvider {
   static viewType = "opencui.chat"
 
@@ -49,6 +101,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private reviewHunks: Record<string, ReviewHunkState> = {}
   private reviewPanel?: vscode.WebviewPanel
   private reviewChange?: ReviewChange
+  private readonly reviewCodeLens = new ReviewCodeLensProvider()
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -63,6 +116,10 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     this.restoreActiveState()
     void this.persistConversations()
+  }
+
+  get reviewCodeLensProvider() {
+    return this.reviewCodeLens
   }
 
   async resolveWebviewView(view: vscode.WebviewView) {
@@ -142,6 +199,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription = undefined
     this.reviewPanel?.dispose()
     this.reviewPanel = undefined
+    this.reviewCodeLens.clear()
   }
 
   private post(msg: Outbound) {
@@ -425,7 +483,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         await openFile(msg.path)
         return
       case "openReviewChange":
-        this.openReviewChange(msg.change)
+        void this.openReviewChange(msg.change)
         return
       case "reviewHunk":
         this.post({
@@ -607,23 +665,28 @@ export class ChatView implements vscode.WebviewViewProvider {
     return webviewID
   }
 
-  private openReviewChange(change: ReviewChange) {
+  private async openReviewChange(change: ReviewChange) {
     this.reviewChange = change
-    if (!this.reviewPanel) {
-      this.reviewPanel = vscode.window.createWebviewPanel(
-        "opencui.reviewChange",
-        "Review change",
-        vscode.ViewColumn.One,
-        { enableScripts: true, retainContextWhenHidden: true },
-      )
-      this.reviewPanel.onDidDispose(() => {
-        this.reviewPanel = undefined
-        this.reviewChange = undefined
-      })
-      this.reviewPanel.webview.onDidReceiveMessage((msg) => this.onReviewPanelMessage(msg))
+    this.reviewPanel?.dispose()
+    this.reviewPanel = undefined
+    const doc = await openFileDocument(change.path)
+    const entries = reviewLensEntries(change, this.reviewHunks, doc)
+    this.reviewCodeLens.setEntries(entries)
+    const editor = await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
+    if (entries[0]) editor.revealRange(entries[0].range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+  }
+
+  async reviewHunk(key: string, action: ReviewHunkState) {
+    const entry = this.reviewCodeLens.get(key)
+    if (!entry) return
+    const state = await reviewHunk(entry.path, action, entry.oldText, entry.newText) ? action : undefined
+    this.post({ type: "reviewHunkState", key, state })
+    if (!state || !this.reviewChange) {
+      this.reviewCodeLens.clear()
+      return
     }
-    this.refreshReviewPanel()
-    this.reviewPanel.reveal(vscode.ViewColumn.One)
+    const doc = await openFileDocument(entry.path)
+    this.reviewCodeLens.setEntries(reviewLensEntries(this.reviewChange, this.reviewHunks, doc))
   }
 
   private async onReviewPanelMessage(msg: { type?: string; key?: string; path?: string; action?: ReviewHunkState; oldText?: string; newText?: string }) {
@@ -769,11 +832,20 @@ async function applyCode(code: string, _language?: string) {
 }
 
 async function openFile(relPath: string) {
-  const ws = vscode.workspace.workspaceFolders?.[0]
-  if (!ws) return
-  const uri = path.isAbsolute(relPath) ? vscode.Uri.file(relPath) : vscode.Uri.joinPath(ws.uri, relPath)
-  const doc = await vscode.workspace.openTextDocument(uri)
+  const doc = await openFileDocument(relPath)
   await vscode.window.showTextDocument(doc)
+}
+
+async function openFileDocument(relPath: string) {
+  const uri = workspaceFileUri(relPath)
+  return vscode.workspace.openTextDocument(uri)
+}
+
+function workspaceFileUri(relPath: string) {
+  const ws = vscode.workspace.workspaceFolders?.[0]
+  if (path.isAbsolute(relPath)) return vscode.Uri.file(relPath)
+  if (!ws) return vscode.Uri.file(relPath)
+  return vscode.Uri.joinPath(ws.uri, relPath)
 }
 
 type ReviewDiffLine = {
@@ -988,6 +1060,27 @@ function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
   }
 
   return { hunks }
+}
+
+function reviewLensEntries(change: ReviewChange, reviewed: Record<string, ReviewHunkState>, doc: vscode.TextDocument): ReviewLensEntry[] {
+  const current = doc.getText()
+  return splitReviewDiff(change.patch).hunks
+    .map((hunk) => ({ ...hunk, key: reviewKey(change, hunk.id) }))
+    .filter((hunk) => !reviewed[hunk.key])
+    .map((hunk) => {
+      const match = findHunkText(current, hunk.newText)
+      const start = match?.start ?? 0
+      const end = match?.end ?? start
+      return {
+        key: hunk.key,
+        path: change.path,
+        uri: doc.uri,
+        range: new vscode.Range(doc.positionAt(start), doc.positionAt(end)),
+        oldText: hunk.oldText,
+        newText: hunk.newText,
+        reversible: hunk.reversible,
+      }
+    })
 }
 
 function hunkText(lines: string[]) {
