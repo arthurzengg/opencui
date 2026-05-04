@@ -69,7 +69,6 @@ export function ReviewPanel({
                 onClick={() => selectChange(change)}
                 title={change.path}
               >
-                <span className={`review-badge kind-${change.kind}`}>{kindLetter(change.kind)}</span>
                 <span className="review-file-name">{basename(change.path)}</span>
                 <span className="review-file-path">{dirname(change.path)}</span>
                 <span className="review-file-stat add">+{change.additions}</span>
@@ -93,7 +92,7 @@ function turnChanges(messages: Message[]) {
     }),
   )
   return changes.reduce<ReviewChange[]>((acc, change) => {
-    const existing = acc.findIndex((item) => item.source === change.source && item.path === change.path)
+    const existing = acc.findIndex((item) => samePath(item.path, change.path))
     if (existing < 0) return [...acc, change]
     const copy = acc.slice()
     copy[existing] = change
@@ -210,6 +209,10 @@ function splitDiff(patch: string): { hunks: DiffHunk[] } {
     })
   }
 
+  if (!hunks.length && patch.trim()) {
+    hunks.push({ id: "0-file" })
+  }
+
   return { hunks }
 }
 
@@ -228,13 +231,6 @@ function normalizePath(value: string) {
 
 function countDiff(patch: string, prefix: "+" | "-") {
   return patch.split("\n").filter((line) => line.startsWith(prefix) && !line.startsWith(`${prefix}${prefix}${prefix}`)).length
-}
-
-function kindLetter(kind: ReviewChange["kind"]) {
-  if (kind === "created") return "A"
-  if (kind === "deleted") return "D"
-  if (kind === "moved") return "R"
-  return "M"
 }
 
 function basename(value: string) {

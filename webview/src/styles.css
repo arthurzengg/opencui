@@ -860,7 +860,7 @@ button {
 .review-head {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   width: 100%;
   min-width: 0;
   padding: 0;
@@ -944,23 +944,19 @@ button {
 .review-files {
   min-width: 0;
   overflow: auto;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: var(--radius);
-  background: var(--vscode-editor-background);
 }
 .review-file {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-areas:
-    "badge name add del"
-    "badge path add del";
+    "name add del"
+    "path add del";
   align-items: center;
-  gap: 0 7px;
+  gap: 0 6px;
   width: 100%;
   min-width: 0;
-  padding: 6px 7px;
+  padding: 5px 2px;
   border: 0;
-  border-bottom: 1px solid var(--vscode-panel-border);
   background: transparent;
   color: inherit;
   text-align: left;
@@ -970,31 +966,15 @@ button {
   background: var(--vscode-list-hoverBackground);
 }
 .review-file.is-selected {
-  outline: 1px solid var(--vscode-focusBorder, transparent);
-  outline-offset: -1px;
+  color: var(--vscode-foreground);
 }
-.review-badge {
-  grid-area: badge;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: var(--vscode-button-secondaryBackground);
-  font-size: 10px;
-  font-weight: 700;
-}
-.review-badge.kind-created { color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); }
-.review-badge.kind-deleted { color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149); }
-.review-badge.kind-moved { color: var(--vscode-gitDecoration-renamedResourceForeground, #d29922); }
 .review-file-name {
   grid-area: name;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 .review-file-path {
