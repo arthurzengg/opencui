@@ -43,9 +43,10 @@ type ReviewLensEntry = {
   reversible: boolean
 }
 
-class ReviewCodeLensProvider implements vscode.CodeLensProvider {
+class ReviewCodeLensProvider implements vscode.CodeLensProvider, vscode.InlayHintsProvider {
   private readonly changed = new vscode.EventEmitter<void>()
   readonly onDidChangeCodeLenses = this.changed.event
+  readonly onDidChangeInlayHints = this.changed.event
   private entries = new Map<string, ReviewLensEntry>()
 
   setEntries(entries: ReviewLensEntry[]) {
@@ -81,6 +82,35 @@ class ReviewCodeLensProvider implements vscode.CodeLensProvider {
           }))
         }
         return lenses
+      })
+  }
+
+  provideInlayHints(document: vscode.TextDocument, range: vscode.Range): vscode.InlayHint[] {
+    const uri = document.uri.toString()
+    return [...this.entries.values()]
+      .filter((entry) => entry.uri.toString() === uri && range.contains(entry.range.start))
+      .map((entry) => {
+        const keep = new vscode.InlayHintLabelPart("Keep")
+        keep.command = {
+          title: "Keep",
+          command: "opencui.review.acceptHunk",
+          arguments: [entry.key],
+        }
+        const parts = [keep]
+        if (entry.reversible) {
+          const spacer = new vscode.InlayHintLabelPart(" / ")
+          const undo = new vscode.InlayHintLabelPart("Undo")
+          undo.command = {
+            title: "Undo",
+            command: "opencui.review.rejectHunk",
+            arguments: [entry.key],
+          }
+          parts.push(spacer, undo)
+        }
+        const hint = new vscode.InlayHint(entry.range.start, parts, vscode.InlayHintKind.Parameter)
+        hint.paddingLeft = true
+        hint.paddingRight = true
+        return hint
       })
   }
 }

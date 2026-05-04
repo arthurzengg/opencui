@@ -177,9 +177,7 @@ export function subscribeSession(
     }
     if (part.type === "tool" && part.callID && part.tool && part.state) {
       const key = part.callID as string
-      const prev = toolStatus.get(key)
       const curr = part.state.status as ToolUpdate["status"]
-      if (prev === curr) return
       toolStatus.set(key, curr)
       if (curr === "running" || curr === "completed" || curr === "error") {
         handlers.onTool?.(messageID, {
