@@ -70,7 +70,6 @@ export function ReviewPanel({
                 title={change.path}
               >
                 <span className="review-file-name">{basename(change.path)}</span>
-                <span className="review-file-path">{dirname(change.path)}</span>
                 <span className="review-file-stat add">+{change.additions}</span>
                 <span className="review-file-stat del">-{change.deletions}</span>
               </button>
@@ -235,12 +234,6 @@ function countDiff(patch: string, prefix: "+" | "-") {
 
 function basename(value: string) {
   return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
-}
-
-function dirname(value: string) {
-  const parts = value.split(/[\\/]/).filter(Boolean)
-  if (parts.length <= 1) return ""
-  return parts.slice(0, -1).join("/")
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

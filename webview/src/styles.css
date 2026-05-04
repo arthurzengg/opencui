@@ -948,14 +948,12 @@ button {
 .review-file {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-areas:
-    "name add del"
-    "path add del";
+  grid-template-areas: "name add del";
   align-items: center;
-  gap: 0 6px;
+  gap: 0 5px;
   width: 100%;
   min-width: 0;
-  padding: 5px 2px;
+  padding: 4px 2px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -976,15 +974,6 @@ button {
   text-overflow: ellipsis;
   font-size: 13px;
   font-weight: 600;
-}
-.review-file-path {
-  grid-area: path;
-  min-width: 0;
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 .review-file-stat.add { grid-area: add; }
 .review-file-stat.del { grid-area: del; }
