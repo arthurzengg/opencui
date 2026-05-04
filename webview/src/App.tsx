@@ -1,0 +1,102 @@
+import { useEffect, useRef } from "react"
+import { useChatState } from "./hooks/useChatState"
+import type { Message } from "./hooks/useChatState"
+import { MessageView } from "./components/MessageView"
+import { PromptBox } from "./components/PromptBox"
+import { TodoPanel } from "./components/TodoPanel"
+import { StatusBar } from "./components/StatusBar"
+import { PermissionDialog } from "./components/PermissionDialog"
+import { ReviewPanel } from "./components/ReviewPanel"
+
+export default function App() {
+  const {
+    state,
+    send,
+    abort,
+    newSession,
+    openConversation,
+    renameConversation,
+    deleteConversation,
+    selectAgent,
+    selectModel,
+    replyPermission,
+  } = useChatState()
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const stickToBottom = useRef(true)
+
+  const busy = state.busy || state.messages.some((m) => m.pending)
+  const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
+
+  useEffect(() => {
+    if (!scrollRef.current || !stickToBottom.current) return
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [state.messages])
+
+  return (
+    <div className="app">
+      <StatusBar
+        connected={state.connected}
+        error={state.error}
+        selection={state.selection}
+        conversations={state.conversations}
+        activeConversationID={state.conversationID}
+        onSelectAgent={selectAgent}
+        onSelectModel={selectModel}
+        onCreateConversation={newSession}
+        onOpenConversation={openConversation}
+        onRenameConversation={renameConversation}
+        onDeleteConversation={deleteConversation}
+      />
+      <TodoPanel todos={state.todos} />
+      <div
+        className="messages"
+        ref={scrollRef}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+        }}
+      >
+        {state.messages.length === 0 && (
+          <div className="welcome">
+            <div className="welcome-title">OpenCUI</div>
+            <div className="welcome-sub">Ask about the current file, refactor code, or run a task.</div>
+          </div>
+        )}
+        {state.messages.map((m, i) => (
+          <MessageView
+            key={m.id}
+            message={m}
+            processOpen={m.id === activeProcessID}
+            processOnly={m.role === "assistant" && (m.pending || hasLaterAssistantInTurn(state.messages, i))}
+          />
+          ))}
+      </div>
+      {state.pendingPermission && (
+        <PermissionDialog
+          id={state.pendingPermission.id}
+          title={state.pendingPermission.title}
+          pattern={state.pendingPermission.pattern}
+          onReply={replyPermission}
+        />
+      )}
+      <ReviewPanel messages={state.messages} />
+      <PromptBox
+        busy={busy}
+        contextLabel={state.context?.label}
+        onSend={send}
+        onAbort={abort}
+        onNew={newSession}
+      />
+    </div>
+  )
+}
+
+function hasLaterAssistantInTurn(messages: Message[], index: number) {
+  const message = messages[index]
+  if (message?.role !== "assistant") return false
+  for (const next of messages.slice(index + 1)) {
+    if (next.role === "user") return false
+    if (next.role === "assistant") return true
+  }
+  return false
+}

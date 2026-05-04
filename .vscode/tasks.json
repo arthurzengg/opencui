@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "compile",
+      "type": "shell",
+      "command": "bun",
+      "args": ["run", "compile"],
+      "options": {
+        "env": {
+          "PATH": "${env:HOME}/.bun/bin:${env:PATH}"
+        }
+      },
+      "group": "build",
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "silent"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "watch",
+      "type": "shell",
+      "command": "bun",
+      "args": ["run", "watch"],
+      "options": {
+        "env": {
+          "PATH": "${env:HOME}/.bun/bin:${env:PATH}"
+        }
+      },
+      "group": "build",
+      "isBackground": true,
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "never"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

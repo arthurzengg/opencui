@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "sourceMap": true,
+    "rootDir": ".",
+    "outDir": "out",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": false,
+    "noEmit": true
+  },
+  "include": ["src/**/*", "webview/src/protocol.ts"],
+  "exclude": ["webview/src/**", "!webview/src/protocol.ts", "dist", "out", "node_modules"]
+}

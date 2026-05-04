@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "opencui",
+  "displayName": "OpenCUI",
+  "description": "OpenCUI: opencode-powered AI assistant with a modern React chat UI",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "opencui",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "opencui",
+          "title": "OpenCUI",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "opencui": [
+        {
+          "id": "opencui.chat",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "opencui.chat.focus",
+        "title": "OpenCUI: Focus Chat"
+      },
+      {
+        "command": "opencui.chat.new",
+        "title": "OpenCUI: New Chat"
+      },
+      {
+        "command": "opencui.conversation.select",
+        "title": "OpenCUI: Select Conversation"
+      },
+      {
+        "command": "opencui.inlineEdit",
+        "title": "OpenCUI: Inline Edit"
+      },
+      {
+        "command": "opencui.selectAgent",
+        "title": "OpenCUI: Select Agent"
+      },
+      {
+        "command": "opencui.selectModel",
+        "title": "OpenCUI: Select Model"
+      },
+      {
+        "command": "opencui.server.restart",
+        "title": "OpenCUI: Restart Backend"
+      },
+      {
+        "command": "opencui.showLogs",
+        "title": "OpenCUI: Show Logs"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "opencui.chat.focus",
+        "key": "cmd+l",
+        "mac": "cmd+l",
+        "win": "ctrl+l",
+        "linux": "ctrl+l"
+      },
+      {
+        "command": "opencui.inlineEdit",
+        "key": "cmd+k",
+        "mac": "cmd+k",
+        "win": "ctrl+k",
+        "linux": "ctrl+k",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "OpenCUI",
+      "properties": {
+        "opencui.binaryPath": {
+          "type": "string",
+          "default": "opencode",
+          "description": "Path to opencode binary"
+        },
+        "opencui.serverPort": {
+          "type": "number",
+          "default": 0,
+          "description": "Port for the opencode server (0 = auto)"
+        },
+        "opencui.model": {
+          "type": "string",
+          "default": "",
+          "description": "Default model id (provider/model)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "bun run build:webview && node esbuild.js",
+    "watch": "bun run build:webview && node esbuild.js --watch",
+    "package": "bun run build:webview && node esbuild.js --production",
+    "build:webview": "cd webview && bun install --silent && bun run build",
+    "check-types": "tsc --noEmit",
+    "vscode:prepublish": "bun run package"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.14.25"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.94.0",
+    "esbuild": "^0.25.3",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "bun@1.3.13",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arthurzengg/opencui.git"
+  }
+}
