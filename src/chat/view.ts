@@ -777,6 +777,7 @@ type ReviewDiffHunk = {
   lines: ReviewDiffLine[]
   oldText: string
   newText: string
+  reversible: boolean
 }
 
 function reviewChangeHtml(change: ReviewChange, reviewed: Record<string, ReviewHunkState>): string {
@@ -784,14 +785,14 @@ function reviewChangeHtml(change: ReviewChange, reviewed: Record<string, ReviewH
   const pending = diff.hunks
     .map((hunk) => ({ ...hunk, key: reviewKey(change, hunk.id) }))
     .filter((hunk) => !reviewed[hunk.key])
-  const payload = JSON.stringify(pending.map(({ key, oldText, newText }) => ({ key, oldText, newText }))).replace(/</g, "\\u003c")
+  const payload = JSON.stringify(pending.map(({ key, oldText, newText, reversible }) => ({ key, oldText, newText, reversible }))).replace(/</g, "\\u003c")
   const body = pending.length
     ? pending.map((hunk, index) => `
       <section class="hunk" data-key="${escapeHtml(hunk.key)}">
         <div class="hunk-head">
           <div class="hunk-title">Hunk ${index + 1}</div>
           <button class="action accept" data-action="accepted" data-key="${escapeHtml(hunk.key)}">Accept</button>
-          <button class="action reject" data-action="rejected" data-key="${escapeHtml(hunk.key)}">Reject</button>
+          <button class="action reject" data-action="rejected" data-key="${escapeHtml(hunk.key)}"${hunk.reversible ? "" : " disabled title=\"This patch format cannot be rejected as a hunk\""}>Reject</button>
         </div>
         <pre class="code"><code>${[{ text: hunk.header, kind: "hunk" as const }, ...hunk.lines].map(diffLineHtml).join("")}</code></pre>
       </section>
@@ -941,6 +942,7 @@ function reviewChangeHtml(change: ReviewChange, reviewed: Record<string, ReviewH
       if (!button) return;
       const hunk = hunks.get(button.dataset.key);
       if (!hunk) return;
+      if (button.dataset.action === "rejected" && !hunk.reversible) return;
       button.closest(".hunk")?.querySelectorAll("button").forEach((item) => item.disabled = true);
       vscode.postMessage({
         type: "reviewHunk",
@@ -983,6 +985,18 @@ function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
       lines: diffLines(hunkLines.join("\n")),
       oldText,
       newText,
+      reversible: true,
+    })
+  }
+
+  if (!hunks.length && patch.trim()) {
+    hunks.push({
+      id: "0-file",
+      header: "@@ file change @@",
+      lines: diffLines(patch),
+      oldText: "",
+      newText: "",
+      reversible: false,
     })
   }
 
