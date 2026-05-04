@@ -8,15 +8,17 @@ export function MessageView({
   message,
   processOpen,
   processOnly,
+  onReviewFile,
 }: {
   message: Message
   processOpen: boolean
   processOnly: boolean
+  onReviewFile?: (path: string) => void
 }) {
   return (
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
-      {renderMessageBlocks(message, processOpen, processOnly)}
+      {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
       {message.pending && message.blocks.length === 0 && <div className="thinking-dots">thinking…</div>}
       {message.error && <div className="msg-error">{message.error}</div>}
       {(message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
@@ -34,31 +36,41 @@ export function MessageView({
   )
 }
 
-function renderMessageBlocks(message: Message, processOpen: boolean, processOnly: boolean) {
-  if (message.role !== "assistant") return renderBlocks(message.blocks)
+function renderMessageBlocks(message: Message, processOpen: boolean, processOnly: boolean, onReviewFile?: (path: string) => void) {
+  if (message.role !== "assistant") return renderBlocks(message.blocks, false, onReviewFile)
   if (processOnly) {
     if (!hasProcessBlocks(message.blocks)) return null
-    return <ProcessPanel blocks={message.blocks} openKey={`process-only-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} />
+    return <ProcessPanel blocks={message.blocks} openKey={`process-only-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
   const finalTextIndex = lastTextIndex(message.blocks, message.pending)
   if (finalTextIndex < 0) {
-    if (!hasProcessBlocks(message.blocks)) return renderBlocks(message.blocks)
-    return <ProcessPanel blocks={message.blocks} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} />
+    if (!hasProcessBlocks(message.blocks)) return renderBlocks(message.blocks, false, onReviewFile)
+    return <ProcessPanel blocks={message.blocks} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
   const process = message.blocks.slice(0, finalTextIndex)
   const final = message.blocks.slice(finalTextIndex)
-  if (!hasProcessBlocks(process)) return renderBlocks(final)
+  if (!hasProcessBlocks(process)) return renderBlocks(final, false, onReviewFile)
   return (
     <>
-      <ProcessPanel blocks={process} openKey={`final-${message.id}-${finalTextIndex}`} defaultOpen={false} />
-      {renderBlocks(final)}
+      <ProcessPanel blocks={process} openKey={`final-${message.id}-${finalTextIndex}`} defaultOpen={false} onReviewFile={onReviewFile} />
+      {renderBlocks(final, false, onReviewFile)}
     </>
   )
 }
 
-function ProcessPanel({ blocks, openKey, defaultOpen }: { blocks: Block[]; openKey: string; defaultOpen: boolean }) {
+function ProcessPanel({
+  blocks,
+  openKey,
+  defaultOpen,
+  onReviewFile,
+}: {
+  blocks: Block[]
+  openKey: string
+  defaultOpen: boolean
+  onReviewFile?: (path: string) => void
+}) {
   const [open, setOpen] = useState(defaultOpen)
 
   useEffect(() => {
@@ -71,17 +83,17 @@ function ProcessPanel({ blocks, openKey, defaultOpen }: { blocks: Block[]; openK
         <span className="process-title">{processTitle(blocks)}</span>
         <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
       </button>
-      {open && <div className="process-body">{renderBlocks(blocks, true)}</div>}
+      {open && <div className="process-body">{renderBlocks(blocks, true, onReviewFile)}</div>}
     </div>
   )
 }
 
-function renderBlocks(blocks: Block[], processMode = false) {
+function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path: string) => void) {
   const nodes: ReactNode[] = []
   let tools: Extract<Block, { type: "tool" }>[] = []
   const flushTools = () => {
     if (!tools.length) return
-    nodes.push(<ToolTimeline key={`tools-${nodes.length}`} updates={tools.map((b) => b.update)} />)
+    nodes.push(<ToolTimeline key={`tools-${nodes.length}`} updates={tools.map((b) => b.update)} onReviewFile={onReviewFile} />)
     tools = []
   }
   blocks.forEach((b, i) => {
@@ -92,7 +104,7 @@ function renderBlocks(blocks: Block[], processMode = false) {
     flushTools()
     if (b.type === "text") nodes.push(processMode ? <ProcessText key={i} text={b.text} /> : <Markdown key={i} text={b.text} />)
     if (b.type === "reasoning") nodes.push(<ProcessText key={i} text={b.text} />)
-    if (b.type === "patch") nodes.push(<PatchBlock key={i} files={b.files} />)
+    if (b.type === "patch") nodes.push(<PatchBlock key={i} files={b.files} onReviewFile={onReviewFile} />)
   })
   flushTools()
   return nodes
@@ -194,7 +206,7 @@ function inferredTextTitle(text: string) {
   return undefined
 }
 
-function PatchBlock({ files }: { files: string[] }) {
+function PatchBlock({ files, onReviewFile }: { files: string[]; onReviewFile?: (path: string) => void }) {
   const [open, setOpen] = useState(files.length <= 4)
   const items = files.map((file) => patchFile(file))
 
@@ -213,7 +225,7 @@ function PatchBlock({ files }: { files: string[] }) {
               <div className="patch-file-wrap">
                 <button
                   className="btn link patch-file"
-                  onClick={() => vscode.post({ type: "openFile", path: item.path })}
+                  onClick={() => onReviewFile ? onReviewFile(item.path) : vscode.post({ type: "openFile", path: item.path })}
                   title={item.path}
                 >
                   {basename(item.path)}

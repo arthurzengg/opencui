@@ -100,6 +100,7 @@ export type Inbound =
   | { type: "deleteConversation"; id: string }
   | { type: "apply"; code: string; language?: string }
   | { type: "openFile"; path: string }
+  | { type: "reviewHunk"; path: string; action: "accept" | "reject"; oldText: string; newText: string }
   | { type: "selectAgent" }
   | { type: "selectModel" }
   | { type: "permissionReply"; id: string; response: "once" | "always" | "reject" }

@@ -2,7 +2,7 @@ import { useState } from "react"
 import type { ToolUpdate } from "../protocol"
 import { vscode } from "../vscode"
 
-export function ToolTimeline({ updates }: { updates: ToolUpdate[] }) {
+export function ToolTimeline({ updates, onReviewFile }: { updates: ToolUpdate[]; onReviewFile?: (path: string) => void }) {
   const [open, setOpen] = useState(true)
 
   return (
@@ -14,7 +14,7 @@ export function ToolTimeline({ updates }: { updates: ToolUpdate[] }) {
       {open && (
         <div className="tool-log-list">
           {updates.map((update) => (
-            <ToolRow key={update.callID} update={update} />
+            <ToolRow key={update.callID} update={update} onReviewFile={onReviewFile} />
           ))}
         </div>
       )}
@@ -22,8 +22,9 @@ export function ToolTimeline({ updates }: { updates: ToolUpdate[] }) {
   )
 }
 
-function ToolRow({ update }: { update: ToolUpdate }) {
+function ToolRow({ update, onReviewFile }: { update: ToolUpdate; onReviewFile?: (path: string) => void }) {
   const item = row(update)
+  const openInReview = Boolean(item.filePath && onReviewFile && previewsInReview(update))
   const content = (
     <>
       <span className="tool-log-action">{item.action}</span>
@@ -37,7 +38,7 @@ function ToolRow({ update }: { update: ToolUpdate }) {
     return (
       <button
         className={`tool-log-row is-clickable status-${update.status}`}
-        onClick={() => vscode.post({ type: "openFile", path: item.filePath! })}
+        onClick={() => openInReview ? onReviewFile?.(item.filePath!) : vscode.post({ type: "openFile", path: item.filePath! })}
         title={item.title ?? item.filePath}
       >
         {content}
@@ -239,6 +240,10 @@ function basename(value?: string) {
 
 function isFileTool(tool: string) {
   return tool === "read" || tool === "edit" || tool === "write"
+}
+
+function previewsInReview(update: ToolUpdate) {
+  return update.tool === "edit" || update.tool === "write"
 }
 
 function plural(count: number, noun: string) {

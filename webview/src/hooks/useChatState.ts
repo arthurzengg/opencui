@@ -228,6 +228,9 @@ export function useChatState() {
     openFile(path: string) {
       vscode.post({ type: "openFile", path })
     },
+    reviewHunk(path: string, action: "accept" | "reject", oldText: string, newText: string) {
+      vscode.post({ type: "reviewHunk", path, action, oldText, newText })
+    },
     selectAgent() {
       vscode.post({ type: "selectAgent" })
     },

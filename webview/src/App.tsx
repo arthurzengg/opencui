@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useChatState } from "./hooks/useChatState"
 import type { Message } from "./hooks/useChatState"
 import { MessageView } from "./components/MessageView"
@@ -20,9 +20,15 @@ export default function App() {
     selectAgent,
     selectModel,
     replyPermission,
+    openFile,
+    reviewHunk,
   } = useChatState()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
+  const [reviewRequest, setReviewRequest] = useState<{ path: string; key: number }>()
+  const openReviewFile = (path: string) => {
+    setReviewRequest((current) => ({ path, key: (current?.key ?? 0) + 1 }))
+  }
 
   const busy = state.busy || state.messages.some((m) => m.pending)
   const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
@@ -68,6 +74,7 @@ export default function App() {
             message={m}
             processOpen={m.id === activeProcessID}
             processOnly={m.role === "assistant" && (m.pending || hasLaterAssistantInTurn(state.messages, i))}
+            onReviewFile={openReviewFile}
           />
           ))}
       </div>
@@ -79,7 +86,14 @@ export default function App() {
           onReply={replyPermission}
         />
       )}
-      <ReviewPanel messages={state.messages} />
+      <ReviewPanel
+        messages={state.messages}
+        selectedPath={reviewRequest?.path}
+        selectedKey={reviewRequest?.key}
+        onSelectPath={openReviewFile}
+        onOpenFile={openFile}
+        onReviewHunk={reviewHunk}
+      />
       <PromptBox
         busy={busy}
         contextLabel={state.context?.label}

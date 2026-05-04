@@ -403,6 +403,9 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "openFile":
         await openFile(msg.path)
         return
+      case "reviewHunk":
+        await reviewHunk(msg.path, msg.action, msg.oldText, msg.newText)
+        return
       case "selectAgent":
         await vscode.commands.executeCommand("opencui.selectAgent")
         return
@@ -654,6 +657,7 @@ function toWire(update: ToolUpdate, cwd: string): WireToolUpdate {
     status: update.status,
     title: update.title,
     input,
+    metadata: update.metadata,
     output: update.output,
     error: update.error,
   }
@@ -700,6 +704,47 @@ async function openFile(relPath: string) {
   const uri = path.isAbsolute(relPath) ? vscode.Uri.file(relPath) : vscode.Uri.joinPath(ws.uri, relPath)
   const doc = await vscode.workspace.openTextDocument(uri)
   await vscode.window.showTextDocument(doc)
+}
+
+async function reviewHunk(relPath: string, action: "accept" | "reject", oldText: string, newText: string) {
+  if (action === "accept") return
+  const ws = vscode.workspace.workspaceFolders?.[0]
+  if (!ws) return
+  const uri = path.isAbsolute(relPath) ? vscode.Uri.file(relPath) : vscode.Uri.joinPath(ws.uri, relPath)
+  const doc = await vscode.workspace.openTextDocument(uri)
+  const current = doc.getText()
+  const match = findHunkText(current, newText)
+  if (!match) {
+    vscode.window.showWarningMessage(`OpenCUI: could not reject hunk in ${relPath}; the file changed since the diff was generated.`)
+    await vscode.window.showTextDocument(doc)
+    return
+  }
+  const edit = new vscode.WorkspaceEdit()
+  edit.replace(uri, new vscode.Range(doc.positionAt(match.start), doc.positionAt(match.end)), oldText)
+  const ok = await vscode.workspace.applyEdit(edit)
+  if (!ok) {
+    vscode.window.showWarningMessage(`OpenCUI: could not reject hunk in ${relPath}`)
+    return
+  }
+  await vscode.window.showTextDocument(doc)
+}
+
+function findHunkText(current: string, value: string): { start: number; end: number } | undefined {
+  const candidates = unique([
+    value,
+    value.endsWith("\n") ? value.slice(0, -1) : `${value}\n`,
+    value.replace(/\r?\n/g, "\r\n"),
+  ]).filter((candidate) => candidate.length > 0)
+  for (const candidate of candidates) {
+    const start = current.indexOf(candidate)
+    if (start >= 0) return { start, end: start + candidate.length }
+  }
+  if (value.length === 0) return { start: 0, end: 0 }
+  return undefined
+}
+
+function unique(items: string[]) {
+  return [...new Set(items)]
 }
 
 function fallbackHtml(message: string): string {

@@ -855,6 +855,7 @@ button {
   border-top: 1px solid var(--vscode-panel-border);
   background: var(--vscode-sideBar-background);
   padding: 7px 10px;
+  animation: review-panel-in 0.18s ease-out;
 }
 .review-head {
   display: flex;
@@ -911,12 +912,34 @@ button {
 .review-diff-line.del {
   color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
 }
+.review-body-clip {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-top: 8px;
+  overflow: hidden;
+  opacity: 1;
+  transition:
+    grid-template-rows 0.2s ease,
+    margin-top 0.2s ease,
+    opacity 0.16s ease;
+}
+.review-panel.is-collapsed .review-body-clip {
+  grid-template-rows: 0fr;
+  margin-top: 0;
+  opacity: 0;
+  pointer-events: none;
+}
 .review-body {
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.4fr);
   gap: 8px;
+  min-height: 0;
   max-height: min(360px, 42vh);
-  margin-top: 8px;
+  transform: translateY(0);
+  transition: transform 0.2s ease;
+}
+.review-panel.is-collapsed .review-body {
+  transform: translateY(-4px);
 }
 .review-files,
 .review-diff {
@@ -1000,13 +1023,73 @@ button {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.review-diff pre {
+.review-diff-code {
   margin: 0;
   padding: 0;
   overflow: auto;
   font-family: var(--vscode-editor-font-family);
   font-size: var(--vscode-editor-font-size);
   line-height: 1.45;
+}
+.review-diff-content {
+  animation: review-diff-in 0.16s ease-out;
+}
+.review-hunk {
+  border-top: 1px solid var(--vscode-panel-border);
+}
+.review-hunk:first-child {
+  border-top: 0;
+}
+.review-hunk.is-accepted,
+.review-hunk.is-rejected {
+  opacity: 0.62;
+}
+.review-hunk-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editorWidget-background);
+}
+.review-hunk-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.review-hunk-state {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+}
+.review-hunk-action {
+  flex: 0 0 auto;
+  min-width: 54px;
+  padding: 2px 7px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  font-size: 11px;
+}
+.review-hunk-action:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+.review-hunk-action.accept {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+}
+.review-hunk-action.reject {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+}
+.review-hunk-action:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 .review-diff-line {
   display: block;
@@ -1023,6 +1106,37 @@ button {
 .review-diff-line.hunk {
   color: var(--vscode-textLink-foreground);
   background: var(--vscode-editor-lineHighlightBackground);
+}
+@keyframes review-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes review-diff-in {
+  from {
+    opacity: 0.65;
+    transform: translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-panel,
+  .review-diff-content {
+    animation: none;
+  }
+  .review-caret,
+  .review-body,
+  .review-body-clip {
+    transition: none;
+  }
 }
 @media (max-width: 460px) {
   .review-body {

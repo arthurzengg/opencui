@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { Message } from "../hooks/useChatState"
 
 type Change = {
@@ -9,19 +9,67 @@ type Change = {
   patch: string
 }
 
-export function ReviewPanel({ messages }: { messages: Message[] }) {
+type ReviewState = "accepted" | "rejected"
+
+type DiffLine = {
+  text: string
+  kind: "add" | "del" | "hunk" | "ctx"
+}
+
+type DiffHunk = {
+  id: string
+  header: string
+  lines: DiffLine[]
+  oldText: string
+  newText: string
+}
+
+export function ReviewPanel({
+  messages,
+  selectedPath,
+  selectedKey,
+  onSelectPath,
+  onOpenFile,
+  onReviewHunk,
+}: {
+  messages: Message[]
+  selectedPath?: string
+  selectedKey?: number
+  onSelectPath?: (path: string) => void
+  onOpenFile?: (path: string) => void
+  onReviewHunk?: (path: string, action: "accept" | "reject", oldText: string, newText: string) => void
+}) {
   const changes = useMemo(() => turnChanges(messages), [messages])
   const [open, setOpen] = useState(true)
-  const [selectedPath, setSelectedPath] = useState<string>()
+  const [internalSelectedPath, setInternalSelectedPath] = useState<string>()
+  const [reviewed, setReviewed] = useState<Record<string, ReviewState>>({})
+
+  useEffect(() => {
+    if (!selectedPath) return
+    setInternalSelectedPath(selectedPath)
+    setOpen(true)
+  }, [selectedPath, selectedKey])
+
   if (!changes.length) return null
 
-  const selected = changes.find((change) => change.path === selectedPath) ?? changes[0]
+  const activePath = selectedPath ?? internalSelectedPath
+  const selected = changes.find((change) => samePath(change.path, activePath)) ?? changes[0]
   const additions = changes.reduce((total, change) => total + change.additions, 0)
   const deletions = changes.reduce((total, change) => total + change.deletions, 0)
+  const selectPath = (path: string) => {
+    setInternalSelectedPath(path)
+    onSelectPath?.(path)
+    onOpenFile?.(path)
+  }
+  const diff = selected ? splitDiff(selected.patch) : undefined
+  const reviewHunk = (hunk: DiffHunk, action: "accept" | "reject") => {
+    setReviewed((current) => ({ ...current, [reviewKey(selected.path, hunk.id)]: action === "accept" ? "accepted" : "rejected" }))
+    onReviewHunk?.(selected.path, action, hunk.oldText, hunk.newText)
+  }
 
   return (
     <div className={`review-panel ${open ? "" : "is-collapsed"}`}>
-      <button className="review-head" onClick={() => setOpen(!open)}>
+      <button className="review-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className={`review-caret ${open ? "is-open" : ""}`}>›</span>
         <span className="review-title">Review changes</span>
         <span className="review-summary">
@@ -30,14 +78,14 @@ export function ReviewPanel({ messages }: { messages: Message[] }) {
         <span className="review-stat add">+{additions}</span>
         <span className="review-stat del">-{deletions}</span>
       </button>
-      {open && (
+      <div className="review-body-clip" aria-hidden={!open}>
         <div className="review-body">
           <div className="review-files">
             {changes.map((change) => (
               <button
                 key={change.path}
                 className={`review-file ${change.path === selected.path ? "is-selected" : ""}`}
-                onClick={() => setSelectedPath(change.path)}
+                onClick={() => selectPath(change.path)}
                 title={change.path}
               >
                 <span className={`review-badge kind-${change.kind}`}>{kindLetter(change.kind)}</span>
@@ -51,18 +99,44 @@ export function ReviewPanel({ messages }: { messages: Message[] }) {
           {selected && (
             <div className="review-diff" role="region" aria-label={`Diff for ${selected.path}`}>
               <div className="review-diff-title">{selected.path}</div>
-              <pre>
-                {diffLines(selected.patch).map((line, index) => (
-                  <code key={index} className={`review-diff-line ${line.kind}`}>
-                    {line.text || " "}
-                  </code>
-                ))}
-              </pre>
+              <div key={selected.path} className="review-diff-content">
+                {diff?.header.length ? <DiffLines lines={diff.header} /> : null}
+                {diff?.hunks.map((hunk, index) => {
+                  const state = reviewed[reviewKey(selected.path, hunk.id)]
+                  return (
+                    <div key={hunk.id} className={`review-hunk ${state ? `is-${state}` : ""}`}>
+                      <div className="review-hunk-head">
+                        <span className="review-hunk-title">Hunk {index + 1}</span>
+                        {state && <span className="review-hunk-state">{state}</span>}
+                        <button className="review-hunk-action accept" disabled={Boolean(state)} onClick={() => reviewHunk(hunk, "accept")}>
+                          Accept
+                        </button>
+                        <button className="review-hunk-action reject" disabled={Boolean(state)} onClick={() => reviewHunk(hunk, "reject")}>
+                          Reject
+                        </button>
+                      </div>
+                      <DiffLines lines={[{ text: hunk.header, kind: "hunk" }, ...hunk.lines]} />
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
+  )
+}
+
+function DiffLines({ lines }: { lines: DiffLine[] }) {
+  return (
+    <pre className="review-diff-code">
+      {lines.map((line, index) => (
+        <code key={index} className={`review-diff-line ${line.kind}`}>
+          {line.text || " "}
+        </code>
+      ))}
+    </pre>
   )
 }
 
@@ -171,7 +245,81 @@ function diffLines(patch: string) {
   return patch.split("\n").map((text) => ({
     text,
     kind: text.startsWith("+") && !text.startsWith("+++") ? "add" : text.startsWith("-") && !text.startsWith("---") ? "del" : text.startsWith("@@") ? "hunk" : "ctx",
-  }))
+  } satisfies DiffLine))
+}
+
+function splitDiff(patch: string): { header: DiffLine[]; hunks: DiffHunk[] } {
+  const lines = patch.split("\n")
+  const header: string[] = []
+  const hunks: DiffHunk[] = []
+  let index = 0
+
+  while (index < lines.length) {
+    const line = lines[index] ?? ""
+    if (!line.startsWith("@@")) {
+      header.push(line)
+      index += 1
+      continue
+    }
+
+    const hunkHeader = line
+    const hunkLines: string[] = []
+    index += 1
+    while (index < lines.length && !(lines[index] ?? "").startsWith("@@")) {
+      hunkLines.push(lines[index] ?? "")
+      index += 1
+    }
+
+    const { oldText, newText } = hunkText(hunkLines)
+    hunks.push({
+      id: `${hunks.length}-${hunkHeader}`,
+      header: hunkHeader,
+      lines: diffLines(hunkLines.join("\n")),
+      oldText,
+      newText,
+    })
+  }
+
+  return {
+    header: diffLines(header.join("\n")).filter((line) => line.text.trim()),
+    hunks,
+  }
+}
+
+function hunkText(lines: string[]) {
+  const oldLines: string[] = []
+  const newLines: string[] = []
+  for (const line of lines) {
+    if (line.startsWith("\\ No newline")) continue
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      newLines.push(line.slice(1))
+      continue
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      oldLines.push(line.slice(1))
+      continue
+    }
+    const text = line.startsWith(" ") ? line.slice(1) : line
+    oldLines.push(text)
+    newLines.push(text)
+  }
+  return {
+    oldText: oldLines.join("\n"),
+    newText: newLines.join("\n"),
+  }
+}
+
+function reviewKey(path: string, hunkID: string) {
+  return `${normalizePath(path)}:${hunkID}`
+}
+
+function samePath(left: string, right?: string) {
+  if (!right) return false
+  return normalizePath(left) === normalizePath(right)
+}
+
+function normalizePath(value: string) {
+  return value.replace(/\\/g, "/").replace(/^\.?\//, "")
 }
 
 function countDiff(patch: string, prefix: "+" | "-") {
