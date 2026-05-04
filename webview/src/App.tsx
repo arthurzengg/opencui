@@ -20,8 +20,7 @@ export default function App() {
     selectAgent,
     selectModel,
     replyPermission,
-    openFile,
-    reviewHunk,
+    openReviewChange,
   } = useChatState()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
@@ -92,8 +91,7 @@ export default function App() {
         selectedKey={reviewRequest?.key}
         reviewedHunks={state.reviewHunks}
         onSelectPath={openReviewFile}
-        onOpenFile={openFile}
-        onReviewHunk={reviewHunk}
+        onOpenReviewChange={openReviewChange}
       />
       <PromptBox
         busy={busy}

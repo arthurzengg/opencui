@@ -6,8 +6,9 @@ import type {
   ConversationSummary,
   EditorContextRef,
   Outbound,
-  Selection,
+  ReviewChange,
   ReviewHunkState,
+  Selection,
   Todo,
   ToolUpdate,
   UsageDelta,
@@ -30,7 +31,7 @@ export type ChatState = {
   pendingPermission?: { id: string; title: string; pattern?: string | string[] }
 }
 
-type Action = Outbound | { type: "reset" } | { type: "clearPermission" } | { type: "reviewHunkLocal"; key: string; state: ReviewHunkState }
+type Action = Outbound | { type: "reset" } | { type: "clearPermission" }
 
 const initial: ChatState = {
   connected: false,
@@ -193,8 +194,6 @@ function reducer(state: ChatState, action: Action): ChatState {
       }
     case "clearPermission":
       return { ...state, pendingPermission: undefined }
-    case "reviewHunkLocal":
-      return { ...state, reviewHunks: { ...state.reviewHunks, [action.key]: action.state } }
     case "clear":
       return { ...initial, selection: state.selection, context: state.context, connected: state.connected }
     default:
@@ -240,8 +239,10 @@ export function useChatState() {
     openFile(path: string) {
       vscode.post({ type: "openFile", path })
     },
+    openReviewChange(change: ReviewChange) {
+      vscode.post({ type: "openReviewChange", change })
+    },
     reviewHunk(key: string, path: string, action: ReviewHunkState, oldText: string, newText: string) {
-      dispatch({ type: "reviewHunkLocal", key, state: action })
       vscode.post({ type: "reviewHunk", key, path, action, oldText, newText })
     },
     selectAgent() {

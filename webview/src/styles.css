@@ -931,7 +931,7 @@ button {
 }
 .review-body {
   display: grid;
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   min-height: 0;
   max-height: min(360px, 42vh);
@@ -941,8 +941,7 @@ button {
 .review-panel.is-collapsed .review-body {
   transform: translateY(-4px);
 }
-.review-files,
-.review-diff {
+.review-files {
   min-width: 0;
   overflow: auto;
   border: 1px solid var(--vscode-panel-border);
@@ -1009,104 +1008,6 @@ button {
 }
 .review-file-stat.add { grid-area: add; }
 .review-file-stat.del { grid-area: del; }
-.review-diff {
-  display: flex;
-  flex-direction: column;
-}
-.review-diff-title {
-  flex: 0 0 auto;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.review-diff-code {
-  margin: 0;
-  padding: 0;
-  overflow: auto;
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size);
-  line-height: 1.45;
-}
-.review-diff-content {
-  animation: review-diff-in 0.16s ease-out;
-}
-.review-hunk {
-  border-top: 1px solid var(--vscode-panel-border);
-}
-.review-hunk:first-child {
-  border-top: 0;
-}
-.review-hunk.is-accepted,
-.review-hunk.is-rejected {
-  opacity: 0.62;
-}
-.review-hunk-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 5px 6px;
-  border-bottom: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-editorWidget-background);
-}
-.review-hunk-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-  font-weight: 600;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.review-hunk-state {
-  flex: 0 0 auto;
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
-}
-.review-hunk-action {
-  flex: 0 0 auto;
-  min-width: 54px;
-  padding: 2px 7px;
-  border: 1px solid var(--vscode-button-border, transparent);
-  border-radius: 4px;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  font-size: 11px;
-}
-.review-hunk-action:hover:not(:disabled) {
-  background: var(--vscode-button-secondaryHoverBackground);
-}
-.review-hunk-action.accept {
-  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
-}
-.review-hunk-action.reject {
-  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
-}
-.review-hunk-action:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-.review-diff-line {
-  display: block;
-  min-height: 1.45em;
-  padding: 0 8px;
-  white-space: pre;
-}
-.review-diff-line.add {
-  background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #3fb950) 16%, transparent);
-}
-.review-diff-line.del {
-  background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #f85149) 16%, transparent);
-}
-.review-diff-line.hunk {
-  color: var(--vscode-textLink-foreground);
-  background: var(--vscode-editor-lineHighlightBackground);
-}
 @keyframes review-panel-in {
   from {
     opacity: 0;
@@ -1117,19 +1018,8 @@ button {
     transform: translateY(0);
   }
 }
-@keyframes review-diff-in {
-  from {
-    opacity: 0.65;
-    transform: translateX(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .review-panel,
-  .review-diff-content {
+  .review-panel {
     animation: none;
   }
   .review-caret,
@@ -1138,15 +1028,6 @@ button {
     transition: none;
   }
 }
-@media (max-width: 460px) {
-  .review-body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .review-diff {
-    max-height: 220px;
-  }
-}
-
 /* ===== Prompt box ===== */
 .promptbox {
   padding: 8px 10px;

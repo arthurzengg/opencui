@@ -5,6 +5,14 @@
 
 export type ToolStatus = "pending" | "running" | "completed" | "error"
 export type ReviewHunkState = "accepted" | "rejected"
+export type ReviewChange = {
+  source: string
+  path: string
+  kind: "created" | "updated" | "deleted" | "moved"
+  additions: number
+  deletions: number
+  patch: string
+}
 
 export type ToolUpdate = {
   callID: string
@@ -102,6 +110,7 @@ export type Inbound =
   | { type: "deleteConversation"; id: string }
   | { type: "apply"; code: string; language?: string }
   | { type: "openFile"; path: string }
+  | { type: "openReviewChange"; change: ReviewChange }
   | { type: "reviewHunk"; key: string; path: string; action: ReviewHunkState; oldText: string; newText: string }
   | { type: "selectAgent" }
   | { type: "selectModel" }
