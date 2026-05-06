@@ -39,6 +39,13 @@ type ReviewLensEntry = {
   path: string
   uri: vscode.Uri
   range: vscode.Range
+  variants: ReviewLensVariant[]
+  oldText: string
+  newText: string
+  reversible: boolean
+}
+
+type ReviewLensVariant = {
   oldText: string
   newText: string
   reversible: boolean
@@ -697,7 +704,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   async reviewHunk(key: string, action: ReviewHunkState) {
     const entry = this.reviewCodeLens.get(key)
     if (!entry) return
-    const state = await reviewHunk(entry.path, action, entry.oldText, entry.newText) ? action : undefined
+    const state = await reviewEntryHunk(entry, action) ? action : undefined
     for (const entryKey of entry.keys) {
       this.post({ type: "reviewHunkState", key: entryKey, state })
     }
@@ -1279,6 +1286,7 @@ function reviewLensEntries(change: ReviewChange, reviewed: Record<string, Review
         path: change.path,
         uri: doc.uri,
         range: new vscode.Range(doc.positionAt(start), doc.positionAt(end)),
+        variants: [{ oldText: hunk.oldText, newText: hunk.newText, reversible: hunk.reversible }],
         oldText: hunk.oldText,
         newText: hunk.newText,
         reversible: hunk.reversible,
@@ -1292,10 +1300,12 @@ function mergeReviewLensEntries(entries: ReviewLensEntry[]) {
     const fingerprint = reviewLensFingerprint(entry)
     const existing = merged.get(fingerprint)
     if (!existing) {
-      merged.set(fingerprint, { ...entry, keys: [...entry.keys] })
+      merged.set(fingerprint, { ...entry, keys: [...entry.keys], variants: [...entry.variants] })
       continue
     }
     existing.keys = unique([...existing.keys, ...entry.keys])
+    existing.variants = uniqueReviewVariants([...existing.variants, ...entry.variants])
+    existing.reversible = existing.reversible || entry.reversible
   }
   return [...merged.values()]
 }
@@ -1305,10 +1315,21 @@ function reviewLensFingerprint(entry: ReviewLensEntry) {
     entry.uri.toString(),
     entry.range.start.line,
     entry.range.start.character,
-    normalizeReviewText(entry.oldText),
-    normalizeReviewText(entry.newText),
-    entry.reversible ? "reversible" : "fixed",
   ].join("\u0000")
+}
+
+function uniqueReviewVariants(variants: ReviewLensVariant[]) {
+  const seen = new Set<string>()
+  return variants.filter((variant) => {
+    const key = [
+      normalizeReviewText(variant.oldText),
+      normalizeReviewText(variant.newText),
+      variant.reversible ? "reversible" : "fixed",
+    ].join("\u0000")
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function normalizeReviewText(value: string) {
@@ -1396,7 +1417,22 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;")
 }
 
-async function reviewHunk(relPath: string, action: ReviewHunkState, oldText: string, newText: string): Promise<boolean> {
+async function reviewEntryHunk(entry: ReviewLensEntry, action: ReviewHunkState) {
+  if (action === "accepted") return true
+  for (const variant of entry.variants.filter((item) => item.reversible)) {
+    if (await reviewHunk(entry.path, action, variant.oldText, variant.newText, true)) return true
+  }
+  vscode.window.showWarningMessage(`OpenCUI: could not undo hunk in ${entry.path}; the file changed since the diff was generated.`)
+  try {
+    const doc = await openFileDocument(entry.path)
+    await vscode.window.showTextDocument(doc)
+  } catch {
+    // The warning above is the actionable UI; ignore follow-up open failures.
+  }
+  return false
+}
+
+async function reviewHunk(relPath: string, action: ReviewHunkState, oldText: string, newText: string, silent = false): Promise<boolean> {
   if (action === "accepted") return true
   const ws = vscode.workspace.workspaceFolders?.[0]
   if (!ws) return false
@@ -1405,15 +1441,17 @@ async function reviewHunk(relPath: string, action: ReviewHunkState, oldText: str
   const current = doc.getText()
   const match = findHunkText(current, newText)
   if (!match) {
-    vscode.window.showWarningMessage(`OpenCUI: could not reject hunk in ${relPath}; the file changed since the diff was generated.`)
-    await vscode.window.showTextDocument(doc)
+    if (!silent) {
+      vscode.window.showWarningMessage(`OpenCUI: could not undo hunk in ${relPath}; the file changed since the diff was generated.`)
+      await vscode.window.showTextDocument(doc)
+    }
     return false
   }
   const edit = new vscode.WorkspaceEdit()
   edit.replace(uri, new vscode.Range(doc.positionAt(match.start), doc.positionAt(match.end)), oldText)
   const ok = await vscode.workspace.applyEdit(edit)
   if (!ok) {
-    vscode.window.showWarningMessage(`OpenCUI: could not reject hunk in ${relPath}`)
+    if (!silent) vscode.window.showWarningMessage(`OpenCUI: could not undo hunk in ${relPath}`)
     return false
   }
   await vscode.window.showTextDocument(doc)

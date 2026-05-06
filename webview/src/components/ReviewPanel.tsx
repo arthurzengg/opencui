@@ -24,7 +24,9 @@ export function ReviewPanel({
   const changes = useMemo(() => turnChanges(messages), [messages])
   const pendingChanges = useMemo(
     () => changes.map((change) => ({ change, diff: splitDiff(change.patch) }))
-      .filter(({ change, diff }) => diff.hunks.some((hunk) => !reviewedHunks[reviewKey(change, hunk.id)])),
+      .filter(({ change, diff }) => (
+        isTextReviewChange(change) && diff.hunks.some((hunk) => !reviewedHunks[reviewKey(change, hunk.id)])
+      )),
     [changes, reviewedHunks],
   )
   const [open, setOpen] = useState(true)
@@ -226,6 +228,49 @@ function samePath(left: string, right?: string) {
 
 function normalizePath(value: string) {
   return value.replace(/\\/g, "/").replace(/^\.?\//, "")
+}
+
+function isTextReviewChange(change: ReviewChange) {
+  if (change.additions === 0 && change.deletions === 0) return false
+  const name = basename(change.path).toLowerCase()
+  if (!name || name === ".ds_store" || name === "thumbs.db") return false
+  const ext = name.includes(".") ? `.${name.split(".").at(-1)}` : ""
+  if (!ext && name.startsWith(".")) return false
+  return !new Set([
+    ".ai",
+    ".avif",
+    ".bin",
+    ".bmp",
+    ".class",
+    ".db",
+    ".dmg",
+    ".doc",
+    ".docx",
+    ".ds_store",
+    ".eot",
+    ".exe",
+    ".gif",
+    ".heic",
+    ".icns",
+    ".ico",
+    ".jar",
+    ".jpeg",
+    ".jpg",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".otf",
+    ".pdf",
+    ".png",
+    ".pyc",
+    ".so",
+    ".sqlite",
+    ".ttf",
+    ".webp",
+    ".woff",
+    ".woff2",
+    ".zip",
+  ]).has(ext)
 }
 
 function countDiff(patch: string, prefix: "+" | "-") {
