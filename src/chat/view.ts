@@ -35,6 +35,7 @@ type SavedConversation = ConversationSummary & {
 
 type ReviewLensEntry = {
   key: string
+  keys: string[]
   path: string
   uri: vscode.Uri
   range: vscode.Range
@@ -46,26 +47,29 @@ type ReviewLensEntry = {
 class ReviewCodeLensProvider implements vscode.CodeLensProvider {
   private readonly changed = new vscode.EventEmitter<void>()
   readonly onDidChangeCodeLenses = this.changed.event
-  private entries = new Map<string, ReviewLensEntry>()
+  private entries: ReviewLensEntry[] = []
+  private byKey = new Map<string, ReviewLensEntry>()
 
   setEntries(entries: ReviewLensEntry[]) {
-    this.entries = new Map(entries.map((entry) => [entry.key, entry]))
+    this.entries = mergeReviewLensEntries(entries)
+    this.byKey = new Map(this.entries.flatMap((entry) => entry.keys.map((key) => [key, entry] as const)))
     this.changed.fire()
   }
 
   clear() {
-    if (!this.entries.size) return
-    this.entries.clear()
+    if (!this.entries.length) return
+    this.entries = []
+    this.byKey.clear()
     this.changed.fire()
   }
 
   get(key: string) {
-    return this.entries.get(key)
+    return this.byKey.get(key)
   }
 
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     const uri = document.uri.toString()
-    return [...this.entries.values()]
+    return this.entries
       .filter((entry) => entry.uri.toString() === uri)
       .flatMap((entry) => {
         const lenses = [new vscode.CodeLens(entry.range, {
@@ -694,7 +698,9 @@ export class ChatView implements vscode.WebviewViewProvider {
     const entry = this.reviewCodeLens.get(key)
     if (!entry) return
     const state = await reviewHunk(entry.path, action, entry.oldText, entry.newText) ? action : undefined
-    this.post({ type: "reviewHunkState", key, state })
+    for (const entryKey of entry.keys) {
+      this.post({ type: "reviewHunkState", key: entryKey, state })
+    }
     await this.syncReviewCodeLens()
   }
 
@@ -1269,6 +1275,7 @@ function reviewLensEntries(change: ReviewChange, reviewed: Record<string, Review
       const end = match?.end ?? start
       return {
         key: hunk.key,
+        keys: [hunk.key],
         path: change.path,
         uri: doc.uri,
         range: new vscode.Range(doc.positionAt(start), doc.positionAt(end)),
@@ -1277,6 +1284,35 @@ function reviewLensEntries(change: ReviewChange, reviewed: Record<string, Review
         reversible: hunk.reversible,
       }
     })
+}
+
+function mergeReviewLensEntries(entries: ReviewLensEntry[]) {
+  const merged = new Map<string, ReviewLensEntry>()
+  for (const entry of entries) {
+    const fingerprint = reviewLensFingerprint(entry)
+    const existing = merged.get(fingerprint)
+    if (!existing) {
+      merged.set(fingerprint, { ...entry, keys: [...entry.keys] })
+      continue
+    }
+    existing.keys = unique([...existing.keys, ...entry.keys])
+  }
+  return [...merged.values()]
+}
+
+function reviewLensFingerprint(entry: ReviewLensEntry) {
+  return [
+    entry.uri.toString(),
+    entry.range.start.line,
+    entry.range.start.character,
+    normalizeReviewText(entry.oldText),
+    normalizeReviewText(entry.newText),
+    entry.reversible ? "reversible" : "fixed",
+  ].join("\u0000")
+}
+
+function normalizeReviewText(value: string) {
+  return value.replace(/\r\n/g, "\n").trimEnd()
 }
 
 function hunkText(lines: string[]) {
