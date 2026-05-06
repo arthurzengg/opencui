@@ -377,7 +377,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.messages = msg.messages.map((m) => ({ ...m, pending: false }))
         this.todos = msg.todos
         this.reviewHunks = msg.reviewHunks ?? {}
-        void this.syncReviewCodeLens()
+        this.queueReviewCodeLensSync()
         return
       case "clear":
         this.messages = []
@@ -408,14 +408,14 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "tool":
         this.messages = upsertTool(this.messages, msg.id, msg.update)
         this.saveActive()
-        void this.syncReviewCodeLens()
+        this.queueReviewCodeLensSync()
         return
       case "patch":
         this.messages = this.messages.map((m) =>
           m.id === msg.id ? { ...m, blocks: [...m.blocks, { type: "patch", files: msg.files, diff: msg.diff }] } : m,
         )
         this.saveActive()
-        void this.syncReviewCodeLens()
+        this.queueReviewCodeLensSync()
         return
       case "todos":
         this.todos = msg.todos
@@ -426,7 +426,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (msg.state) this.reviewHunks[msg.key] = msg.state
         else delete this.reviewHunks[msg.key]
         this.saveActive()
-        void this.syncReviewCodeLens()
+        this.queueReviewCodeLensSync()
         return
       case "assistantError":
         this.messages = this.messages.map((m) =>
@@ -701,14 +701,23 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private async openReviewChange(change: ReviewChange) {
+    if (!isTextReviewPath(change.path)) {
+      vscode.window.showWarningMessage(`OpenCUI: ${change.path} cannot be reviewed as text.`)
+      return
+    }
     this.reviewChange = change
     this.reviewPanel?.dispose()
     this.reviewPanel = undefined
-    const doc = await openFileDocument(change.path)
-    const entries = reviewLensEntries(change, this.reviewHunks, doc)
-    this.reviewCodeLens.setEntries(entries)
-    const editor = await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
-    if (entries[0]) editor.revealRange(entries[0].range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+    try {
+      const doc = await openFileDocument(change.path)
+      const entries = reviewLensEntries(change, this.reviewHunks, doc)
+      this.reviewCodeLens.setEntries(entries)
+      const editor = await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
+      if (entries[0]) editor.revealRange(entries[0].range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+    } catch (e) {
+      log(`could not open review file ${change.path}`, e)
+      vscode.window.showWarningMessage(`OpenCUI: could not open ${change.path} as text.`)
+    }
   }
 
   async reviewHunk(key: string, action: ReviewHunkState) {
@@ -742,8 +751,12 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.reviewPanel.webview.html = reviewChangeHtml(this.reviewChange, reviewed)
   }
 
+  private queueReviewCodeLensSync() {
+    void this.syncReviewCodeLens().catch((e) => log("review CodeLens sync failed", e))
+  }
+
   private async syncReviewCodeLens() {
-    const changes = reviewChanges(this.messages)
+    const changes = reviewChanges(this.messages).filter((change) => isTextReviewPath(change.path))
     if (!changes.length) {
       this.reviewCodeLens.clear()
       return
@@ -917,6 +930,49 @@ function patchKind(value: unknown): ReviewChange["kind"] {
 function samePath(left: string, right?: string) {
   if (!right) return false
   return normalizePath(left) === normalizePath(right)
+}
+
+function isTextReviewPath(value: string) {
+  const name = path.basename(value).toLowerCase()
+  if (!name || name === ".ds_store" || name === "thumbs.db") return false
+  const ext = path.extname(name)
+  if (!ext && name.startsWith(".")) return false
+  const binaryExtensions = new Set([
+    ".ai",
+    ".avif",
+    ".bin",
+    ".bmp",
+    ".class",
+    ".db",
+    ".dmg",
+    ".doc",
+    ".docx",
+    ".ds_store",
+    ".eot",
+    ".exe",
+    ".gif",
+    ".heic",
+    ".icns",
+    ".ico",
+    ".jar",
+    ".jpeg",
+    ".jpg",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".otf",
+    ".pdf",
+    ".png",
+    ".pyc",
+    ".so",
+    ".sqlite",
+    ".ttf",
+    ".webp",
+    ".woff",
+    ".woff2",
+    ".zip",
+  ])
+  return !binaryExtensions.has(ext)
 }
 
 function countDiff(patch: string, prefix: "+" | "-") {
