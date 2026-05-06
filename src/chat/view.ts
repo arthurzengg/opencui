@@ -43,10 +43,9 @@ type ReviewLensEntry = {
   reversible: boolean
 }
 
-class ReviewCodeLensProvider implements vscode.CodeLensProvider, vscode.InlayHintsProvider {
+class ReviewCodeLensProvider implements vscode.CodeLensProvider {
   private readonly changed = new vscode.EventEmitter<void>()
   readonly onDidChangeCodeLenses = this.changed.event
-  readonly onDidChangeInlayHints = this.changed.event
   private entries = new Map<string, ReviewLensEntry>()
 
   setEntries(entries: ReviewLensEntry[]) {
@@ -82,35 +81,6 @@ class ReviewCodeLensProvider implements vscode.CodeLensProvider, vscode.InlayHin
           }))
         }
         return lenses
-      })
-  }
-
-  provideInlayHints(document: vscode.TextDocument, range: vscode.Range): vscode.InlayHint[] {
-    const uri = document.uri.toString()
-    return [...this.entries.values()]
-      .filter((entry) => entry.uri.toString() === uri && range.contains(entry.range.start))
-      .map((entry) => {
-        const keep = new vscode.InlayHintLabelPart("Keep")
-        keep.command = {
-          title: "Keep",
-          command: "opencui.review.acceptHunk",
-          arguments: [entry.key],
-        }
-        const parts = [keep]
-        if (entry.reversible) {
-          const spacer = new vscode.InlayHintLabelPart(" / ")
-          const undo = new vscode.InlayHintLabelPart("Undo")
-          undo.command = {
-            title: "Undo",
-            command: "opencui.review.rejectHunk",
-            arguments: [entry.key],
-          }
-          parts.push(spacer, undo)
-        }
-        const hint = new vscode.InlayHint(entry.range.start, parts, vscode.InlayHintKind.Parameter)
-        hint.paddingLeft = true
-        hint.paddingRight = true
-        return hint
       })
   }
 }
@@ -711,7 +681,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     try {
       const doc = await openFileDocument(change.path)
       const entries = reviewLensEntries(change, this.reviewHunks, doc)
-      this.reviewCodeLens.setEntries(entries)
+      await this.syncReviewCodeLens()
       const editor = await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
       if (entries[0]) editor.revealRange(entries[0].range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
     } catch (e) {
@@ -833,7 +803,9 @@ function reviewChanges(messages: ChatMessage[]) {
     }),
   )
   return changes.reduce<ReviewChange[]>((acc, change) => {
-    const existing = acc.findIndex((item) => samePath(item.path, change.path))
+    const existing = acc.findIndex((item) => (
+      samePath(item.path, change.path) && (item.source === change.source || item.patch === change.patch)
+    ))
     if (existing < 0) return [...acc, change]
     const copy = acc.slice()
     copy[existing] = change
@@ -1078,6 +1050,7 @@ type ReviewDiffHunk = {
   id: string
   header: string
   lines: ReviewDiffLine[]
+  anchorText: string
   oldText: string
   newText: string
   reversible: boolean
@@ -1258,11 +1231,12 @@ function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
       index += 1
     }
 
-    const { oldText, newText } = hunkText(hunkLines)
+    const { oldText, newText, anchorText } = hunkText(hunkLines)
     hunks.push({
       id: `${hunks.length}-${hunkHeader}`,
       header: hunkHeader,
       lines: diffLines(hunkLines.join("\n")),
+      anchorText,
       oldText,
       newText,
       reversible: true,
@@ -1274,6 +1248,7 @@ function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
       id: "0-file",
       header: "@@ file change @@",
       lines: diffLines(patch),
+      anchorText: firstReviewAnchor(diffLines(patch), patch),
       oldText: "",
       newText: "",
       reversible: false,
@@ -1289,7 +1264,7 @@ function reviewLensEntries(change: ReviewChange, reviewed: Record<string, Review
     .map((hunk) => ({ ...hunk, key: reviewKey(change, hunk.id) }))
     .filter((hunk) => !reviewed[hunk.key])
     .map((hunk) => {
-      const match = findHunkText(current, hunk.newText)
+      const match = findHunkText(current, hunk.anchorText || hunk.newText)
       const start = match?.start ?? 0
       const end = match?.end ?? start
       return {
@@ -1307,6 +1282,7 @@ function reviewLensEntries(change: ReviewChange, reviewed: Record<string, Review
 function hunkText(lines: string[]) {
   const oldLines: string[] = []
   const newLines: string[] = []
+  const diff = diffLines(lines.join("\n"))
   for (const line of lines) {
     if (line.startsWith("\\ No newline")) continue
     if (line.startsWith("+") && !line.startsWith("+++")) {
@@ -1324,6 +1300,7 @@ function hunkText(lines: string[]) {
   return {
     oldText: oldLines.join("\n"),
     newText: newLines.join("\n"),
+    anchorText: firstReviewAnchor(diff, newLines.join("\n")),
   }
 }
 
@@ -1332,6 +1309,31 @@ function diffLines(patch: string) {
     text,
     kind: text.startsWith("+") && !text.startsWith("+++") ? "add" : text.startsWith("-") && !text.startsWith("---") ? "del" : text.startsWith("@@") ? "hunk" : "ctx",
   } satisfies ReviewDiffLine))
+}
+
+function firstReviewAnchor(lines: ReviewDiffLine[], fallback: string) {
+  const added = firstChangedBlock(lines, "add")
+  if (added) return added
+  const context = firstChangedBlock(lines, "ctx")
+  return context || fallback
+}
+
+function firstChangedBlock(lines: ReviewDiffLine[], kind: ReviewDiffLine["kind"]) {
+  const start = lines.findIndex((line) => line.kind === kind && reviewLineText(line).trim())
+  if (start < 0) return ""
+  const block: string[] = []
+  for (const line of lines.slice(start)) {
+    if (line.kind !== kind) break
+    block.push(reviewLineText(line))
+  }
+  return block.join("\n")
+}
+
+function reviewLineText(line: ReviewDiffLine) {
+  if ((line.kind === "add" || line.kind === "del" || line.kind === "ctx") && /^[+\- ]/.test(line.text)) {
+    return line.text.slice(1)
+  }
+  return line.text
 }
 
 function diffLineHtml(line: ReviewDiffLine) {

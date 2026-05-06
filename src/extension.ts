@@ -23,7 +23,6 @@ export async function activate(context: vscode.ExtensionContext) {
       webviewOptions: { retainContextWhenHidden: true },
     }),
     vscode.languages.registerCodeLensProvider({ scheme: "file" }, chat.reviewCodeLensProvider),
-    vscode.languages.registerInlayHintsProvider({ scheme: "file" }, chat.reviewCodeLensProvider),
     vscode.commands.registerCommand("opencui.chat.focus", async () => {
       await vscode.commands.executeCommand("workbench.view.extension.opencui")
       chat.focus()
