@@ -39,11 +39,11 @@ export function StatusBar({
         {error ? `error · ${error}` : connected ? "connected" : "connecting…"}
       </span>
       <div className="spacer" />
-      <button className="chip" onClick={onSelectAgent} title={`Agent: ${agent}`}>
+      <button className="chip agent-chip" onClick={onSelectAgent} title={`Agent: ${agent}`}>
         <span className="chip-icon">Agent</span>
         <span className="chip-text">{agent}</span>
       </button>
-      <button className="chip" onClick={onSelectModel} title={`Model: ${model}`}>
+      <button className="chip model-chip" onClick={onSelectModel} title={`Model: ${model}`}>
         <span className="chip-icon">Model</span>
         <span className="chip-text">{model}</span>
       </button>

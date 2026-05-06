@@ -29,7 +29,8 @@ button {
 
 /* ===== Status bar ===== */
 .statusbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(52px, 82px) minmax(84px, 0.9fr) minmax(112px, 1.35fr) auto;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
@@ -50,8 +51,7 @@ button {
 .statusbar .dot.err { background: #f85149; }
 
 .statusbar .status-text {
-  flex: 1;
-  min-width: 46px;
+  min-width: 0;
   opacity: 0.75;
   overflow: hidden;
   white-space: nowrap;
@@ -64,7 +64,7 @@ button {
   align-items: center;
   gap: 4px;
   min-width: 24px;
-  max-width: 28%;
+  width: 100%;
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
   border: none;
@@ -73,6 +73,8 @@ button {
   font-size: 11px;
   overflow: hidden;
 }
+.agent-chip { min-width: 0; }
+.model-chip { min-width: 0; }
 .chip:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .chip-icon {
   flex: 0 0 auto;
@@ -80,10 +82,22 @@ button {
   opacity: 0.75;
 }
 .chip-text {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+@media (max-width: 430px) {
+  .statusbar {
+    grid-template-columns: auto minmax(34px, 68px) minmax(58px, 0.75fr) minmax(90px, 1.45fr) auto;
+    gap: 6px;
+    padding-inline: 8px;
+  }
+  .chip-icon {
+    display: none;
+  }
 }
 
 .history-menu {
