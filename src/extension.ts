@@ -22,7 +22,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(ChatView.viewType, chat, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    vscode.languages.registerCodeLensProvider({ scheme: "file" }, chat.reviewCodeLensProvider),
+    vscode.languages.registerCodeLensProvider(reviewCodeLensSelector(), chat.reviewCodeLensProvider),
     vscode.commands.registerCommand("opencui.chat.focus", async () => {
       await vscode.commands.executeCommand("workbench.view.extension.opencui")
       chat.focus()
@@ -56,4 +56,28 @@ export async function activate(context: vscode.ExtensionContext) {
 
 export async function deactivate() {
   await servers?.dispose()
+}
+
+function reviewCodeLensSelector(): vscode.DocumentSelector {
+  return [
+    "python",
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact",
+    "json",
+    "jsonc",
+    "markdown",
+    "html",
+    "css",
+    "scss",
+    "less",
+    "yaml",
+    "shellscript",
+    "go",
+    "rust",
+    "c",
+    "cpp",
+    "java",
+  ].map((language) => ({ scheme: "file", language }))
 }

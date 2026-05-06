@@ -153,14 +153,15 @@ export class ChatView implements vscode.WebviewViewProvider {
     view.webview.onDidReceiveMessage((msg: Inbound) => this.onMessage(msg))
     view.onDidDispose(() => this.dispose())
 
-    vscode.window.onDidChangeActiveTextEditor(() => this.pushContext(), null, this.context.subscriptions)
+    vscode.window.onDidChangeActiveTextEditor(() => {
+      this.pushContext()
+      this.queueReviewCodeLensSync()
+    }, null, this.context.subscriptions)
     vscode.window.onDidChangeTextEditorSelection(
       () => this.pushContext(),
       null,
       this.context.subscriptions,
     )
-    vscode.workspace.onDidOpenTextDocument(() => this.queueReviewCodeLensSync(), null, this.context.subscriptions)
-    vscode.workspace.onDidChangeTextDocument(() => this.queueReviewCodeLensSync(), null, this.context.subscriptions)
     this.prefs.onChange(() => this.postSelection())
   }
 
@@ -749,7 +750,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     const entries: ReviewLensEntry[] = []
     for (const change of changes) {
       try {
-        const doc = openReviewDocument(change.path)
+        const doc = visibleReviewDocument(change.path)
         if (!doc) continue
         entries.push(...reviewLensEntries(change, this.reviewHunks, doc))
       } catch (e) {
@@ -1050,9 +1051,9 @@ async function openFileDocument(relPath: string) {
   return vscode.workspace.openTextDocument(uri)
 }
 
-function openReviewDocument(relPath: string) {
+function visibleReviewDocument(relPath: string) {
   const uri = workspaceFileUri(relPath).toString()
-  return vscode.workspace.textDocuments.find((doc) => doc.uri.toString() === uri)
+  return vscode.window.visibleTextEditors.find((editor) => editor.document.uri.toString() === uri)?.document
 }
 
 function workspaceFileUri(relPath: string) {
