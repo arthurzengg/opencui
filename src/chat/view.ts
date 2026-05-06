@@ -159,6 +159,8 @@ export class ChatView implements vscode.WebviewViewProvider {
       null,
       this.context.subscriptions,
     )
+    vscode.workspace.onDidOpenTextDocument(() => this.queueReviewCodeLensSync(), null, this.context.subscriptions)
+    vscode.workspace.onDidChangeTextDocument(() => this.queueReviewCodeLensSync(), null, this.context.subscriptions)
     this.prefs.onChange(() => this.postSelection())
   }
 
@@ -747,7 +749,8 @@ export class ChatView implements vscode.WebviewViewProvider {
     const entries: ReviewLensEntry[] = []
     for (const change of changes) {
       try {
-        const doc = await openFileDocument(change.path)
+        const doc = openReviewDocument(change.path)
+        if (!doc) continue
         entries.push(...reviewLensEntries(change, this.reviewHunks, doc))
       } catch (e) {
         log(`could not prepare review CodeLens for ${change.path}`, e)
@@ -1045,6 +1048,11 @@ async function openFile(relPath: string) {
 async function openFileDocument(relPath: string) {
   const uri = workspaceFileUri(relPath)
   return vscode.workspace.openTextDocument(uri)
+}
+
+function openReviewDocument(relPath: string) {
+  const uri = workspaceFileUri(relPath).toString()
+  return vscode.workspace.textDocuments.find((doc) => doc.uri.toString() === uri)
 }
 
 function workspaceFileUri(relPath: string) {
