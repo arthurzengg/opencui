@@ -21,6 +21,8 @@ export default function App() {
     selectModel,
     replyPermission,
     openReviewChange,
+    editMessage,
+    reviewAllInChange,
   } = useChatState()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
@@ -65,6 +67,13 @@ export default function App() {
           <div className="welcome">
             <div className="welcome-title">OpenCUI</div>
             <div className="welcome-sub">Ask about the current file, refactor code, or run a task.</div>
+            <div className="welcome-suggestions">
+              {WELCOME_PROMPTS.map((prompt) => (
+                <button key={prompt} className="welcome-suggestion" onClick={() => send(prompt)}>
+                  {prompt}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {state.messages.map((m, i) => (
@@ -73,7 +82,9 @@ export default function App() {
             message={m}
             processOpen={m.id === activeProcessID}
             processOnly={m.role === "assistant" && (m.pending || hasLaterAssistantInTurn(state.messages, i))}
+            busy={busy}
             onReviewFile={openReviewFile}
+            onEditMessage={editMessage}
           />
           ))}
       </div>
@@ -92,17 +103,24 @@ export default function App() {
         reviewedHunks={state.reviewHunks}
         onSelectPath={openReviewFile}
         onOpenReviewChange={openReviewChange}
+        onReviewAllInChange={reviewAllInChange}
       />
       <PromptBox
         busy={busy}
         contextLabel={state.context?.label}
         onSend={send}
         onAbort={abort}
-        onNew={newSession}
       />
     </div>
   )
 }
+
+const WELCOME_PROMPTS = [
+  "Explain this file",
+  "Find bugs in the current file",
+  "Add tests for this file",
+  "Refactor this for readability",
+]
 
 function hasLaterAssistantInTurn(messages: Message[], index: number) {
   const message = messages[index]

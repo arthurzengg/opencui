@@ -1,20 +1,56 @@
-import { useState } from "react"
-import type { ToolUpdate } from "../protocol"
+import type { ToolStatus, ToolUpdate } from "../protocol"
 import { vscode } from "../vscode"
 
-export function ToolTimeline({ updates, onReviewFile }: { updates: ToolUpdate[]; onReviewFile?: (path: string) => void }) {
-  const [open, setOpen] = useState(true)
+type FileAction = "read" | "created" | "updated" | "deleted" | "moved"
+
+type FileOp = {
+  path: string
+  action: FileAction
+  range?: string
+  additions?: number
+  deletions?: number
+  status: ToolStatus
+  errorText?: string
+  reviewable: boolean
+}
+
+type OtherOp = {
+  key: string
+  action: string
+  detail?: string
+  title?: string
+  status: ToolStatus
+  errorText?: string
+}
+
+type PatchInput = { files: string[]; diff?: string }
+
+export function ToolTrace({
+  updates,
+  patches = [],
+  onReviewFile,
+}: {
+  updates: ToolUpdate[]
+  patches?: PatchInput[]
+  onReviewFile?: (path: string) => void
+}) {
+  const trace = buildTrace(updates, patches)
+  if (!trace.edits.length && !trace.reads.length && !trace.others.length) return null
 
   return (
-    <div className="tool-log">
-      <button className="tool-log-head" onClick={() => setOpen(!open)}>
-        <span className="tool-log-title">{toolHeadline(updates)}</span>
-        <span className={`tool-log-caret ${open ? "is-open" : ""}`}>›</span>
-      </button>
-      {open && (
-        <div className="tool-log-list">
-          {updates.map((update) => (
-            <ToolRow key={update.callID} update={update} onReviewFile={onReviewFile} />
+    <div className="trace">
+      {trace.edits.length > 0 && (
+        <div className="trace-edits">
+          {trace.edits.map((op) => (
+            <EditCard key={op.path} op={op} onReviewFile={onReviewFile} />
+          ))}
+        </div>
+      )}
+      {trace.reads.length > 0 && <ReadsLine reads={trace.reads} />}
+      {trace.others.length > 0 && (
+        <div className="trace-others">
+          {trace.others.map((op) => (
+            <OtherRow key={op.key} op={op} />
           ))}
         </div>
       )}
@@ -22,94 +58,265 @@ export function ToolTimeline({ updates, onReviewFile }: { updates: ToolUpdate[];
   )
 }
 
-function ToolRow({ update, onReviewFile }: { update: ToolUpdate; onReviewFile?: (path: string) => void }) {
-  const item = row(update)
-  const openInReview = Boolean(item.filePath && onReviewFile && previewsInReview(update))
-  const content = (
-    <>
-      <span className="tool-log-action">{item.action}</span>
-      {item.target && <span className="tool-log-target">{item.target}</span>}
-      {item.meta && <span className="tool-log-meta">{item.meta}</span>}
-      {update.status === "running" && <span className="tool-log-meta">running</span>}
-      {update.status === "error" && <span className="tool-log-error">{update.error ?? "failed"}</span>}
-    </>
+function EditCard({ op, onReviewFile }: { op: FileOp; onReviewFile?: (path: string) => void }) {
+  const click = () => {
+    if (onReviewFile && op.reviewable) onReviewFile(op.path)
+    else vscode.post({ type: "openFile", path: op.path })
+  }
+  return (
+    <button className={`edit-row status-${op.status} kind-${op.action}`} onClick={click} title={op.path}>
+      <span className="edit-name">{basename(op.path)}</span>
+      {typeof op.additions === "number" && op.additions > 0 && <span className="edit-add">+{op.additions}</span>}
+      {typeof op.deletions === "number" && op.deletions > 0 && <span className="edit-del">−{op.deletions}</span>}
+      {op.status === "running" && <span className="edit-running">running</span>}
+      {op.errorText && <span className="edit-error">{op.errorText}</span>}
+    </button>
   )
-  if (item.filePath) {
-    return (
-      <button
-        className={`tool-log-row is-clickable status-${update.status}`}
-        onClick={() => openInReview ? onReviewFile?.(item.filePath!) : vscode.post({ type: "openFile", path: item.filePath! })}
-        title={item.title ?? item.filePath}
-      >
-        {content}
-      </button>
-    )
+}
+
+function ReadsLine({ reads }: { reads: FileOp[] }) {
+  return (
+    <div className="trace-reads">
+      <span className="trace-reads-label">Read</span>
+      <span className="trace-reads-count">{reads.length}</span>
+      <div className="trace-reads-list">
+        {reads.map((op, i) => (
+          <button
+            key={op.path}
+            className="trace-read-chip"
+            onClick={() => vscode.post({ type: "openFile", path: op.path })}
+            title={op.range ? `${op.path} (${op.range})` : op.path}
+          >
+            <span className="trace-read-name">{basename(op.path)}</span>
+            {op.range && <span className="trace-read-range">{op.range}</span>}
+            {i < reads.length - 1 && <span className="trace-read-sep">,</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function OtherRow({ op }: { op: OtherOp }) {
+  return (
+    <div className={`other-row status-${op.status}`} title={op.title}>
+      <span className="other-action">{op.action}</span>
+      {op.detail && <span className="other-detail">{op.detail}</span>}
+      {op.status === "running" && <span className="other-meta">running</span>}
+      {op.errorText && <span className="other-error">{op.errorText}</span>}
+    </div>
+  )
+}
+
+function buildTrace(updates: ToolUpdate[], patches: PatchInput[]) {
+  const fileOps = new Map<string, FileOp>()
+  const others: OtherOp[] = []
+
+  for (const update of updates) {
+    if (update.tool === "read") {
+      const path = pickPath(update)
+      if (!path) {
+        others.push(genericOther(update))
+        continue
+      }
+      const existing = fileOps.get(path)
+      if (existing && existing.action !== "read") continue
+      fileOps.set(path, {
+        path,
+        action: "read",
+        range: lineRange(update) ?? existing?.range,
+        status: mergeStatus(existing?.status, update.status),
+        errorText: update.error ?? existing?.errorText,
+        reviewable: false,
+      })
+      continue
+    }
+    if (update.tool === "edit") {
+      const path = pickPath(update)
+      if (!path) {
+        others.push(genericOther(update))
+        continue
+      }
+      const action: FileAction = update.input?.oldString === "" ? "created" : "updated"
+      const stats = diffStats(update)
+      mergeFileOp(fileOps, path, {
+        action,
+        additions: stats.additions,
+        deletions: stats.deletions,
+        status: update.status,
+        errorText: update.error,
+        reviewable: true,
+      })
+      continue
+    }
+    if (update.tool === "write") {
+      const path = pickPath(update)
+      if (!path) {
+        others.push(genericOther(update))
+        continue
+      }
+      const action: FileAction = update.metadata?.exists === false ? "created" : "updated"
+      mergeFileOp(fileOps, path, {
+        action,
+        additions: writeLines(update),
+        status: update.status,
+        errorText: update.error,
+        reviewable: true,
+      })
+      continue
+    }
+    if (update.tool === "apply_patch") {
+      const files = patchFilesFromUpdate(update)
+      if (!files.length) {
+        others.push({
+          key: update.callID,
+          action: "Applied patch",
+          status: update.status,
+          errorText: update.error,
+        })
+        continue
+      }
+      for (const file of files) {
+        mergeFileOp(fileOps, file.path, {
+          action: file.kind,
+          additions: file.additions,
+          deletions: file.deletions,
+          status: update.status,
+          errorText: update.error,
+          reviewable: true,
+        })
+      }
+      continue
+    }
+    others.push(deriveOther(update))
   }
-  return <div className={`tool-log-row status-${update.status}`} title={item.title}>{content}</div>
-}
 
-export function toolHeadline(updates: ToolUpdate[]) {
-  const changes = changedFiles(updates)
-  if (changes.length) {
-    const created = changes.filter((change) => change.kind === "created").length
-    const deleted = changes.filter((change) => change.kind === "deleted").length
-    if (changes.length === 1) return `${kindLabel(changes[0]!.kind)} ${basename(changes[0]!.path)}`
-    if (created && created === changes.length) return `Created ${created} ${plural(created, "file")}`
-    if (deleted && deleted === changes.length) return `Deleted ${deleted} ${plural(deleted, "file")}`
-    return `Changed ${changes.length} ${plural(changes.length, "file")}`
+  for (const patch of patches) {
+    for (const entry of patch.files) {
+      const match = entry.match(/^([AMD])\s+(.+)$/)
+      const path = (match?.[2] ?? entry).trim()
+      if (!path) continue
+      if (fileOps.has(path)) continue
+      const code = match?.[1]
+      const action: FileAction = code === "A" ? "created" : code === "D" ? "deleted" : "updated"
+      fileOps.set(path, {
+        path,
+        action,
+        status: "completed",
+        reviewable: true,
+      })
+    }
   }
 
-  const files = new Set(updates.flatMap((update) => {
-    const item = row(update)
-    return item.filePath && isFileTool(update.tool) ? [item.filePath] : []
-  })).size
-  const searches = updates.filter((update) => update.tool === "grep" || update.tool === "glob").length
-  if (files && searches) return `Explored ${files} ${plural(files, "file")}, ${searches} ${plural(searches, "search")}`
-  if (files) return `Read ${files} ${plural(files, "file")}`
-  if (searches) return `Ran ${searches} ${plural(searches, "search")}`
-  return `Used ${updates.length} ${plural(updates.length, "tool")}`
+  const allOps = [...fileOps.values()]
+  const edits = allOps.filter((op) => op.action !== "read")
+  const reads = allOps.filter((op) => op.action === "read")
+  return { edits, reads, others }
 }
 
-function row(update: ToolUpdate): { action: string; target?: string; meta?: string; filePath?: string; title?: string } {
-  const filePath = pickPath(update)
-  const target = filePath ? basename(filePath) : summary(update)
-  if (update.tool === "read") return { action: "Read", target, meta: lineRange(update), filePath }
-  if (update.tool === "grep") return { action: "Grepped", target }
-  if (update.tool === "glob") return { action: "Searched", target: globTarget(update), title: globTitle(update) }
-  if (update.tool === "bash") return { action: "Ran", target }
-  if (update.tool === "edit") return { action: editKind(update), target, meta: diffStat(update), filePath, title: filePath }
-  if (update.tool === "write") return { action: writeKind(update), target, meta: writeMeta(update), filePath, title: filePath }
-  if (update.tool === "apply_patch") return { action: "Applied", target: patchTarget(update), meta: patchMeta(update), title: update.output }
-  if (update.tool === "webfetch") return { action: "Fetched", target }
-  if (update.tool === "todowrite") return { action: "Updated", target: "todos" }
-  if (update.tool === "task") return { action: "Investigating", target }
-  return { action: pastTense(update.tool), target }
+function mergeFileOp(map: Map<string, FileOp>, path: string, patch: Omit<FileOp, "path" | "range" | "reviewable"> & { reviewable: boolean }) {
+  const existing = map.get(path)
+  const additions = (existing?.additions ?? 0) + (patch.additions ?? 0)
+  const deletions = (existing?.deletions ?? 0) + (patch.deletions ?? 0)
+  const action = preferAction(existing?.action, patch.action)
+  map.set(path, {
+    path,
+    action,
+    additions: additions || undefined,
+    deletions: deletions || undefined,
+    status: mergeStatus(existing?.status, patch.status),
+    errorText: patch.errorText ?? existing?.errorText,
+    reviewable: patch.reviewable || (existing?.reviewable ?? false),
+  })
 }
 
-function globTarget(update: ToolUpdate) {
-  if (typeof update.input?.path === "string" && update.input.path !== "." && update.input.path.trim()) {
-    return update.input.path
+function preferAction(existing: FileAction | undefined, next: FileAction): FileAction {
+  if (!existing) return next
+  if (existing === "read") return next
+  if (next === "read") return existing
+  if (existing === "created" || next === "created") return "created"
+  if (existing === "deleted" || next === "deleted") return "deleted"
+  return next
+}
+
+function mergeStatus(existing: ToolStatus | undefined, next: ToolStatus): ToolStatus {
+  if (!existing) return next
+  if (next === "error" || existing === "error") return "error"
+  if (next === "running" || existing === "running") return "running"
+  if (next === "pending" || existing === "pending") return "pending"
+  return next
+}
+
+function deriveOther(update: ToolUpdate): OtherOp {
+  if (update.tool === "grep") {
+    return {
+      key: update.callID,
+      action: "Grepped",
+      detail: stringInput(update, "pattern") ?? update.title,
+      status: update.status,
+      errorText: update.error,
+    }
   }
-  if (typeof update.title === "string" && update.title !== "." && update.title.trim()) {
-    return update.title
+  if (update.tool === "glob") {
+    return {
+      key: update.callID,
+      action: "Searched",
+      detail: stringInput(update, "pattern") ?? update.title,
+      status: update.status,
+      errorText: update.error,
+    }
   }
-  return "project files"
+  if (update.tool === "bash") {
+    return {
+      key: update.callID,
+      action: "Ran",
+      detail: stringInput(update, "command") ?? update.title,
+      status: update.status,
+      errorText: update.error,
+    }
+  }
+  if (update.tool === "webfetch") {
+    return {
+      key: update.callID,
+      action: "Fetched",
+      detail: stringInput(update, "url") ?? update.title,
+      status: update.status,
+      errorText: update.error,
+    }
+  }
+  if (update.tool === "todowrite") {
+    return {
+      key: update.callID,
+      action: "Updated todos",
+      status: update.status,
+      errorText: update.error,
+    }
+  }
+  if (update.tool === "task") {
+    return {
+      key: update.callID,
+      action: "Investigated",
+      detail: stringInput(update, "description") ?? update.title,
+      status: update.status,
+      errorText: update.error,
+    }
+  }
+  return genericOther(update)
 }
 
-function globTitle(update: ToolUpdate) {
-  if (typeof update.input?.pattern !== "string") return undefined
-  return `Pattern: ${update.input.pattern}`
+function genericOther(update: ToolUpdate): OtherOp {
+  return {
+    key: update.callID,
+    action: pastTense(update.tool),
+    detail: update.title ?? stringInput(update, "description"),
+    status: update.status,
+    errorText: update.error,
+  }
 }
 
-function summary(update: ToolUpdate): string | undefined {
-  if (update.title && !/^\d+\s+todos$/.test(update.title)) return update.title
-  const input = update.input ?? {}
-  if (typeof input.pattern === "string") return input.pattern
-  if (typeof input.command === "string") return input.command
-  if (typeof input.url === "string") return input.url
-  if (typeof input.description === "string") return input.description
-  if (typeof input.path === "string") return input.path
-  return update.tool
+function stringInput(update: ToolUpdate, key: string): string | undefined {
+  const value = update.input?.[key]
+  return typeof value === "string" ? value : undefined
 }
 
 function pickPath(update: ToolUpdate): string | undefined {
@@ -119,26 +326,7 @@ function pickPath(update: ToolUpdate): string | undefined {
   return undefined
 }
 
-type ChangeKind = "created" | "updated" | "deleted" | "moved"
-
-function changedFiles(updates: ToolUpdate[]) {
-  return updates.flatMap((update): Array<{ path: string; kind: ChangeKind }> => {
-    if (update.tool === "write") {
-      const path = pickPath(update)
-      if (!path) return []
-      return [{ path, kind: update.metadata?.exists === false ? "created" : "updated" }]
-    }
-    if (update.tool === "edit") {
-      const path = pickPath(update)
-      if (!path) return []
-      return [{ path, kind: update.input?.oldString === "" ? "created" : "updated" }]
-    }
-    if (update.tool !== "apply_patch") return []
-    return patchFiles(update).map((file) => ({ path: file.path, kind: file.kind }))
-  })
-}
-
-function patchFiles(update: ToolUpdate): Array<{ path: string; kind: ChangeKind; additions?: number; deletions?: number }> {
+function patchFilesFromUpdate(update: ToolUpdate): Array<{ path: string; kind: FileAction; additions?: number; deletions?: number }> {
   const files = Array.isArray(update.metadata?.files) ? update.metadata.files : undefined
   if (files) {
     return files.flatMap((item) => {
@@ -157,66 +345,24 @@ function patchFiles(update: ToolUpdate): Array<{ path: string; kind: ChangeKind;
   }))
 }
 
-function patchKind(value: unknown): ChangeKind {
+function patchKind(value: unknown): FileAction {
   if (value === "add") return "created"
   if (value === "delete") return "deleted"
   if (value === "move") return "moved"
   return "updated"
 }
 
-function kindLabel(kind: ChangeKind) {
-  if (kind === "created") return "Created"
-  if (kind === "deleted") return "Deleted"
-  if (kind === "moved") return "Moved"
-  return "Updated"
-}
-
-function editKind(update: ToolUpdate) {
-  return update.input?.oldString === "" ? "Created" : "Updated"
-}
-
-function writeKind(update: ToolUpdate) {
-  return update.metadata?.exists === false ? "Created" : "Updated"
-}
-
-function writeMeta(update: ToolUpdate) {
-  if (typeof update.input?.content !== "string") return undefined
-  const lines = update.input.content.split("\n").length
-  return `${lines} ${plural(lines, "line")}`
-}
-
-function diffStat(update: ToolUpdate) {
+function diffStats(update: ToolUpdate): { additions?: number; deletions?: number } {
   const filediff = isRecord(update.metadata?.filediff) ? update.metadata.filediff : undefined
-  const additions = typeof filediff?.additions === "number" ? filediff.additions : undefined
-  const deletions = typeof filediff?.deletions === "number" ? filediff.deletions : undefined
-  if (additions === undefined && deletions === undefined) return undefined
-  return compact([additions ? `+${additions}` : undefined, deletions ? `-${deletions}` : undefined]).join(" ")
+  return {
+    additions: typeof filediff?.additions === "number" ? filediff.additions : undefined,
+    deletions: typeof filediff?.deletions === "number" ? filediff.deletions : undefined,
+  }
 }
 
-function patchTarget(update: ToolUpdate) {
-  const files = patchFiles(update)
-  if (files.length === 1) return basename(files[0]!.path)
-  if (files.length > 1) return `${files.length} ${plural(files.length, "file")}`
-  return "patch"
-}
-
-function patchMeta(update: ToolUpdate) {
-  const totals = patchFiles(update).reduce(
-    (acc, file) => ({
-      additions: acc.additions + (file.additions ?? 0),
-      deletions: acc.deletions + (file.deletions ?? 0),
-    }),
-    { additions: 0, deletions: 0 },
-  )
-  return compact([totals.additions ? `+${totals.additions}` : undefined, totals.deletions ? `-${totals.deletions}` : undefined]).join(" ") || undefined
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
-}
-
-function compact<T>(items: Array<T | undefined>) {
-  return items.filter((item): item is T => item !== undefined)
+function writeLines(update: ToolUpdate): number | undefined {
+  if (typeof update.input?.content !== "string") return undefined
+  return update.input.content.split("\n").length
 }
 
 function lineRange(update: ToolUpdate): string | undefined {
@@ -233,25 +379,43 @@ function lineRange(update: ToolUpdate): string | undefined {
   return undefined
 }
 
-function basename(value?: string) {
-  if (!value) return undefined
-  return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
 }
 
 function isFileTool(tool: string) {
   return tool === "read" || tool === "edit" || tool === "write"
 }
 
-function previewsInReview(update: ToolUpdate) {
-  return update.tool === "edit" || update.tool === "write"
-}
-
-function plural(count: number, noun: string) {
-  if (count !== 1 && noun === "search") return "searches"
-  return count === 1 ? noun : `${noun}s`
+function basename(value: string) {
+  return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
 }
 
 function pastTense(tool: string) {
   if (tool.endsWith("e")) return `${tool}d`
   return `${tool}ed`
+}
+
+export function toolHeadline(updates: ToolUpdate[]) {
+  const trace = buildTrace(updates, [])
+  if (trace.edits.length === 1) return `${kindWord(trace.edits[0]!.action)} ${basename(trace.edits[0]!.path)}`
+  if (trace.edits.length > 1) {
+    const created = trace.edits.filter((op) => op.action === "created").length
+    const deleted = trace.edits.filter((op) => op.action === "deleted").length
+    if (created && created === trace.edits.length) return `Created ${created} files`
+    if (deleted && deleted === trace.edits.length) return `Deleted ${deleted} files`
+    return `Changed ${trace.edits.length} files`
+  }
+  if (trace.reads.length && trace.others.length) return `Explored ${trace.reads.length} files, ${trace.others.length} ops`
+  if (trace.reads.length) return `Read ${trace.reads.length} ${trace.reads.length === 1 ? "file" : "files"}`
+  if (trace.others.length) return `Used ${trace.others.length} ${trace.others.length === 1 ? "tool" : "tools"}`
+  return `Used ${updates.length} ${updates.length === 1 ? "tool" : "tools"}`
+}
+
+function kindWord(action: FileAction): string {
+  if (action === "created") return "Created"
+  if (action === "deleted") return "Deleted"
+  if (action === "moved") return "Moved"
+  if (action === "read") return "Read"
+  return "Updated"
 }

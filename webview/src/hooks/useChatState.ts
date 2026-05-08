@@ -123,8 +123,15 @@ function reducer(state: ChatState, action: Action): ChatState {
         busy: true,
         messages: [
           ...state.messages,
-          { id: action.id, role: "user", blocks: [{ type: "text", text: action.text }], ref: action.ref },
+          { id: action.id, role: "user", blocks: [{ type: "text", text: action.text }], ref: action.ref, backendID: action.backendID },
         ],
+      }
+    case "userMessageBackendID":
+      return {
+        ...state,
+        messages: state.messages.map((m) =>
+          m.id === action.id ? { ...m, backendID: action.backendID } : m,
+        ),
       }
     case "assistantStart":
       return {
@@ -215,6 +222,9 @@ export function useChatState() {
     send(text: string) {
       vscode.post({ type: "send", text })
     },
+    editMessage(id: string, text: string) {
+      vscode.post({ type: "editMessage", id, text })
+    },
     abort() {
       vscode.post({ type: "abort" })
     },
@@ -244,6 +254,9 @@ export function useChatState() {
     },
     reviewHunk(key: string, path: string, action: ReviewHunkState, oldText: string, newText: string) {
       vscode.post({ type: "reviewHunk", key, path, action, oldText, newText })
+    },
+    reviewAllInChange(source: string, path: string, action: ReviewHunkState) {
+      vscode.post({ type: "reviewAllInChange", source, path, action })
     },
     selectAgent() {
       vscode.post({ type: "selectAgent" })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react"
 import type { Message } from "../hooks/useChatState"
 import type { ReviewChange, ReviewHunkState } from "../protocol"
 
@@ -13,6 +13,7 @@ export function ReviewPanel({
   reviewedHunks,
   onSelectPath,
   onOpenReviewChange,
+  onReviewAllInChange,
 }: {
   messages: Message[]
   selectedPath?: string
@@ -20,6 +21,7 @@ export function ReviewPanel({
   reviewedHunks: Record<string, ReviewHunkState>
   onSelectPath?: (path: string) => void
   onOpenReviewChange?: (change: ReviewChange) => void
+  onReviewAllInChange?: (source: string, path: string, action: ReviewHunkState) => void
 }) {
   const changes = useMemo(() => turnChanges(messages), [messages])
   const pendingChanges = useMemo(
@@ -44,19 +46,23 @@ export function ReviewPanel({
   const selected = pendingChanges.find(({ change }) => samePath(change.path, activePath))?.change ?? pendingChanges[0].change
   const additions = pendingChanges.reduce((total, { change }) => total + change.additions, 0)
   const deletions = pendingChanges.reduce((total, { change }) => total + change.deletions, 0)
+  const displayNames = disambiguatePaths(pendingChanges.map(({ change }) => change.path))
   const selectChange = (change: ReviewChange) => {
     setInternalSelectedPath(change.path)
     onSelectPath?.(change.path)
     onOpenReviewChange?.(change)
   }
 
+  const isSingle = pendingChanges.length === 1
+  const onlyChange = isSingle ? pendingChanges[0].change : undefined
+
   return (
     <div className={`review-panel ${open ? "" : "is-collapsed"}`}>
       <button className="review-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className={`review-caret ${open ? "is-open" : ""}`}>›</span>
-        <span className="review-title">Review changes</span>
-        <span className="review-summary">
-          {pendingChanges.length} file{pendingChanges.length === 1 ? "" : "s"}
+        <span className="review-title">{isSingle ? "Review" : "Review changes"}</span>
+        <span className="review-summary" title={onlyChange?.path}>
+          {onlyChange ? (displayNames.get(onlyChange.path) ?? basename(onlyChange.path)) : `${pendingChanges.length} files`}
         </span>
         <span className="review-stat add">+{additions}</span>
         <span className="review-stat del">-{deletions}</span>
@@ -64,23 +70,91 @@ export function ReviewPanel({
       <div className="review-body-clip" aria-hidden={!open}>
         <div className="review-body">
           <div className="review-files">
-            {pendingChanges.map(({ change }) => (
-              <button
-                key={`${change.source}:${change.path}`}
-                className={`review-file ${change.source === selected.source && change.path === selected.path ? "is-selected" : ""}`}
-                onClick={() => selectChange(change)}
-                title={change.path}
-              >
-                <span className="review-file-name">{basename(change.path)}</span>
-                <span className="review-file-stat add">+{change.additions}</span>
-                <span className="review-file-stat del">-{change.deletions}</span>
-              </button>
-            ))}
+            {pendingChanges.map(({ change }) => {
+              const isSelected = change.source === selected.source && change.path === selected.path
+              const stop = (event: MouseEvent | KeyboardEvent) => event.stopPropagation()
+              const act = (action: ReviewHunkState) => {
+                onReviewAllInChange?.(change.source, change.path, action)
+              }
+              return (
+                <div
+                  key={`${change.source}:${change.path}`}
+                  className={`review-file kind-${change.kind} ${isSelected ? "is-selected" : ""}`}
+                  onClick={() => selectChange(change)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault()
+                      selectChange(change)
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  title={change.path}
+                >
+                  <span className="review-file-name">{displayNames.get(change.path) ?? basename(change.path)}</span>
+                  <span className="review-file-stat add">+{change.additions}</span>
+                  <span className="review-file-stat del">-{change.deletions}</span>
+                  <button
+                    className="review-file-action accept"
+                    onClick={(event) => { stop(event); act("accepted") }}
+                    onKeyDown={stop}
+                    aria-label={`Keep changes in ${basename(change.path)}`}
+                    title="Keep all changes in this file"
+                  >
+                    Keep
+                  </button>
+                  <button
+                    className="review-file-action reject"
+                    onClick={(event) => { stop(event); act("rejected") }}
+                    onKeyDown={stop}
+                    aria-label={`Undo changes in ${basename(change.path)}`}
+                    title="Undo all changes in this file"
+                  >
+                    Undo
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+function disambiguatePaths(paths: string[]): Map<string, string> {
+  const result = new Map<string, string>()
+  const groups = new Map<string, string[]>()
+  for (const path of paths) {
+    const key = basename(path)
+    const list = groups.get(key) ?? []
+    list.push(path)
+    groups.set(key, list)
+  }
+  for (const [, group] of groups) {
+    if (group.length === 1) {
+      result.set(group[0]!, basename(group[0]!))
+      continue
+    }
+    for (const path of group) {
+      result.set(path, shortestUniqueSuffix(path, group))
+    }
+  }
+  return result
+}
+
+function shortestUniqueSuffix(target: string, group: string[]): string {
+  const targetSegs = target.split(/[\\/]/).filter(Boolean)
+  for (let depth = 1; depth <= targetSegs.length; depth++) {
+    const candidate = targetSegs.slice(-depth).join("/")
+    const collides = group.some((other) => {
+      if (other === target) return false
+      const otherSegs = other.split(/[\\/]/).filter(Boolean)
+      return otherSegs.slice(-depth).join("/") === candidate
+    })
+    if (!collides) return candidate
+  }
+  return target
 }
 
 function turnChanges(messages: Message[]) {

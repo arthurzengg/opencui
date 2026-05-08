@@ -5,10 +5,9 @@ type Props = {
   contextLabel?: string
   onSend: (text: string) => void
   onAbort: () => void
-  onNew: () => void
 }
 
-export function PromptBox({ busy, contextLabel, onSend, onAbort, onNew }: Props) {
+export function PromptBox({ busy, contextLabel, onSend, onAbort }: Props) {
   const [text, setText] = useState("")
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -42,9 +41,6 @@ export function PromptBox({ busy, contextLabel, onSend, onAbort, onNew }: Props)
         }}
       />
       <div className="promptbox-row">
-        <button className="btn subtle" onClick={onNew} disabled={busy}>
-          New
-        </button>
         <div className="spacer" />
         {busy ? (
           <button className="btn danger" onClick={onAbort}>

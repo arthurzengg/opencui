@@ -29,8 +29,7 @@ button {
 
 /* ===== Status bar ===== */
 .statusbar {
-  display: grid;
-  grid-template-columns: auto minmax(52px, 82px) minmax(84px, 0.9fr) minmax(112px, 1.35fr) auto;
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
@@ -39,6 +38,7 @@ button {
   background: var(--vscode-sideBarSectionHeader-background);
   min-width: 0;
 }
+.statusbar.is-quiet .status-text { display: none; }
 
 .statusbar .dot {
   width: 8px;
@@ -57,45 +57,125 @@ button {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.statusbar .spacer { display: none; }
+.statusbar .spacer { flex: 1; }
 
-.chip {
+.selector-menu {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  /* Ensure the selector never claims more than its share of the bar so the
+     history icon and right-side elements always have room. */
+  max-width: calc(100% - 36px);
+}
+.selector-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-width: 24px;
+  gap: 5px;
   width: 100%;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 2px 9px;
+  border: 0;
+  border-radius: 10px;
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
-  border: none;
-  padding: 2px 7px;
-  border-radius: 10px;
   font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
   overflow: hidden;
 }
-.agent-chip { min-width: 0; }
-.model-chip { min-width: 0; }
-.chip:hover { background: var(--vscode-button-secondaryHoverBackground); }
-.chip-icon {
+.selector-trigger:hover,
+.selector-trigger.is-open {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+.selector-prefix {
   flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
   font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   opacity: 0.75;
 }
-.chip-text {
-  flex: 1 1 auto;
+/* Primary (model) keeps its natural size up to where it can fit; */
+.selector-primary {
+  flex: 0 1 auto;
   min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.selector-sep {
+  flex: 0 0 auto;
+  opacity: 0.5;
+}
+/* Secondary (agent) gives ground first when the bar is tight — much higher
+   shrink factor so it ellipsis-truncates before the model name does. */
+.selector-secondary {
+  flex: 1 100 auto;
+  min-width: 0;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.selector-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: min(300px, calc(100vw - 20px));
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+  border-radius: var(--radius);
+  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+.selector-row {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+.selector-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+.selector-row-label {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.selector-row-value {
+  min-width: 0;
+  font-weight: 600;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.selector-row-arrow {
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+}
 
-@media (max-width: 430px) {
+@media (max-width: 520px) {
   .statusbar {
-    grid-template-columns: auto minmax(34px, 68px) minmax(58px, 0.75fr) minmax(90px, 1.45fr) auto;
     gap: 6px;
     padding-inline: 8px;
   }
-  .chip-icon {
+  /* On narrow panels, drop the small prefix labels so the model and agent
+     values themselves keep room. Both values stay visible (ellipsis-truncated
+     if needed). */
+  .selector-prefix {
     display: none;
   }
 }
@@ -109,17 +189,18 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  width: 22px;
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--vscode-foreground);
+  line-height: 1;
 }
 .history-trigger:hover,
 .history-trigger.is-open {
-  background: var(--vscode-button-secondaryHoverBackground);
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
 }
 .history-clock {
   position: relative;
@@ -140,13 +221,15 @@ button {
   background: currentColor;
   transform-origin: 50% 0;
 }
+/* Minute hand: longer, pointing to 12 (rotation 180deg in this scheme). */
 .history-clock::before {
   height: 4.5px;
-  transform: translate(-50%, -1px) rotate(0deg);
+  transform: translate(-50%, -1px) rotate(180deg);
 }
+/* Hour hand: shorter, pointing to 4 (rotation 300deg ≈ 30° past 3 o'clock). */
 .history-clock::after {
-  height: 4px;
-  transform: translate(-50%, -1px) rotate(120deg);
+  height: 3.5px;
+  transform: translate(-50%, -1px) rotate(300deg);
 }
 .history-popover {
   position: absolute;
@@ -182,6 +265,22 @@ button {
 .history-new:hover {
   background: var(--vscode-button-secondaryHoverBackground);
 }
+.history-search {
+  margin-top: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.history-search:focus {
+  border-color: var(--vscode-focusBorder);
+}
 .history-list {
   margin-top: 6px;
   overflow-y: auto;
@@ -192,45 +291,52 @@ button {
   font-size: 12px;
 }
 .history-item {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 4px;
-  min-height: 34px;
-  padding: 3px;
+  padding: 2px 4px 2px 8px;
   border-radius: 4px;
 }
-.history-item:hover,
-.history-item.is-active {
+.history-item:hover {
   background: var(--vscode-list-hoverBackground);
 }
 .history-item.is-active {
-  outline: 1px solid var(--vscode-focusBorder, transparent);
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
 }
-.history-item.is-editing {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+.history-item.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--vscode-focusBorder, var(--vscode-textLink-foreground));
 }
 .history-open {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
-  padding: 3px 4px;
+  padding: 4px 0;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
+  line-height: 1.2;
 }
-.history-title,
-.history-date {
-  display: block;
+.history-title {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-.history-title {
   font-size: 12px;
 }
 .history-date {
-  margin-top: 1px;
+  flex: 0 0 auto;
   color: var(--vscode-descriptionForeground);
   font-size: 10px;
 }
@@ -241,13 +347,35 @@ button {
   background: transparent;
   color: var(--vscode-descriptionForeground);
   font-size: 10px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.history-item:hover .history-action,
+.history-item:focus-within .history-action,
+.history-item.is-editing .history-action,
+.history-item.is-confirming .history-action {
+  opacity: 1;
+}
+.history-action:focus-visible {
+  opacity: 1;
+  outline: 1px solid var(--vscode-focusBorder);
 }
 .history-action:hover {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   color: var(--vscode-foreground);
 }
-.history-action.danger:hover {
+.history-action.danger:hover,
+.history-action.danger.is-confirming {
   color: var(--vscode-errorForeground);
+}
+.history-action.danger.is-confirming {
+  background: var(--vscode-inputValidation-errorBackground, rgba(248, 81, 73, 0.18));
+  font-weight: 600;
+}
+@media (hover: none) {
+  .history-action {
+    opacity: 1;
+  }
 }
 .history-rename-input {
   min-width: 0;
@@ -269,9 +397,6 @@ button {
   transition: padding 0.16s ease, background-color 0.16s ease;
 }
 .todo-panel.is-collapsed {
-  padding-bottom: 3px;
-}
-.todo-panel.is-collapsed:not(.has-active) {
   padding-bottom: 6px;
 }
 .todo-header {
@@ -289,7 +414,7 @@ button {
   margin-bottom: 4px;
   text-align: left;
 }
-.todo-panel.is-collapsed:not(.has-active) .todo-header {
+.todo-panel.is-collapsed .todo-header {
   margin-bottom: 0;
 }
 .todo-caret {
@@ -306,8 +431,31 @@ button {
 .todo-caret.is-open {
   transform: rotate(90deg);
 }
+.todo-label {
+  flex: 0 0 auto;
+}
+.todo-header-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.todo-header-sep {
+  flex: 0 0 auto;
+  opacity: 0.5;
+}
+.todo-header-current-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .todo-progress {
   margin-left: auto;
+  flex: 0 0 auto;
   font-family: var(--vscode-editor-font-family);
   font-size: 10px;
 }
@@ -317,20 +465,8 @@ button {
   transition: max-height 0.18s ease, opacity 0.16s ease;
 }
 .todo-panel.is-collapsed .todo-body {
-  max-height: 18px;
-  overflow: hidden;
-}
-.todo-panel.is-collapsed:not(.has-active) .todo-body {
   max-height: 0;
-}
-.todo-current {
-  padding-left: 16px;
-  font-size: 12px;
-  opacity: 0.75;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  transition: opacity 0.14s ease, transform 0.16s ease;
 }
 .todo-list {
   list-style: none;
@@ -344,11 +480,6 @@ button {
   opacity: 0;
   transform: translateY(-4px);
   pointer-events: none;
-}
-.todo-panel:not(.is-collapsed) .todo-current {
-  opacity: 0;
-  transform: translateY(-4px);
-  height: 0;
 }
 .todo-item {
   display: flex;
@@ -423,28 +554,164 @@ button {
 .messages {
   flex: 1;
   overflow-y: auto;
+  /* Reserve gutter space on BOTH sides so message bubbles don't reflow narrower
+     when scrolling appears, AND stay visually centered (the symmetric reserve
+     mirrors the right scrollbar gutter on the left). */
+  scrollbar-gutter: stable both-edges;
   padding: 10px 12px 4px;
+  /* Firefox: thin transparent scrollbar that brightens on hover. */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.18s ease;
+}
+.messages:hover {
+  scrollbar-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4)) transparent;
+}
+/* Chromium / WebKit (VS Code's webview): track blends with the chat background,
+   thumb is invisible by default and appears only on hover or while scrolling. */
+.messages::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+.messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+.messages::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background-clip: padding-box;
+  transition: background-color 0.18s ease;
+}
+.messages:hover::-webkit-scrollbar-thumb {
+  background-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4));
+}
+.messages::-webkit-scrollbar-thumb:hover {
+  background-color: var(--vscode-scrollbarSlider-hoverBackground, rgba(100, 100, 100, 0.7));
+}
+.messages::-webkit-scrollbar-thumb:active {
+  background-color: var(--vscode-scrollbarSlider-activeBackground, rgba(80, 80, 80, 0.8));
+}
+.messages::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .welcome {
   text-align: center;
-  opacity: 0.5;
-  padding: 18vh 10px 0;
+  padding: 14vh 10px 0;
 }
-.welcome-title { font-size: 18px; font-weight: 600; }
-.welcome-sub { font-size: 12px; margin-top: 6px; }
+.welcome-title { font-size: 18px; font-weight: 600; opacity: 0.7; }
+.welcome-sub { font-size: 12px; margin-top: 6px; opacity: 0.55; }
+.welcome-suggestions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  max-width: 320px;
+  margin: 18px auto 0;
+}
+.welcome-suggestion {
+  padding: 7px 10px;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--radius);
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  text-align: left;
+  opacity: 0.85;
+}
+.welcome-suggestion:hover {
+  background: var(--vscode-list-hoverBackground);
+  opacity: 1;
+}
 
 .msg {
   margin-bottom: 16px;
 }
 
 .msg.role-user {
+  position: relative;
   padding: 8px 10px;
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: var(--radius);
+  word-break: break-word;
+}
+.msg.role-user .user-text {
   white-space: pre-wrap;
   word-break: break-word;
+}
+.msg.role-user.is-editable {
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.msg.role-user.is-editable:hover {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-input-border, var(--vscode-focusBorder));
+}
+.msg.role-user.is-editable:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+.msg.role-user.is-editing {
+  cursor: default;
+  padding: 8px;
+  border-color: var(--vscode-focusBorder);
+}
+.user-edit-hint {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.5;
+  pointer-events: none;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+.msg.role-user.is-editable:hover .user-edit-hint {
+  opacity: 1;
+  color: var(--vscode-foreground);
+}
+.user-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.user-edit-input {
+  width: 100%;
+  min-height: 56px;
+  max-height: 240px;
+  padding: 6px 8px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-focusBorder));
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.45;
+  resize: none;
+  outline: none;
+}
+.user-edit-input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+.user-edit-warning {
+  padding: 5px 8px;
+  border-left: 2px solid var(--vscode-charts-yellow, #d29922);
+  border-radius: 0 4px 4px 0;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+.user-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .msg-ref {
@@ -485,9 +752,33 @@ button {
 }
 
 .thinking-dots {
-  opacity: 0.6;
+  display: inline-block;
+  padding: 6px 2px;
+  color: var(--vscode-descriptionForeground);
   font-style: italic;
-  padding: 4px 2px;
+  background: linear-gradient(
+    90deg,
+    var(--vscode-descriptionForeground) 0%,
+    var(--vscode-foreground) 50%,
+    var(--vscode-descriptionForeground) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: thinking-shimmer 2s linear infinite;
+}
+@keyframes thinking-shimmer {
+  0% { background-position: 200% center; }
+  100% { background-position: 0% center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dots {
+    animation: none;
+    -webkit-text-fill-color: var(--vscode-descriptionForeground);
+    background: none;
+    opacity: 0.7;
+  }
 }
 
 /* ===== Process block ===== */
@@ -543,11 +834,6 @@ button {
 }
 .process-body .md-text {
   margin-bottom: 10px;
-}
-.process-body .tool-log {
-  margin: 8px 0 10px;
-  padding-left: 0;
-  border-left: 0;
 }
 .process-text {
   margin: 0 0 10px;
@@ -641,191 +927,169 @@ button {
   font-style: italic;
 }
 
-/* ===== Tool log ===== */
-.tool-log {
-  margin: 8px 0 10px;
-  padding-left: 12px;
-  border-left: 1px solid var(--vscode-panel-border);
-  color: var(--vscode-descriptionForeground);
-}
-.tool-log-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  min-width: 0;
-  padding: 0 0 6px;
-  border: 0;
-  background: transparent;
-  color: var(--vscode-descriptionForeground);
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-}
-.tool-log-title {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.tool-log-caret {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 14px;
-  width: 14px;
-  height: 18px;
-  line-height: 18px;
-  opacity: 0.8;
-  transform: rotate(0deg);
-  transition: transform 0.16s ease;
-}
-.tool-log-caret.is-open {
-  transform: rotate(90deg);
-}
-.tool-log-list {
+/* ===== Trace ===== */
+.trace {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  margin: 8px 0 10px;
 }
-.tool-log-row {
+.process-body .trace {
+  margin-top: 4px;
+}
+
+.trace-edits {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex-direction: column;
+}
+.edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0 6px;
   width: 100%;
   min-width: 0;
-  padding: 0;
+  padding: 4px 2px;
   border: 0;
   background: transparent;
-  color: var(--vscode-descriptionForeground);
-  font: inherit;
+  color: inherit;
   font-size: 13px;
-  font-weight: 600;
-  line-height: 1.25;
   text-align: left;
 }
-.tool-log-row.is-clickable:hover .tool-log-target {
-  color: var(--vscode-textLink-activeForeground);
-  text-decoration: underline;
+.edit-row:hover {
+  background: var(--vscode-list-hoverBackground);
 }
-.tool-log-action {
-  flex: 0 0 auto;
-  color: var(--vscode-foreground);
+.edit-row.status-running {
+  opacity: 0.7;
 }
-.tool-log-target {
+.edit-row.kind-created .edit-name {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+}
+.edit-row.kind-deleted .edit-name {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+  text-decoration: line-through;
+}
+.edit-row.kind-moved .edit-name {
+  color: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-yellow, #d29922));
+}
+.edit-name {
   min-width: 0;
+  font-weight: 600;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.tool-log-meta {
+.edit-add,
+.edit-del {
   flex: 0 0 auto;
-  opacity: 0.75;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
 }
-.tool-log-error {
-  min-width: 0;
+.edit-add { color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); }
+.edit-del { color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149); }
+.edit-running {
+  opacity: 0.65;
+  font-style: italic;
+  font-size: 11px;
+}
+.edit-error {
+  grid-column: 1 / -1;
+  margin-top: 2px;
   color: var(--vscode-errorForeground);
+  font-size: 11px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-/* ===== Patch block ===== */
-.patch {
-  margin: 8px 0 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: var(--radius);
-  background: var(--vscode-sideBarSectionHeader-background);
+.trace-reads {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  color: var(--vscode-descriptionForeground);
   font-size: 12px;
 }
-.patch-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
+.trace-reads-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+.trace-reads-count {
+  flex: 0 0 auto;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 10px;
+  opacity: 0.6;
+}
+.trace-reads-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
   min-width: 0;
+}
+.trace-read-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: inherit;
-  text-align: left;
+  color: var(--vscode-textLink-foreground);
+  font-size: 12px;
 }
-.patch-title {
-  flex: 0 0 auto;
-  font-weight: 600;
+.trace-read-chip:hover .trace-read-name {
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
 }
-.patch-summary {
+.trace-read-name {
+  white-space: nowrap;
+}
+.trace-read-range {
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 10px;
+}
+.trace-read-sep {
+  color: var(--vscode-descriptionForeground);
+}
+
+.trace-others {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+}
+.other-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
   color: var(--vscode-descriptionForeground);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
-.patch-caret {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 14px;
-  width: 14px;
-  height: 18px;
-  margin-left: auto;
-  opacity: 0.8;
-  transform: rotate(0deg);
-  transition: transform 0.16s ease;
-}
-.patch-caret.is-open {
-  transform: rotate(90deg);
-}
-.patch-list {
-  list-style: none;
-  padding: 7px 0 0;
-  margin: 0;
-}
-.patch-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 4px 0;
-}
-.patch-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  font-size: 10px;
-  font-weight: 700;
-}
-.patch-badge.kind-created {
-  color: var(--vscode-testing-iconPassed, #3fb950);
-}
-.patch-badge.kind-deleted {
+.other-row.status-error {
   color: var(--vscode-errorForeground);
 }
-.patch-file-wrap {
-  min-width: 0;
-}
-.patch-file {
-  display: block;
-  max-width: 100%;
-  padding: 0;
+.other-action {
+  flex: 0 0 auto;
   color: var(--vscode-foreground);
   font-weight: 600;
+}
+.other-detail {
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  text-align: left;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
 }
-.patch-path {
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
+.other-meta {
+  flex: 0 0 auto;
+  opacity: 0.75;
+  font-style: italic;
+}
+.other-error {
+  min-width: 0;
+  color: var(--vscode-errorForeground);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -916,6 +1180,43 @@ button {
   font-family: var(--vscode-editor-font-family);
   font-size: 11px;
 }
+.review-file-stat.add { grid-area: add; }
+.review-file-stat.del { grid-area: del; }
+.review-file-action {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+}
+.review-file-action.accept { grid-area: keep; }
+.review-file-action.reject { grid-area: undo; }
+.review-file:hover .review-file-action,
+.review-file:focus-within .review-file-action {
+  opacity: 1;
+}
+.review-file-action:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+.review-file-action.accept:hover {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+}
+.review-file-action.reject:hover {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+}
+.review-file-action:focus-visible {
+  opacity: 1;
+  outline: 1px solid var(--vscode-focusBorder);
+}
+@media (hover: none) {
+  .review-file-action { opacity: 1; }
+}
 .review-stat.add,
 .review-file-stat.add,
 .review-diff-line.add {
@@ -957,28 +1258,71 @@ button {
 }
 .review-files {
   min-width: 0;
-  overflow: auto;
+  /* Keep overflow hidden so the inner list never shows a scrollbar while the
+     outer body-clip is animating its height. After the 0.2s expand transition
+     completes, the animation below promotes overflow to auto so long lists can
+     still scroll once fully open. */
+  overflow: hidden;
+}
+.review-panel:not(.is-collapsed) .review-files {
+  animation: review-files-show-scroll 0s linear 0.2s forwards;
+}
+@keyframes review-files-show-scroll {
+  to { overflow: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-panel:not(.is-collapsed) .review-files {
+    animation: none;
+    overflow: auto;
+  }
 }
 .review-file {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  grid-template-areas: "name add del";
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  grid-template-areas: "name add del keep undo";
   align-items: center;
-  gap: 0 5px;
+  gap: 0 6px;
   width: 100%;
   min-width: 0;
-  padding: 4px 2px;
+  padding: 4px 4px 4px 8px;
   border: 0;
+  border-radius: 3px;
   background: transparent;
   color: inherit;
   text-align: left;
+  cursor: pointer;
 }
-.review-file:hover,
-.review-file.is-selected {
+.review-file:hover {
   background: var(--vscode-list-hoverBackground);
 }
 .review-file.is-selected {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
   color: var(--vscode-foreground);
+}
+.review-file.is-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--vscode-focusBorder, var(--vscode-textLink-foreground));
+}
+.review-file:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+.review-file.kind-created .review-file-name {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+}
+.review-file.kind-deleted .review-file-name {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+  text-decoration: line-through;
+}
+.review-file.kind-moved .review-file-name {
+  color: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-yellow, #d29922));
 }
 .review-file-name {
   grid-area: name;

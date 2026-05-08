@@ -35,6 +35,11 @@ bun run compile
 Then open this folder in VS Code and press `F5` to launch an Extension
 Development Host.
 
+By default, this repo's VS Code launch settings use `scripts/opencode-dev`,
+which starts a sibling checkout at `../opencode/packages/opencode` with Bun.
+Set `OPENCODE_DEV_DIR` to point somewhere else, or change
+`opencui.binaryPath` to `opencode` to use the installed CLI instead.
+
 ## Package
 
 ```bash

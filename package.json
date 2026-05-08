@@ -19,6 +19,9 @@
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
+  "enabledApiProposals": [
+    "editorInsets"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [

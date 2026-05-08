@@ -1,25 +1,35 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
 import { Markdown } from "./Markdown"
-import { ToolTimeline, toolHeadline } from "./ToolCard"
-import { vscode } from "../vscode"
+import { ToolTrace, toolHeadline } from "./ToolCard"
 
 export function MessageView({
   message,
   processOpen,
   processOnly,
+  busy,
   onReviewFile,
+  onEditMessage,
 }: {
   message: Message
   processOpen: boolean
   processOnly: boolean
+  busy?: boolean
   onReviewFile?: (path: string) => void
+  onEditMessage?: (id: string, text: string) => void
 }) {
+  if (message.role === "user") {
+    return (
+      <UserMessageView message={message} busy={busy} onEditMessage={onEditMessage} />
+    )
+  }
   return (
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
       {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
-      {message.pending && message.blocks.length === 0 && <div className="thinking-dots">thinking…</div>}
+      {message.pending && message.blocks.length === 0 && (
+        <div className="thinking-dots" role="status" aria-label="Thinking">thinking</div>
+      )}
       {message.error && <div className="msg-error">{message.error}</div>}
       {(message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
         <div className="msg-usage">
@@ -36,17 +46,147 @@ export function MessageView({
   )
 }
 
+function UserMessageView({
+  message,
+  busy,
+  onEditMessage,
+}: {
+  message: Message
+  busy?: boolean
+  onEditMessage?: (id: string, text: string) => void
+}) {
+  const originalText = message.blocks
+    .filter((b): b is Extract<Block, { type: "text" }> => b.type === "text")
+    .map((b) => b.text)
+    .join("\n\n")
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(originalText)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (editing) setDraft(originalText)
+  }, [editing, originalText])
+
+  useEffect(() => {
+    const node = textareaRef.current
+    if (!editing || !node) return
+    node.focus()
+    node.setSelectionRange(node.value.length, node.value.length)
+    node.style.height = "auto"
+    node.style.height = Math.min(node.scrollHeight, 240) + "px"
+  }, [editing])
+
+  useEffect(() => {
+    const node = textareaRef.current
+    if (!editing || !node) return
+    node.style.height = "auto"
+    node.style.height = Math.min(node.scrollHeight, 240) + "px"
+  }, [draft, editing])
+
+  const canEdit = Boolean(onEditMessage)
+  const editBlocked = busy || !message.backendID
+  const editable = canEdit && !editBlocked
+  const editTitle = !canEdit
+    ? undefined
+    : busy
+      ? "Wait for the assistant to finish before editing"
+      : !message.backendID
+        ? "Saving your message — try again in a moment"
+        : "Edit and regenerate"
+
+  const submit = () => {
+    const trimmed = draft.trim()
+    if (!trimmed) return
+    if (trimmed === originalText.trim()) {
+      setEditing(false)
+      return
+    }
+    onEditMessage?.(message.id, trimmed)
+    setEditing(false)
+  }
+
+  const handleBubbleClick = () => {
+    if (!editable || editing) return
+    if (typeof window !== "undefined" && window.getSelection?.()?.toString()) return
+    setEditing(true)
+  }
+
+  return (
+    <div
+      className={`msg role-user ${editing ? "is-editing" : ""} ${editable ? "is-editable" : ""}`}
+      onClick={handleBubbleClick}
+      role={editable ? "button" : undefined}
+      tabIndex={editable ? 0 : undefined}
+      onKeyDown={editable ? (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          setEditing(true)
+        }
+      } : undefined}
+      title={editing ? undefined : editTitle}
+    >
+      {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
+      {editing ? (
+        <div className="user-edit" onClick={(event) => event.stopPropagation()}>
+          <textarea
+            ref={textareaRef}
+            className="user-edit-input"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault()
+                submit()
+              }
+              if (event.key === "Escape") {
+                event.preventDefault()
+                setEditing(false)
+              }
+            }}
+          />
+          <div className="user-edit-warning">
+            Replies after this point will be discarded and regenerated.
+          </div>
+          <div className="user-edit-actions">
+            <button className="btn subtle" onClick={() => setEditing(false)}>Cancel</button>
+            <button
+              className="btn primary"
+              onClick={submit}
+              disabled={!draft.trim() || draft.trim() === originalText.trim()}
+            >
+              Save & regenerate
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="user-text">{originalText}</div>
+          {canEdit && (
+            <span className="user-edit-hint" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8h7a3 3 0 0 1 0 6H6.5"/>
+                <polyline points="5.5,5 3,8 5.5,11"/>
+              </svg>
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 function renderMessageBlocks(message: Message, processOpen: boolean, processOnly: boolean, onReviewFile?: (path: string) => void) {
   if (message.role !== "assistant") return renderBlocks(message.blocks, false, onReviewFile)
+  const pending = Boolean(message.pending)
   if (processOnly) {
     if (!hasProcessBlocks(message.blocks)) return null
-    return <ProcessPanel blocks={message.blocks} openKey={`process-only-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+    return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
   const finalTextIndex = lastTextIndex(message.blocks, message.pending)
   if (finalTextIndex < 0) {
     if (!hasProcessBlocks(message.blocks)) return renderBlocks(message.blocks, false, onReviewFile)
-    return <ProcessPanel blocks={message.blocks} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+    return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
   const process = message.blocks.slice(0, finalTextIndex)
@@ -54,7 +194,7 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   if (!hasProcessBlocks(process)) return renderBlocks(final, false, onReviewFile)
   return (
     <>
-      <ProcessPanel blocks={process} openKey={`final-${message.id}-${finalTextIndex}`} defaultOpen={false} onReviewFile={onReviewFile} />
+      <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}-${finalTextIndex}`} defaultOpen={false} onReviewFile={onReviewFile} />
       {renderBlocks(final, false, onReviewFile)}
     </>
   )
@@ -62,11 +202,13 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
 
 function ProcessPanel({
   blocks,
+  pending,
   openKey,
   defaultOpen,
   onReviewFile,
 }: {
   blocks: Block[]
+  pending: boolean
   openKey: string
   defaultOpen: boolean
   onReviewFile?: (path: string) => void
@@ -77,10 +219,12 @@ function ProcessPanel({
     setOpen(defaultOpen)
   }, [defaultOpen, openKey])
 
+  const title = pending ? processTitle(blocks) : processSummary(blocks) ?? processTitle(blocks)
+
   return (
     <div className="process">
       <button className="process-head" onClick={() => setOpen(!open)}>
-        <span className="process-title">{processTitle(blocks)}</span>
+        <span className="process-title">{title}</span>
         <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
       </button>
       {open && <div className="process-body">{renderBlocks(blocks, true, onReviewFile)}</div>}
@@ -91,22 +235,34 @@ function ProcessPanel({
 function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path: string) => void) {
   const nodes: ReactNode[] = []
   let tools: Extract<Block, { type: "tool" }>[] = []
-  const flushTools = () => {
-    if (!tools.length) return
-    nodes.push(<ToolTimeline key={`tools-${nodes.length}`} updates={tools.map((b) => b.update)} onReviewFile={onReviewFile} />)
+  let patches: Extract<Block, { type: "patch" }>[] = []
+  const flushTrace = () => {
+    if (!tools.length && !patches.length) return
+    nodes.push(
+      <ToolTrace
+        key={`trace-${nodes.length}`}
+        updates={tools.map((b) => b.update)}
+        patches={patches.map((b) => ({ files: b.files, diff: b.diff }))}
+        onReviewFile={onReviewFile}
+      />,
+    )
     tools = []
+    patches = []
   }
   blocks.forEach((b, i) => {
     if (b.type === "tool") {
       tools.push(b)
       return
     }
-    flushTools()
+    if (b.type === "patch") {
+      patches.push(b)
+      return
+    }
+    flushTrace()
     if (b.type === "text") nodes.push(processMode ? <ProcessText key={i} text={b.text} /> : <Markdown key={i} text={b.text} />)
     if (b.type === "reasoning") nodes.push(<ProcessText key={i} text={b.text} />)
-    if (b.type === "patch") nodes.push(<PatchBlock key={i} files={b.files} onReviewFile={onReviewFile} />)
   })
-  flushTools()
+  flushTrace()
   return nodes
 }
 
@@ -166,6 +322,74 @@ function processTitle(blocks: Block[]) {
   return "Working"
 }
 
+function processSummary(blocks: Block[]) {
+  const tools = blocks.flatMap((block) => block.type === "tool" ? [block.update] : [])
+  if (!tools.length) return undefined
+
+  const reads = new Set<string>()
+  const edits = new Set<string>()
+  const creates = new Set<string>()
+  let searches = 0
+  let runs = 0
+  let fetches = 0
+  let other = 0
+
+  for (const update of tools) {
+    if (update.tool === "read") {
+      const path = pickToolPath(update)
+      if (path) reads.add(path)
+      else other++
+      continue
+    }
+    if (update.tool === "edit") {
+      const path = pickToolPath(update)
+      if (path) (update.input?.oldString === "" ? creates : edits).add(path)
+      else other++
+      continue
+    }
+    if (update.tool === "write") {
+      const path = pickToolPath(update)
+      const exists = update.metadata?.exists !== false
+      if (path) (exists ? edits : creates).add(path)
+      else other++
+      continue
+    }
+    if (update.tool === "apply_patch") {
+      const files = Array.isArray(update.metadata?.files) ? update.metadata.files : []
+      for (const file of files) {
+        if (typeof file !== "object" || file === null) continue
+        const record = file as Record<string, unknown>
+        if (typeof record.relativePath !== "string") continue
+        if (record.type === "add") creates.add(record.relativePath)
+        else if (record.type === "delete") edits.add(record.relativePath)
+        else edits.add(record.relativePath)
+      }
+      continue
+    }
+    if (update.tool === "grep" || update.tool === "glob") { searches++; continue }
+    if (update.tool === "bash") { runs++; continue }
+    if (update.tool === "webfetch") { fetches++; continue }
+    other++
+  }
+
+  const parts: string[] = []
+  if (reads.size) parts.push(`Read ${reads.size}`)
+  if (creates.size) parts.push(`Created ${creates.size}`)
+  if (edits.size) parts.push(`Edited ${edits.size}`)
+  if (searches) parts.push(`${searches} ${searches === 1 ? "search" : "searches"}`)
+  if (runs) parts.push(`${runs} ${runs === 1 ? "command" : "commands"}`)
+  if (fetches) parts.push(`${fetches} ${fetches === 1 ? "fetch" : "fetches"}`)
+  if (!parts.length && other) parts.push(`${other} ${other === 1 ? "tool" : "tools"}`)
+  return parts.length ? parts.join(" · ") : undefined
+}
+
+function pickToolPath(update: { input?: Record<string, unknown>; title?: string; tool: string }): string | undefined {
+  if (typeof update.input?.filePath === "string") return update.input.filePath
+  if (typeof update.input?.path === "string") return update.input.path
+  if (update.title) return update.title
+  return undefined
+}
+
 function textTitle(text: string) {
   const [first = ""] = text.trim().split(/\n+/)
   const title = cleanProcessText(first).replace(/[:.]+$/, "")
@@ -206,65 +430,3 @@ function inferredTextTitle(text: string) {
   return undefined
 }
 
-function PatchBlock({ files, onReviewFile }: { files: string[]; onReviewFile?: (path: string) => void }) {
-  const [open, setOpen] = useState(files.length <= 4)
-  const items = files.map((file) => patchFile(file))
-
-  return (
-    <div className="patch">
-      <button className="patch-head" onClick={() => setOpen(!open)}>
-        <span className="patch-title">Changed {files.length} file{files.length === 1 ? "" : "s"}</span>
-        <span className="patch-summary">{patchSummary(items)}</span>
-        <span className={`patch-caret ${open ? "is-open" : ""}`}>›</span>
-      </button>
-      {open && (
-        <ul className="patch-list">
-          {items.map((item, i) => (
-            <li key={i} className="patch-row">
-              <span className={`patch-badge kind-${item.kind}`}>{item.label}</span>
-              <div className="patch-file-wrap">
-                <button
-                  className="btn link patch-file"
-                  onClick={() => onReviewFile ? onReviewFile(item.path) : vscode.post({ type: "openFile", path: item.path })}
-                  title={item.path}
-                >
-                  {basename(item.path)}
-                </button>
-                <div className="patch-path">{dirname(item.path)}</div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-function patchFile(file: string) {
-  const match = file.match(/^([AMD])\s+(.+)$/)
-  const code = match?.[1]
-  return {
-    path: match?.[2] ?? file,
-    kind: code === "A" ? "created" : code === "D" ? "deleted" : "updated",
-    label: code ?? "M",
-  }
-}
-
-function patchSummary(items: Array<{ kind: string }>) {
-  const created = items.filter((item) => item.kind === "created").length
-  const deleted = items.filter((item) => item.kind === "deleted").length
-  const updated = items.length - created - deleted
-  return [created ? `${created} created` : undefined, updated ? `${updated} updated` : undefined, deleted ? `${deleted} deleted` : undefined]
-    .filter(Boolean)
-    .join(" · ")
-}
-
-function basename(value: string) {
-  return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
-}
-
-function dirname(value: string) {
-  const parts = value.split(/[\\/]/).filter(Boolean)
-  if (parts.length <= 1) return ""
-  return parts.slice(0, -1).join("/")
-}

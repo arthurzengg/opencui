@@ -28,6 +28,8 @@ export type MessageUsage = {
 export type StreamHandlers = {
   /** Fired when the SSE connection is open and subscribed. */
   onReady?: () => void
+  /** Fired when a new user message is observed for this session. */
+  onUserMessage?: (messageID: string) => void
   /** Fired when a new assistant message appears for this session. */
   onAssistantStart?: (messageID: string) => void
   /** Fired once when an assistant message is marked finished or errored. */
@@ -65,6 +67,7 @@ export function subscribeSession(
 
   const seenLen = new Map<string, number>()
   const seenAssistantMessages = new Set<string>()
+  const seenUserMessages = new Set<string>()
   const assistantFinished = new Set<string>()
   const toolStatus = new Map<string, string>()
   const seenPatches = new Set<string>()
@@ -121,6 +124,14 @@ export function subscribeSession(
 
   function onMessageUpdated(info: any) {
     if (!info || info.sessionID !== sessionID) return
+    if (info.role === "user") {
+      const uid = info.id as string | undefined
+      if (uid && !seenUserMessages.has(uid)) {
+        seenUserMessages.add(uid)
+        handlers.onUserMessage?.(uid)
+      }
+      return
+    }
     if (info.role !== "assistant") return
     const mid = info.id as string
     if (!seenAssistantMessages.has(mid)) {

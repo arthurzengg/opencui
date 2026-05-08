@@ -31,6 +31,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("opencui.conversation.select", () => chat.pickConversation()),
     vscode.commands.registerCommand("opencui.review.acceptHunk", (key: string) => chat.reviewHunk(key, "accepted")),
     vscode.commands.registerCommand("opencui.review.rejectHunk", (key: string) => chat.reviewHunk(key, "rejected")),
+    vscode.commands.registerCommand("opencui.review.deletedLine", () => { /* noop — anchors a non-clickable lens */ }),
     vscode.commands.registerCommand("opencui.inlineEdit", () => inline.run()),
     vscode.commands.registerCommand("opencui.selectAgent", () => picker.pickAgent()),
     vscode.commands.registerCommand("opencui.selectModel", () => picker.pickModel()),

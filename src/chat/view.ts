@@ -24,6 +24,7 @@ import type {
 
 const CONVERSATIONS_KEY = "opencui.conversations"
 const ACTIVE_CONVERSATION_KEY = "opencui.activeConversation"
+const MIGRATED_TO_WORKSPACE_KEY = "opencui.migratedToWorkspaceState"
 
 type SavedConversation = ConversationSummary & {
   createdAt: number
@@ -43,12 +44,185 @@ type ReviewLensEntry = {
   oldText: string
   newText: string
   reversible: boolean
+  hunkCount: number
+  /** Document line numbers (0-based) for AI-added lines in this hunk cluster. */
+  addedLines: number[]
+  /** Deletion sites: text of the deleted line and the document line index where it should visually appear. */
+  deletedAtLines: { line: number; text: string }[]
+}
+
+type ReviewLensSummary = {
+  entries: ReviewLensEntry[]
+  unlocatableByUri: Map<string, { uri: vscode.Uri; count: number }>
 }
 
 type ReviewLensVariant = {
   oldText: string
   newText: string
   reversible: boolean
+}
+
+class ReviewDecorations {
+  private byUri = new Map<string, ReviewDecorationData>()
+  private insetsByEditor = new Map<string, vscode.Disposable[]>()
+
+  private readonly addedLine = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    overviewRulerColor: new vscode.ThemeColor("gitDecoration.addedResourceForeground"),
+    overviewRulerLane: vscode.OverviewRulerLane.Left,
+    backgroundColor: new vscode.ThemeColor("diffEditor.insertedLineBackground"),
+    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+  })
+
+  private readonly deletedAnchor = vscode.window.createTextEditorDecorationType({
+    overviewRulerColor: new vscode.ThemeColor("gitDecoration.deletedResourceForeground"),
+    overviewRulerLane: vscode.OverviewRulerLane.Left,
+    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+  })
+
+  private readonly unlocatableBanner = vscode.window.createTextEditorDecorationType({
+    isWholeLine: true,
+    after: {
+      contentText: "",
+      color: new vscode.ThemeColor("editorWarning.foreground"),
+      margin: "0 0 0 16px",
+      fontStyle: "italic",
+    },
+    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
+  })
+
+  setForUri(uri: vscode.Uri, data: ReviewDecorationData) {
+    this.byUri.set(uri.toString(), data)
+    this.applyToVisible(uri)
+  }
+
+  activeUriKeys(): string[] {
+    return [...this.byUri.keys()]
+  }
+
+  clearUriKey(uriKey: string) {
+    if (!this.byUri.delete(uriKey)) return
+    for (const editor of vscode.window.visibleTextEditors) {
+      if (editor.document.uri.toString() !== uriKey) continue
+      editor.setDecorations(this.addedLine, [])
+      editor.setDecorations(this.deletedAnchor, [])
+      editor.setDecorations(this.unlocatableBanner, [])
+      this.disposeInsetsForEditor(editorKey(editor))
+    }
+  }
+
+  clearAll() {
+    this.byUri.clear()
+    for (const editor of vscode.window.visibleTextEditors) {
+      editor.setDecorations(this.addedLine, [])
+      editor.setDecorations(this.deletedAnchor, [])
+      editor.setDecorations(this.unlocatableBanner, [])
+    }
+    this.disposeAllInsets()
+  }
+
+  applyToVisible(uri?: vscode.Uri) {
+    const target = uri?.toString()
+    for (const editor of vscode.window.visibleTextEditors) {
+      const editorUri = editor.document.uri.toString()
+      if (target && editorUri !== target) continue
+      const data = this.byUri.get(editorUri)
+      if (!data) {
+        editor.setDecorations(this.addedLine, [])
+        editor.setDecorations(this.deletedAnchor, [])
+        editor.setDecorations(this.unlocatableBanner, [])
+        this.disposeInsetsForEditor(editorKey(editor))
+        continue
+      }
+      editor.setDecorations(this.addedLine, data.addedRanges)
+      editor.setDecorations(this.deletedAnchor, data.deletedRanges)
+      editor.setDecorations(this.unlocatableBanner, data.banner ? [data.banner] : [])
+      this.applyInsets(editor, data.deletions)
+    }
+  }
+
+  private applyInsets(editor: vscode.TextEditor, deletions: DeletionInset[]) {
+    const key = editorKey(editor)
+    this.disposeInsetsForEditor(key)
+    if (!deletions.length) return
+    const insets: vscode.Disposable[] = []
+    const win = vscode.window as unknown as {
+      createWebviewTextEditorInset?: (
+        editor: vscode.TextEditor,
+        line: number,
+        height: number,
+        options?: vscode.WebviewOptions,
+      ) => { webview: vscode.Webview; dispose: () => void; onDidDispose: vscode.Event<void> }
+    }
+    if (typeof win.createWebviewTextEditorInset !== "function") return
+    for (const del of deletions) {
+      const lineCount = editor.document.lineCount
+      if (lineCount === 0) continue
+      // Render the inset BELOW (line-1) so the ghost block sits visually ABOVE
+      // the surviving line at del.line. For del.line === 0, render below it (best effort).
+      const insetLine = del.line === 0 ? 0 : del.line - 1
+      try {
+        const inset = win.createWebviewTextEditorInset!(editor, insetLine, del.texts.length, { enableScripts: false })
+        inset.webview.html = renderDeletedInsetHtml(del.texts)
+        insets.push(inset)
+      } catch (error) {
+        log("createWebviewTextEditorInset failed", error)
+      }
+    }
+    if (insets.length) this.insetsByEditor.set(key, insets)
+  }
+
+  private disposeInsetsForEditor(key: string) {
+    const list = this.insetsByEditor.get(key)
+    if (!list) return
+    for (const item of list) {
+      try { item.dispose() } catch { /* swallow */ }
+    }
+    this.insetsByEditor.delete(key)
+  }
+
+  private disposeAllInsets() {
+    for (const list of this.insetsByEditor.values()) {
+      for (const item of list) {
+        try { item.dispose() } catch { /* swallow */ }
+      }
+    }
+    this.insetsByEditor.clear()
+  }
+
+  dispose() {
+    this.disposeAllInsets()
+    this.addedLine.dispose()
+    this.deletedAnchor.dispose()
+    this.unlocatableBanner.dispose()
+  }
+}
+
+type DeletionInset = { line: number; texts: string[] }
+
+type ReviewDecorationData = {
+  addedRanges: vscode.Range[]
+  deletedRanges: vscode.DecorationOptions[]
+  deletions: DeletionInset[]
+  banner?: vscode.DecorationOptions
+}
+
+function editorKey(editor: vscode.TextEditor): string {
+  return `${editor.document.uri.toString()}#${editor.viewColumn ?? "n"}`
+}
+
+function renderDeletedInsetHtml(texts: string[]): string {
+  const rows = texts.map((line) => `<div class="line">${escapeForHtml(line || " ")}</div>`).join("")
+  return `<!doctype html><html><head><style>
+    html, body { margin: 0; padding: 0; background: transparent; color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149); font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); line-height: 1.4; }
+    body { background: var(--vscode-diffEditor-removedLineBackground, rgba(248, 81, 73, 0.15)); border-left: 2px solid var(--vscode-gitDecoration-deletedResourceForeground, #f85149); padding-left: 8px; }
+    .line { white-space: pre; padding: 0 4px; }
+    .line::before { content: "- "; opacity: 0.7; }
+  </style></head><body>${rows}</body></html>`
+}
+
+function escapeForHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
 class ReviewCodeLensProvider implements vscode.CodeLensProvider {
@@ -74,25 +248,46 @@ class ReviewCodeLensProvider implements vscode.CodeLensProvider {
     return this.byKey.get(key)
   }
 
+  entriesForUri(uri: vscode.Uri): ReviewLensEntry[] {
+    const target = uri.toString()
+    return this.entries.filter((entry) => entry.uri.toString() === target)
+  }
+
+  entriesForAllUris(): ReviewLensEntry[] {
+    return [...this.entries]
+  }
+
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
-    const uri = document.uri.toString()
-    return this.entries
-      .filter((entry) => entry.uri.toString() === uri)
-      .flatMap((entry) => {
-        const lenses = [new vscode.CodeLens(entry.range, {
-          title: "Keep",
-          command: "opencui.review.acceptHunk",
+    return this.entriesForUri(document.uri).flatMap((entry) => {
+      const suffix = entry.hunkCount > 1 ? ` (${entry.hunkCount})` : ""
+      const removedCount = entry.deletedAtLines.length
+      const lenses: vscode.CodeLens[] = []
+      // Single summary tag for any removed lines — hover the red-tinted line below
+      // to see the actual deleted content in a code block.
+      if (removedCount > 0) {
+        lenses.push(new vscode.CodeLens(entry.range, {
+          title: `$(diff-removed) -${removedCount}`,
+          tooltip: "Hover the highlighted line to see the removed code",
+          command: "opencui.review.deletedLine",
+          arguments: [],
+        }))
+      }
+      lenses.push(new vscode.CodeLens(entry.range, {
+        title: `$(check) Keep${suffix}`,
+        tooltip: entry.hunkCount > 1 ? `Keep ${entry.hunkCount} adjacent changes` : "Keep this change",
+        command: "opencui.review.acceptHunk",
+        arguments: [entry.key],
+      }))
+      if (entry.reversible) {
+        lenses.push(new vscode.CodeLens(entry.range, {
+          title: `$(discard) Undo${suffix}`,
+          tooltip: entry.hunkCount > 1 ? `Undo ${entry.hunkCount} adjacent changes` : "Undo this change",
+          command: "opencui.review.rejectHunk",
           arguments: [entry.key],
-        })]
-        if (entry.reversible) {
-          lenses.push(new vscode.CodeLens(entry.range, {
-            title: "Undo",
-            command: "opencui.review.rejectHunk",
-            arguments: [entry.key],
-          }))
-        }
-        return lenses
-      })
+        }))
+      }
+      return lenses
+    })
   }
 }
 
@@ -108,19 +303,24 @@ export class ChatView implements vscode.WebviewViewProvider {
   private conversations: SavedConversation[]
   private activeConversationID: string
   private messages: ChatMessage[] = []
+  /** Webview ID of the user message currently awaiting a backend ID from the stream. */
+  private pendingUserBackendID?: string
   private todos: Todo[] = []
   private reviewHunks: Record<string, ReviewHunkState> = {}
   private reviewPanel?: vscode.WebviewPanel
   private reviewChange?: ReviewChange
   private readonly reviewCodeLens = new ReviewCodeLensProvider()
+  private readonly reviewDecorations = new ReviewDecorations()
+  private reviewDecorationListener?: vscode.Disposable
 
   constructor(
     private context: vscode.ExtensionContext,
     private servers: ServerManager,
     private prefs: Preferences,
   ) {
-    this.conversations = context.globalState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
-    this.activeConversationID = context.globalState.get<string>(ACTIVE_CONVERSATION_KEY) ?? ""
+    migrateConversationsToWorkspace(context)
+    this.conversations = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
+    this.activeConversationID = context.workspaceState.get<string>(ACTIVE_CONVERSATION_KEY) ?? ""
     if (!this.conversations.length) this.addConversation("New conversation")
     if (!this.conversations.some((c) => c.id === this.activeConversationID)) {
       this.activeConversationID = this.conversations[0]!.id
@@ -328,8 +528,8 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private async persistConversations() {
-    await this.context.globalState.update(CONVERSATIONS_KEY, this.conversations)
-    await this.context.globalState.update(ACTIVE_CONVERSATION_KEY, this.activeConversationID)
+    await this.context.workspaceState.update(CONVERSATIONS_KEY, this.conversations)
+    await this.context.workspaceState.update(ACTIVE_CONVERSATION_KEY, this.activeConversationID)
   }
 
   private saveActive() {
@@ -373,8 +573,14 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "userMessage":
         this.messages = [
           ...this.messages,
-          { id: msg.id, role: "user", blocks: [{ type: "text", text: msg.text }], ref: msg.ref },
+          { id: msg.id, role: "user", blocks: [{ type: "text", text: msg.text }], ref: msg.ref, backendID: msg.backendID },
         ]
+        this.saveActive()
+        return
+      case "userMessageBackendID":
+        this.messages = this.messages.map((m) =>
+          m.id === msg.id ? { ...m, backendID: msg.backendID } : m,
+        )
         this.saveActive()
         return
       case "assistantStart":
@@ -474,6 +680,9 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "send":
         await this.handleSend(msg.text)
         return
+      case "editMessage":
+        await this.handleEdit(msg.id, msg.text)
+        return
       case "abort":
         await this.abortCurrent()
         return
@@ -511,10 +720,15 @@ export class ChatView implements vscode.WebviewViewProvider {
           state: await reviewHunk(msg.path, msg.action, msg.oldText, msg.newText) ? msg.action : undefined,
         })
         return
+      case "reviewAllInChange":
+        await this.handleReviewAllInChange(msg.source, msg.path, msg.action)
+        return
       case "selectAgent":
+        log("selectAgent → executing opencui.selectAgent")
         await vscode.commands.executeCommand("opencui.selectAgent")
         return
       case "selectModel":
+        log("selectModel → executing opencui.selectModel")
         await vscode.commands.executeCommand("opencui.selectModel")
         return
       case "permissionReply": {
@@ -550,9 +764,11 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async handleSend(text: string) {
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
+    const userMessageID = "u_" + Date.now()
+    this.pendingUserBackendID = userMessageID
     this.post({
       type: "userMessage",
-      id: "u_" + Date.now(),
+      id: userMessageID,
       text,
       ref: { path: ctx.filePath, label },
     })
@@ -607,9 +823,54 @@ export class ChatView implements vscode.WebviewViewProvider {
     // No UI action here — the SSE subscription owns assistant lifecycle.
   }
 
+  private async handleEdit(webviewID: string, text: string) {
+    const target = this.messages.find((m) => m.id === webviewID && m.role === "user")
+    if (!target) {
+      log("editMessage: user message not found", webviewID)
+      return
+    }
+    const trimmed = text.trim()
+    if (!trimmed) return
+
+    if (target.backendID && this.sessionID) {
+      try {
+        const backend = await this.servers.ensure()
+        const res = await backend.client.session.revert({
+          path: { id: this.sessionID },
+          body: { messageID: target.backendID },
+        })
+        if (res.error) log("session.revert failed", res.error)
+      } catch (e) {
+        log("session.revert threw", e)
+      }
+    } else {
+      log("editMessage: no backendID — truncating locally only", webviewID)
+    }
+
+    const idx = this.messages.findIndex((m) => m.id === webviewID)
+    if (idx >= 0) {
+      this.messages = this.messages.slice(0, idx)
+      this.todos = []
+      this.reviewHunks = {}
+      this.saveActive()
+      this.sendConversationState()
+      this.queueReviewCodeLensSync()
+    }
+
+    await this.handleSend(trimmed)
+  }
+
   private async attachSubscription(backend: Backend, sessionID: string) {
     this.subscription?.abort()
     this.subscription = subscribeSession(backend, sessionID, {
+      onUserMessage: (mid) => {
+        const targetID = this.pendingUserBackendID
+        if (!targetID) return
+        const target = this.messages.find((m) => m.id === targetID)
+        if (!target || target.backendID) return
+        this.pendingUserBackendID = undefined
+        this.post({ type: "userMessageBackendID", id: targetID, backendID: mid })
+      },
       onAssistantStart: (mid) => {
         const webviewID = "a_" + mid
         this.messageMap.set(mid, webviewID)
@@ -694,7 +955,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.reviewPanel = undefined
     try {
       const doc = await openFileDocument(change.path)
-      const entries = reviewLensEntries(change, this.reviewHunks, doc)
+      const { entries } = reviewLensEntries(change, this.reviewHunks, doc)
       await this.syncReviewCodeLens()
       const editor = await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
       if (entries[0]) editor.revealRange(entries[0].range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
@@ -712,6 +973,47 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.post({ type: "reviewHunkState", key: entryKey, state })
     }
     await this.syncReviewCodeLens()
+  }
+
+  private async handleReviewAllInChange(source: string, requestedPath: string, action: ReviewHunkState) {
+    const all = reviewChanges(this.messages)
+    // Match every change for this path, not just the one matching `source`.
+    // A single physical edit can show up as multiple ReviewChange records
+    // (tool block + patch block of the same hunk produce different sources
+    // and therefore different reviewKeys). If we only mark the source-matched
+    // record's hunks reviewed, the other record's hunks still spawn codelenses
+    // and decorations on the next sync. For reject this is masked because the
+    // file actually changes and the duplicate hunks become unlocatable; for
+    // accept the file is unchanged, so duplicates would linger forever.
+    const targets = all.filter((c) => samePath(c.path, requestedPath))
+    if (!targets.length) {
+      log("reviewAllInChange: no matching change", { source, path: requestedPath, available: all.map((c) => ({ source: c.source, path: c.path })) })
+      return
+    }
+    let any = false
+    for (const change of targets) {
+      const hunks = splitReviewDiff(change.patch).hunks
+      for (const hunk of hunks) {
+        const key = reviewKey(change, hunk.id)
+        if (this.reviewHunks[key]) continue
+        if (action === "rejected" && !hunk.reversible) continue
+        const ok = await reviewHunk(change.path, action, hunk.oldText, hunk.newText, true)
+        if (ok) {
+          this.post({ type: "reviewHunkState", key, state: action })
+          any = true
+          continue
+        }
+        // For reject, the first change in `targets` may have already reverted
+        // the file — subsequent reviewHunk calls then fail to relocate newText.
+        // Still mark the duplicate hunk as reviewed so its codelens clears.
+        if (action === "rejected") {
+          this.post({ type: "reviewHunkState", key, state: action })
+          any = true
+        }
+      }
+    }
+    if (any) await this.syncReviewCodeLens()
+    else log("reviewAllInChange: no hunks applied", { source, path: requestedPath, action })
   }
 
   private async onReviewPanelMessage(msg: { type?: string; key?: string; path?: string; action?: ReviewHunkState; oldText?: string; newText?: string }) {
@@ -745,19 +1047,121 @@ export class ChatView implements vscode.WebviewViewProvider {
     const changes = reviewChanges(this.messages).filter((change) => isTextReviewPath(change.path))
     if (!changes.length) {
       this.reviewCodeLens.clear()
+      this.reviewDecorations.clearAll()
+      this.ensureReviewDecorationListener(false)
       return
     }
     const entries: ReviewLensEntry[] = []
+    const unlocatableByUri = new Map<string, { uri: vscode.Uri; count: number }>()
+    const docByUri = new Map<string, vscode.TextDocument>()
     for (const change of changes) {
       try {
         const doc = visibleReviewDocument(change.path)
         if (!doc) continue
-        entries.push(...reviewLensEntries(change, this.reviewHunks, doc))
+        docByUri.set(doc.uri.toString(), doc)
+        const result = reviewLensEntries(change, this.reviewHunks, doc)
+        entries.push(...result.entries)
+        if (result.unlocatable > 0) {
+          const key = doc.uri.toString()
+          const existing = unlocatableByUri.get(key) ?? { uri: doc.uri, count: 0 }
+          existing.count += result.unlocatable
+          unlocatableByUri.set(key, existing)
+        }
       } catch (e) {
         log(`could not prepare review CodeLens for ${change.path}`, e)
       }
     }
     this.reviewCodeLens.setEntries(entries)
+    this.applyReviewDecorations(docByUri, unlocatableByUri)
+    this.ensureReviewDecorationListener(true)
+  }
+
+  private applyReviewDecorations(
+    docByUri: Map<string, vscode.TextDocument>,
+    unlocatableByUri: Map<string, { uri: vscode.Uri; count: number }>,
+  ) {
+    const merged = this.reviewCodeLens.entriesForAllUris()
+    const byUri = new Map<string, { doc: vscode.TextDocument; entries: ReviewLensEntry[] }>()
+    for (const entry of merged) {
+      const key = entry.uri.toString()
+      const doc = docByUri.get(key)
+      if (!doc) continue
+      const bucket = byUri.get(key) ?? { doc, entries: [] }
+      bucket.entries.push(entry)
+      byUri.set(key, bucket)
+    }
+
+    // Clear any file that previously had decorations but no longer needs them
+    // (e.g. the user accepted/rejected the last remaining hunk in that file).
+    const stillActive = new Set<string>([...byUri.keys(), ...unlocatableByUri.keys()])
+    for (const previousKey of this.reviewDecorations.activeUriKeys()) {
+      if (!stillActive.has(previousKey)) this.reviewDecorations.clearUriKey(previousKey)
+    }
+    const touched = new Set<string>()
+    for (const [key, { doc, entries }] of byUri) {
+      touched.add(key)
+      const lineCount = doc.lineCount
+      const addedSet = new Set<number>()
+      const deletedByLine = new Map<number, string[]>()
+      for (const entry of entries) {
+        for (const ln of entry.addedLines) {
+          if (ln >= 0 && ln < lineCount) addedSet.add(ln)
+        }
+        for (const del of entry.deletedAtLines) {
+          if (del.line < 0 || del.line >= lineCount) continue
+          const list = deletedByLine.get(del.line) ?? []
+          list.push(del.text)
+          deletedByLine.set(del.line, list)
+        }
+      }
+      const addedRanges = [...addedSet].sort((a, b) => a - b).map((ln) => doc.lineAt(ln).range)
+      const langID = doc.languageId
+      const sortedDeletions = [...deletedByLine.entries()].sort((a, b) => a[0] - b[0])
+      const deletedRanges: vscode.DecorationOptions[] = sortedDeletions.map(([line, texts]) => {
+        const md = new vscode.MarkdownString()
+        md.isTrusted = false
+        md.supportThemeIcons = true
+        md.appendMarkdown(`$(diff-removed) **Removed by AI** — ${texts.length} ${texts.length === 1 ? "line" : "lines"}\n\n`)
+        md.appendCodeblock(texts.join("\n"), langID)
+        return { range: doc.lineAt(line).range, hoverMessage: md }
+      })
+      const deletions: DeletionInset[] = sortedDeletions.map(([line, texts]) => ({ line, texts }))
+      const banner = this.buildUnlocatableBanner(doc, unlocatableByUri.get(key)?.count ?? 0)
+      this.reviewDecorations.setForUri(doc.uri, { addedRanges, deletedRanges, deletions, banner })
+    }
+    for (const [key, info] of unlocatableByUri) {
+      if (touched.has(key)) continue
+      const doc = docByUri.get(key)
+      if (!doc) continue
+      const banner = this.buildUnlocatableBanner(doc, info.count)
+      if (!banner) continue
+      this.reviewDecorations.setForUri(doc.uri, { addedRanges: [], deletedRanges: [], deletions: [], banner })
+    }
+  }
+
+  private buildUnlocatableBanner(doc: vscode.TextDocument, count: number): vscode.DecorationOptions | undefined {
+    if (!count) return undefined
+    const message = count === 1
+      ? "1 AI change can't be located here — review in the OpenCUI sidebar."
+      : `${count} AI changes can't be located here — review in the OpenCUI sidebar.`
+    return {
+      range: new vscode.Range(0, 0, 0, 0),
+      renderOptions: {
+        after: { contentText: `  ${message}` },
+      },
+    }
+  }
+
+  private ensureReviewDecorationListener(active: boolean) {
+    if (active && !this.reviewDecorationListener) {
+      this.reviewDecorationListener = vscode.window.onDidChangeVisibleTextEditors(() => {
+        this.reviewDecorations.applyToVisible()
+      })
+    }
+    if (!active && this.reviewDecorationListener) {
+      this.reviewDecorationListener.dispose()
+      this.reviewDecorationListener = undefined
+    }
   }
 
   private async buildHtml(webview: vscode.Webview): Promise<string> {
@@ -808,6 +1212,27 @@ function upsertTool(messages: ChatMessage[], id: string, update: WireToolUpdate)
     }
     return { ...message, blocks: [...message.blocks, { type: "tool", update }] }
   })
+}
+
+/**
+ * One-shot copy of conversation data from the legacy global storage into the
+ * current workspace's state. Runs once per workspace; subsequent activations
+ * see the migrated data already in workspaceState and skip the copy.
+ *
+ * Existing global storage keys are cleared after the first successful migration
+ * so a different workspace doesn't see the same conversations duplicated.
+ */
+function migrateConversationsToWorkspace(context: vscode.ExtensionContext) {
+  if (context.workspaceState.get<boolean>(MIGRATED_TO_WORKSPACE_KEY, false)) return
+  const legacy = context.globalState.get<SavedConversation[]>(CONVERSATIONS_KEY)
+  if (legacy && legacy.length) {
+    void context.workspaceState.update(CONVERSATIONS_KEY, legacy)
+    const legacyActive = context.globalState.get<string>(ACTIVE_CONVERSATION_KEY)
+    if (legacyActive) void context.workspaceState.update(ACTIVE_CONVERSATION_KEY, legacyActive)
+    void context.globalState.update(CONVERSATIONS_KEY, undefined)
+    void context.globalState.update(ACTIVE_CONVERSATION_KEY, undefined)
+  }
+  void context.workspaceState.update(MIGRATED_TO_WORKSPACE_KEY, true)
 }
 
 function reviewChanges(messages: ChatMessage[]) {
@@ -1280,43 +1705,176 @@ function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
   return { hunks }
 }
 
-function reviewLensEntries(change: ReviewChange, reviewed: Record<string, ReviewHunkState>, doc: vscode.TextDocument): ReviewLensEntry[] {
+function reviewLensEntries(change: ReviewChange, reviewed: Record<string, ReviewHunkState>, doc: vscode.TextDocument): { entries: ReviewLensEntry[]; unlocatable: number } {
   const current = doc.getText()
-  return splitReviewDiff(change.patch).hunks
-    .map((hunk) => ({ ...hunk, key: reviewKey(change, hunk.id) }))
-    .filter((hunk) => !reviewed[hunk.key])
-    .map((hunk) => {
-      const match = findHunkText(current, hunk.anchorText || hunk.newText)
-      const start = match?.start ?? 0
-      const end = match?.end ?? start
-      return {
-        key: hunk.key,
-        keys: [hunk.key],
-        path: change.path,
-        uri: doc.uri,
-        range: new vscode.Range(doc.positionAt(start), doc.positionAt(end)),
-        variants: [{ oldText: hunk.oldText, newText: hunk.newText, reversible: hunk.reversible }],
-        oldText: hunk.oldText,
-        newText: hunk.newText,
-        reversible: hunk.reversible,
-      }
+  let unlocatable = 0
+  const entries: ReviewLensEntry[] = []
+  const lineCount = doc.lineCount
+  for (const hunk of splitReviewDiff(change.patch).hunks) {
+    const key = reviewKey(change, hunk.id)
+    if (reviewed[key]) continue
+    const match = locateHunkInDocument(current, hunk)
+    if (!match) {
+      unlocatable += 1
+      continue
+    }
+    const baseLine = doc.positionAt(match.start).line
+    const layout = computeHunkLineLayout(hunk, baseLine, lineCount)
+    const firstChanged = layout.firstChangedLine ?? baseLine
+    const lastChanged = layout.lastChangedLine ?? firstChanged
+    const lineEnd = doc.lineAt(Math.min(lastChanged, lineCount - 1)).text.length
+    entries.push({
+      key,
+      keys: [key],
+      path: change.path,
+      uri: doc.uri,
+      range: new vscode.Range(firstChanged, 0, Math.min(lastChanged, lineCount - 1), lineEnd),
+      variants: [{ oldText: hunk.oldText, newText: hunk.newText, reversible: hunk.reversible }],
+      oldText: hunk.oldText,
+      newText: hunk.newText,
+      reversible: hunk.reversible,
+      hunkCount: 1,
+      addedLines: layout.addedLines,
+      deletedAtLines: layout.deletedAtLines,
     })
+  }
+  return { entries, unlocatable }
 }
 
+function locateHunkInDocument(current: string, hunk: ReviewDiffHunk): { start: number; end: number } | undefined {
+  // Prefer matching newText since it's the actual content present in the file.
+  // Only fall back to anchorText if newText is empty (pure deletion at the very edge of the file).
+  if (hunk.newText.length > 0) {
+    const direct = findHunkText(current, hunk.newText)
+    if (direct) return direct
+  }
+  if (hunk.anchorText) {
+    const anchor = findHunkText(current, hunk.anchorText)
+    if (anchor) return anchor
+  }
+  return undefined
+}
+
+function computeHunkLineLayout(hunk: ReviewDiffHunk, baseLine: number, lineCount: number) {
+  let lineOffset = 0
+  const addedLines: number[] = []
+  const deletedAtLines: { line: number; text: string }[] = []
+  let firstChangedLine: number | undefined
+  let lastChangedLine: number | undefined
+  const remember = (line: number) => {
+    if (firstChangedLine === undefined || line < firstChangedLine) firstChangedLine = line
+    if (lastChangedLine === undefined || line > lastChangedLine) lastChangedLine = line
+  }
+  for (const entry of hunk.lines) {
+    if (entry.kind === "hunk") continue
+    if (entry.kind === "add") {
+      const ln = baseLine + lineOffset
+      addedLines.push(ln)
+      remember(ln)
+      lineOffset += 1
+      continue
+    }
+    if (entry.kind === "del") {
+      // Visually attach the deleted text to the next surviving line (or last) so users see what was removed.
+      const ln = Math.max(0, Math.min(baseLine + lineOffset, Math.max(lineCount - 1, 0)))
+      deletedAtLines.push({ line: ln, text: reviewLineText(entry) })
+      remember(ln)
+      continue
+    }
+    if (entry.kind === "ctx") {
+      lineOffset += 1
+    }
+  }
+  return { addedLines, deletedAtLines, firstChangedLine, lastChangedLine }
+}
+
+const REVIEW_LENS_MERGE_LINE_GAP = 3
+
 function mergeReviewLensEntries(entries: ReviewLensEntry[]) {
-  const merged = new Map<string, ReviewLensEntry>()
+  const collapsed = new Map<string, ReviewLensEntry>()
   for (const entry of entries) {
     const fingerprint = reviewLensFingerprint(entry)
-    const existing = merged.get(fingerprint)
+    const existing = collapsed.get(fingerprint)
     if (!existing) {
-      merged.set(fingerprint, { ...entry, keys: [...entry.keys], variants: [...entry.variants] })
+      collapsed.set(fingerprint, {
+        ...entry,
+        keys: [...entry.keys],
+        variants: [...entry.variants],
+        addedLines: [...entry.addedLines],
+        deletedAtLines: [...entry.deletedAtLines],
+      })
       continue
     }
     existing.keys = unique([...existing.keys, ...entry.keys])
     existing.variants = uniqueReviewVariants([...existing.variants, ...entry.variants])
     existing.reversible = existing.reversible || entry.reversible
+    existing.addedLines = uniqueNumbers([...existing.addedLines, ...entry.addedLines])
+    existing.deletedAtLines = uniqueDeletions([...existing.deletedAtLines, ...entry.deletedAtLines])
   }
-  return [...merged.values()]
+  // Two records for the SAME physical edit (e.g. tool block + patch block) reduce to one variant —
+  // hunkCount stays at 1. Genuinely distinct changes that collide on start line are kept as separate
+  // variants and counted accordingly.
+  for (const entry of collapsed.values()) {
+    entry.hunkCount = Math.max(1, entry.variants.length)
+  }
+  return coalesceAdjacentLensEntries([...collapsed.values()])
+}
+
+function uniqueNumbers(items: number[]): number[] {
+  return [...new Set(items)]
+}
+
+
+function uniqueDeletions(items: { line: number; text: string }[]): { line: number; text: string }[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = `${item.line}\u0000${item.text}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function coalesceAdjacentLensEntries(entries: ReviewLensEntry[]) {
+  const byUri = new Map<string, ReviewLensEntry[]>()
+  for (const entry of entries) {
+    const key = entry.uri.toString()
+    const list = byUri.get(key) ?? []
+    list.push(entry)
+    byUri.set(key, list)
+  }
+  const result: ReviewLensEntry[] = []
+  for (const list of byUri.values()) {
+    list.sort((a, b) => (a.range.start.line - b.range.start.line) || (a.range.start.character - b.range.start.character))
+    let current: ReviewLensEntry | undefined
+    for (const entry of list) {
+      if (!current) {
+        current = { ...entry, keys: [...entry.keys], variants: [...entry.variants] }
+        continue
+      }
+      const gap = entry.range.start.line - current.range.end.line
+      if (gap <= REVIEW_LENS_MERGE_LINE_GAP) {
+        const mergedVariants = uniqueReviewVariants([...current.variants, ...entry.variants])
+        current = {
+          ...current,
+          range: new vscode.Range(current.range.start, entry.range.end.isAfter(current.range.end) ? entry.range.end : current.range.end),
+          keys: unique([...current.keys, ...entry.keys]),
+          variants: mergedVariants,
+          reversible: current.reversible || entry.reversible,
+          hunkCount: Math.max(1, mergedVariants.length),
+          newText: current.newText + (current.newText && entry.newText ? "\n" : "") + entry.newText,
+          oldText: current.oldText + (current.oldText && entry.oldText ? "\n" : "") + entry.oldText,
+          addedLines: uniqueNumbers([...current.addedLines, ...entry.addedLines]),
+          deletedAtLines: uniqueDeletions([...current.deletedAtLines, ...entry.deletedAtLines]),
+        }
+        continue
+      }
+      result.push(current)
+      current = { ...entry, keys: [...entry.keys], variants: [...entry.variants] }
+    }
+    if (current) result.push(current)
+  }
+  return result
 }
 
 function reviewLensFingerprint(entry: ReviewLensEntry) {

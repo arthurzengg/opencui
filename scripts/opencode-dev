@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OPENCODE_DIR="${OPENCODE_DEV_DIR:-"$SCRIPT_DIR/../../opencode/packages/opencode"}"
+
+cd "$OPENCODE_DIR"
+exec bun run --conditions=browser ./src/index.ts "$@"

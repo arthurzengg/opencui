@@ -12,11 +12,16 @@ export function TodoPanel({ todos }: { todos: Todo[] }) {
     <div className={`todo-panel ${collapsed ? "is-collapsed" : ""} ${active ? "has-active" : ""}`}>
       <button className="todo-header" onClick={() => setCollapsed(!collapsed)}>
         <span className={`todo-caret ${collapsed ? "" : "is-open"}`}>›</span>
-        <span>Todos</span>
+        <span className="todo-label">Todos</span>
+        {collapsed && active && (
+          <span className="todo-header-current" title={active.content}>
+            <span className="todo-header-sep">·</span>
+            <span className="todo-header-current-text">{active.content}</span>
+          </span>
+        )}
         <span className="todo-progress">{completed}/{todos.length}</span>
       </button>
       <div className="todo-body">
-        {active && <div className="todo-current">{active.content}</div>}
         <ul className="todo-list">
           {todos.map((t, i) => (
             <li key={i} className={`todo-item status-${t.status}`}>

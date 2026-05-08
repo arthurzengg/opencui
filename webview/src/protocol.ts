@@ -39,6 +39,7 @@ export type ChatMessage = {
   pending?: boolean
   error?: string
   usage?: UsageDelta
+  backendID?: string
 }
 
 export type ConversationSummary = {
@@ -81,7 +82,8 @@ export type Outbound =
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; todos: Todo[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
-  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef }
+  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string }
+  | { type: "userMessageBackendID"; id: string; backendID: string }
   | { type: "assistantStart"; id: string }
   | { type: "textDelta"; id: string; delta: string }
   | { type: "reasoningDelta"; id: string; delta: string }
@@ -101,6 +103,7 @@ export type Outbound =
 export type Inbound =
   | { type: "mounted" }
   | { type: "send"; text: string }
+  | { type: "editMessage"; id: string; text: string }
   | { type: "abort" }
   | { type: "newSession" }
   | { type: "createConversation" }
@@ -112,6 +115,7 @@ export type Inbound =
   | { type: "openFile"; path: string }
   | { type: "openReviewChange"; change: ReviewChange }
   | { type: "reviewHunk"; key: string; path: string; action: ReviewHunkState; oldText: string; newText: string }
+  | { type: "reviewAllInChange"; source: string; path: string; action: ReviewHunkState }
   | { type: "selectAgent" }
   | { type: "selectModel" }
   | { type: "permissionReply"; id: string; response: "once" | "always" | "reject" }
