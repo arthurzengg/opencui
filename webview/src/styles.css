@@ -184,7 +184,8 @@ button {
   position: relative;
   flex: 0 0 auto;
 }
-.history-trigger {
+.history-trigger,
+.new-chat-trigger {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -197,10 +198,39 @@ button {
   background: transparent;
   color: var(--vscode-foreground);
   line-height: 1;
+  cursor: pointer;
 }
 .history-trigger:hover,
-.history-trigger.is-open {
+.history-trigger.is-open,
+.new-chat-trigger:hover {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+.new-chat-icon {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  opacity: 0.85;
+}
+.new-chat-icon::before,
+.new-chat-icon::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+  border-radius: 1px;
+}
+.new-chat-icon::before {
+  left: 50%;
+  top: 0;
+  width: 1.6px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+.new-chat-icon::after {
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1.6px;
+  transform: translateY(-50%);
 }
 .history-clock {
   position: relative;
@@ -252,18 +282,56 @@ button {
   font-size: 11px;
   font-weight: 600;
 }
+/* "New chat" — small green link-style action so it reads as "create"
+   rather than "select" against the regular history rows below. */
 .history-new {
-  width: 100%;
-  padding: 5px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 3px 6px;
+  margin: 2px 0 4px;
   border: 0;
-  border-radius: 4px;
-  background: var(--vscode-button-secondaryBackground);
-  color: var(--vscode-button-secondaryForeground);
-  text-align: left;
-  font-size: 12px;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 .history-new:hover {
-  background: var(--vscode-button-secondaryHoverBackground);
+  background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #3fb950) 14%, transparent);
+}
+.history-new-icon {
+  position: relative;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+}
+.history-new-icon::before,
+.history-new-icon::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+  border-radius: 1px;
+}
+.history-new-icon::before {
+  left: 50%;
+  top: 0;
+  width: 1.6px;
+  height: 100%;
+  transform: translateX(-50%);
+}
+.history-new-icon::after {
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1.6px;
+  transform: translateY(-50%);
+}
+.history-new-text {
+  flex: 0 0 auto;
 }
 .history-search {
   margin-top: 6px;
@@ -364,13 +432,18 @@ button {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   color: var(--vscode-foreground);
 }
+.history-action.danger {
+  /* Reserve enough width to fit either "Delete" or "Confirm" so the row
+     columns don't shift when toggling between the two states. */
+  min-width: 52px;
+  text-align: center;
+}
 .history-action.danger:hover,
 .history-action.danger.is-confirming {
   color: var(--vscode-errorForeground);
 }
 .history-action.danger.is-confirming {
   background: var(--vscode-inputValidation-errorBackground, rgba(248, 81, 73, 0.18));
-  font-weight: 600;
 }
 @media (hover: none) {
   .history-action {
@@ -390,115 +463,50 @@ button {
 }
 
 /* ===== Todo panel ===== */
-.todo-panel {
-  border-bottom: 1px solid var(--vscode-panel-border);
+/* ===== Inline Todos block (in trace) ===== */
+.trace-todos {
+  margin: 6px 0;
   padding: 6px 10px 7px;
-  overflow: hidden;
-  transition: padding 0.16s ease, background-color 0.16s ease;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--radius);
+  background: var(--vscode-editorWidget-background);
 }
-.todo-panel.is-collapsed {
-  padding-bottom: 6px;
-}
-.todo-header {
+.trace-todos-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  color: inherit;
-  background: transparent;
   font-size: 11px;
   font-weight: 600;
-  opacity: 0.7;
-  margin-bottom: 4px;
-  text-align: left;
-}
-.todo-panel.is-collapsed .todo-header {
-  margin-bottom: 0;
-}
-.todo-caret {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 10px;
-  height: 16px;
-  flex-shrink: 0;
-  opacity: 0.8;
-  transform: rotate(0deg);
-  transition: transform 0.16s ease;
-}
-.todo-caret.is-open {
-  transform: rotate(90deg);
-}
-.todo-label {
-  flex: 0 0 auto;
-}
-.todo-header-current {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1 1 auto;
-  font-weight: 400;
   opacity: 0.85;
+  margin-bottom: 6px;
 }
-.todo-header-sep {
-  flex: 0 0 auto;
-  opacity: 0.5;
-}
-.todo-header-current-text {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.todo-progress {
+.trace-todos-label { flex: 0 0 auto; }
+.trace-todos-progress {
   margin-left: auto;
   flex: 0 0 auto;
   font-family: var(--vscode-editor-font-family);
   font-size: 10px;
+  opacity: 0.85;
 }
-.todo-body {
-  max-height: 150px;
-  overflow-y: auto;
-  transition: max-height 0.18s ease, opacity 0.16s ease;
-}
-.todo-panel.is-collapsed .todo-body {
-  max-height: 0;
-  overflow: hidden;
-}
-.todo-list {
+.trace-todos-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 0.14s ease, transform 0.16s ease;
 }
-.todo-panel.is-collapsed .todo-list {
-  opacity: 0;
-  transform: translateY(-4px);
-  pointer-events: none;
-}
-.todo-item {
+.trace-todo-item {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 3px 0;
   font-size: 12px;
 }
-.todo-item.status-completed {
-  opacity: 0.58;
-}
-.todo-item.status-cancelled {
-  opacity: 0.45;
-}
-.todo-item.status-completed .todo-content,
-.todo-item.status-cancelled .todo-content {
+.trace-todo-item.status-completed { opacity: 0.58; }
+.trace-todo-item.status-cancelled { opacity: 0.45; }
+.trace-todo-item.status-completed .trace-todo-content,
+.trace-todo-item.status-cancelled .trace-todo-content {
   text-decoration: line-through;
 }
-.todo-status {
+.trace-todo-status {
   position: relative;
   flex: 0 0 12px;
   width: 12px;
@@ -507,21 +515,21 @@ button {
   border-radius: 50%;
   opacity: 0.9;
 }
-.todo-item.status-in_progress .todo-status {
+.trace-todo-item.status-in_progress .trace-todo-status {
   border-color: var(--vscode-charts-yellow);
 }
-.todo-item.status-in_progress .todo-status::after {
+.trace-todo-item.status-in_progress .trace-todo-status::after {
   content: "";
   position: absolute;
   inset: 3px;
   border-radius: 50%;
   background: var(--vscode-charts-yellow);
 }
-.todo-item.status-completed .todo-status {
+.trace-todo-item.status-completed .trace-todo-status {
   border-color: var(--vscode-testing-iconPassed, #3fb950);
   background: var(--vscode-testing-iconPassed, #3fb950);
 }
-.todo-item.status-completed .todo-status::after {
+.trace-todo-item.status-completed .trace-todo-status::after {
   content: "";
   position: absolute;
   left: 3px;
@@ -532,10 +540,7 @@ button {
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg);
 }
-.todo-item.status-cancelled .todo-status {
-  border-color: var(--vscode-descriptionForeground);
-}
-.todo-item.status-cancelled .todo-status::after {
+.trace-todo-item.status-cancelled .trace-todo-status::after {
   content: "";
   position: absolute;
   left: 2.5px;
@@ -546,9 +551,8 @@ button {
   background: currentColor;
   transform: translateY(-50%);
 }
-.todo-content {
-  min-width: 0;
-}
+.trace-todo-content { min-width: 0; }
+
 
 /* ===== Messages ===== */
 .messages {
@@ -631,12 +635,63 @@ button {
 }
 
 .msg.role-user {
-  position: relative;
+  position: sticky;
+  /* Sticks to the top of the messages container as the chat scrolls. While the
+     AI streams its answer, the user's question stays visible above. When the
+     user scrolls into a different turn, the next user message takes over the
+     pinned slot — Claude.ai / ChatGPT-style "section header" pattern. */
+  top: 0;
+  z-index: 2;
   padding: 8px 10px;
+  /* Solid opaque background so scrolling content underneath never bleeds
+     through, even when a hover/list color is layered on top. */
   background: var(--vscode-input-background);
+  background-color: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: var(--radius);
   word-break: break-word;
+  /* Soft drop shadow gives the pinned bubble a subtle natural-fade transition
+     against the scrolling content below it, regardless of theme contrast. */
+  box-shadow: 0 12px 18px -10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
+}
+/* Extra gradient strip below the bubble for stronger visual feathering.
+   Uses a high-contrast shadow color with explicit alpha so it shows up
+   reliably across all themes (light/dark) where the bubble background may
+   be close to the surrounding panel color. */
+.msg.role-user::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -16px;
+  height: 16px;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.18) 0%,
+    rgba(0, 0, 0, 0.06) 40%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+/* Light themes: invert the shadow to a soft dark-blue tint for visibility. */
+@media (prefers-color-scheme: light) {
+  .msg.role-user::after {
+    background: linear-gradient(
+      to bottom,
+      rgba(50, 65, 90, 0.12) 0%,
+      rgba(50, 65, 90, 0.04) 40%,
+      transparent 100%
+    );
+  }
+}
+.msg.role-user.is-editing {
+  /* When editing the message, drop sticky positioning so the textarea + actions
+     can grow naturally without being constrained against the scroll viewport. */
+  position: relative;
+  z-index: auto;
+}
+.msg.role-user.is-editing::after {
+  display: none;
 }
 .msg.role-user .user-text {
   white-space: pre-wrap;
@@ -647,7 +702,14 @@ button {
   transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 .msg.role-user.is-editable:hover {
-  background: var(--vscode-list-hoverBackground);
+  /* Layer the (possibly semi-transparent) hover color on TOP of the opaque
+     input-background so scrolling text behind the pinned bubble never shows
+     through during hover. Without this, on themes where
+     --vscode-list-hoverBackground is rgba(...) with low alpha, hover would
+     reveal the chat content scrolling beneath the sticky message. */
+  background:
+    linear-gradient(0deg, var(--vscode-list-hoverBackground), var(--vscode-list-hoverBackground)),
+    var(--vscode-input-background);
   border-color: var(--vscode-input-border, var(--vscode-focusBorder));
 }
 .msg.role-user.is-editable:focus-visible {
@@ -1360,12 +1422,6 @@ button {
   padding: 8px 10px;
   border-top: 1px solid var(--vscode-panel-border);
   background: var(--vscode-sideBar-background);
-}
-.todo-panel + .promptbox {
-  border-top: 0;
-}
-.todo-panel.is-collapsed + .promptbox {
-  padding-top: 0;
 }
 .conversation-row {
   display: flex;

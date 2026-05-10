@@ -3,7 +3,6 @@ import { useChatState } from "./hooks/useChatState"
 import type { Message } from "./hooks/useChatState"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
-import { TodoPanel } from "./components/TodoPanel"
 import { StatusBar } from "./components/StatusBar"
 import { PermissionDialog } from "./components/PermissionDialog"
 import { ReviewPanel } from "./components/ReviewPanel"
@@ -39,6 +38,19 @@ export default function App() {
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [state.messages])
 
+  // When the user opens a different conversation from the History menu, jump
+  // to the bottom (most recent messages) and re-enable sticky-bottom mode so
+  // the previous conversation's scroll position doesn't leave the new one
+  // anchored near the top.
+  useEffect(() => {
+    if (!scrollRef.current || !state.conversationID) return
+    requestAnimationFrame(() => {
+      if (!scrollRef.current) return
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      stickToBottom.current = true
+    })
+  }, [state.conversationID])
+
   return (
     <div className="app">
       <StatusBar
@@ -54,7 +66,6 @@ export default function App() {
         onRenameConversation={renameConversation}
         onDeleteConversation={deleteConversation}
       />
-      <TodoPanel todos={state.todos} />
       <div
         className="messages"
         ref={scrollRef}

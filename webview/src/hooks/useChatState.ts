@@ -9,7 +9,6 @@ import type {
   ReviewChange,
   ReviewHunkState,
   Selection,
-  Todo,
   ToolUpdate,
   UsageDelta,
 } from "../protocol"
@@ -26,7 +25,6 @@ export type ChatState = {
   conversationID?: string
   context?: EditorContextRef
   messages: Message[]
-  todos: Todo[]
   reviewHunks: Record<string, ReviewHunkState>
   pendingPermission?: { id: string; title: string; pattern?: string | string[] }
 }
@@ -39,7 +37,6 @@ const initial: ChatState = {
   selection: {},
   conversations: [],
   messages: [],
-  todos: [],
   reviewHunks: {},
 }
 
@@ -111,7 +108,6 @@ function reducer(state: ChatState, action: Action): ChatState {
         busy: false,
         conversationID: action.conversationID,
         messages: action.messages,
-        todos: action.todos,
         reviewHunks: action.reviewHunks ?? {},
         pendingPermission: undefined,
       }
@@ -155,8 +151,6 @@ function reducer(state: ChatState, action: Action): ChatState {
           m.id === action.id ? { ...m, blocks: [...m.blocks, { type: "patch", files: action.files, diff: action.diff }] } : m,
         ),
       }
-    case "todos":
-      return { ...state, todos: action.todos }
     case "reviewHunkState": {
       const reviewHunks = { ...state.reviewHunks }
       if (action.state) reviewHunks[action.key] = action.state

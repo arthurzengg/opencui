@@ -36,7 +36,16 @@ export function CodeBlock({ code, language }: Props) {
   }, [code, language, theme])
 
   const lang = normaliseLang(language)
-  const onApply = () => vscode.post({ type: "apply", code, language })
+  const isShell = lang === "bash"
+  const onApply = () => {
+    vscode.post({ type: "apply", code, language })
+    // Return focus to the chat input so the user can keep the conversation
+    // going right after Run/Apply, instead of having to click the textarea.
+    requestAnimationFrame(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>(".promptbox textarea")
+      textarea?.focus()
+    })
+  }
   const onCopy = () =>
     navigator.clipboard?.writeText(code).then(
       () => {
@@ -54,8 +63,12 @@ export function CodeBlock({ code, language }: Props) {
           <button className="btn compact" onClick={onCopy} title="Copy">
             {copied ? "Copied" : "Copy"}
           </button>
-          <button className="btn compact primary" onClick={onApply} title="Apply to active file">
-            Apply
+          <button
+            className="btn compact primary"
+            onClick={onApply}
+            title={isShell ? "Send to integrated terminal" : "Apply to active file"}
+          >
+            {isShell ? "Run" : "Apply"}
           </button>
         </div>
       </div>

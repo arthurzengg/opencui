@@ -259,8 +259,16 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
       return
     }
     flushTrace()
-    if (b.type === "text") nodes.push(processMode ? <ProcessText key={i} text={b.text} /> : <Markdown key={i} text={b.text} />)
-    if (b.type === "reasoning") nodes.push(<ProcessText key={i} text={b.text} />)
+    if (b.type === "text") {
+      const cleaned = stripInternalMarkers(b.text)
+      if (!cleaned.trim()) return
+      nodes.push(processMode ? <ProcessText key={i} text={cleaned} /> : <Markdown key={i} text={cleaned} />)
+    }
+    if (b.type === "reasoning") {
+      const cleaned = stripInternalMarkers(b.text)
+      if (!cleaned.trim()) return
+      nodes.push(<ProcessText key={i} text={cleaned} />)
+    }
   })
   flushTrace()
   return nodes
@@ -413,6 +421,27 @@ function cleanProcessText(text: string) {
     .replace(/^\*\*(.+)\*\*$/, "$1")
     .replace(/^__(.+)__$/, "$1")
     .replace(/^#+\s*/, "")
+}
+
+/**
+ * Strip internal scaffolding markers that the model or harness inserts into
+ * its reasoning/text stream (system reminders, internal comments). These are
+ * not user-facing content and shouldn't render in the chat conversation.
+ */
+function stripInternalMarkers(text: string): string {
+  return text
+    // <system-reminder>...</system-reminder> (often multi-line; non-greedy)
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "")
+    // Stray opening/closing tags left over from partial streams.
+    .replace(/<\/?system-reminder>/gi, "")
+    // HTML-style internal comments (e.g. <!-- OMO_INTERNAL_INITIATOR -->).
+    .replace(/<!--[\s\S]*?-->/g, "")
+    // <command-name>, <command-message>, <command-args>, <local-command-stdout>
+    // and similar harness scaffolding tags.
+    .replace(/<(command-name|command-message|command-args|local-command-stdout|local-command-stderr|user-prompt-submit-hook)>[\s\S]*?<\/\1>/gi, "")
+    // Collapse the blank lines left behind by removed blocks.
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\s+|\s+$/g, "")
 }
 
 function inferredTextTitle(text: string) {

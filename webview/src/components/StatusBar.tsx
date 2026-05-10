@@ -44,6 +44,15 @@ export function StatusBar({
       )}
       <div className="spacer" />
       <SelectorMenu agent={agent} model={model} onSelectAgent={onSelectAgent} onSelectModel={onSelectModel} />
+      <button
+        type="button"
+        className="new-chat-trigger"
+        onClick={onCreateConversation}
+        aria-label="New chat"
+        title="New chat"
+      >
+        <span className="new-chat-icon" aria-hidden="true" />
+      </button>
       <ChatHistoryMenu
         conversations={conversations}
         activeID={activeConversationID}
@@ -158,13 +167,15 @@ function ChatHistoryMenu({
         <div className="history-popover">
           <div className="history-popover-title">Chat history</div>
           <button
+            type="button"
             className="history-new"
             onClick={() => {
               setOpen(false)
               onCreate()
             }}
           >
-            New chat
+            <span className="history-new-icon" aria-hidden="true" />
+            <span className="history-new-text">New chat</span>
           </button>
           {showSearch && (
             <input
@@ -228,7 +239,7 @@ function ChatHistoryMenu({
                         onClick={() => handleDelete(conversation.id)}
                         title={isConfirming ? "Click again to delete" : "Delete"}
                       >
-                        {isConfirming ? "Confirm?" : "Delete"}
+                        {isConfirming ? "Confirm" : "Delete"}
                       </button>
                     </>
                   )}

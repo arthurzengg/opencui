@@ -80,7 +80,7 @@ export type Outbound =
   | { type: "connected"; connected: boolean; error?: string }
   | { type: "selection"; selection: Selection }
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
-  | { type: "restore"; conversationID: string; messages: ChatMessage[]; todos: Todo[]; reviewHunks?: Record<string, ReviewHunkState> }
+  | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
   | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string }
   | { type: "userMessageBackendID"; id: string; backendID: string }
@@ -89,7 +89,6 @@ export type Outbound =
   | { type: "reasoningDelta"; id: string; delta: string }
   | { type: "tool"; id: string; update: ToolUpdate }
   | { type: "patch"; id: string; files: string[]; diff?: string }
-  | { type: "todos"; todos: Todo[] }
   | { type: "reviewHunkState"; key: string; state?: ReviewHunkState }
   | { type: "assistantError"; id: string; message: string }
   | { type: "assistantDone"; id: string; usage?: UsageDelta }

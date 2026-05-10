@@ -22,16 +22,12 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(ChatView.viewType, chat, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    vscode.languages.registerCodeLensProvider(reviewCodeLensSelector(), chat.reviewCodeLensProvider),
     vscode.commands.registerCommand("opencui.chat.focus", async () => {
       await vscode.commands.executeCommand("workbench.view.extension.opencui")
       chat.focus()
     }),
     vscode.commands.registerCommand("opencui.chat.new", () => chat.newSession()),
     vscode.commands.registerCommand("opencui.conversation.select", () => chat.pickConversation()),
-    vscode.commands.registerCommand("opencui.review.acceptHunk", (key: string) => chat.reviewHunk(key, "accepted")),
-    vscode.commands.registerCommand("opencui.review.rejectHunk", (key: string) => chat.reviewHunk(key, "rejected")),
-    vscode.commands.registerCommand("opencui.review.deletedLine", () => { /* noop — anchors a non-clickable lens */ }),
     vscode.commands.registerCommand("opencui.inlineEdit", () => inline.run()),
     vscode.commands.registerCommand("opencui.selectAgent", () => picker.pickAgent()),
     vscode.commands.registerCommand("opencui.selectModel", () => picker.pickModel()),
@@ -57,28 +53,4 @@ export async function activate(context: vscode.ExtensionContext) {
 
 export async function deactivate() {
   await servers?.dispose()
-}
-
-function reviewCodeLensSelector(): vscode.DocumentSelector {
-  return [
-    "python",
-    "javascript",
-    "javascriptreact",
-    "typescript",
-    "typescriptreact",
-    "json",
-    "jsonc",
-    "markdown",
-    "html",
-    "css",
-    "scss",
-    "less",
-    "yaml",
-    "shellscript",
-    "go",
-    "rust",
-    "c",
-    "cpp",
-    "java",
-  ].map((language) => ({ scheme: "file", language }))
 }

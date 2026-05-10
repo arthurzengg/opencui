@@ -15,7 +15,6 @@ import type {
   ConversationSummary,
   Inbound,
   Outbound,
-  Todo,
   ToolUpdate as WireToolUpdate,
   Selection,
   ReviewChange,
@@ -30,266 +29,9 @@ type SavedConversation = ConversationSummary & {
   createdAt: number
   sessionID?: string
   messages: ChatMessage[]
-  todos: Todo[]
   reviewHunks?: Record<string, ReviewHunkState>
 }
 
-type ReviewLensEntry = {
-  key: string
-  keys: string[]
-  path: string
-  uri: vscode.Uri
-  range: vscode.Range
-  variants: ReviewLensVariant[]
-  oldText: string
-  newText: string
-  reversible: boolean
-  hunkCount: number
-  /** Document line numbers (0-based) for AI-added lines in this hunk cluster. */
-  addedLines: number[]
-  /** Deletion sites: text of the deleted line and the document line index where it should visually appear. */
-  deletedAtLines: { line: number; text: string }[]
-}
-
-type ReviewLensSummary = {
-  entries: ReviewLensEntry[]
-  unlocatableByUri: Map<string, { uri: vscode.Uri; count: number }>
-}
-
-type ReviewLensVariant = {
-  oldText: string
-  newText: string
-  reversible: boolean
-}
-
-class ReviewDecorations {
-  private byUri = new Map<string, ReviewDecorationData>()
-  private insetsByEditor = new Map<string, vscode.Disposable[]>()
-
-  private readonly addedLine = vscode.window.createTextEditorDecorationType({
-    isWholeLine: true,
-    overviewRulerColor: new vscode.ThemeColor("gitDecoration.addedResourceForeground"),
-    overviewRulerLane: vscode.OverviewRulerLane.Left,
-    backgroundColor: new vscode.ThemeColor("diffEditor.insertedLineBackground"),
-    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
-  })
-
-  private readonly deletedAnchor = vscode.window.createTextEditorDecorationType({
-    overviewRulerColor: new vscode.ThemeColor("gitDecoration.deletedResourceForeground"),
-    overviewRulerLane: vscode.OverviewRulerLane.Left,
-    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
-  })
-
-  private readonly unlocatableBanner = vscode.window.createTextEditorDecorationType({
-    isWholeLine: true,
-    after: {
-      contentText: "",
-      color: new vscode.ThemeColor("editorWarning.foreground"),
-      margin: "0 0 0 16px",
-      fontStyle: "italic",
-    },
-    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed,
-  })
-
-  setForUri(uri: vscode.Uri, data: ReviewDecorationData) {
-    this.byUri.set(uri.toString(), data)
-    this.applyToVisible(uri)
-  }
-
-  activeUriKeys(): string[] {
-    return [...this.byUri.keys()]
-  }
-
-  clearUriKey(uriKey: string) {
-    if (!this.byUri.delete(uriKey)) return
-    for (const editor of vscode.window.visibleTextEditors) {
-      if (editor.document.uri.toString() !== uriKey) continue
-      editor.setDecorations(this.addedLine, [])
-      editor.setDecorations(this.deletedAnchor, [])
-      editor.setDecorations(this.unlocatableBanner, [])
-      this.disposeInsetsForEditor(editorKey(editor))
-    }
-  }
-
-  clearAll() {
-    this.byUri.clear()
-    for (const editor of vscode.window.visibleTextEditors) {
-      editor.setDecorations(this.addedLine, [])
-      editor.setDecorations(this.deletedAnchor, [])
-      editor.setDecorations(this.unlocatableBanner, [])
-    }
-    this.disposeAllInsets()
-  }
-
-  applyToVisible(uri?: vscode.Uri) {
-    const target = uri?.toString()
-    for (const editor of vscode.window.visibleTextEditors) {
-      const editorUri = editor.document.uri.toString()
-      if (target && editorUri !== target) continue
-      const data = this.byUri.get(editorUri)
-      if (!data) {
-        editor.setDecorations(this.addedLine, [])
-        editor.setDecorations(this.deletedAnchor, [])
-        editor.setDecorations(this.unlocatableBanner, [])
-        this.disposeInsetsForEditor(editorKey(editor))
-        continue
-      }
-      editor.setDecorations(this.addedLine, data.addedRanges)
-      editor.setDecorations(this.deletedAnchor, data.deletedRanges)
-      editor.setDecorations(this.unlocatableBanner, data.banner ? [data.banner] : [])
-      this.applyInsets(editor, data.deletions)
-    }
-  }
-
-  private applyInsets(editor: vscode.TextEditor, deletions: DeletionInset[]) {
-    const key = editorKey(editor)
-    this.disposeInsetsForEditor(key)
-    if (!deletions.length) return
-    const insets: vscode.Disposable[] = []
-    const win = vscode.window as unknown as {
-      createWebviewTextEditorInset?: (
-        editor: vscode.TextEditor,
-        line: number,
-        height: number,
-        options?: vscode.WebviewOptions,
-      ) => { webview: vscode.Webview; dispose: () => void; onDidDispose: vscode.Event<void> }
-    }
-    if (typeof win.createWebviewTextEditorInset !== "function") return
-    for (const del of deletions) {
-      const lineCount = editor.document.lineCount
-      if (lineCount === 0) continue
-      // Render the inset BELOW (line-1) so the ghost block sits visually ABOVE
-      // the surviving line at del.line. For del.line === 0, render below it (best effort).
-      const insetLine = del.line === 0 ? 0 : del.line - 1
-      try {
-        const inset = win.createWebviewTextEditorInset!(editor, insetLine, del.texts.length, { enableScripts: false })
-        inset.webview.html = renderDeletedInsetHtml(del.texts)
-        insets.push(inset)
-      } catch (error) {
-        log("createWebviewTextEditorInset failed", error)
-      }
-    }
-    if (insets.length) this.insetsByEditor.set(key, insets)
-  }
-
-  private disposeInsetsForEditor(key: string) {
-    const list = this.insetsByEditor.get(key)
-    if (!list) return
-    for (const item of list) {
-      try { item.dispose() } catch { /* swallow */ }
-    }
-    this.insetsByEditor.delete(key)
-  }
-
-  private disposeAllInsets() {
-    for (const list of this.insetsByEditor.values()) {
-      for (const item of list) {
-        try { item.dispose() } catch { /* swallow */ }
-      }
-    }
-    this.insetsByEditor.clear()
-  }
-
-  dispose() {
-    this.disposeAllInsets()
-    this.addedLine.dispose()
-    this.deletedAnchor.dispose()
-    this.unlocatableBanner.dispose()
-  }
-}
-
-type DeletionInset = { line: number; texts: string[] }
-
-type ReviewDecorationData = {
-  addedRanges: vscode.Range[]
-  deletedRanges: vscode.DecorationOptions[]
-  deletions: DeletionInset[]
-  banner?: vscode.DecorationOptions
-}
-
-function editorKey(editor: vscode.TextEditor): string {
-  return `${editor.document.uri.toString()}#${editor.viewColumn ?? "n"}`
-}
-
-function renderDeletedInsetHtml(texts: string[]): string {
-  const rows = texts.map((line) => `<div class="line">${escapeForHtml(line || " ")}</div>`).join("")
-  return `<!doctype html><html><head><style>
-    html, body { margin: 0; padding: 0; background: transparent; color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149); font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); line-height: 1.4; }
-    body { background: var(--vscode-diffEditor-removedLineBackground, rgba(248, 81, 73, 0.15)); border-left: 2px solid var(--vscode-gitDecoration-deletedResourceForeground, #f85149); padding-left: 8px; }
-    .line { white-space: pre; padding: 0 4px; }
-    .line::before { content: "- "; opacity: 0.7; }
-  </style></head><body>${rows}</body></html>`
-}
-
-function escapeForHtml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-}
-
-class ReviewCodeLensProvider implements vscode.CodeLensProvider {
-  private readonly changed = new vscode.EventEmitter<void>()
-  readonly onDidChangeCodeLenses = this.changed.event
-  private entries: ReviewLensEntry[] = []
-  private byKey = new Map<string, ReviewLensEntry>()
-
-  setEntries(entries: ReviewLensEntry[]) {
-    this.entries = mergeReviewLensEntries(entries)
-    this.byKey = new Map(this.entries.flatMap((entry) => entry.keys.map((key) => [key, entry] as const)))
-    this.changed.fire()
-  }
-
-  clear() {
-    if (!this.entries.length) return
-    this.entries = []
-    this.byKey.clear()
-    this.changed.fire()
-  }
-
-  get(key: string) {
-    return this.byKey.get(key)
-  }
-
-  entriesForUri(uri: vscode.Uri): ReviewLensEntry[] {
-    const target = uri.toString()
-    return this.entries.filter((entry) => entry.uri.toString() === target)
-  }
-
-  entriesForAllUris(): ReviewLensEntry[] {
-    return [...this.entries]
-  }
-
-  provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
-    return this.entriesForUri(document.uri).flatMap((entry) => {
-      const suffix = entry.hunkCount > 1 ? ` (${entry.hunkCount})` : ""
-      const removedCount = entry.deletedAtLines.length
-      const lenses: vscode.CodeLens[] = []
-      // Single summary tag for any removed lines — hover the red-tinted line below
-      // to see the actual deleted content in a code block.
-      if (removedCount > 0) {
-        lenses.push(new vscode.CodeLens(entry.range, {
-          title: `$(diff-removed) -${removedCount}`,
-          tooltip: "Hover the highlighted line to see the removed code",
-          command: "opencui.review.deletedLine",
-          arguments: [],
-        }))
-      }
-      lenses.push(new vscode.CodeLens(entry.range, {
-        title: `$(check) Keep${suffix}`,
-        tooltip: entry.hunkCount > 1 ? `Keep ${entry.hunkCount} adjacent changes` : "Keep this change",
-        command: "opencui.review.acceptHunk",
-        arguments: [entry.key],
-      }))
-      if (entry.reversible) {
-        lenses.push(new vscode.CodeLens(entry.range, {
-          title: `$(discard) Undo${suffix}`,
-          tooltip: entry.hunkCount > 1 ? `Undo ${entry.hunkCount} adjacent changes` : "Undo this change",
-          command: "opencui.review.rejectHunk",
-          arguments: [entry.key],
-        }))
-      }
-      return lenses
-    })
-  }
-}
 
 export class ChatView implements vscode.WebviewViewProvider {
   static viewType = "opencui.chat"
@@ -305,13 +47,9 @@ export class ChatView implements vscode.WebviewViewProvider {
   private messages: ChatMessage[] = []
   /** Webview ID of the user message currently awaiting a backend ID from the stream. */
   private pendingUserBackendID?: string
-  private todos: Todo[] = []
   private reviewHunks: Record<string, ReviewHunkState> = {}
   private reviewPanel?: vscode.WebviewPanel
   private reviewChange?: ReviewChange
-  private readonly reviewCodeLens = new ReviewCodeLensProvider()
-  private readonly reviewDecorations = new ReviewDecorations()
-  private reviewDecorationListener?: vscode.Disposable
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -327,10 +65,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     this.restoreActiveState()
     void this.persistConversations()
-  }
-
-  get reviewCodeLensProvider() {
-    return this.reviewCodeLens
   }
 
   async resolveWebviewView(view: vscode.WebviewView) {
@@ -355,7 +89,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
     vscode.window.onDidChangeActiveTextEditor(() => {
       this.pushContext()
-      this.queueReviewCodeLensSync()
+      this.queueReviewDecorationsSync()
     }, null, this.context.subscriptions)
     vscode.window.onDidChangeTextEditorSelection(
       () => this.pushContext(),
@@ -382,7 +116,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     const conversation = this.addConversation("New conversation")
     this.activeConversationID = conversation.id
     this.messages = []
-    this.todos = []
     this.reviewHunks = {}
     await this.persistConversations()
     this.sendConversationState()
@@ -413,7 +146,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription = undefined
     this.reviewPanel?.dispose()
     this.reviewPanel = undefined
-    this.reviewCodeLens.clear()
   }
 
   private post(msg: Outbound) {
@@ -431,7 +163,6 @@ export class ChatView implements vscode.WebviewViewProvider {
       type: "restore",
       conversationID: this.activeConversationID,
       messages: this.messages,
-      todos: this.todos,
       reviewHunks: this.reviewHunks,
     })
   }
@@ -444,7 +175,6 @@ export class ChatView implements vscode.WebviewViewProvider {
       createdAt: now,
       updatedAt: now,
       messages: [],
-      todos: [],
       reviewHunks: {},
     }
     this.conversations = [conversation, ...this.conversations]
@@ -461,7 +191,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     const conversation = this.activeConversation()
     this.sessionID = conversation.sessionID
     this.messages = conversation.messages.map((m) => ({ ...m, pending: false }))
-    this.todos = conversation.todos
     this.reviewHunks = conversation.reviewHunks ?? {}
   }
 
@@ -537,7 +266,6 @@ export class ChatView implements vscode.WebviewViewProvider {
       ...conversation,
       sessionID: this.sessionID,
       messages: this.messages,
-      todos: this.todos,
       reviewHunks: this.reviewHunks,
       updatedAt: Date.now(),
     }))
@@ -559,15 +287,12 @@ export class ChatView implements vscode.WebviewViewProvider {
     switch (msg.type) {
       case "restore":
         this.messages = msg.messages.map((m) => ({ ...m, pending: false }))
-        this.todos = msg.todos
         this.reviewHunks = msg.reviewHunks ?? {}
-        this.queueReviewCodeLensSync()
+        this.queueReviewDecorationsSync()
         return
       case "clear":
         this.messages = []
-        this.todos = []
         this.reviewHunks = {}
-        this.reviewCodeLens.clear()
         this.saveActive()
         return
       case "userMessage":
@@ -598,25 +323,21 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "tool":
         this.messages = upsertTool(this.messages, msg.id, msg.update)
         this.saveActive()
-        this.queueReviewCodeLensSync()
+        this.queueReviewDecorationsSync()
         return
       case "patch":
         this.messages = this.messages.map((m) =>
           m.id === msg.id ? { ...m, blocks: [...m.blocks, { type: "patch", files: msg.files, diff: msg.diff }] } : m,
         )
         this.saveActive()
-        this.queueReviewCodeLensSync()
-        return
-      case "todos":
-        this.todos = msg.todos
-        this.saveActive()
+        this.queueReviewDecorationsSync()
         return
       case "reviewHunkState":
         this.reviewHunks = { ...this.reviewHunks }
         if (msg.state) this.reviewHunks[msg.key] = msg.state
         else delete this.reviewHunks[msg.key]
         this.saveActive()
-        this.queueReviewCodeLensSync()
+        this.queueReviewDecorationsSync()
         return
       case "assistantError":
         this.messages = this.messages.map((m) =>
@@ -850,11 +571,10 @@ export class ChatView implements vscode.WebviewViewProvider {
     const idx = this.messages.findIndex((m) => m.id === webviewID)
     if (idx >= 0) {
       this.messages = this.messages.slice(0, idx)
-      this.todos = []
       this.reviewHunks = {}
       this.saveActive()
       this.sendConversationState()
-      this.queueReviewCodeLensSync()
+      this.queueReviewDecorationsSync()
     }
 
     await this.handleSend(trimmed)
@@ -896,10 +616,6 @@ export class ChatView implements vscode.WebviewViewProvider {
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         const wire = toWire(update, backend.directory)
         this.post({ type: "tool", id: webviewID, update: wire })
-        if (update.tool === "todowrite" && update.status !== "pending") {
-          const todos = (update.input?.todos ?? []) as Todo[]
-          if (todos.length) this.post({ type: "todos", todos })
-        }
       },
       onPatch: (mid, files, diff) => {
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
@@ -955,24 +671,36 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.reviewPanel = undefined
     try {
       const doc = await openFileDocument(change.path)
-      const { entries } = reviewLensEntries(change, this.reviewHunks, doc)
-      await this.syncReviewCodeLens()
-      const editor = await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
-      if (entries[0]) editor.revealRange(entries[0].range, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+      await this.syncReviewDecorations()
+      await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
     } catch (e) {
       log(`could not open review file ${change.path}`, e)
       vscode.window.showWarningMessage(`OpenCUI: could not open ${change.path} as text.`)
     }
   }
 
-  async reviewHunk(key: string, action: ReviewHunkState) {
-    const entry = this.reviewCodeLens.get(key)
-    if (!entry) return
-    const state = await reviewEntryHunk(entry, action) ? action : undefined
-    for (const entryKey of entry.keys) {
-      this.post({ type: "reviewHunkState", key: entryKey, state })
+  private async purgeMissingFileHunks(changes: ReviewChange[]): Promise<void> {
+    const seen = new Set<string>()
+    for (const change of changes) {
+      if (seen.has(change.path)) continue
+      seen.add(change.path)
+      // Never purge created files — they were just written and may not yet be
+      // visible to the VS Code file-system API, or the workspace may not cover
+      // the path. Purging here would permanently hide the review card.
+      if (change.kind === "created") continue
+      if (await reviewPathExists(change.path)) continue
+      let purged = 0
+      for (const sibling of changes) {
+        if (!samePath(sibling.path, change.path)) continue
+        for (const hunk of splitReviewDiff(sibling.patch).hunks) {
+          const key = reviewKey(sibling, hunk.id)
+          if (this.reviewHunks[key]) continue
+          this.post({ type: "reviewHunkState", key, state: "rejected" })
+          purged += 1
+        }
+      }
+      if (purged) log(`purged ${purged} review hunks for missing file ${change.path}`)
     }
-    await this.syncReviewCodeLens()
   }
 
   private async handleReviewAllInChange(source: string, requestedPath: string, action: ReviewHunkState) {
@@ -988,6 +716,25 @@ export class ChatView implements vscode.WebviewViewProvider {
     const targets = all.filter((c) => samePath(c.path, requestedPath))
     if (!targets.length) {
       log("reviewAllInChange: no matching change", { source, path: requestedPath, available: all.map((c) => ({ source: c.source, path: c.path })) })
+      return
+    }
+    // If the file no longer exists on disk, neither accept nor reject can
+    // operate on it — silently mark every pending hunk reviewed so the row
+    // drops out of the Review Card and tell the user once.
+    if (!(await reviewPathExists(requestedPath))) {
+      let purged = 0
+      for (const change of targets) {
+        for (const hunk of splitReviewDiff(change.patch).hunks) {
+          const key = reviewKey(change, hunk.id)
+          if (this.reviewHunks[key]) continue
+          this.post({ type: "reviewHunkState", key, state: "rejected" })
+          purged += 1
+        }
+      }
+      vscode.window.showInformationMessage(
+        `OpenCUI: ${requestedPath} is no longer present; removed ${purged} pending hunk${purged === 1 ? "" : "s"} from review.`,
+      )
+      await this.syncReviewDecorations()
       return
     }
     let any = false
@@ -1012,7 +759,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         }
       }
     }
-    if (any) await this.syncReviewCodeLens()
+    if (any) await this.syncReviewDecorations()
     else log("reviewAllInChange: no hunks applied", { source, path: requestedPath, action })
   }
 
@@ -1039,129 +786,18 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.reviewPanel.webview.html = reviewChangeHtml(this.reviewChange, reviewed)
   }
 
-  private queueReviewCodeLensSync() {
-    void this.syncReviewCodeLens().catch((e) => log("review CodeLens sync failed", e))
+  private queueReviewDecorationsSync() {
+    void this.syncReviewDecorations().catch((e) => log("review decorations sync failed", e))
   }
 
-  private async syncReviewCodeLens() {
+  private async syncReviewDecorations() {
+    // All editor-side review UI (line highlights, ghost-text deletions,
+    // unlocatable banner) was removed — review actions live exclusively in
+    // the Review Card now. This sync only purges hunks for files that have
+    // been deleted on disk so they don't linger in the panel.
     const changes = reviewChanges(this.messages).filter((change) => isTextReviewPath(change.path))
-    if (!changes.length) {
-      this.reviewCodeLens.clear()
-      this.reviewDecorations.clearAll()
-      this.ensureReviewDecorationListener(false)
-      return
-    }
-    const entries: ReviewLensEntry[] = []
-    const unlocatableByUri = new Map<string, { uri: vscode.Uri; count: number }>()
-    const docByUri = new Map<string, vscode.TextDocument>()
-    for (const change of changes) {
-      try {
-        const doc = visibleReviewDocument(change.path)
-        if (!doc) continue
-        docByUri.set(doc.uri.toString(), doc)
-        const result = reviewLensEntries(change, this.reviewHunks, doc)
-        entries.push(...result.entries)
-        if (result.unlocatable > 0) {
-          const key = doc.uri.toString()
-          const existing = unlocatableByUri.get(key) ?? { uri: doc.uri, count: 0 }
-          existing.count += result.unlocatable
-          unlocatableByUri.set(key, existing)
-        }
-      } catch (e) {
-        log(`could not prepare review CodeLens for ${change.path}`, e)
-      }
-    }
-    this.reviewCodeLens.setEntries(entries)
-    this.applyReviewDecorations(docByUri, unlocatableByUri)
-    this.ensureReviewDecorationListener(true)
-  }
-
-  private applyReviewDecorations(
-    docByUri: Map<string, vscode.TextDocument>,
-    unlocatableByUri: Map<string, { uri: vscode.Uri; count: number }>,
-  ) {
-    const merged = this.reviewCodeLens.entriesForAllUris()
-    const byUri = new Map<string, { doc: vscode.TextDocument; entries: ReviewLensEntry[] }>()
-    for (const entry of merged) {
-      const key = entry.uri.toString()
-      const doc = docByUri.get(key)
-      if (!doc) continue
-      const bucket = byUri.get(key) ?? { doc, entries: [] }
-      bucket.entries.push(entry)
-      byUri.set(key, bucket)
-    }
-
-    // Clear any file that previously had decorations but no longer needs them
-    // (e.g. the user accepted/rejected the last remaining hunk in that file).
-    const stillActive = new Set<string>([...byUri.keys(), ...unlocatableByUri.keys()])
-    for (const previousKey of this.reviewDecorations.activeUriKeys()) {
-      if (!stillActive.has(previousKey)) this.reviewDecorations.clearUriKey(previousKey)
-    }
-    const touched = new Set<string>()
-    for (const [key, { doc, entries }] of byUri) {
-      touched.add(key)
-      const lineCount = doc.lineCount
-      const addedSet = new Set<number>()
-      const deletedByLine = new Map<number, string[]>()
-      for (const entry of entries) {
-        for (const ln of entry.addedLines) {
-          if (ln >= 0 && ln < lineCount) addedSet.add(ln)
-        }
-        for (const del of entry.deletedAtLines) {
-          if (del.line < 0 || del.line >= lineCount) continue
-          const list = deletedByLine.get(del.line) ?? []
-          list.push(del.text)
-          deletedByLine.set(del.line, list)
-        }
-      }
-      const addedRanges = [...addedSet].sort((a, b) => a - b).map((ln) => doc.lineAt(ln).range)
-      const langID = doc.languageId
-      const sortedDeletions = [...deletedByLine.entries()].sort((a, b) => a[0] - b[0])
-      const deletedRanges: vscode.DecorationOptions[] = sortedDeletions.map(([line, texts]) => {
-        const md = new vscode.MarkdownString()
-        md.isTrusted = false
-        md.supportThemeIcons = true
-        md.appendMarkdown(`$(diff-removed) **Removed by AI** — ${texts.length} ${texts.length === 1 ? "line" : "lines"}\n\n`)
-        md.appendCodeblock(texts.join("\n"), langID)
-        return { range: doc.lineAt(line).range, hoverMessage: md }
-      })
-      const deletions: DeletionInset[] = sortedDeletions.map(([line, texts]) => ({ line, texts }))
-      const banner = this.buildUnlocatableBanner(doc, unlocatableByUri.get(key)?.count ?? 0)
-      this.reviewDecorations.setForUri(doc.uri, { addedRanges, deletedRanges, deletions, banner })
-    }
-    for (const [key, info] of unlocatableByUri) {
-      if (touched.has(key)) continue
-      const doc = docByUri.get(key)
-      if (!doc) continue
-      const banner = this.buildUnlocatableBanner(doc, info.count)
-      if (!banner) continue
-      this.reviewDecorations.setForUri(doc.uri, { addedRanges: [], deletedRanges: [], deletions: [], banner })
-    }
-  }
-
-  private buildUnlocatableBanner(doc: vscode.TextDocument, count: number): vscode.DecorationOptions | undefined {
-    if (!count) return undefined
-    const message = count === 1
-      ? "1 AI change can't be located here — review in the OpenCUI sidebar."
-      : `${count} AI changes can't be located here — review in the OpenCUI sidebar.`
-    return {
-      range: new vscode.Range(0, 0, 0, 0),
-      renderOptions: {
-        after: { contentText: `  ${message}` },
-      },
-    }
-  }
-
-  private ensureReviewDecorationListener(active: boolean) {
-    if (active && !this.reviewDecorationListener) {
-      this.reviewDecorationListener = vscode.window.onDidChangeVisibleTextEditors(() => {
-        this.reviewDecorations.applyToVisible()
-      })
-    }
-    if (!active && this.reviewDecorationListener) {
-      this.reviewDecorationListener.dispose()
-      this.reviewDecorationListener = undefined
-    }
+    if (!changes.length) return
+    await this.purgeMissingFileHunks(changes)
   }
 
   private async buildHtml(webview: vscode.Webview): Promise<string> {
@@ -1258,16 +894,35 @@ function reviewChanges(messages: ChatMessage[]) {
 function toolChanges(update: WireToolUpdate, source: string) {
   if (update.tool === "apply_patch") return patchChanges(update.metadata?.files, source)
   const filediff = isRecord(update.metadata?.filediff) ? update.metadata.filediff : undefined
-  const patch = typeof filediff?.patch === "string" ? filediff.patch : typeof update.metadata?.diff === "string" ? update.metadata.diff : undefined
+  let patch = typeof filediff?.patch === "string" ? filediff.patch : typeof update.metadata?.diff === "string" ? update.metadata.diff : undefined
+  const isCreate =
+    (update.tool === "write" && update.metadata?.exists === false) ||
+    (update.tool === "edit" && update.input?.oldString === "")
+  if (!patch && isCreate) patch = synthesizeCreatePatch(update)
   if (!patch) return []
   return [{
     source,
     path: displayPath(update, filediff),
-    kind: update.tool === "write" && update.metadata?.exists === false ? "created" : "updated",
+    kind: isCreate ? "created" : "updated",
     additions: typeof filediff?.additions === "number" ? filediff.additions : countDiff(patch, "+"),
     deletions: typeof filediff?.deletions === "number" ? filediff.deletions : countDiff(patch, "-"),
     patch,
   } satisfies ReviewChange]
+}
+
+function synthesizeCreatePatch(update: WireToolUpdate): string | undefined {
+  const content =
+    update.tool === "write" && typeof update.input?.content === "string"
+      ? update.input.content
+      : update.tool === "edit" && typeof update.input?.newString === "string"
+        ? update.input.newString
+        : undefined
+  if (typeof content !== "string") return undefined
+  const lines = content.split("\n")
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop()
+  if (!lines.length) return undefined
+  const body = lines.map((line) => `+${line}`).join("\n")
+  return `@@ -0,0 +1,${lines.length} @@\n${body}`
 }
 
 function patchChanges(files: unknown, source: string) {
@@ -1327,11 +982,19 @@ function patchPath(patch: string) {
   return index ?? "file"
 }
 
-function displayPath(update: { title?: string; input?: Record<string, unknown> }, filediff?: Record<string, unknown>) {
+function displayPath(update: { title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, filediff?: Record<string, unknown>) {
+  // The absolute filepath opencode resolved is unambiguous; prefer it. The
+  // model's raw input.filePath can be relative to opencode's internal
+  // directory (e.g., the git worktree root) which differs from our VSCode
+  // workspace folder, and persisted conversations may already have the wrong
+  // relative there.
+  const fromMetadata = typeof update.metadata?.filepath === "string" ? update.metadata.filepath : undefined
+  if (fromMetadata && path.isAbsolute(fromMetadata)) return fromMetadata
+  const fromFilediff = typeof filediff?.file === "string" ? filediff.file : undefined
+  if (fromFilediff && path.isAbsolute(fromFilediff)) return fromFilediff
+  if (typeof update.input?.filePath === "string" && update.input.filePath) return update.input.filePath
   if (typeof update.title === "string" && update.title.trim()) return update.title
-  if (typeof update.input?.filePath === "string") return update.input.filePath
-  if (typeof filediff?.file === "string") return filediff.file
-  return "file"
+  return fromFilediff ?? "file"
 }
 
 function patchKind(value: unknown): ReviewChange["kind"] {
@@ -1344,6 +1007,10 @@ function patchKind(value: unknown): ReviewChange["kind"] {
 function samePath(left: string, right?: string) {
   if (!right) return false
   return normalizePath(left) === normalizePath(right)
+}
+
+async function reviewPathExists(relPath: string): Promise<boolean> {
+  return !!(await existingWorkspaceFileUri(relPath))
 }
 
 function isTextReviewPath(value: string) {
@@ -1415,8 +1082,19 @@ function buildPrompt(userText: string, ctx: ReturnType<typeof getEditorContext>)
 
 function toWire(update: ToolUpdate, cwd: string): WireToolUpdate {
   const input = update.input ? { ...update.input } : undefined
+  const metadata = update.metadata ? normalizeWireMetadata(update.metadata, cwd) : undefined
   if (input) {
-    if (typeof input.filePath === "string") input.filePath = relative(cwd, input.filePath)
+    // Prefer the absolute filepath opencode resolved (in metadata) over the
+    // raw model input. The raw input may be relative to opencode's internal
+    // directory (e.g., the git worktree root) which differs from our VSCode
+    // workspace folder, and a relative path here would be joined against the
+    // wrong base when we open or stat the file.
+    const resolved = pickResolvedPath(metadata)
+    if (resolved && path.isAbsolute(resolved)) {
+      input.filePath = relative(cwd, resolved)
+    } else if (typeof input.filePath === "string") {
+      input.filePath = relative(cwd, input.filePath)
+    }
     if (typeof input.path === "string") input.path = relative(cwd, input.path)
   }
   return {
@@ -1425,42 +1103,71 @@ function toWire(update: ToolUpdate, cwd: string): WireToolUpdate {
     status: update.status,
     title: update.title,
     input,
-    metadata: update.metadata,
+    metadata,
     output: update.output,
     error: update.error,
   }
 }
 
+function normalizeWireMetadata(metadata: Record<string, unknown>, cwd: string): Record<string, unknown> {
+  const next = { ...metadata }
+  if (typeof next.filepath === "string" && !path.isAbsolute(next.filepath)) {
+    next.filepath = relative(cwd, next.filepath)
+  }
+  if (isRecord(next.filediff)) {
+    const filediff = { ...next.filediff }
+    if (typeof filediff.file === "string" && !path.isAbsolute(filediff.file)) {
+      filediff.file = relative(cwd, filediff.file)
+    }
+    next.filediff = filediff
+  }
+  if (Array.isArray(next.files)) {
+    next.files = next.files.map((file) => {
+      if (!isRecord(file) || typeof file.relativePath !== "string") return file
+      return { ...file, relativePath: relative(cwd, file.relativePath) }
+    })
+  }
+  return next
+}
+
+function pickResolvedPath(metadata: Record<string, unknown> | undefined): string | undefined {
+  if (!metadata) return undefined
+  if (typeof metadata.filepath === "string") return metadata.filepath
+  const filediff = metadata.filediff
+  if (isRecord(filediff) && typeof filediff.file === "string") return filediff.file
+  return undefined
+}
+
 function relative(cwd: string, p: string): string {
   if (!p) return p
-  if (!path.isAbsolute(p)) return p
+  if (!path.isAbsolute(p)) return stripWorkspaceFolderPrefix(cwd, p) ?? p
   const rel = path.relative(cwd, p)
   return rel && !rel.startsWith("..") ? rel : p
 }
 
-async function applyCode(code: string, _language?: string) {
+const SHELL_LANGS = new Set([
+  "bash", "sh", "shell", "shellscript", "zsh", "fish", "powershell", "ps", "ps1", "bat", "cmd",
+])
+
+async function applyCode(code: string, language?: string) {
+  // Shell snippets go to the integrated terminal — Apply on a `npm start`
+  // block belongs in a terminal, not a file.
+  if (language && SHELL_LANGS.has(language.toLowerCase())) {
+    const terminal = vscode.window.activeTerminal ?? vscode.window.createTerminal({ name: "OpenCUI" })
+    terminal.show(true)
+    terminal.sendText(code.replace(/\n+$/, ""), true)
+    return
+  }
   const editor = vscode.window.activeTextEditor
   if (!editor) {
-    vscode.window.showWarningMessage("OpenCUI: open a file first to apply")
+    vscode.window.showWarningMessage("OpenCUI: open a file first to apply this snippet")
     return
   }
   const doc = editor.document
   const target = editor.selection.isEmpty
     ? new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length))
     : editor.selection
-  const proposedUri = vscode.Uri.parse(`untitled:OpenCUI-apply-${Date.now()}.${doc.languageId}`)
-  await vscode.workspace.openTextDocument(proposedUri)
-  const insert = new vscode.WorkspaceEdit()
-  insert.insert(proposedUri, new vscode.Position(0, 0), code)
-  await vscode.workspace.applyEdit(insert)
-  await vscode.commands.executeCommand("vscode.diff", doc.uri, proposedUri, "OpenCUI: Apply preview")
-  const choice = await vscode.window.showInformationMessage(
-    "Apply this change?",
-    { modal: false },
-    "Apply",
-    "Cancel",
-  )
-  if (choice !== "Apply") return
+  // Replace selection (or whole file) directly. Cmd+Z to revert.
   const edit = new vscode.WorkspaceEdit()
   edit.replace(doc.uri, target, code)
   await vscode.workspace.applyEdit(edit)
@@ -1472,20 +1179,68 @@ async function openFile(relPath: string) {
 }
 
 async function openFileDocument(relPath: string) {
-  const uri = workspaceFileUri(relPath)
+  const uri = await workspaceFileUri(relPath)
   return vscode.workspace.openTextDocument(uri)
 }
 
 function visibleReviewDocument(relPath: string) {
-  const uri = workspaceFileUri(relPath).toString()
-  return vscode.window.visibleTextEditors.find((editor) => editor.document.uri.toString() === uri)?.document
+  const uris = new Set(workspaceFileUriCandidates(relPath).map(({ uri }) => uri.toString()))
+  return vscode.window.visibleTextEditors.find((editor) => uris.has(editor.document.uri.toString()))?.document
 }
 
-function workspaceFileUri(relPath: string) {
-  const ws = vscode.workspace.workspaceFolders?.[0]
-  if (path.isAbsolute(relPath)) return vscode.Uri.file(relPath)
-  if (!ws) return vscode.Uri.file(relPath)
-  return vscode.Uri.joinPath(ws.uri, relPath)
+async function workspaceFileUri(relPath: string) {
+  const existing = await existingWorkspaceFileUri(relPath)
+  if (existing) return existing
+  const candidates = workspaceFileUriCandidates(relPath)
+  return candidates.find((candidate) => candidate.preferIfMissing)?.uri ?? candidates[0]?.uri ?? vscode.Uri.file(relPath)
+}
+
+async function existingWorkspaceFileUri(relPath: string): Promise<vscode.Uri | undefined> {
+  for (const { uri } of workspaceFileUriCandidates(relPath)) {
+    try {
+      await vscode.workspace.fs.stat(uri)
+      return uri
+    } catch {
+      // Try the next plausible base.
+    }
+  }
+  return undefined
+}
+
+function workspaceFileUriCandidates(relPath: string): Array<{ uri: vscode.Uri; preferIfMissing?: boolean }> {
+  if (path.isAbsolute(relPath)) return [{ uri: vscode.Uri.file(relPath) }]
+  const normalized = normalizeRelativeReviewPath(relPath)
+  const workspaces = vscode.workspace.workspaceFolders ?? []
+  if (!workspaces.length) return [{ uri: vscode.Uri.file(relPath) }]
+  const candidates: Array<{ uri: vscode.Uri; preferIfMissing?: boolean }> = []
+  const seen = new Set<string>()
+  const add = (uri: vscode.Uri, preferIfMissing = false) => {
+    const key = uri.toString()
+    if (seen.has(key)) return
+    seen.add(key)
+    candidates.push({ uri, preferIfMissing })
+  }
+  for (const ws of workspaces) {
+    add(joinUriPath(ws.uri, normalized))
+    const stripped = stripWorkspaceFolderPrefix(ws.uri.fsPath, normalized)
+    if (stripped) add(joinUriPath(ws.uri, stripped), true)
+  }
+  return candidates
+}
+
+function joinUriPath(base: vscode.Uri, relPath: string) {
+  return vscode.Uri.joinPath(base, ...relPath.split("/").filter(Boolean))
+}
+
+function normalizeRelativeReviewPath(value: string) {
+  return value.replace(/\\/g, "/").replace(/^\.?\//, "")
+}
+
+function stripWorkspaceFolderPrefix(workspacePath: string, relPath: string): string | undefined {
+  const segments = normalizeRelativeReviewPath(relPath).split("/").filter(Boolean)
+  if (segments.length < 2) return undefined
+  if (segments[0].toLowerCase() !== path.basename(workspacePath).toLowerCase()) return undefined
+  return segments.slice(1).join("/")
 }
 
 type ReviewDiffLine = {
@@ -1705,203 +1460,6 @@ function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
   return { hunks }
 }
 
-function reviewLensEntries(change: ReviewChange, reviewed: Record<string, ReviewHunkState>, doc: vscode.TextDocument): { entries: ReviewLensEntry[]; unlocatable: number } {
-  const current = doc.getText()
-  let unlocatable = 0
-  const entries: ReviewLensEntry[] = []
-  const lineCount = doc.lineCount
-  for (const hunk of splitReviewDiff(change.patch).hunks) {
-    const key = reviewKey(change, hunk.id)
-    if (reviewed[key]) continue
-    const match = locateHunkInDocument(current, hunk)
-    if (!match) {
-      unlocatable += 1
-      continue
-    }
-    const baseLine = doc.positionAt(match.start).line
-    const layout = computeHunkLineLayout(hunk, baseLine, lineCount)
-    const firstChanged = layout.firstChangedLine ?? baseLine
-    const lastChanged = layout.lastChangedLine ?? firstChanged
-    const lineEnd = doc.lineAt(Math.min(lastChanged, lineCount - 1)).text.length
-    entries.push({
-      key,
-      keys: [key],
-      path: change.path,
-      uri: doc.uri,
-      range: new vscode.Range(firstChanged, 0, Math.min(lastChanged, lineCount - 1), lineEnd),
-      variants: [{ oldText: hunk.oldText, newText: hunk.newText, reversible: hunk.reversible }],
-      oldText: hunk.oldText,
-      newText: hunk.newText,
-      reversible: hunk.reversible,
-      hunkCount: 1,
-      addedLines: layout.addedLines,
-      deletedAtLines: layout.deletedAtLines,
-    })
-  }
-  return { entries, unlocatable }
-}
-
-function locateHunkInDocument(current: string, hunk: ReviewDiffHunk): { start: number; end: number } | undefined {
-  // Prefer matching newText since it's the actual content present in the file.
-  // Only fall back to anchorText if newText is empty (pure deletion at the very edge of the file).
-  if (hunk.newText.length > 0) {
-    const direct = findHunkText(current, hunk.newText)
-    if (direct) return direct
-  }
-  if (hunk.anchorText) {
-    const anchor = findHunkText(current, hunk.anchorText)
-    if (anchor) return anchor
-  }
-  return undefined
-}
-
-function computeHunkLineLayout(hunk: ReviewDiffHunk, baseLine: number, lineCount: number) {
-  let lineOffset = 0
-  const addedLines: number[] = []
-  const deletedAtLines: { line: number; text: string }[] = []
-  let firstChangedLine: number | undefined
-  let lastChangedLine: number | undefined
-  const remember = (line: number) => {
-    if (firstChangedLine === undefined || line < firstChangedLine) firstChangedLine = line
-    if (lastChangedLine === undefined || line > lastChangedLine) lastChangedLine = line
-  }
-  for (const entry of hunk.lines) {
-    if (entry.kind === "hunk") continue
-    if (entry.kind === "add") {
-      const ln = baseLine + lineOffset
-      addedLines.push(ln)
-      remember(ln)
-      lineOffset += 1
-      continue
-    }
-    if (entry.kind === "del") {
-      // Visually attach the deleted text to the next surviving line (or last) so users see what was removed.
-      const ln = Math.max(0, Math.min(baseLine + lineOffset, Math.max(lineCount - 1, 0)))
-      deletedAtLines.push({ line: ln, text: reviewLineText(entry) })
-      remember(ln)
-      continue
-    }
-    if (entry.kind === "ctx") {
-      lineOffset += 1
-    }
-  }
-  return { addedLines, deletedAtLines, firstChangedLine, lastChangedLine }
-}
-
-const REVIEW_LENS_MERGE_LINE_GAP = 3
-
-function mergeReviewLensEntries(entries: ReviewLensEntry[]) {
-  const collapsed = new Map<string, ReviewLensEntry>()
-  for (const entry of entries) {
-    const fingerprint = reviewLensFingerprint(entry)
-    const existing = collapsed.get(fingerprint)
-    if (!existing) {
-      collapsed.set(fingerprint, {
-        ...entry,
-        keys: [...entry.keys],
-        variants: [...entry.variants],
-        addedLines: [...entry.addedLines],
-        deletedAtLines: [...entry.deletedAtLines],
-      })
-      continue
-    }
-    existing.keys = unique([...existing.keys, ...entry.keys])
-    existing.variants = uniqueReviewVariants([...existing.variants, ...entry.variants])
-    existing.reversible = existing.reversible || entry.reversible
-    existing.addedLines = uniqueNumbers([...existing.addedLines, ...entry.addedLines])
-    existing.deletedAtLines = uniqueDeletions([...existing.deletedAtLines, ...entry.deletedAtLines])
-  }
-  // Two records for the SAME physical edit (e.g. tool block + patch block) reduce to one variant —
-  // hunkCount stays at 1. Genuinely distinct changes that collide on start line are kept as separate
-  // variants and counted accordingly.
-  for (const entry of collapsed.values()) {
-    entry.hunkCount = Math.max(1, entry.variants.length)
-  }
-  return coalesceAdjacentLensEntries([...collapsed.values()])
-}
-
-function uniqueNumbers(items: number[]): number[] {
-  return [...new Set(items)]
-}
-
-
-function uniqueDeletions(items: { line: number; text: string }[]): { line: number; text: string }[] {
-  const seen = new Set<string>()
-  return items.filter((item) => {
-    const key = `${item.line}\u0000${item.text}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
-function coalesceAdjacentLensEntries(entries: ReviewLensEntry[]) {
-  const byUri = new Map<string, ReviewLensEntry[]>()
-  for (const entry of entries) {
-    const key = entry.uri.toString()
-    const list = byUri.get(key) ?? []
-    list.push(entry)
-    byUri.set(key, list)
-  }
-  const result: ReviewLensEntry[] = []
-  for (const list of byUri.values()) {
-    list.sort((a, b) => (a.range.start.line - b.range.start.line) || (a.range.start.character - b.range.start.character))
-    let current: ReviewLensEntry | undefined
-    for (const entry of list) {
-      if (!current) {
-        current = { ...entry, keys: [...entry.keys], variants: [...entry.variants] }
-        continue
-      }
-      const gap = entry.range.start.line - current.range.end.line
-      if (gap <= REVIEW_LENS_MERGE_LINE_GAP) {
-        const mergedVariants = uniqueReviewVariants([...current.variants, ...entry.variants])
-        current = {
-          ...current,
-          range: new vscode.Range(current.range.start, entry.range.end.isAfter(current.range.end) ? entry.range.end : current.range.end),
-          keys: unique([...current.keys, ...entry.keys]),
-          variants: mergedVariants,
-          reversible: current.reversible || entry.reversible,
-          hunkCount: Math.max(1, mergedVariants.length),
-          newText: current.newText + (current.newText && entry.newText ? "\n" : "") + entry.newText,
-          oldText: current.oldText + (current.oldText && entry.oldText ? "\n" : "") + entry.oldText,
-          addedLines: uniqueNumbers([...current.addedLines, ...entry.addedLines]),
-          deletedAtLines: uniqueDeletions([...current.deletedAtLines, ...entry.deletedAtLines]),
-        }
-        continue
-      }
-      result.push(current)
-      current = { ...entry, keys: [...entry.keys], variants: [...entry.variants] }
-    }
-    if (current) result.push(current)
-  }
-  return result
-}
-
-function reviewLensFingerprint(entry: ReviewLensEntry) {
-  return [
-    entry.uri.toString(),
-    entry.range.start.line,
-    entry.range.start.character,
-  ].join("\u0000")
-}
-
-function uniqueReviewVariants(variants: ReviewLensVariant[]) {
-  const seen = new Set<string>()
-  return variants.filter((variant) => {
-    const key = [
-      normalizeReviewText(variant.oldText),
-      normalizeReviewText(variant.newText),
-      variant.reversible ? "reversible" : "fixed",
-    ].join("\u0000")
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
-function normalizeReviewText(value: string) {
-  return value.replace(/\r\n/g, "\n").trimEnd()
-}
 
 function hunkText(lines: string[]) {
   const oldLines: string[] = []
@@ -1984,26 +1542,9 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;")
 }
 
-async function reviewEntryHunk(entry: ReviewLensEntry, action: ReviewHunkState) {
-  if (action === "accepted") return true
-  for (const variant of entry.variants.filter((item) => item.reversible)) {
-    if (await reviewHunk(entry.path, action, variant.oldText, variant.newText, true)) return true
-  }
-  vscode.window.showWarningMessage(`OpenCUI: could not undo hunk in ${entry.path}; the file changed since the diff was generated.`)
-  try {
-    const doc = await openFileDocument(entry.path)
-    await vscode.window.showTextDocument(doc)
-  } catch {
-    // The warning above is the actionable UI; ignore follow-up open failures.
-  }
-  return false
-}
-
 async function reviewHunk(relPath: string, action: ReviewHunkState, oldText: string, newText: string, silent = false): Promise<boolean> {
   if (action === "accepted") return true
-  const ws = vscode.workspace.workspaceFolders?.[0]
-  if (!ws) return false
-  const uri = path.isAbsolute(relPath) ? vscode.Uri.file(relPath) : vscode.Uri.joinPath(ws.uri, relPath)
+  const uri = await workspaceFileUri(relPath)
   const doc = await vscode.workspace.openTextDocument(uri)
   const current = doc.getText()
   const match = findHunkText(current, newText)

@@ -166,11 +166,26 @@ function turnChanges(messages: Message[]) {
       return toolChanges(block.update, block.update.callID || source)
     }),
   )
+  // When the same file is modified multiple times in the same conversation,
+  // collapse the rows so only one appears per file — but SUM additions and
+  // deletions across all changes so the row reflects the total work, not
+  // just the last edit. Keep the earliest `kind` (so a file that was created
+  // and later updated still shows as "created"), and keep the most-recent
+  // `source` and `patch` since those drive Action targeting and the popup
+  // review-panel diff view. The host's `handleReviewAllInChange` already
+  // iterates all matching records by path, so Keep/Undo correctly act on
+  // every underlying change.
   return changes.reduce<ReviewChange[]>((acc, change) => {
     const existing = acc.findIndex((item) => samePath(item.path, change.path))
     if (existing < 0) return [...acc, change]
+    const prev = acc[existing]!
     const copy = acc.slice()
-    copy[existing] = change
+    copy[existing] = {
+      ...change,
+      additions: prev.additions + change.additions,
+      deletions: prev.deletions + change.deletions,
+      kind: prev.kind === "created" || prev.kind === "deleted" ? prev.kind : change.kind,
+    }
     return copy
   }, [])
 }
@@ -178,16 +193,40 @@ function turnChanges(messages: Message[]) {
 function toolChanges(update: { tool: string; title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, source: string) {
   if (update.tool === "apply_patch") return patchChanges(update.metadata?.files, source)
   const filediff = isRecord(update.metadata?.filediff) ? update.metadata.filediff : undefined
-  const patch = typeof filediff?.patch === "string" ? filediff.patch : typeof update.metadata?.diff === "string" ? update.metadata.diff : undefined
+  let patch = typeof filediff?.patch === "string" ? filediff.patch : typeof update.metadata?.diff === "string" ? update.metadata.diff : undefined
+  const isCreate =
+    (update.tool === "write" && update.metadata?.exists === false) ||
+    (update.tool === "edit" && update.input?.oldString === "")
+  // For created files, opencode often doesn't produce a unified diff in
+  // metadata since there's nothing to diff against. Synthesize one from the
+  // tool's input content so the file shows up in the review card.
+  if (!patch && isCreate) patch = synthesizeCreatePatch(update)
   if (!patch) return []
   return [{
     source,
     path: displayPath(update, filediff),
-    kind: update.tool === "write" && update.metadata?.exists === false ? "created" : "updated",
+    kind: isCreate ? "created" : "updated",
     additions: typeof filediff?.additions === "number" ? filediff.additions : countDiff(patch, "+"),
     deletions: typeof filediff?.deletions === "number" ? filediff.deletions : countDiff(patch, "-"),
     patch,
   } satisfies ReviewChange]
+}
+
+function synthesizeCreatePatch(update: { tool: string; input?: Record<string, unknown> }): string | undefined {
+  const content =
+    update.tool === "write" && typeof update.input?.content === "string"
+      ? update.input.content
+      : update.tool === "edit" && typeof update.input?.newString === "string"
+        ? update.input.newString
+        : undefined
+  if (typeof content !== "string") return undefined
+  const lines = content.split("\n")
+  // git omits a trailing empty line if the content ends in "\n"; mirror that
+  // so additions counts match what diff/patch consumers expect.
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop()
+  if (!lines.length) return undefined
+  const body = lines.map((line) => `+${line}`).join("\n")
+  return `@@ -0,0 +1,${lines.length} @@\n${body}`
 }
 
 function patchChanges(files: unknown, source: string) {
@@ -247,11 +286,24 @@ function patchPath(patch: string) {
   return index ?? "file"
 }
 
-function displayPath(update: { title?: string; input?: Record<string, unknown> }, filediff?: Record<string, unknown>) {
+function displayPath(update: { title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, filediff?: Record<string, unknown>) {
+  // The absolute filepath opencode resolved is unambiguous; prefer it. The
+  // model's raw input.filePath can be relative to opencode's internal
+  // directory (e.g., the git worktree root) which differs from our VSCode
+  // workspace folder, and persisted conversations may already have the wrong
+  // relative there.
+  const fromMetadata = typeof update.metadata?.filepath === "string" ? update.metadata.filepath : undefined
+  if (fromMetadata && isAbsolutePath(fromMetadata)) return fromMetadata
+  const fromFilediff = typeof filediff?.file === "string" ? filediff.file : undefined
+  if (fromFilediff && isAbsolutePath(fromFilediff)) return fromFilediff
+  if (typeof update.input?.filePath === "string" && update.input.filePath) return update.input.filePath
   if (typeof update.title === "string" && update.title.trim()) return update.title
-  if (typeof update.input?.filePath === "string") return update.input.filePath
-  if (typeof filediff?.file === "string") return filediff.file
-  return "file"
+  return fromFilediff ?? "file"
+}
+
+function isAbsolutePath(value: string) {
+  // Posix and Windows absolute paths. We don't import node:path in the webview.
+  return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\")
 }
 
 function patchKind(value: unknown): ReviewChange["kind"] {

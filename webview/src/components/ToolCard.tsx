@@ -1,4 +1,4 @@
-import type { ToolStatus, ToolUpdate } from "../protocol"
+import type { Todo, ToolStatus, ToolUpdate } from "../protocol"
 import { vscode } from "../vscode"
 
 type FileAction = "read" | "created" | "updated" | "deleted" | "moved"
@@ -35,7 +35,7 @@ export function ToolTrace({
   onReviewFile?: (path: string) => void
 }) {
   const trace = buildTrace(updates, patches)
-  if (!trace.edits.length && !trace.reads.length && !trace.others.length) return null
+  if (!trace.edits.length && !trace.reads.length && !trace.others.length && !trace.todos) return null
 
   return (
     <div className="trace">
@@ -47,6 +47,7 @@ export function ToolTrace({
         </div>
       )}
       {trace.reads.length > 0 && <ReadsLine reads={trace.reads} />}
+      {trace.todos && <TodoBlock todos={trace.todos} />}
       {trace.others.length > 0 && (
         <div className="trace-others">
           {trace.others.map((op) => (
@@ -56,6 +57,34 @@ export function ToolTrace({
       )}
     </div>
   )
+}
+
+function TodoBlock({ todos }: { todos: Todo[] }) {
+  if (!todos.length) return null
+  const completed = todos.filter((t) => t.status === "completed" || t.status === "cancelled").length
+  return (
+    <div className="trace-todos">
+      <div className="trace-todos-head">
+        <span className="trace-todos-label">Todos</span>
+        <span className="trace-todos-progress">{completed}/{todos.length}</span>
+      </div>
+      <ul className="trace-todos-list">
+        {todos.map((todo, i) => (
+          <li key={i} className={`trace-todo-item status-${todo.status}`}>
+            <span className="trace-todo-status" aria-label={statusLabel(todo.status)} />
+            <span className="trace-todo-content">{todo.content}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function statusLabel(status: Todo["status"]): string {
+  if (status === "completed") return "completed"
+  if (status === "in_progress") return "in progress"
+  if (status === "cancelled") return "cancelled"
+  return "pending"
 }
 
 function EditCard({ op, onReviewFile }: { op: FileOp; onReviewFile?: (path: string) => void }) {
@@ -111,8 +140,17 @@ function OtherRow({ op }: { op: OtherOp }) {
 function buildTrace(updates: ToolUpdate[], patches: PatchInput[]) {
   const fileOps = new Map<string, FileOp>()
   const others: OtherOp[] = []
+  let todos: Todo[] | undefined
 
   for (const update of updates) {
+    if (update.tool === "todowrite") {
+      // Route todowrite into a dedicated todos block instead of an "Updated todos" row.
+      // Successive todowrite calls within the same trace cluster overwrite each other,
+      // so we always show the latest snapshot.
+      const next = Array.isArray(update.input?.todos) ? (update.input.todos as Todo[]) : undefined
+      if (next) todos = next
+      continue
+    }
     if (update.tool === "read") {
       const path = pickPath(update)
       if (!path) {
@@ -211,7 +249,7 @@ function buildTrace(updates: ToolUpdate[], patches: PatchInput[]) {
   const allOps = [...fileOps.values()]
   const edits = allOps.filter((op) => op.action !== "read")
   const reads = allOps.filter((op) => op.action === "read")
-  return { edits, reads, others }
+  return { edits, reads, others, todos }
 }
 
 function mergeFileOp(map: Map<string, FileOp>, path: string, patch: Omit<FileOp, "path" | "range" | "reviewable"> & { reviewable: boolean }) {
@@ -280,14 +318,6 @@ function deriveOther(update: ToolUpdate): OtherOp {
       key: update.callID,
       action: "Fetched",
       detail: stringInput(update, "url") ?? update.title,
-      status: update.status,
-      errorText: update.error,
-    }
-  }
-  if (update.tool === "todowrite") {
-    return {
-      key: update.callID,
-      action: "Updated todos",
       status: update.status,
       errorText: update.error,
     }

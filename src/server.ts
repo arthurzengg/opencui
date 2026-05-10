@@ -38,10 +38,11 @@ export class ServerManager {
   private async startInternal(): Promise<Backend> {
     const config = vscode.workspace.getConfiguration("opencui")
     const port = config.get<number>("serverPort") ?? 0
-    const binaryPath = config.get<string>("binaryPath") || "opencode"
+    const configuredBinaryPath = config.get<string>("binaryPath") || "opencode"
+    const binaryPath = resolveBinaryPath(configuredBinaryPath, this.context.extensionPath)
 
-    log("starting opencode server", { binaryPath, port })
-    const server = await startOpencodeServer(resolveBinaryPath(binaryPath, this.context.extensionPath), {
+    log("starting opencode server", { configuredBinaryPath, resolved: binaryPath, port })
+    const server = await startOpencodeServer(binaryPath, {
       hostname: "127.0.0.1",
       port: port || randomPort(),
       timeout: SERVER_START_TIMEOUT_MS,
@@ -83,9 +84,29 @@ function workspaceDir() {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()
 }
 
-function resolveBinaryPath(binaryPath: string, extensionPath: string) {
-  if (path.isAbsolute(binaryPath) || binaryPath === "opencode") return binaryPath
-  return path.join(extensionPath, binaryPath)
+function resolveBinaryPath(binaryPath: string, extensionPath: string): string {
+  // Absolute path → use as-is (lets dev override via settings.json).
+  if (path.isAbsolute(binaryPath)) return binaryPath
+  // Anything other than the literal "opencode" → resolve relative to the
+  // extension install dir (lets us point at a non-default bundled name).
+  if (binaryPath !== "opencode") return path.join(extensionPath, binaryPath)
+  // Default path: prefer a bundled binary if shipped with the extension,
+  // fall back to the literal "opencode" so it resolves via $PATH.
+  const bundled = bundledBinaryPath(extensionPath)
+  return bundled ?? "opencode"
+}
+
+function bundledBinaryPath(extensionPath: string): string | undefined {
+  // The published `opencode-ai` npm package exposes a Node.js shim at
+  // `bin/opencode` that routes to the platform-specific binary at runtime.
+  // If this is bundled into the extension via npm dependency, we use it.
+  const candidate = path.join(extensionPath, "node_modules", "opencode-ai", "bin", "opencode")
+  try {
+    require("fs").accessSync(candidate, require("fs").constants.X_OK)
+    return candidate
+  } catch {
+    return undefined
+  }
 }
 
 function startOpencodeServer(
