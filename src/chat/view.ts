@@ -858,7 +858,7 @@ function upsertTool(messages: ChatMessage[], id: string, update: WireToolUpdate)
  * Existing global storage keys are cleared after the first successful migration
  * so a different workspace doesn't see the same conversations duplicated.
  */
-function migrateConversationsToWorkspace(context: vscode.ExtensionContext) {
+export function migrateConversationsToWorkspace(context: vscode.ExtensionContext) {
   if (context.workspaceState.get<boolean>(MIGRATED_TO_WORKSPACE_KEY, false)) return
   const legacy = context.globalState.get<SavedConversation[]>(CONVERSATIONS_KEY)
   if (legacy && legacy.length) {
@@ -871,7 +871,7 @@ function migrateConversationsToWorkspace(context: vscode.ExtensionContext) {
   void context.workspaceState.update(MIGRATED_TO_WORKSPACE_KEY, true)
 }
 
-function reviewChanges(messages: ChatMessage[]) {
+export function reviewChanges(messages: ChatMessage[]) {
   const changes = messages.flatMap((message) =>
     message.blocks.flatMap((block, blockIndex) => {
       const source = `${message.id}:${blockIndex}`
@@ -891,7 +891,7 @@ function reviewChanges(messages: ChatMessage[]) {
   }, [])
 }
 
-function toolChanges(update: WireToolUpdate, source: string) {
+export function toolChanges(update: WireToolUpdate, source: string) {
   if (update.tool === "apply_patch") return patchChanges(update.metadata?.files, source)
   const filediff = isRecord(update.metadata?.filediff) ? update.metadata.filediff : undefined
   let patch = typeof filediff?.patch === "string" ? filediff.patch : typeof update.metadata?.diff === "string" ? update.metadata.diff : undefined
@@ -910,14 +910,14 @@ function toolChanges(update: WireToolUpdate, source: string) {
   } satisfies ReviewChange]
 }
 
-function synthesizeCreatePatch(update: WireToolUpdate): string | undefined {
+export function synthesizeCreatePatch(update: WireToolUpdate): string | undefined {
   const content =
     update.tool === "write" && typeof update.input?.content === "string"
       ? update.input.content
       : update.tool === "edit" && typeof update.input?.newString === "string"
         ? update.input.newString
         : undefined
-  if (typeof content !== "string") return undefined
+  if (typeof content !== "string" || content === "") return undefined
   const lines = content.split("\n")
   if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop()
   if (!lines.length) return undefined
@@ -925,7 +925,7 @@ function synthesizeCreatePatch(update: WireToolUpdate): string | undefined {
   return `@@ -0,0 +1,${lines.length} @@\n${body}`
 }
 
-function patchChanges(files: unknown, source: string) {
+export function patchChanges(files: unknown, source: string) {
   if (!Array.isArray(files)) return []
   return files.flatMap((file) => {
     if (!isRecord(file) || typeof file.relativePath !== "string" || typeof file.patch !== "string") return []
@@ -940,7 +940,7 @@ function patchChanges(files: unknown, source: string) {
   })
 }
 
-function diffChanges(diff: string, source: string) {
+export function diffChanges(diff: string, source: string) {
   const starts = diff.split("\n").reduce<number[]>((acc, line, index) => (
     line.startsWith("diff --git ") ? [...acc, index] : acc
   ), [])
@@ -962,7 +962,7 @@ function diffChanges(diff: string, source: string) {
   })
 }
 
-function createPatchChange(patch: string, source: string) {
+export function createPatchChange(patch: string, source: string) {
   return [{
     source,
     path: patchPath(patch),
@@ -973,16 +973,16 @@ function createPatchChange(patch: string, source: string) {
   } satisfies ReviewChange]
 }
 
-function patchPath(patch: string) {
-  const plus = patch.match(/\n\+\+\+\s+(?:b\/)?(.+)/)?.[1]
+export function patchPath(patch: string) {
+  const plus = patch.match(/(?:^|\n)\+\+\+\s+(?:b\/)?(.+)/)?.[1]
   if (plus && plus !== "/dev/null") return plus
-  const minus = patch.match(/\n---\s+(?:a\/)?(.+)/)?.[1]
+  const minus = patch.match(/(?:^|\n)---\s+(?:a\/)?(.+)/)?.[1]
   if (minus && minus !== "/dev/null") return minus
   const index = patch.match(/^Index:\s+(.+)$/m)?.[1]
   return index ?? "file"
 }
 
-function displayPath(update: { title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, filediff?: Record<string, unknown>) {
+export function displayPath(update: { title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, filediff?: Record<string, unknown>) {
   // The absolute filepath opencode resolved is unambiguous; prefer it. The
   // model's raw input.filePath can be relative to opencode's internal
   // directory (e.g., the git worktree root) which differs from our VSCode
@@ -997,14 +997,14 @@ function displayPath(update: { title?: string; input?: Record<string, unknown>; 
   return fromFilediff ?? "file"
 }
 
-function patchKind(value: unknown): ReviewChange["kind"] {
+export function patchKind(value: unknown): ReviewChange["kind"] {
   if (value === "add") return "created"
   if (value === "delete") return "deleted"
   if (value === "move") return "moved"
   return "updated"
 }
 
-function samePath(left: string, right?: string) {
+export function samePath(left: string, right?: string) {
   if (!right) return false
   return normalizePath(left) === normalizePath(right)
 }
@@ -1013,7 +1013,7 @@ async function reviewPathExists(relPath: string): Promise<boolean> {
   return !!(await existingWorkspaceFileUri(relPath))
 }
 
-function isTextReviewPath(value: string) {
+export function isTextReviewPath(value: string) {
   const name = path.basename(value).toLowerCase()
   if (!name || name === ".ds_store" || name === "thumbs.db") return false
   const ext = path.extname(name)
@@ -1056,11 +1056,11 @@ function isTextReviewPath(value: string) {
   return !binaryExtensions.has(ext)
 }
 
-function countDiff(patch: string, prefix: "+" | "-") {
+export function countDiff(patch: string, prefix: "+" | "-") {
   return patch.split("\n").filter((line) => line.startsWith(prefix) && !line.startsWith(`${prefix}${prefix}${prefix}`)).length
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
 
@@ -1243,12 +1243,12 @@ function stripWorkspaceFolderPrefix(workspacePath: string, relPath: string): str
   return segments.slice(1).join("/")
 }
 
-type ReviewDiffLine = {
+export type ReviewDiffLine = {
   text: string
   kind: "add" | "del" | "hunk" | "ctx"
 }
 
-type ReviewDiffHunk = {
+export type ReviewDiffHunk = {
   id: string
   header: string
   lines: ReviewDiffLine[]
@@ -1413,7 +1413,7 @@ function reviewChangeHtml(change: ReviewChange, reviewed: Record<string, ReviewH
 </html>`
 }
 
-function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
+export function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
   const lines = patch.split("\n")
   const hunks: ReviewDiffHunk[] = []
   let index = 0
@@ -1461,7 +1461,7 @@ function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
 }
 
 
-function hunkText(lines: string[]) {
+export function hunkText(lines: string[]) {
   const oldLines: string[] = []
   const newLines: string[] = []
   const diff = diffLines(lines.join("\n"))
@@ -1486,21 +1486,21 @@ function hunkText(lines: string[]) {
   }
 }
 
-function diffLines(patch: string) {
+export function diffLines(patch: string) {
   return patch.split("\n").map((text) => ({
     text,
     kind: text.startsWith("+") && !text.startsWith("+++") ? "add" : text.startsWith("-") && !text.startsWith("---") ? "del" : text.startsWith("@@") ? "hunk" : "ctx",
   } satisfies ReviewDiffLine))
 }
 
-function firstReviewAnchor(lines: ReviewDiffLine[], fallback: string) {
+export function firstReviewAnchor(lines: ReviewDiffLine[], fallback: string) {
   const added = firstChangedBlock(lines, "add")
   if (added) return added
   const context = firstChangedBlock(lines, "ctx")
   return context || fallback
 }
 
-function firstChangedBlock(lines: ReviewDiffLine[], kind: ReviewDiffLine["kind"]) {
+export function firstChangedBlock(lines: ReviewDiffLine[], kind: ReviewDiffLine["kind"]) {
   const start = lines.findIndex((line) => line.kind === kind && reviewLineText(line).trim())
   if (start < 0) return ""
   const block: string[] = []
@@ -1511,7 +1511,7 @@ function firstChangedBlock(lines: ReviewDiffLine[], kind: ReviewDiffLine["kind"]
   return block.join("\n")
 }
 
-function reviewLineText(line: ReviewDiffLine) {
+export function reviewLineText(line: ReviewDiffLine) {
   if ((line.kind === "add" || line.kind === "del" || line.kind === "ctx") && /^[+\- ]/.test(line.text)) {
     return line.text.slice(1)
   }
@@ -1526,15 +1526,15 @@ function hasPendingReviewHunks(change: ReviewChange, reviewed: Record<string, Re
   return splitReviewDiff(change.patch).hunks.some((hunk) => !reviewed[reviewKey(change, hunk.id)])
 }
 
-function reviewKey(change: ReviewChange, hunkID: string) {
+export function reviewKey(change: ReviewChange, hunkID: string) {
   return `${change.source}:${normalizePath(change.path)}:${hunkID}`
 }
 
-function normalizePath(value: string) {
+export function normalizePath(value: string) {
   return value.replace(/\\/g, "/").replace(/^\.?\//, "")
 }
 
-function escapeHtml(value: string) {
+export function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -1566,7 +1566,7 @@ async function reviewHunk(relPath: string, action: ReviewHunkState, oldText: str
   return true
 }
 
-function findHunkText(current: string, value: string): { start: number; end: number } | undefined {
+export function findHunkText(current: string, value: string): { start: number; end: number } | undefined {
   const candidates = unique([
     value,
     value.endsWith("\n") ? value.slice(0, -1) : `${value}\n`,
@@ -1580,7 +1580,7 @@ function findHunkText(current: string, value: string): { start: number; end: num
   return undefined
 }
 
-function unique(items: string[]) {
+export function unique(items: string[]) {
   return [...new Set(items)]
 }
 

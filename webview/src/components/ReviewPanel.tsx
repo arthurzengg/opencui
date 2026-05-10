@@ -122,7 +122,7 @@ export function ReviewPanel({
   )
 }
 
-function disambiguatePaths(paths: string[]): Map<string, string> {
+export function disambiguatePaths(paths: string[]): Map<string, string> {
   const result = new Map<string, string>()
   const groups = new Map<string, string[]>()
   for (const path of paths) {
@@ -143,7 +143,7 @@ function disambiguatePaths(paths: string[]): Map<string, string> {
   return result
 }
 
-function shortestUniqueSuffix(target: string, group: string[]): string {
+export function shortestUniqueSuffix(target: string, group: string[]): string {
   const targetSegs = target.split(/[\\/]/).filter(Boolean)
   for (let depth = 1; depth <= targetSegs.length; depth++) {
     const candidate = targetSegs.slice(-depth).join("/")
@@ -157,7 +157,7 @@ function shortestUniqueSuffix(target: string, group: string[]): string {
   return target
 }
 
-function turnChanges(messages: Message[]) {
+export function turnChanges(messages: Message[]) {
   const changes = messages.flatMap((message) =>
     message.blocks.flatMap((block, blockIndex) => {
       const source = `${message.id}:${blockIndex}`
@@ -190,7 +190,7 @@ function turnChanges(messages: Message[]) {
   }, [])
 }
 
-function toolChanges(update: { tool: string; title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, source: string) {
+export function toolChanges(update: { tool: string; title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, source: string) {
   if (update.tool === "apply_patch") return patchChanges(update.metadata?.files, source)
   const filediff = isRecord(update.metadata?.filediff) ? update.metadata.filediff : undefined
   let patch = typeof filediff?.patch === "string" ? filediff.patch : typeof update.metadata?.diff === "string" ? update.metadata.diff : undefined
@@ -212,14 +212,14 @@ function toolChanges(update: { tool: string; title?: string; input?: Record<stri
   } satisfies ReviewChange]
 }
 
-function synthesizeCreatePatch(update: { tool: string; input?: Record<string, unknown> }): string | undefined {
+export function synthesizeCreatePatch(update: { tool: string; input?: Record<string, unknown> }): string | undefined {
   const content =
     update.tool === "write" && typeof update.input?.content === "string"
       ? update.input.content
       : update.tool === "edit" && typeof update.input?.newString === "string"
         ? update.input.newString
         : undefined
-  if (typeof content !== "string") return undefined
+  if (typeof content !== "string" || content === "") return undefined
   const lines = content.split("\n")
   // git omits a trailing empty line if the content ends in "\n"; mirror that
   // so additions counts match what diff/patch consumers expect.
@@ -229,7 +229,7 @@ function synthesizeCreatePatch(update: { tool: string; input?: Record<string, un
   return `@@ -0,0 +1,${lines.length} @@\n${body}`
 }
 
-function patchChanges(files: unknown, source: string) {
+export function patchChanges(files: unknown, source: string) {
   if (!Array.isArray(files)) return []
   return files.flatMap((file) => {
     if (!isRecord(file) || typeof file.relativePath !== "string" || typeof file.patch !== "string") return []
@@ -244,7 +244,7 @@ function patchChanges(files: unknown, source: string) {
   })
 }
 
-function diffChanges(diff: string, source: string) {
+export function diffChanges(diff: string, source: string) {
   const starts = diff.split("\n").reduce<number[]>((acc, line, index) => (
     line.startsWith("diff --git ") ? [...acc, index] : acc
   ), [])
@@ -266,7 +266,7 @@ function diffChanges(diff: string, source: string) {
   })
 }
 
-function createPatchChange(patch: string, source: string) {
+export function createPatchChange(patch: string, source: string) {
   return [{
     source,
     path: patchPath(patch),
@@ -277,7 +277,7 @@ function createPatchChange(patch: string, source: string) {
   } satisfies ReviewChange]
 }
 
-function patchPath(patch: string) {
+export function patchPath(patch: string) {
   const plus = patch.match(/\n\+\+\+\s+(?:b\/)?(.+)/)?.[1]
   if (plus && plus !== "/dev/null") return plus
   const minus = patch.match(/\n---\s+(?:a\/)?(.+)/)?.[1]
@@ -286,7 +286,7 @@ function patchPath(patch: string) {
   return index ?? "file"
 }
 
-function displayPath(update: { title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, filediff?: Record<string, unknown>) {
+export function displayPath(update: { title?: string; input?: Record<string, unknown>; metadata?: Record<string, unknown> }, filediff?: Record<string, unknown>) {
   // The absolute filepath opencode resolved is unambiguous; prefer it. The
   // model's raw input.filePath can be relative to opencode's internal
   // directory (e.g., the git worktree root) which differs from our VSCode
@@ -301,19 +301,19 @@ function displayPath(update: { title?: string; input?: Record<string, unknown>; 
   return fromFilediff ?? "file"
 }
 
-function isAbsolutePath(value: string) {
+export function isAbsolutePath(value: string) {
   // Posix and Windows absolute paths. We don't import node:path in the webview.
   return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\")
 }
 
-function patchKind(value: unknown): ReviewChange["kind"] {
+export function patchKind(value: unknown): ReviewChange["kind"] {
   if (value === "add") return "created"
   if (value === "delete") return "deleted"
   if (value === "move") return "moved"
   return "updated"
 }
 
-function splitDiff(patch: string): { hunks: DiffHunk[] } {
+export function splitDiff(patch: string): { hunks: DiffHunk[] } {
   const lines = patch.split("\n")
   const hunks: DiffHunk[] = []
   let index = 0
@@ -343,20 +343,20 @@ function splitDiff(patch: string): { hunks: DiffHunk[] } {
   return { hunks }
 }
 
-function reviewKey(change: ReviewChange, hunkID: string) {
+export function reviewKey(change: ReviewChange, hunkID: string) {
   return `${change.source}:${normalizePath(change.path)}:${hunkID}`
 }
 
-function samePath(left: string, right?: string) {
+export function samePath(left: string, right?: string) {
   if (!right) return false
   return normalizePath(left) === normalizePath(right)
 }
 
-function normalizePath(value: string) {
+export function normalizePath(value: string) {
   return value.replace(/\\/g, "/").replace(/^\.?\//, "")
 }
 
-function isTextReviewChange(change: ReviewChange) {
+export function isTextReviewChange(change: ReviewChange) {
   if (change.additions === 0 && change.deletions === 0) return false
   const name = basename(change.path).toLowerCase()
   if (!name || name === ".ds_store" || name === "thumbs.db") return false
@@ -399,14 +399,14 @@ function isTextReviewChange(change: ReviewChange) {
   ]).has(ext)
 }
 
-function countDiff(patch: string, prefix: "+" | "-") {
+export function countDiff(patch: string, prefix: "+" | "-") {
   return patch.split("\n").filter((line) => line.startsWith(prefix) && !line.startsWith(`${prefix}${prefix}${prefix}`)).length
 }
 
-function basename(value: string) {
+export function basename(value: string) {
   return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }

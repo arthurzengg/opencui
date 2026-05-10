@@ -137,7 +137,7 @@ function OtherRow({ op }: { op: OtherOp }) {
   )
 }
 
-function buildTrace(updates: ToolUpdate[], patches: PatchInput[]) {
+export function buildTrace(updates: ToolUpdate[], patches: PatchInput[]) {
   const fileOps = new Map<string, FileOp>()
   const others: OtherOp[] = []
   let todos: Todo[] | undefined
@@ -268,7 +268,7 @@ function mergeFileOp(map: Map<string, FileOp>, path: string, patch: Omit<FileOp,
   })
 }
 
-function preferAction(existing: FileAction | undefined, next: FileAction): FileAction {
+export function preferAction(existing: FileAction | undefined, next: FileAction): FileAction {
   if (!existing) return next
   if (existing === "read") return next
   if (next === "read") return existing
@@ -277,7 +277,7 @@ function preferAction(existing: FileAction | undefined, next: FileAction): FileA
   return next
 }
 
-function mergeStatus(existing: ToolStatus | undefined, next: ToolStatus): ToolStatus {
+export function mergeStatus(existing: ToolStatus | undefined, next: ToolStatus): ToolStatus {
   if (!existing) return next
   if (next === "error" || existing === "error") return "error"
   if (next === "running" || existing === "running") return "running"
@@ -344,19 +344,19 @@ function genericOther(update: ToolUpdate): OtherOp {
   }
 }
 
-function stringInput(update: ToolUpdate, key: string): string | undefined {
+export function stringInput(update: ToolUpdate, key: string): string | undefined {
   const value = update.input?.[key]
   return typeof value === "string" ? value : undefined
 }
 
-function pickPath(update: ToolUpdate): string | undefined {
+export function pickPath(update: ToolUpdate): string | undefined {
   if (typeof update.input?.filePath === "string") return update.input.filePath
   if (isFileTool(update.tool) && typeof update.input?.path === "string") return update.input.path
   if (isFileTool(update.tool) && update.title) return update.title
   return undefined
 }
 
-function patchFilesFromUpdate(update: ToolUpdate): Array<{ path: string; kind: FileAction; additions?: number; deletions?: number }> {
+export function patchFilesFromUpdate(update: ToolUpdate): Array<{ path: string; kind: FileAction; additions?: number; deletions?: number }> {
   const files = Array.isArray(update.metadata?.files) ? update.metadata.files : undefined
   if (files) {
     return files.flatMap((item) => {
@@ -375,7 +375,7 @@ function patchFilesFromUpdate(update: ToolUpdate): Array<{ path: string; kind: F
   }))
 }
 
-function patchKind(value: unknown): FileAction {
+export function patchKind(value: unknown): FileAction {
   if (value === "add") return "created"
   if (value === "delete") return "deleted"
   if (value === "move") return "moved"
@@ -390,12 +390,12 @@ function diffStats(update: ToolUpdate): { additions?: number; deletions?: number
   }
 }
 
-function writeLines(update: ToolUpdate): number | undefined {
+export function writeLines(update: ToolUpdate): number | undefined {
   if (typeof update.input?.content !== "string") return undefined
   return update.input.content.split("\n").length
 }
 
-function lineRange(update: ToolUpdate): string | undefined {
+export function lineRange(update: ToolUpdate): string | undefined {
   const matches = [...(update.output ?? "").matchAll(/(?:^|\n)(\d+): /g)]
   if (matches.length) {
     const start = matches[0]?.[1]

@@ -287,14 +287,14 @@ function ProcessText({ text }: { text: string }) {
   )
 }
 
-function hasProcessBlocks(blocks: Block[]) {
+export function hasProcessBlocks(blocks: Block[]) {
   return blocks.some((b) => {
     if (b.type === "text" || b.type === "reasoning") return b.text.trim().length > 0
     return true
   })
 }
 
-function lastTextIndex(blocks: Block[], pending: boolean) {
+export function lastTextIndex(blocks: Block[], pending: boolean) {
   const mixedWithActivity = blocks.some((block) => block.type !== "text") || blocks.filter((block) => block.type === "text").length > 1
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i]
@@ -307,19 +307,19 @@ function lastTextIndex(blocks: Block[], pending: boolean) {
   return -1
 }
 
-function looksLikeFinalAnswer(text: string) {
+export function looksLikeFinalAnswer(text: string) {
   const value = text.trim()
   if (/^[-*]\s+\[[ x]\]/m.test(value)) return true
   if (/^(short summary|summary|model|i['’]m|factoryflow)/i.test(value)) return true
   return value.length > 240 && !/\b(i('|’)m|i am)\s+(checking|reading|looking|inspecting|exploring|going to|falling back)\b/i.test(value)
 }
 
-function looksLikeProcessText(text: string) {
+export function looksLikeProcessText(text: string) {
   return /\b(i('|’)m|i am)\s+(checking|reading|looking|inspecting|exploring|going to|falling back|considering)\b/i.test(text)
     || /^(found|next|now|the quick|i detect|i’ve confirmed|i’ve got|i need to|let’s|this will help)\b/i.test(text.trim())
 }
 
-function processTitle(blocks: Block[]) {
+export function processTitle(blocks: Block[]) {
   const fromText = blocks.flatMap((block) =>
     block.type === "text" || block.type === "reasoning" ? [textTitle(block.text) ?? inferredTextTitle(block.text)] : [],
   ).find(Boolean)
@@ -330,7 +330,7 @@ function processTitle(blocks: Block[]) {
   return "Working"
 }
 
-function processSummary(blocks: Block[]) {
+export function processSummary(blocks: Block[]) {
   const tools = blocks.flatMap((block) => block.type === "tool" ? [block.update] : [])
   if (!tools.length) return undefined
 
@@ -391,14 +391,14 @@ function processSummary(blocks: Block[]) {
   return parts.length ? parts.join(" · ") : undefined
 }
 
-function pickToolPath(update: { input?: Record<string, unknown>; title?: string; tool: string }): string | undefined {
+export function pickToolPath(update: { input?: Record<string, unknown>; title?: string; tool: string }): string | undefined {
   if (typeof update.input?.filePath === "string") return update.input.filePath
   if (typeof update.input?.path === "string") return update.input.path
   if (update.title) return update.title
   return undefined
 }
 
-function textTitle(text: string) {
+export function textTitle(text: string) {
   const [first = ""] = text.trim().split(/\n+/)
   const title = cleanProcessText(first).replace(/[:.]+$/, "")
   if (!title || title.length > 80) return undefined
@@ -407,7 +407,7 @@ function textTitle(text: string) {
   return title
 }
 
-function stripDuplicateTitle(text: string, title: string) {
+export function stripDuplicateTitle(text: string, title: string) {
   const lines = text.trim().split(/\n+/)
   if (cleanProcessText(lines[0] ?? "").replace(/[:.]+$/, "") === title) {
     return lines.slice(1).join("\n").trim()
@@ -415,7 +415,7 @@ function stripDuplicateTitle(text: string, title: string) {
   return text.trim()
 }
 
-function cleanProcessText(text: string) {
+export function cleanProcessText(text: string) {
   return text
     .trim()
     .replace(/^\*\*(.+)\*\*$/, "$1")
@@ -428,7 +428,7 @@ function cleanProcessText(text: string) {
  * its reasoning/text stream (system reminders, internal comments). These are
  * not user-facing content and shouldn't render in the chat conversation.
  */
-function stripInternalMarkers(text: string): string {
+export function stripInternalMarkers(text: string): string {
   return text
     // <system-reminder>...</system-reminder> (often multi-line; non-greedy)
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "")
@@ -444,7 +444,7 @@ function stripInternalMarkers(text: string): string {
     .replace(/^\s+|\s+$/g, "")
 }
 
-function inferredTextTitle(text: string) {
+export function inferredTextTitle(text: string) {
   const value = text.trim()
   if (/^i detect\b/i.test(value)) return "Understanding request"
   if (/^found\b/i.test(value)) return "Inspecting project"

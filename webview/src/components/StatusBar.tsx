@@ -253,7 +253,7 @@ function ChatHistoryMenu({
   )
 }
 
-function formatUpdated(updatedAt: number) {
+export function formatUpdated(updatedAt: number) {
   const date = new Date(updatedAt)
   const now = Date.now()
   const diff = now - updatedAt
