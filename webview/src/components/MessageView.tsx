@@ -59,6 +59,9 @@ function UserMessageView({
     .filter((b): b is Extract<Block, { type: "text" }> => b.type === "text")
     .map((b) => b.text)
     .join("\n\n")
+  const attachments = message.blocks.filter(
+    (b): b is Extract<Block, { type: "attachment" }> => b.type === "attachment",
+  )
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(originalText)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -117,7 +120,11 @@ function UserMessageView({
       onClick={handleBubbleClick}
       role={editable ? "button" : undefined}
       tabIndex={editable ? 0 : undefined}
-      onKeyDown={editable ? (event) => {
+      onKeyDown={editable && !editing ? (event) => {
+        // Only react to keydowns on the bubble itself; events bubbled up from
+        // child inputs/textareas (in edit mode) must pass through so the user
+        // can type spaces and Enter normally.
+        if (event.target !== event.currentTarget) return
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault()
           setEditing(true)
@@ -160,7 +167,21 @@ function UserMessageView({
         </div>
       ) : (
         <>
-          <div className="user-text">{originalText}</div>
+          {attachments.length > 0 && (
+            <ul className="msg-attachments" aria-label="Attachments">
+              {attachments.map((a, i) => (
+                <li key={i} className="attachment-tile readonly" title={a.filename}>
+                  {a.mime.startsWith("image/") ? (
+                    <img className="attachment-thumb" src={a.dataUrl} alt={a.filename} />
+                  ) : (
+                    <span className="attachment-icon" aria-hidden>PDF</span>
+                  )}
+                  <span className="attachment-name">{a.filename}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {originalText && <div className="user-text">{originalText}</div>}
           {canEdit && (
             <span className="user-edit-hint" aria-hidden="true">
               <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -290,6 +311,7 @@ function ProcessText({ text }: { text: string }) {
 export function hasProcessBlocks(blocks: Block[]) {
   return blocks.some((b) => {
     if (b.type === "text" || b.type === "reasoning") return b.text.trim().length > 0
+    if (b.type === "attachment") return false
     return true
   })
 }

@@ -119,6 +119,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:integration": "tsc -p test/integration/tsconfig.json && vscode-test",
     "vscode:prepublish": "bun run package"
   },
   "dependencies": {
@@ -127,11 +128,20 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
     "@types/vscode": "^1.94.0",
     "@vitest/coverage-v8": "^4.1.5",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.25.3",
     "jsdom": "^29.1.1",
+    "mocha": "^11.7.5",
+    "react": "^18",
+    "react-dom": "^18",
     "typescript": "^5.8.3",
     "vitest": "^4.1.5"
   },

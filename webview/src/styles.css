@@ -1465,20 +1465,63 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.promptbox-input {
+  position: relative;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: var(--radius);
+}
+.promptbox-input:focus-within { border-color: var(--vscode-focusBorder); }
+.promptbox-backdrop {
+  position: absolute;
+  inset: 0;
+  padding: 6px 8px;
+  margin: 0;
+  border: 0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  color: transparent;
+  background: transparent;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  box-sizing: border-box;
+}
+.promptbox-backdrop .mention-chip {
+  background: var(--vscode-editor-wordHighlightStrongBackground, rgba(80, 140, 255, 0.22));
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--vscode-editor-wordHighlightStrongBorder, rgba(80, 140, 255, 0.4));
+}
+.promptbox-backdrop .mention-chip-selected {
+  background: var(--vscode-editor-selectionBackground, rgba(80, 140, 255, 0.45));
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(80, 140, 255, 0.9));
+}
 .promptbox textarea {
   width: 100%;
   min-height: 48px;
   padding: 6px 8px;
-  border: 1px solid var(--vscode-input-border, transparent);
-  background: var(--vscode-input-background);
+  border: 0;
+  background: transparent;
   color: var(--vscode-input-foreground);
   border-radius: var(--radius);
   resize: none;
   font-family: inherit;
   font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
   outline: none;
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  display: block;
 }
-.promptbox textarea:focus { border-color: var(--vscode-focusBorder); }
 .promptbox-row {
   display: flex;
   align-items: center;
@@ -1487,6 +1530,122 @@ button {
   min-width: 0;
 }
 .promptbox-row .spacer { flex: 1; }
+
+/* ===== Attachments (read-only thumbnails in user-message bubbles) ===== */
+.attachment-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--vscode-editor-inactiveSelectionBackground, var(--vscode-editorWidget-background));
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 6px;
+  font-size: 11px;
+  max-width: 200px;
+}
+.attachment-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 3px;
+  display: block;
+}
+.attachment-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: var(--vscode-debugIcon-stopForeground, #b85454);
+  color: white;
+  border-radius: 3px;
+}
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.attachment-error {
+  font-size: 11px;
+  color: var(--vscode-errorForeground, #f14c4c);
+  margin-bottom: 4px;
+}
+.icon-btn.attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  padding: 0;
+}
+.icon-btn.attach-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
+.icon-btn.attach-btn:disabled { opacity: 0.4; cursor: default; }
+.msg-attachments {
+  list-style: none;
+  margin: 0 0 6px 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mention-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  z-index: 20;
+}
+.mention-hit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.mention-hit.active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.mention-name {
+  color: var(--vscode-foreground);
+  font-weight: 500;
+}
+.mention-hit.active .mention-name {
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.mention-path {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.mention-hit.active .mention-path {
+  color: var(--vscode-list-activeSelectionForeground);
+  opacity: 0.8;
+}
 
 /* ===== Buttons ===== */
 .btn {

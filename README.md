@@ -12,6 +12,8 @@ imported.
 - **Sidebar chat panel** with workspace context, streaming responses, reasoning blocks, and a tool-call trace inline in the conversation.
 - **Sticky user message** — your most recent question pins to the top of the messages area while the AI streams its answer (Claude.ai / ChatGPT-style "section header").
 - **Edit + regenerate previous prompts** — click any past user message to revise it; the conversation rewinds via `session.revert` (file effects rolled back too) and the AI re-answers from there.
+- **`@file` mentions** — type `@` in the prompt to open a fuzzy file picker over the workspace, navigate with arrows, Enter/Tab/click to insert. Inserted mentions render as **highlighted chips** inline in the textarea (transparent textarea over a positioned backdrop layer with `<span class="mention-chip">` wrappers — gives a colored chip without breaking selection, undo, or character-level cursor). **Two-step Backspace** at the right edge of a chip: first press highlights the chip in a stronger selected color, second press deletes the whole `@path` token plus its trailing space — matches Slack/Discord/Notion behavior. Selected files are read on send and prepended to the prompt as fenced code blocks (capped at 20 files / 200 KB total) so the AI sees them as first-class context.
+- **Image / PDF uploads** — paperclip button next to Send opens VS Code's native file dialog filtered to images (`png/jpg/jpeg/gif/webp/bmp/svg`) and `pdf`. Picked files insert as **inline `@filename` chips** in the textarea at the current caret position, in order — the same chip styling and two-step-Backspace deletion as `@file` mentions. Same-name files get disambiguated labels (`@screen.png`, `@screen_2.png`). Spaces in filenames become underscores in the chip label so the `@token` boundary stays intact. On send the attached files are forwarded to opencode as `FilePartInput` with base64 data URLs and persist as attachment blocks on the user message bubble in the conversation history (with read-only thumbnails). Per-file cap 10 MB, total 25 MB.
 - **Inline thinking indicator** with a shimmering text-gradient animation while the AI is producing its first token.
 - **Welcome screen** with one-click suggestion prompts ("Explain this file", "Find bugs in the current file", etc.).
 - **Inline edit** (`Cmd+K` / `Ctrl+K`) — rewrite the selection with a natural-language instruction.
@@ -75,48 +77,82 @@ For local-source development against a sibling opencode checkout, override `open
 
 ## Tests
 
-The project ships with a Vitest-based test suite covering the core diff/path/format/trace logic on both the host and webview sides.
+The project ships a comprehensive test suite across four phases:
+
+| Phase | Layer | Stack | Tests |
+|---|---|---|---|
+| 1 | Unit (pure helpers) | Vitest + node/jsdom | 215 |
+| 2 | Integration (VS Code extension host) | @vscode/test-electron + Mocha | 14 |
+| 3 | Component (React UI) | Vitest + RTL + jsdom | 99 |
+| 4 | E2E (mock opencode HTTP/SSE server) | Vitest + node http | 12 |
+| **Total** | | | **328 tests, 100% pass** |
+
+### Commands
 
 ```bash
-bun run test           # one-shot run
-bun run test:watch     # rerun on file change
-bun run test:coverage  # generate coverage report (HTML at coverage/index.html)
+bun run test              # phases 1 + 3 + 4 (Vitest, ~5s)
+bun run test:watch        # rerun on file change
+bun run test:coverage     # phases 1 + 3 + 4 with coverage report at coverage/index.html
+bun run test:integration  # phase 2 (downloads VS Code if needed; ~30s on first run)
 ```
 
 ### What's covered
 
-- **Host (`test/host/`)**:
-  - `diff-utils.test.ts` — path utilities, isTextReviewPath, patchKind/patchPath, escapeHtml, findHunkText, splitReviewDiff, diffLines, reviewLineText, firstReviewAnchor, reviewKey, synthesizeCreatePatch.
-  - `review-changes.test.ts` — toolChanges write/edit/apply_patch flows, patchChanges, displayPath, reviewChanges dedup rules.
-  - `migrate-conversations.test.ts` — workspace-state migration: idempotency flag, copy from global, global cleanup.
+**Phase 1 — Unit (host helpers)** in `test/host/`:
+- `diff-utils.test.ts` — path utilities, isTextReviewPath, patchKind/patchPath, escapeHtml, findHunkText, splitReviewDiff, diffLines, reviewLineText, firstReviewAnchor, reviewKey, synthesizeCreatePatch.
+- `review-changes.test.ts` — toolChanges write/edit/apply_patch flows, patchChanges, displayPath, reviewChanges dedup rules.
+- `migrate-conversations.test.ts` — workspace-state migration: idempotency flag, copy from global, global cleanup.
+- `file-search.test.ts` — rankHits empty/exact/prefix/substring/path tiers, tie-break by length, case-insensitivity.
+- `build-prompt.test.ts` — buildPrompt context + mention block ordering, readMentions fence-language inference, dedup, partial failure tolerance, total empty-result handling.
 
-- **Webview (`test/webview/`)**:
-  - `format.test.ts` — formatModel for Claude/GPT/Gemini families and unknown fallbacks, formatAgent slug-titlecase, formatUpdated across all time bands.
-  - `strip-markers.test.ts` — system-reminder stripping, HTML comments, command-tags, blank-line collapse.
-  - `disambiguate.test.ts` — same-basename path collision resolution.
-  - `turn-changes.test.ts` — synthesizeCreatePatch, patchKind, isTextReviewChange, splitDiff, turnChanges aggregation (sums additions/deletions across multiple edits to the same file, retains earliest "created" kind), countDiff.
-  - `build-trace.test.ts` — buildTrace file-op grouping, todowrite routing into trace.todos, classification of grep/glob/bash/webfetch, apply_patch metadata expansion, toolHeadline summaries, mergeStatus / preferAction / pickPath helpers.
+**Phase 1 — Unit (webview helpers)** in `test/webview/`:
+- `format.test.ts` — formatModel for Claude/GPT/Gemini families and unknown fallbacks, formatAgent slug-titlecase, formatUpdated across all time bands.
+- `strip-markers.test.ts` — system-reminder stripping, HTML comments, command-tags, blank-line collapse.
+- `disambiguate.test.ts` — same-basename path collision resolution.
+- `turn-changes.test.ts` — synthesizeCreatePatch, patchKind, isTextReviewChange, splitDiff, turnChanges aggregation, countDiff.
+- `build-trace.test.ts` — buildTrace file-op grouping, todowrite routing into trace.todos, classification of grep/glob/bash/webfetch, apply_patch metadata expansion, toolHeadline summaries, mergeStatus / preferAction / pickPath helpers.
 
-### Coverage snapshot (147 tests, 100% pass)
+**Phase 2 — Integration** in `test/integration/`:
+- `extension.test.ts` — extension activation, all 8 commands registered, settings defaults (`opencui.binaryPath`, `opencui.serverPort`), webview view registration, workspace fixture state.
+
+**Phase 3 — Component (React)** in `test/webview/`:
+- `statusbar.test.tsx` — model + agent labels, connecting/connected/error states, selector popover open/click handlers, history popover (search filtering at 5+ chats, two-click delete confirmation, rename inline editor, conversation open).
+- `review-panel.test.tsx` — empty state, single-file collapsed header, multi-file summary, kind colors, path disambiguation, Keep/Undo button click → onReviewAllInChange, row click → onSelectPath/onOpenReviewChange, hidden when all hunks reviewed, panel collapse toggle, created-kind retention with turnChanges aggregation.
+- `message-view.test.tsx` — user message rendering, edit-on-bubble-click flow, busy/no-backendID gating, Save & regenerate, Cancel, Escape and Cmd+Enter keyboard shortcuts, editor-context label, thinking indicator, error display, usage stats.
+- `codeblock.test.tsx` — Apply vs. Run label by language, sh/shell normalization, post `{ type: "apply", code, language }` on click, clipboard write on Copy + briefly-changed label.
+- `promptbox.test.tsx` — empty/disabled Send, Enter sends + clears, Shift+Enter inserts newline, Stop button when busy, contextLabel rendering, whitespace-only no-op. Plus `@file` autocomplete: detectMention, extractMentions, picker open/filter/insert via Enter/Tab/click/ArrowKeys/Escape, mention paths forwarded to onSend.
+
+**Phase 4 — E2E (mock opencode)** in `test/host/`:
+- `mock-opencode-server.ts` — minimal HTTP/SSE server stub of opencode (sessions, agents, providers, prompt_async, revert, /global/event SSE stream).
+- `e2e-mock-opencode.test.ts` — SDK round-trips (session.create, app.agents, promptAsync record, revert record), then `subscribeSession` streaming: onAssistantStart on first message.updated, session-id filtering, terminal vs. non-terminal finish reasons, onUserMessage dedup, text delta accumulation, tool status transitions, patch part forwarding.
+
+### Coverage snapshot (235 tests across all phases, 100% pass)
 
 ```
-File               | % Stmts | % Branch | % Funcs | % Lines
--------------------|---------|----------|---------|---------
-All files          |   40.56 |    33.13 |   35.76 |   41.25
-src/chat/view.ts   |   77.03 |    62.78 |   74.17 |   77.76
-ReviewPanel.tsx    |   55.78 |    50.98 |   42.00 |   59.18
-ToolCard.tsx       |   64.03 |    48.70 |   57.89 |   70.51
-StatusBar.tsx      |   42.40 |    37.41 |   25.00 |   39.10
+File              | % Stmts | % Branch | % Funcs | % Lines
+------------------|---------|----------|---------|---------
+All files         |   57.38 |    49.47 |   58.45 |   59.33
+src/chat/view.ts  |   77.03 |    62.78 |   74.17 |   77.76
+src/chat/stream.ts|   59.42 |    41.61 |   66.66 |   64.16
+ReviewPanel.tsx   |   78.42 |    63.23 |   82.00 |   80.27
+StatusBar.tsx     |   92.14 |    85.71 |   93.18 |   94.87
+PromptBox.tsx     |   94.44 |    92.85 |  100.00 |  100.00
+CodeBlock.tsx     |   83.72 |    79.16 |   68.75 |   94.59
+ToolCard.tsx      |   64.03 |    48.70 |   57.89 |   70.51
+MessageView.tsx   |   36.02 |    38.46 |   57.14 |   42.43
 ```
 
-The pure-logic surface — diff parsing, path utilities, format helpers, trace builder, change aggregation, marker stripping — is well-covered (60–77% on the modules where the logic lives). Uncovered code is mostly React render bodies (App.tsx, MessageView render, CodeBlock, PermissionDialog, PromptBox); those need component tests via React Testing Library — a planned follow-up.
+Pure-logic and component surfaces are 60–95% covered. The remaining gaps are in modules like `picker.ts`, `preferences.ts`, `server.ts`, `inline/edit.ts`, and `App.tsx` — these are all VS Code-API-heavy thin wrappers tested indirectly by the integration tests in Phase 2 (which spin up a real VS Code).
 
 ### Test stack
 
 - **Vitest 4** with two project configs (`host` runs in node with a vscode-module mock; `webview` runs in jsdom).
 - **@vitest/coverage-v8** for V8-native coverage.
-- **@testing-library/react** + **@testing-library/jest-dom** ready for component tests.
-- vscode-module mock at `test/host/setup.ts` provides minimal stubs for `Position`, `Range`, `Uri`, `WorkspaceEdit`, `MarkdownString`, `EventEmitter`, plus `workspace`/`window`/`commands` namespaces — enough for pure-helper imports without spinning up VS Code.
+- **@testing-library/react** + **@testing-library/user-event** + **@testing-library/jest-dom** for component tests.
+- **@vscode/test-electron** + **@vscode/test-cli** + **Mocha** for integration tests against a real downloaded VS Code instance.
+- **node:http**-based mock opencode server in `test/host/mock-opencode-server.ts` for E2E SSE/HTTP scenarios.
+- vscode-module mock at `test/host/setup.ts` provides minimal stubs for `Position`, `Range`, `Uri`, `WorkspaceEdit`, `MarkdownString`, `EventEmitter`, `createOutputChannel`, plus `workspace`/`window`/`commands` namespaces — enough for pure-helper imports without spinning up VS Code.
+- React 18 pinned at the project root and aliased in `vitest.config.ts` so tests share a single React copy with the webview's components (otherwise: "Cannot read properties of null (reading 'useState')" from duplicate React installs).
 
 ## Package
 

@@ -1,6 +1,21 @@
 import { defineConfig } from "vitest/config"
+import path from "path"
 
 export default defineConfig({
+  resolve: {
+    // Force a single React copy across the host install and the webview's
+    // own install. Without this, components from `webview/src/...` resolve
+    // React via `webview/node_modules/react` while @testing-library/react
+    // resolves it via the root `node_modules/react` — two physically distinct
+    // module instances that can't share React's internal hook dispatcher,
+    // which produces "Cannot read properties of null (reading 'useState')".
+    alias: {
+      react: path.resolve(__dirname, "node_modules/react"),
+      "react-dom": path.resolve(__dirname, "node_modules/react-dom"),
+      "react/jsx-runtime": path.resolve(__dirname, "node_modules/react/jsx-runtime.js"),
+      "react/jsx-dev-runtime": path.resolve(__dirname, "node_modules/react/jsx-dev-runtime.js"),
+    },
+  },
   test: {
     coverage: {
       provider: "v8",

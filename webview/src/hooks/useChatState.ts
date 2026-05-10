@@ -1,10 +1,12 @@
-import { useEffect, useReducer } from "react"
+import { useEffect, useReducer, useRef } from "react"
 import { vscode } from "../vscode"
 import type {
+  Attachment,
   ChatBlock,
   ChatMessage,
   ConversationSummary,
   EditorContextRef,
+  FileSearchHit,
   Outbound,
   ReviewChange,
   ReviewHunkState,
@@ -113,15 +115,29 @@ function reducer(state: ChatState, action: Action): ChatState {
       }
     case "context":
       return { ...state, context: action.ref }
-    case "userMessage":
+    case "userMessage": {
+      const blocks: ChatBlock[] = []
+      if (action.attachments) {
+        for (const a of action.attachments) {
+          blocks.push({
+            type: "attachment",
+            mime: a.mime,
+            filename: a.filename,
+            dataUrl: a.dataUrl,
+            bytes: a.bytes,
+          })
+        }
+      }
+      blocks.push({ type: "text", text: action.text })
       return {
         ...state,
         busy: true,
         messages: [
           ...state.messages,
-          { id: action.id, role: "user", blocks: [{ type: "text", text: action.text }], ref: action.ref, backendID: action.backendID },
+          { id: action.id, role: "user", blocks, ref: action.ref, backendID: action.backendID },
         ],
       }
+    }
     case "userMessageBackendID":
       return {
         ...state,
@@ -204,20 +220,64 @@ function reducer(state: ChatState, action: Action): ChatState {
 
 export function useChatState() {
   const [state, dispatch] = useReducer(reducer, initial)
+  const fileSearchPending = useRef(new Map<number, (hits: FileSearchHit[]) => void>())
+  const attachPending = useRef(
+    new Map<number, (result: { attachments: Attachment[]; error?: string }) => void>(),
+  )
+  const nextRequestID = useRef(1)
 
   useEffect(() => {
-    const off = vscode.onMessage((msg) => dispatch(msg as Action))
+    const off = vscode.onMessage((msg) => {
+      if (msg.type === "fileSearchResult") {
+        const resolver = fileSearchPending.current.get(msg.requestID)
+        if (resolver) {
+          fileSearchPending.current.delete(msg.requestID)
+          resolver(msg.hits)
+        }
+        return
+      }
+      if (msg.type === "attachmentResult") {
+        const resolver = attachPending.current.get(msg.requestID)
+        if (resolver) {
+          attachPending.current.delete(msg.requestID)
+          resolver({ attachments: msg.attachments, error: msg.error })
+        }
+        return
+      }
+      dispatch(msg as Action)
+    })
     vscode.post({ type: "mounted" })
     return off
   }, [])
 
   return {
     state,
-    send(text: string) {
-      vscode.post({ type: "send", text })
+    send(text: string, mentions?: string[], attachments?: Attachment[]) {
+      vscode.post({ type: "send", text, mentions, attachments })
     },
-    editMessage(id: string, text: string) {
-      vscode.post({ type: "editMessage", id, text })
+    editMessage(id: string, text: string, mentions?: string[], attachments?: Attachment[]) {
+      vscode.post({ type: "editMessage", id, text, mentions, attachments })
+    },
+    searchFiles(query: string): Promise<FileSearchHit[]> {
+      const requestID = nextRequestID.current++
+      return new Promise<FileSearchHit[]>((resolve) => {
+        fileSearchPending.current.set(requestID, resolve)
+        vscode.post({ type: "fileSearch", requestID, query })
+        setTimeout(() => {
+          if (fileSearchPending.current.delete(requestID)) resolve([])
+        }, 5000)
+      })
+    },
+    attachFile(): Promise<{ attachments: Attachment[]; error?: string }> {
+      const requestID = nextRequestID.current++
+      return new Promise((resolve) => {
+        attachPending.current.set(requestID, resolve)
+        vscode.post({ type: "attachFile", requestID })
+        // File-dialog can sit open for a long time; give it 5 minutes.
+        setTimeout(() => {
+          if (attachPending.current.delete(requestID)) resolve({ attachments: [] })
+        }, 5 * 60 * 1000)
+      })
     },
     abort() {
       vscode.post({ type: "abort" })

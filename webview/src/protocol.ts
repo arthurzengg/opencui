@@ -30,6 +30,7 @@ export type ChatBlock =
   | { type: "reasoning"; text: string }
   | { type: "tool"; update: ToolUpdate }
   | { type: "patch"; files: string[]; diff?: string }
+  | { type: "attachment"; mime: string; filename: string; dataUrl: string; bytes: number }
 
 export type ChatMessage = {
   id: string
@@ -74,6 +75,19 @@ export type EditorContextRef = {
   label?: string
 }
 
+export type FileSearchHit = { path: string; name: string }
+
+export type Attachment = {
+  /** Stable id used to dedup / remove an attachment in the prompt UI. */
+  id: string
+  mime: string
+  filename: string
+  /** `data:<mime>;base64,...` or a `file://` URL. Used both for sending and for `<img src>`. */
+  dataUrl: string
+  /** Bytes of the underlying file (for size display + cap enforcement). */
+  bytes: number
+}
+
 /** Messages sent from the extension host to the webview. */
 export type Outbound =
   | { type: "ready"; connected: boolean; selection: Selection }
@@ -82,7 +96,7 @@ export type Outbound =
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
-  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string }
+  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[] }
   | { type: "userMessageBackendID"; id: string; backendID: string }
   | { type: "assistantStart"; id: string }
   | { type: "textDelta"; id: string; delta: string }
@@ -96,13 +110,15 @@ export type Outbound =
   | { type: "sessionBusy" }
   | { type: "sessionIdle" }
   | { type: "permission"; id: string; title: string; pattern?: string | string[] }
+  | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }
+  | { type: "attachmentResult"; requestID: number; attachments: Attachment[]; error?: string }
   | { type: "clear" }
 
 /** Messages sent from the webview to the extension host. */
 export type Inbound =
   | { type: "mounted" }
-  | { type: "send"; text: string }
-  | { type: "editMessage"; id: string; text: string }
+  | { type: "send"; text: string; mentions?: string[]; attachments?: Attachment[] }
+  | { type: "editMessage"; id: string; text: string; mentions?: string[]; attachments?: Attachment[] }
   | { type: "abort" }
   | { type: "newSession" }
   | { type: "createConversation" }
@@ -117,4 +133,6 @@ export type Inbound =
   | { type: "reviewAllInChange"; source: string; path: string; action: ReviewHunkState }
   | { type: "selectAgent" }
   | { type: "selectModel" }
+  | { type: "fileSearch"; requestID: number; query: string }
+  | { type: "attachFile"; requestID: number }
   | { type: "permissionReply"; id: string; response: "once" | "always" | "reject" }

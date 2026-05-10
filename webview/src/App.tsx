@@ -22,6 +22,8 @@ export default function App() {
     openReviewChange,
     editMessage,
     reviewAllInChange,
+    searchFiles,
+    attachFile,
   } = useChatState()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
@@ -121,6 +123,8 @@ export default function App() {
         contextLabel={state.context?.label}
         onSend={send}
         onAbort={abort}
+        searchFiles={searchFiles}
+        attachFile={attachFile}
       />
     </div>
   )
