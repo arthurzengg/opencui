@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { reviewChanges, toolChanges, patchChanges, displayPath } from "../../src/chat/view"
+import { reviewChanges, toolChanges, patchChanges, displayPath } from "../../src/chat/review-changes"
 import type { ChatMessage } from "../../webview/src/protocol"
 
 describe("toolChanges", () => {

@@ -86,6 +86,9 @@ describe("readAttachment", () => {
       expect(result.attachment.bytes).toBe(3)
       expect(result.attachment.dataUrl).toBe("data:image/png;base64,AQID")
       expect(result.attachment.id).toMatch(/^att_/)
+      // sourcePath lets the host emit a file:// URL so opencode can read the
+      // file directly — works for files outside the workspace.
+      expect(result.attachment.sourcePath).toBe("/x/screen.png")
     }
   })
 

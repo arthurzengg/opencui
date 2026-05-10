@@ -82,10 +82,17 @@ export type Attachment = {
   id: string
   mime: string
   filename: string
-  /** `data:<mime>;base64,...` or a `file://` URL. Used both for sending and for `<img src>`. */
+  /** `data:<mime>;base64,...` — used for `<img src>` previews in the bubble. */
   dataUrl: string
   /** Bytes of the underlying file (for size display + cap enforcement). */
   bytes: number
+  /**
+   * Absolute filesystem path on the host. When present we forward `file://<sourcePath>`
+   * to opencode so the LLM can read the file directly (works for files outside
+   * the workspace too). Stays optional because restored attachments from older
+   * conversations may not have it.
+   */
+  sourcePath?: string
 }
 
 /** Messages sent from the extension host to the webview. */

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import * as vscode from "vscode"
-import { buildPrompt, readMentions } from "../../src/chat/view"
+import { buildPrompt, readMentions } from "../../src/chat/prompt-builder"
 
 describe("buildPrompt", () => {
   it("returns the user text when there is no editor context or mentions", () => {

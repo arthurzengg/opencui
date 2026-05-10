@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { migrateConversationsToWorkspace } from "../../src/chat/view"
+import { migrateConversationsToWorkspace } from "../../src/chat/conversation-store"
 
 type Store = Map<string, unknown>
 

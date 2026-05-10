@@ -60,6 +60,7 @@ export async function readAttachment(uri: vscode.Uri): Promise<ReadResult> {
     filename,
     dataUrl: bytesToDataUrl(mime, bytes),
     bytes: bytes.byteLength,
+    sourcePath: uri.fsPath,
   }
   return { ok: true, attachment }
 }

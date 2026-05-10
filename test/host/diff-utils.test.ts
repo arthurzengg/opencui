@@ -1,14 +1,8 @@
 import { describe, it, expect } from "vitest"
+import { samePath, normalizePath, isRecord, escapeHtml, unique } from "../../src/chat/paths"
 import {
-  samePath,
-  normalizePath,
   isTextReviewPath,
-  patchKind,
-  patchPath,
   countDiff,
-  unique,
-  isRecord,
-  escapeHtml,
   findHunkText,
   splitReviewDiff,
   reviewLineText,
@@ -16,8 +10,8 @@ import {
   firstChangedBlock,
   reviewKey,
   diffLines,
-  synthesizeCreatePatch,
-} from "../../src/chat/view"
+} from "../../src/chat/diff"
+import { patchKind, patchPath, synthesizeCreatePatch } from "../../src/chat/review-changes"
 
 describe("samePath / normalizePath", () => {
   it("compares identical paths", () => {

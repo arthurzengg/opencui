@@ -816,29 +816,17 @@ button {
 .thinking-dots {
   display: inline-block;
   padding: 6px 2px;
-  color: var(--vscode-descriptionForeground);
+  color: var(--vscode-foreground);
   font-style: italic;
-  background: linear-gradient(
-    90deg,
-    var(--vscode-descriptionForeground) 0%,
-    var(--vscode-foreground) 50%,
-    var(--vscode-descriptionForeground) 100%
-  );
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: thinking-shimmer 2s linear infinite;
+  animation: thinking-breathe 1.8s ease-in-out infinite;
 }
-@keyframes thinking-shimmer {
-  0% { background-position: 200% center; }
-  100% { background-position: 0% center; }
+@keyframes thinking-breathe {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .thinking-dots {
     animation: none;
-    -webkit-text-fill-color: var(--vscode-descriptionForeground);
-    background: none;
     opacity: 0.7;
   }
 }
@@ -1535,33 +1523,35 @@ button {
 .attachment-tile {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: 5px;
+  padding: 2px 7px 2px 4px;
   background: var(--vscode-editor-inactiveSelectionBackground, var(--vscode-editorWidget-background));
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  border-radius: 6px;
+  border-radius: 10px;
   font-size: 11px;
-  max-width: 200px;
+  line-height: 1.4;
+  max-width: 220px;
 }
 .attachment-thumb {
-  width: 28px;
-  height: 28px;
+  width: 16px;
+  height: 16px;
   object-fit: cover;
-  border-radius: 3px;
+  border-radius: 2px;
   display: block;
 }
 .attachment-icon {
-  width: 28px;
-  height: 28px;
+  width: auto;
+  height: 14px;
+  padding: 0 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   background: var(--vscode-debugIcon-stopForeground, #b85454);
   color: white;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 .attachment-name {
   overflow: hidden;
