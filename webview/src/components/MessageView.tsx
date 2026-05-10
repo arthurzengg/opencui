@@ -281,9 +281,23 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
     }
     flushTrace()
     if (b.type === "text") {
-      const cleaned = stripInternalMarkers(b.text)
-      if (!cleaned.trim()) return
-      nodes.push(processMode ? <ProcessText key={i} text={cleaned} /> : <Markdown key={i} text={cleaned} />)
+      // In processMode (within the trace panel) we still strip reminders —
+      // they'd nest inside already-collapsed UI and be noise. In normal
+      // rendering, surface them as collapsible callouts.
+      if (processMode) {
+        const cleaned = stripInternalMarkers(b.text)
+        if (cleaned.trim()) nodes.push(<ProcessText key={i} text={cleaned} />)
+      } else {
+        const segments = splitWithReminders(b.text)
+        segments.forEach((seg, j) => {
+          const key = `${i}-${j}`
+          if (seg.type === "reminder") {
+            nodes.push(<SystemReminderCallout key={key} text={seg.content} />)
+          } else {
+            nodes.push(<Markdown key={key} text={seg.content} />)
+          }
+        })
+      }
     }
     if (b.type === "reasoning") {
       const cleaned = stripInternalMarkers(b.text)
@@ -452,10 +466,10 @@ export function cleanProcessText(text: string) {
  */
 export function stripInternalMarkers(text: string): string {
   return text
-    // <system-reminder>...</system-reminder> (often multi-line; non-greedy)
-    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "")
+    // <system-reminder ...>...</system-reminder> — also accepts attributes.
+    .replace(/<system-reminder\b[^>]*>[\s\S]*?<\/system-reminder>/gi, "")
     // Stray opening/closing tags left over from partial streams.
-    .replace(/<\/?system-reminder>/gi, "")
+    .replace(/<\/?system-reminder\b[^>]*>/gi, "")
     // HTML-style internal comments (e.g. <!-- OMO_INTERNAL_INITIATOR -->).
     .replace(/<!--[\s\S]*?-->/g, "")
     // <command-name>, <command-message>, <command-args>, <local-command-stdout>
@@ -464,6 +478,65 @@ export function stripInternalMarkers(text: string): string {
     // Collapse the blank lines left behind by removed blocks.
     .replace(/\n{3,}/g, "\n\n")
     .replace(/^\s+|\s+$/g, "")
+}
+
+export type RenderSegment = { type: "text"; content: string } | { type: "reminder"; content: string }
+
+/**
+ * Like `stripInternalMarkers` but preserves `<system-reminder>` blocks as
+ * separate segments so the UI can render them as collapsible callouts
+ * (instead of hiding them entirely). Other internal markers (`<!-- ... -->`,
+ * command-name etc.) are still stripped — they're noise, not content.
+ */
+export function splitWithReminders(text: string): RenderSegment[] {
+  // Strip noise markers but DO NOT touch <system-reminder> tags yet — we need
+  // the closing tags intact to find paired matches.
+  const cleanedNoise = text
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(command-name|command-message|command-args|local-command-stdout|local-command-stderr|user-prompt-submit-hook)>[\s\S]*?<\/\1>/gi, "")
+
+  const segments: RenderSegment[] = []
+  const regex = /<system-reminder\b[^>]*>([\s\S]*?)<\/system-reminder>/gi
+  let cursor = 0
+  let match: RegExpExecArray | null
+  const pushText = (raw: string) => {
+    // Drop any stray unpaired reminder tags from the surrounding text.
+    const cleaned = raw
+      .replace(/<\/?system-reminder\b[^>]*>/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/^\n+|\n+$/g, "")
+    if (cleaned.trim()) segments.push({ type: "text", content: cleaned })
+  }
+  while ((match = regex.exec(cleanedNoise)) !== null) {
+    pushText(cleanedNoise.slice(cursor, match.index))
+    const reminder = match[1].trim()
+    if (reminder) segments.push({ type: "reminder", content: reminder })
+    cursor = match.index + match[0].length
+  }
+  pushText(cleanedNoise.slice(cursor))
+  return segments
+}
+
+function reminderPreview(content: string): string {
+  const firstLine = content.split("\n", 1)[0]!.trim()
+  if (!firstLine) return ""
+  return firstLine.length > 80 ? firstLine.slice(0, 77).trimEnd() + "…" : firstLine
+}
+
+function SystemReminderCallout({ text }: { text: string }) {
+  const preview = reminderPreview(text)
+  return (
+    <details className="system-reminder">
+      <summary className="system-reminder-summary">
+        <span className="system-reminder-chevron" aria-hidden>▸</span>
+        <span className="system-reminder-label">System reminder</span>
+        {preview && <span className="system-reminder-preview"> · {preview}</span>}
+      </summary>
+      <div className="system-reminder-body">
+        <Markdown text={text} />
+      </div>
+    </details>
+  )
 }
 
 export function inferredTextTitle(text: string) {

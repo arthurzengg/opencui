@@ -529,17 +529,6 @@ button {
   border-color: var(--vscode-testing-iconPassed, #3fb950);
   background: var(--vscode-testing-iconPassed, #3fb950);
 }
-.trace-todo-item.status-completed .trace-todo-status::after {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: 1px;
-  width: 4px;
-  height: 7px;
-  border: solid var(--vscode-sideBar-background);
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
-}
 .trace-todo-item.status-cancelled .trace-todo-status::after {
   content: "";
   position: absolute;
@@ -570,6 +559,14 @@ button {
 }
 .messages:hover {
   scrollbar-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4)) transparent;
+}
+
+/* Per-turn container: each user message + its following assistant messages
+   live inside one .turn so the sticky user bubble has a bounded containing
+   block. Without this wrapping every user message tries to stick at top:0
+   of the shared scroll container and they overlap as you scroll up. */
+.turn {
+  display: block;
 }
 /* Chromium / WebKit (VS Code's webview): track blends with the chat background,
    thumb is invisible by default and appears only on hover or while scrolling. */
@@ -1518,6 +1515,61 @@ button {
   min-width: 0;
 }
 .promptbox-row .spacer { flex: 1; }
+
+/* ===== System reminder callout ===== */
+.system-reminder {
+  margin: 8px 0;
+  padding: 0;
+  border: 1px solid var(--vscode-panel-border);
+  border-left: 3px solid var(--vscode-charts-blue, var(--vscode-textLink-foreground));
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background);
+  font-size: 12px;
+  overflow: hidden;
+}
+.system-reminder-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--vscode-descriptionForeground);
+  user-select: none;
+}
+.system-reminder-summary::-webkit-details-marker { display: none; }
+.system-reminder-summary::marker { display: none; content: ""; }
+.system-reminder-chevron {
+  flex: 0 0 10px;
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+  transform-origin: 50% 55%;
+}
+.system-reminder[open] > .system-reminder-summary .system-reminder-chevron {
+  transform: rotate(90deg);
+}
+.system-reminder-label {
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.system-reminder-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  opacity: 0.75;
+}
+.system-reminder-body {
+  padding: 4px 12px 10px;
+  border-top: 1px solid var(--vscode-panel-border);
+  color: var(--vscode-foreground);
+  opacity: 0.9;
+}
+.system-reminder-body p:first-child { margin-top: 0; }
+.system-reminder-body p:last-child { margin-bottom: 0; }
 
 /* ===== Attachments (read-only thumbnails in user-message bubbles) ===== */
 .attachment-tile {

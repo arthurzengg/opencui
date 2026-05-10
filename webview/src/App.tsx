@@ -89,17 +89,32 @@ export default function App() {
             </div>
           </div>
         )}
-        {state.messages.map((m, i) => (
-          <MessageView
-            key={m.id}
-            message={m}
-            processOpen={m.id === activeProcessID}
-            processOnly={m.role === "assistant" && (m.pending || hasLaterAssistantInTurn(state.messages, i))}
-            busy={busy}
-            onReviewFile={openReviewFile}
-            onEditMessage={editMessage}
-          />
-          ))}
+        {groupTurns(state.messages).map((turn) => (
+          <div className="turn" key={turn.key}>
+            {turn.user && (
+              <MessageView
+                key={turn.user.id}
+                message={turn.user}
+                processOpen={turn.user.id === activeProcessID}
+                processOnly={false}
+                busy={busy}
+                onReviewFile={openReviewFile}
+                onEditMessage={editMessage}
+              />
+            )}
+            {turn.assistants.map((m, i) => (
+              <MessageView
+                key={m.id}
+                message={m}
+                processOpen={m.id === activeProcessID}
+                processOnly={m.pending || i < turn.assistants.length - 1}
+                busy={busy}
+                onReviewFile={openReviewFile}
+                onEditMessage={editMessage}
+              />
+            ))}
+          </div>
+        ))}
       </div>
       {state.pendingPermission && (
         <PermissionDialog
@@ -137,12 +152,27 @@ const WELCOME_PROMPTS = [
   "Refactor this for readability",
 ]
 
-function hasLaterAssistantInTurn(messages: Message[], index: number) {
-  const message = messages[index]
-  if (message?.role !== "assistant") return false
-  for (const next of messages.slice(index + 1)) {
-    if (next.role === "user") return false
-    if (next.role === "assistant") return true
+type Turn = { user?: Message; assistants: Message[]; key: string }
+
+/**
+ * Group a flat message list into per-turn buckets: each user message starts a
+ * new turn and collects any assistant messages until the next user message.
+ * Used to wrap each turn in its own DOM container so the sticky user-message
+ * bubble has a bounded containing block — otherwise every user message tries
+ * to stick at `top: 0` of the shared scroll container and they overlap.
+ */
+export function groupTurns(messages: Message[]): Turn[] {
+  const turns: Turn[] = []
+  let current: Turn | undefined
+  for (const m of messages) {
+    if (m.role === "user") {
+      if (current) turns.push(current)
+      current = { user: m, assistants: [], key: m.id }
+    } else {
+      if (!current) current = { assistants: [], key: m.id }
+      current.assistants.push(m)
+    }
   }
-  return false
+  if (current) turns.push(current)
+  return turns
 }
