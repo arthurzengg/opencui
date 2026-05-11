@@ -57,7 +57,7 @@ If `opencode` isn't on your PATH after install, set `opencui.binaryPath` in VS C
 Search for **"OpenCode CUI"** in the VS Code Extensions sidebar, or install from the command line:
 
 ```bash
-code --install-extension opencui.opencui
+code --install-extension arthurzeng.opencui
 ```
 
 Open the OpenCode CUI sidebar (click the activity-bar icon or press `Cmd+L` / `Ctrl+L`).
