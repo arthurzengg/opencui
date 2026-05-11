@@ -69,6 +69,22 @@ describe("PromptBox", () => {
     expect(onAbort).toHaveBeenCalled()
   })
 
+  it("shows disabled Stopping… button while aborting (not Stop, not Send)", () => {
+    render(<PromptBox busy={true} aborting={true} onSend={vi.fn()} onAbort={vi.fn()} />)
+    const btn = screen.getByRole("button", { name: /^Stopping…$/ }) as HTMLButtonElement
+    expect(btn.disabled).toBe(true)
+    expect(screen.queryByRole("button", { name: /^Stop$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^Send$/ })).not.toBeInTheDocument()
+  })
+
+  it("clicking the Stopping… button is a no-op (does not refire onAbort)", async () => {
+    const user = userEvent.setup()
+    const onAbort = vi.fn()
+    render(<PromptBox busy={true} aborting={true} onSend={vi.fn()} onAbort={onAbort} />)
+    await user.click(screen.getByRole("button", { name: /^Stopping…$/ }))
+    expect(onAbort).not.toHaveBeenCalled()
+  })
+
   it("renders contextLabel when provided", () => {
     render(
       <PromptBox

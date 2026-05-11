@@ -21,6 +21,14 @@ export type Message = ChatMessage
 export type ChatState = {
   connected: boolean
   busy: boolean
+  /**
+   * True after the user pressed Stop and before opencode emitted sessionIdle.
+   * While true: PromptBox shows a disabled "Stopping…" button, and the
+   * reducer drops in-flight `textDelta` / `reasoningDelta` / `tool` / `patch`
+   * events so opencode's last few queued frames don't keep extending the
+   * already-stopped message.
+   */
+  aborting: boolean
   error?: string
   selection: Selection
   conversations: ConversationSummary[]
@@ -36,6 +44,7 @@ type Action = Outbound | { type: "reset" } | { type: "clearPermission" }
 const initial: ChatState = {
   connected: false,
   busy: false,
+  aborting: false,
   selection: {},
   conversations: [],
   messages: [],
@@ -92,7 +101,9 @@ function upsertTool(messages: Message[], id: string, update: ToolUpdate): Messag
   return copy
 }
 
-function reducer(state: ChatState, action: Action): ChatState {
+export { initial as initialChatState }
+
+export function reducer(state: ChatState, action: Action): ChatState {
   switch (action.type) {
     case "reset":
       return { ...initial, selection: state.selection, context: state.context, connected: state.connected }
@@ -134,7 +145,14 @@ function reducer(state: ChatState, action: Action): ChatState {
         busy: true,
         messages: [
           ...state.messages,
-          { id: action.id, role: "user", blocks, ref: action.ref, backendID: action.backendID },
+          {
+            id: action.id,
+            role: "user",
+            blocks,
+            ref: action.ref,
+            backendID: action.backendID,
+            mentions: action.mentions,
+          },
         ],
       }
     }
@@ -152,15 +170,21 @@ function reducer(state: ChatState, action: Action): ChatState {
         messages: [...state.messages, { id: action.id, role: "assistant", blocks: [], pending: true }],
       }
     case "textDelta":
+      // Drop deltas that race in after Stop — the message is already marked
+      // `stopped: true` and opencode is still draining its in-flight response.
+      if (state.aborting) return state
       return { ...state, messages: appendToLastBlock(state.messages, action.id, "text", action.delta) }
     case "reasoningDelta":
+      if (state.aborting) return state
       return {
         ...state,
         messages: appendToLastBlock(state.messages, action.id, "reasoning", action.delta),
       }
     case "tool":
+      if (state.aborting) return state
       return { ...state, messages: upsertTool(state.messages, action.id, action.update) }
     case "patch":
+      if (state.aborting) return state
       return {
         ...state,
         messages: state.messages.map((m) =>
@@ -173,33 +197,55 @@ function reducer(state: ChatState, action: Action): ChatState {
       else delete reviewHunks[action.key]
       return { ...state, reviewHunks }
     }
-    case "assistantError":
+    case "assistantError": {
+      // If the message was already marked stopped (user-initiated abort), the
+      // error is just opencode telling us the LLM call was canceled — skip it
+      // so we don't show both a Stopped badge and a red error block.
+      const target = state.messages.find((m) => m.id === action.id)
+      if (target?.stopped) return state
       return {
         ...state,
         busy: false,
         messages: upsertMessage(state.messages, action.id, { error: action.message, pending: false }),
       }
+    }
     case "assistantDone":
       return {
         ...state,
         busy: false,
         messages: upsertMessage(state.messages, action.id, { pending: false, usage: action.usage }),
       }
-    case "aborted":
+    case "aborted": {
+      // Stay busy (Send button must NOT re-enable yet) and enter aborting mode
+      // until opencode sends sessionIdle. One abort = one Stopped badge: a
+      // turn can contain multiple assistant messages (subtasks etc.), only the
+      // last pending one carries the badge; the others just clear pending.
+      let lastPendingIdx = -1
+      state.messages.forEach((m, i) => {
+        if (m.role === "assistant" && m.pending) lastPendingIdx = i
+      })
       return {
         ...state,
-        busy: false,
+        busy: true,
+        aborting: true,
         pendingPermission: undefined,
-        messages: state.messages.map((m) =>
-          m.role === "assistant" && m.pending ? { ...m, pending: false, error: "Stopped" } : m,
-        ),
+        messages: state.messages.map((m, i) => {
+          if (m.role !== "assistant" || !m.pending) return m
+          if (i === lastPendingIdx) return { ...m, pending: false, stopped: true }
+          return { ...m, pending: false }
+        }),
       }
+    }
     case "sessionBusy":
       return { ...state, busy: true }
     case "sessionIdle":
+      // Opencode finished draining its in-flight LLM call. Clear both flags so
+      // the Send button comes back; ALSO clear `aborting` regardless of how we
+      // got here (normal completion or abort tail).
       return {
         ...state,
         busy: false,
+        aborting: false,
         messages: state.messages.map((m) =>
           m.role === "assistant" && m.pending ? { ...m, pending: false } : m,
         ),

@@ -100,6 +100,8 @@ export default function App() {
                 busy={busy}
                 onReviewFile={openReviewFile}
                 onEditMessage={editMessage}
+                searchFiles={searchFiles}
+                attachFile={attachFile}
               />
             )}
             {turn.assistants.map((m, i) => (
@@ -135,6 +137,7 @@ export default function App() {
       />
       <PromptBox
         busy={busy}
+        aborting={state.aborting}
         contextLabel={state.context?.label}
         onSend={send}
         onAbort={abort}

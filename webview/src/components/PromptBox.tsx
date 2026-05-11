@@ -1,150 +1,84 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import type { Attachment, FileSearchHit } from "../protocol"
+import {
+  detectMention,
+  extractMentions,
+  findChipAtCaret,
+  findMentionRanges,
+  makeAttachmentLabel,
+  type MentionState,
+} from "../mention-tokens"
+
+// Re-export so existing consumers (tests, integrators) keep working through PromptBox.
+export {
+  detectMention,
+  extractMentions,
+  findChipAtCaret,
+  findMentionRanges,
+  makeAttachmentLabel,
+  formatBytes,
+} from "../mention-tokens"
 
 type Props = {
   busy: boolean
+  /**
+   * True between user-pressed Stop and the subsequent sessionIdle. While true
+   * we render a disabled "Stopping…" button instead of Stop — clicking Stop
+   * a second time would be a no-op (abort is already in flight) and the user
+   * shouldn't be able to type and Send a new prompt over the still-draining
+   * one.
+   */
+  aborting?: boolean
   contextLabel?: string
   onSend: (text: string, mentions?: string[], attachments?: Attachment[]) => void
   onAbort: () => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-type MentionState = {
-  /** Index of the @ that triggered the picker. */
-  start: number
-  /** Query typed after the @ (excluding the @ itself). */
-  query: string
+  /**
+   * Pre-fill the input with text, mention paths, and attachments. Used by
+   * MessageView's edit-in-place flow so the user picks up exactly where they
+   * left off — same picker, same chips, same paperclip — instead of a
+   * stripped-down textarea.
+   */
+  initial?: { text?: string; mentions?: string[]; attachments?: Attachment[] }
+  /**
+   * "send" (default) renders the standard Send/Stop bottom row. "edit"
+   * renders Cancel + Save & regenerate, plus a warning that subsequent
+   * replies will be discarded. onAbort is repurposed as the Cancel handler.
+   */
+  variant?: "send" | "edit"
 }
 
 const MAX_VISIBLE_HITS = 8
 
-/**
- * Returns the active @-mention if the cursor is inside one, else undefined.
- * Triggers regardless of what precedes the @ — `look@` should open the picker
- * just like `look @`. The picker is non-modal (Escape dismisses), so over-
- * triggering on email-style fragments is harmless.
- */
-export function detectMention(text: string, caret: number): MentionState | undefined {
-  for (let i = caret - 1; i >= 0; i--) {
-    const ch = text[i]
-    if (ch === "@") {
-      return { start: i, query: text.slice(i + 1, caret) }
-    }
-    // Whitespace cancels the mention scan; @path tokens are word-like.
-    if (ch && /\s/.test(ch)) return undefined
+function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachment> {
+  const map = new Map<string, Attachment>()
+  if (!initial?.attachments) return map
+  const existing = new Set<string>(initial.mentions ?? [])
+  for (const a of initial.attachments) {
+    const label = makeAttachmentLabel(a.filename, existing)
+    existing.add(label)
+    map.set(label, a)
   }
-  return undefined
+  return map
 }
 
-/**
- * From a textarea text, return the set of `@path` tokens that match a known
- * mention path. The leading boundary is intentionally NOT required to be
- * whitespace — `look@src/foo.ts` is a valid chip, mirroring `detectMention`'s
- * relaxed trigger. The trailing boundary still must be whitespace (or
- * end-of-string), so `@foo.ts` inside `@foo.tsx` does not match.
- */
-export function extractMentions(text: string, known: Set<string>): string[] {
-  const out: string[] = []
-  for (const path of known) {
-    const token = "@" + path
-    const idx = text.indexOf(token)
-    if (idx < 0) continue
-    const after = text[idx + token.length] ?? ""
-    if (after && !/\s/.test(after)) continue
-    out.push(path)
-  }
-  return out
-}
-
-/**
- * Find a known @path token whose right edge sits at the caret. Allows the
- * caret to be one position past the end of the chip when the next char is a
- * space — this covers the cursor position right after the auto-inserted
- * trailing space, which is where the user lands after picking from the menu.
- */
-export function findChipAtCaret(
-  text: string,
-  caret: number,
-  known: Set<string>,
-): { start: number; end: number; trailingSpace: boolean } | undefined {
-  const ranges = findMentionRanges(text, known)
-  for (const r of ranges) {
-    if (caret === r.end) return { start: r.start, end: r.end, trailingSpace: false }
-    if (caret === r.end + 1 && text[r.end] === " ") {
-      return { start: r.start, end: r.end, trailingSpace: true }
-    }
-  }
-  return undefined
-}
-
-/**
- * Locate every @path token belonging to `known` within `text`. The leading
- * boundary is NOT required to be whitespace (so `look@src/foo.ts` is matched);
- * the trailing boundary still must be whitespace or end-of-string, so
- * `@foo.ts` inside `@foo.tsx` doesn't match.
- */
-export function findMentionRanges(text: string, known: Set<string>): Array<{ start: number; end: number }> {
-  const ranges: Array<{ start: number; end: number }> = []
-  for (const path of known) {
-    const token = "@" + path
-    let from = 0
-    while (true) {
-      const idx = text.indexOf(token, from)
-      if (idx < 0) break
-      const after = text[idx + token.length] ?? ""
-      if (!after || /\s/.test(after)) {
-        ranges.push({ start: idx, end: idx + token.length })
-      }
-      from = idx + token.length
-    }
-  }
-  ranges.sort((a, b) => a.start - b.start)
-  // Drop overlapping ranges (shouldn't happen, but guard anyway)
-  const out: Array<{ start: number; end: number }> = []
-  let prevEnd = -1
-  for (const r of ranges) {
-    if (r.start >= prevEnd) {
-      out.push(r)
-      prevEnd = r.end
-    }
-  }
-  return out
-}
-
-/**
- * Build a chip-safe label for an attachment filename. Spaces would break the
- * `@token` boundary detection, so we replace whitespace with `_`. If the
- * resulting label is already in `existing`, append `_2`, `_3`, … before the
- * extension to keep it unique.
- */
-export function makeAttachmentLabel(filename: string, existing: Set<string>): string {
-  const cleaned = filename.replace(/\s+/g, "_")
-  if (!existing.has(cleaned)) return cleaned
-  const dot = cleaned.lastIndexOf(".")
-  const base = dot >= 0 ? cleaned.slice(0, dot) : cleaned
-  const ext = dot >= 0 ? cleaned.slice(dot) : ""
-  let i = 2
-  while (existing.has(`${base}_${i}${ext}`)) i++
-  return `${base}_${i}${ext}`
-}
-
-export function PromptBox({ busy, contextLabel, onSend, onAbort, searchFiles, attachFile }: Props) {
-  const [text, setText] = useState("")
+export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbort, searchFiles, attachFile, initial, variant = "send" }: Props) {
+  const [text, setText] = useState(() => initial?.text ?? "")
   const [hits, setHits] = useState<FileSearchHit[]>([])
   const [mention, setMention] = useState<MentionState | undefined>(undefined)
   const [activeIndex, setActiveIndex] = useState(0)
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
   const [attaching, setAttaching] = useState(false)
-  const knownMentions = useRef(new Set<string>())
-  const knownAttachments = useRef(new Map<string, Attachment>())
+  // Use lazy init via "first render only" pattern so initial values aren't
+  // re-applied every render. After mount these mutate freely.
+  const knownMentions = useRef<Set<string>>(undefined as never)
+  const knownAttachments = useRef<Map<string, Attachment>>(undefined as never)
+  if (!knownMentions.current) {
+    knownMentions.current = new Set<string>(initial?.mentions ?? [])
+    knownAttachments.current = buildInitialAttachments(initial)
+  }
   const ref = useRef<HTMLTextAreaElement>(null)
   const backdropRef = useRef<HTMLDivElement>(null)
   const queryRef = useRef("")
@@ -335,6 +269,12 @@ export function PromptBox({ busy, contextLabel, onSend, onAbort, searchFiles, at
     if (e.key !== "Backspace" && selectedChipStart !== undefined) {
       setSelectedChipStart(undefined)
     }
+    // In edit variant, Escape cancels (matches the original edit-textarea UX).
+    if (variant === "edit" && e.key === "Escape") {
+      e.preventDefault()
+      onAbort()
+      return
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       submit()
@@ -358,7 +298,7 @@ export function PromptBox({ busy, contextLabel, onSend, onAbort, searchFiles, at
   })()
 
   return (
-    <div className="promptbox">
+    <div className={"promptbox" + (variant === "edit" ? " promptbox--edit" : "")}>
       {contextLabel && <div className="context-chip">{contextLabel}</div>}
       {attachError && <div className="attachment-error">{attachError}</div>}
       <div className="promptbox-input">
@@ -402,6 +342,11 @@ export function PromptBox({ busy, contextLabel, onSend, onAbort, searchFiles, at
           </ul>
         )}
       </div>
+      {variant === "edit" && (
+        <div className="user-edit-warning">
+          Replies after this point will be discarded and regenerated.
+        </div>
+      )}
       <div className="promptbox-row">
         {attachFile && (
           <button
@@ -424,7 +369,22 @@ export function PromptBox({ busy, contextLabel, onSend, onAbort, searchFiles, at
           </button>
         )}
         <div className="spacer" />
-        {busy ? (
+        {variant === "edit" ? (
+          <>
+            <button className="btn subtle" onClick={onAbort}>Cancel</button>
+            <button
+              className="btn primary"
+              onClick={submit}
+              disabled={busy || (!text.trim() && !hasActiveAttachment)}
+            >
+              Save & regenerate
+            </button>
+          </>
+        ) : aborting ? (
+          <button className="btn danger" disabled aria-busy="true">
+            Stopping…
+          </button>
+        ) : busy ? (
           <button className="btn danger" onClick={onAbort}>
             Stop
           </button>

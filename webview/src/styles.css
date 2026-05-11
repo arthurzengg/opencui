@@ -683,9 +683,19 @@ button {
 }
 .msg.role-user.is-editing {
   /* When editing the message, drop sticky positioning so the textarea + actions
-     can grow naturally without being constrained against the scroll viewport. */
+     can grow naturally without being constrained against the scroll viewport.
+     Also strip the bubble chrome so the embedded PromptBox provides the only
+     padding/border — otherwise we'd double up on inset spacing. */
   position: relative;
   z-index: auto;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+}
+.msg.role-user.is-editing > div > .promptbox {
+  padding: 0;
+  border-top: 0;
+  background: transparent;
 }
 .msg.role-user.is-editing::after {
   display: none;
@@ -785,6 +795,28 @@ button {
   padding: 6px 10px;
   border-radius: var(--radius);
   margin-top: 6px;
+}
+/* "Stopped" is a user action, not a failure — render as a quiet grey footer
+   note (small italic text with a leading bullet dot), no chip background,
+   so it doesn't compete visually with real content. */
+.msg-stopped {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-style: italic;
+  opacity: 0.75;
+}
+.msg-stopped::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
 }
 
 .msg-usage {
@@ -1655,6 +1687,13 @@ button {
   border-radius: var(--radius);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   z-index: 20;
+}
+/* In edit-in-place mode the message bubble is stuck at the top of the scroll
+   container, so a picker drawn above the textarea gets clipped by the status
+   bar. Flip it to render below the textarea instead. */
+.promptbox--edit .mention-popover {
+  bottom: auto;
+  top: calc(100% + 4px);
 }
 .mention-hit {
   display: flex;

@@ -1,0 +1,122 @@
+import { describe, it, expect } from "vitest"
+import { reducer, initialChatState } from "../../webview/src/hooks/useChatState"
+
+function pendingAssistant(id = "a1") {
+  return reducer(
+    { ...initialChatState, busy: true },
+    { type: "assistantStart", id },
+  )
+}
+
+describe("reducer abort flow", () => {
+  it("aborted: enters aborting=true, keeps busy=true, marks pending assistants as stopped", () => {
+    const before = pendingAssistant("a1")
+    expect(before.busy).toBe(true)
+    expect(before.aborting).toBe(false)
+    const after = reducer(before, { type: "aborted" })
+    expect(after.busy).toBe(true)
+    expect(after.aborting).toBe(true)
+    const msg = after.messages.find((m) => m.id === "a1")!
+    expect(msg.pending).toBe(false)
+    expect(msg.stopped).toBe(true)
+    // Crucially, no `error` was set — Stop is not a failure.
+    expect(msg.error).toBeUndefined()
+  })
+
+  it("sessionIdle after aborted: clears both busy and aborting", () => {
+    const before = pendingAssistant()
+    const aborted = reducer(before, { type: "aborted" })
+    const idle = reducer(aborted, { type: "sessionIdle" })
+    expect(idle.busy).toBe(false)
+    expect(idle.aborting).toBe(false)
+  })
+
+  it("textDelta during aborting is dropped (no message mutation)", () => {
+    const before = pendingAssistant()
+    const aborted = reducer(before, { type: "aborted" })
+    const next = reducer(aborted, { type: "textDelta", id: "a1", delta: "leftover" })
+    expect(next).toBe(aborted) // reference-equal: reducer returned the same state
+    const msg = next.messages.find((m) => m.id === "a1")!
+    // No text block was appended.
+    expect(msg.blocks.find((b) => b.type === "text" && b.text.includes("leftover"))).toBeUndefined()
+  })
+
+  it("reasoningDelta / tool / patch during aborting are also dropped", () => {
+    const before = pendingAssistant()
+    const aborted = reducer(before, { type: "aborted" })
+    const after1 = reducer(aborted, { type: "reasoningDelta", id: "a1", delta: "x" })
+    expect(after1).toBe(aborted)
+    const after2 = reducer(aborted, {
+      type: "tool",
+      id: "a1",
+      update: { callID: "c1", tool: "read", status: "running" },
+    })
+    expect(after2).toBe(aborted)
+    const after3 = reducer(aborted, { type: "patch", id: "a1", files: ["foo.ts"], diff: "@@" })
+    expect(after3).toBe(aborted)
+  })
+
+  it("textDelta when NOT aborting still appends normally (control test)", () => {
+    const before = pendingAssistant()
+    const next = reducer(before, { type: "textDelta", id: "a1", delta: "hello" })
+    const msg = next.messages.find((m) => m.id === "a1")!
+    const textBlock = msg.blocks.find((b) => b.type === "text")
+    expect(textBlock).toBeDefined()
+    expect(textBlock?.type === "text" && textBlock.text).toBe("hello")
+  })
+
+  it("Send button can re-enable: busy stays false once sessionIdle fires after abort", () => {
+    const before = pendingAssistant()
+    const after = reducer(reducer(before, { type: "aborted" }), { type: "sessionIdle" })
+    expect(after.busy).toBe(false)
+    expect(after.aborting).toBe(false)
+  })
+
+  it("aborted also clears pending permission", () => {
+    const withPerm = reducer(
+      pendingAssistant(),
+      { type: "permission", id: "p1", title: "Allow run?" },
+    )
+    expect(withPerm.pendingPermission?.id).toBe("p1")
+    const after = reducer(withPerm, { type: "aborted" })
+    expect(after.pendingPermission).toBeUndefined()
+  })
+
+  it("assistantError on an already-stopped message is suppressed (no red block)", () => {
+    const before = pendingAssistant("a1")
+    const aborted = reducer(before, { type: "aborted" })
+    // Opencode later emits Aborted error for the same message.
+    const after = reducer(aborted, { type: "assistantError", id: "a1", message: "Aborted" })
+    expect(after).toBe(aborted)
+    const msg = after.messages.find((m) => m.id === "a1")!
+    expect(msg.error).toBeUndefined()
+    expect(msg.stopped).toBe(true)
+  })
+
+  it("assistantError on a normal (not stopped) message still sets error", () => {
+    const before = pendingAssistant("a2")
+    const after = reducer(before, { type: "assistantError", id: "a2", message: "Network error" })
+    const msg = after.messages.find((m) => m.id === "a2")!
+    expect(msg.error).toBe("Network error")
+    expect(msg.pending).toBe(false)
+  })
+
+  it("multiple pending assistants in a turn: only the LAST one gets the Stopped badge", () => {
+    // Build a state with two pending assistants in the same turn (e.g. a
+    // subtask intermediate step + the final answer).
+    const s0 = reducer(
+      { ...initialChatState, busy: true },
+      { type: "assistantStart", id: "a1" },
+    )
+    const s1 = reducer(s0, { type: "assistantStart", id: "a2" })
+    expect(s1.messages.filter((m) => m.role === "assistant" && m.pending)).toHaveLength(2)
+    const after = reducer(s1, { type: "aborted" })
+    const a1 = after.messages.find((m) => m.id === "a1")!
+    const a2 = after.messages.find((m) => m.id === "a2")!
+    // Both stop pending, but only the last one is badged stopped.
+    expect(a1.pending).toBe(false)
+    expect(a2.pending).toBe(false)
+    expect(a1.stopped).toBeUndefined()
+    expect(a2.stopped).toBe(true)
+  })
+})

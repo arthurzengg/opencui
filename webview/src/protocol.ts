@@ -41,6 +41,19 @@ export type ChatMessage = {
   error?: string
   usage?: UsageDelta
   backendID?: string
+  /**
+   * True when the user pressed Stop while this assistant message was streaming.
+   * Rendered as a neutral grey "Stopped" badge instead of the red error block.
+   * Distinct from `error`, which signals a real failure.
+   */
+  stopped?: boolean
+  /**
+   * @-mention paths the user originally selected when this message was sent.
+   * Persisted on the message so the edit flow can preserve them — when the
+   * user clicks an old user message to revise it, we know which `@path`
+   * tokens in the text should still be treated as file context attachments.
+   */
+  mentions?: string[]
 }
 
 export type ConversationSummary = {
@@ -103,7 +116,7 @@ export type Outbound =
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
-  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[] }
+  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[] }
   | { type: "userMessageBackendID"; id: string; backendID: string }
   | { type: "assistantStart"; id: string }
   | { type: "textDelta"; id: string; delta: string }

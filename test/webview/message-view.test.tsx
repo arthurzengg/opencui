@@ -61,7 +61,7 @@ describe("MessageView (user role)", () => {
     const bubble = container.querySelector(".msg.role-user") as HTMLElement
     await user.click(bubble)
     // Now in edit mode — textarea should appear
-    expect(container.querySelector("textarea.user-edit-input")).not.toBeNull()
+    expect(container.querySelector("textarea")).not.toBeNull()
     expect(screen.getByText("Save & regenerate")).toBeInTheDocument()
   })
 
@@ -78,7 +78,7 @@ describe("MessageView (user role)", () => {
     )
     const bubble = container.querySelector(".msg.role-user") as HTMLElement
     await user.click(bubble)
-    expect(container.querySelector("textarea.user-edit-input")).toBeNull()
+    expect(container.querySelector("textarea")).toBeNull()
   })
 
   it("does NOT enter edit mode without backendID", async () => {
@@ -93,7 +93,7 @@ describe("MessageView (user role)", () => {
     )
     const bubble = container.querySelector(".msg.role-user") as HTMLElement
     await user.click(bubble)
-    expect(container.querySelector("textarea.user-edit-input")).toBeNull()
+    expect(container.querySelector("textarea")).toBeNull()
   })
 
   it("calls onEditMessage when Save & regenerate is clicked with a changed value", async () => {
@@ -112,22 +112,25 @@ describe("MessageView (user role)", () => {
     await user.clear(textarea)
     await user.type(textarea, "updated text")
     await user.click(screen.getByText("Save & regenerate"))
-    expect(onEditMessage).toHaveBeenCalledWith("u-edit", "updated text")
+    expect(onEditMessage).toHaveBeenCalledWith("u-edit", "updated text", undefined, undefined)
   })
 
-  it("Save button is disabled when content is unchanged", async () => {
+  it("clicking Save with unchanged content does NOT fire onEditMessage", async () => {
     const user = userEvent.setup()
+    const onEditMessage = vi.fn()
     const { container } = render(
       <MessageView
         message={userMessage("same text", { backendID: "b1" })}
         processOpen={false}
         processOnly={false}
-        onEditMessage={vi.fn()}
+        onEditMessage={onEditMessage}
       />,
     )
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
-    const save = screen.getByText("Save & regenerate") as HTMLButtonElement
-    expect(save.disabled).toBe(true)
+    await user.click(screen.getByText("Save & regenerate"))
+    // No regenerate triggered, edit mode closed.
+    expect(onEditMessage).not.toHaveBeenCalled()
+    expect(container.querySelector("textarea")).toBeNull()
   })
 
   it("Cancel returns to view mode without firing onEditMessage", async () => {
@@ -181,7 +184,7 @@ describe("MessageView (user role)", () => {
     await user.clear(textarea)
     await user.type(textarea, "via shortcut")
     await user.keyboard("{Meta>}{Enter}{/Meta}")
-    expect(onEditMessage).toHaveBeenCalledWith("u-cmd", "via shortcut")
+    expect(onEditMessage).toHaveBeenCalledWith("u-cmd", "via shortcut", undefined, undefined)
   })
 
   it("renders the editor-context label when message has ref", () => {
@@ -223,5 +226,183 @@ describe("MessageView (assistant role)", () => {
     expect(screen.getByText("claude-opus-4-7")).toBeInTheDocument()
     expect(screen.getByText(/0\.0025/)).toBeInTheDocument()
     expect(screen.getByText(/150 tokens/)).toBeInTheDocument()
+  })
+})
+
+describe("MessageView edit preserves mentions + attachments", () => {
+  function userWithMentions(text: string, mentions: string[], opts: { id?: string; backendID?: string } = {}): Message {
+    return {
+      id: opts.id ?? "u-mention",
+      role: "user",
+      blocks: [{ type: "text", text }],
+      backendID: opts.backendID ?? "b1",
+      mentions,
+    } as Message
+  }
+
+  function userWithAttachment(
+    text: string,
+    attachment: { mime: string; filename: string; dataUrl: string; bytes: number },
+    opts: { id?: string } = {},
+  ): Message {
+    return {
+      id: opts.id ?? "u-att",
+      role: "user",
+      blocks: [
+        { type: "attachment", ...attachment },
+        { type: "text", text },
+      ],
+      backendID: "b1",
+    } as Message
+  }
+
+  it("forwards preserved mentions whose token still appears in the edited text", async () => {
+    const user = userEvent.setup()
+    const onEditMessage = vi.fn()
+    const message = userWithMentions("@src/foo.ts please explain", ["src/foo.ts"])
+    const { container } = render(
+      <MessageView
+        message={message}
+        processOpen={false}
+        processOnly={false}
+        onEditMessage={onEditMessage}
+      />,
+    )
+    await user.click(container.querySelector(".msg.role-user") as HTMLElement)
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement
+    await user.clear(textarea)
+    await user.type(textarea, "@src/foo.ts rewrite it")
+    await user.click(screen.getByText("Save & regenerate"))
+    expect(onEditMessage).toHaveBeenCalledWith("u-mention", "@src/foo.ts rewrite it", ["src/foo.ts"], undefined)
+  })
+
+  it("drops mentions whose @token was deleted in the edited text", async () => {
+    const user = userEvent.setup()
+    const onEditMessage = vi.fn()
+    const message = userWithMentions("@src/foo.ts something", ["src/foo.ts"])
+    const { container } = render(
+      <MessageView
+        message={message}
+        processOpen={false}
+        processOnly={false}
+        onEditMessage={onEditMessage}
+      />,
+    )
+    await user.click(container.querySelector(".msg.role-user") as HTMLElement)
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement
+    await user.clear(textarea)
+    await user.type(textarea, "no mentions here")
+    await user.click(screen.getByText("Save & regenerate"))
+    expect(onEditMessage).toHaveBeenCalledWith("u-mention", "no mentions here", undefined, undefined)
+  })
+
+  it("re-derives attachments and forwards them when their label is still in the text", async () => {
+    const user = userEvent.setup()
+    const onEditMessage = vi.fn()
+    const att = {
+      mime: "image/png",
+      filename: "screen.png",
+      dataUrl: "data:image/png;base64,AQID",
+      bytes: 3,
+    }
+    const message = userWithAttachment("@screen.png look at this", att)
+    const { container } = render(
+      <MessageView
+        message={message}
+        processOpen={false}
+        processOnly={false}
+        onEditMessage={onEditMessage}
+      />,
+    )
+    await user.click(container.querySelector(".msg.role-user") as HTMLElement)
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement
+    await user.clear(textarea)
+    await user.type(textarea, "@screen.png what is this")
+    await user.click(screen.getByText("Save & regenerate"))
+    expect(onEditMessage).toHaveBeenCalledTimes(1)
+    const call = onEditMessage.mock.calls[0]
+    expect(call?.[0]).toBe("u-att")
+    expect(call?.[1]).toBe("@screen.png what is this")
+    expect(call?.[2]).toBeUndefined()
+    expect(call?.[3]).toHaveLength(1)
+    expect(call?.[3]?.[0]?.filename).toBe("screen.png")
+    expect(call?.[3]?.[0]?.dataUrl).toBe("data:image/png;base64,AQID")
+  })
+
+  it("renders @path tokens as .mention-chip spans in the read-only bubble", () => {
+    const message: Message = {
+      id: "u-render",
+      role: "user",
+      blocks: [{ type: "text", text: "look at @src/foo.ts please" }],
+      backendID: "b1",
+      mentions: ["src/foo.ts"],
+    } as Message
+    const { container } = render(
+      <MessageView message={message} processOpen={false} processOnly={false} />,
+    )
+    const chip = container.querySelector(".user-text .mention-chip")
+    expect(chip).not.toBeNull()
+    expect(chip!.textContent).toBe("@src/foo.ts")
+  })
+
+  it("renders a neutral grey Stopped badge for stopped assistant messages", () => {
+    const message: Message = {
+      id: "a-stop",
+      role: "assistant",
+      blocks: [{ type: "text", text: "I was working on this when…" }],
+      stopped: true,
+    } as Message
+    const { container } = render(
+      <MessageView message={message} processOpen={false} processOnly={false} />,
+    )
+    const badge = container.querySelector(".msg-stopped")
+    expect(badge).not.toBeNull()
+    expect(badge!.textContent).toBe("Stopped")
+    // Should NOT render the red .msg-error block.
+    expect(container.querySelector(".msg-error")).toBeNull()
+  })
+
+  it("renders an attachment label as a chip in the read-only bubble too", () => {
+    const message: Message = {
+      id: "u-att-chip",
+      role: "user",
+      blocks: [
+        { type: "attachment", mime: "image/png", filename: "screen.png", dataUrl: "data:image/png;base64,A", bytes: 1 },
+        { type: "text", text: "@screen.png describe this" },
+      ],
+      backendID: "b1",
+    } as Message
+    const { container } = render(
+      <MessageView message={message} processOpen={false} processOnly={false} />,
+    )
+    const chip = container.querySelector(".user-text .mention-chip")
+    expect(chip).not.toBeNull()
+    expect(chip!.textContent).toBe("@screen.png")
+  })
+
+  it("drops attachments whose label was deleted from the text", async () => {
+    const user = userEvent.setup()
+    const onEditMessage = vi.fn()
+    const att = {
+      mime: "image/png",
+      filename: "screen.png",
+      dataUrl: "data:image/png;base64,AQID",
+      bytes: 3,
+    }
+    const message = userWithAttachment("@screen.png describe", att)
+    const { container } = render(
+      <MessageView
+        message={message}
+        processOpen={false}
+        processOnly={false}
+        onEditMessage={onEditMessage}
+      />,
+    )
+    await user.click(container.querySelector(".msg.role-user") as HTMLElement)
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement
+    await user.clear(textarea)
+    await user.type(textarea, "no attachments now")
+    await user.click(screen.getByText("Save & regenerate"))
+    expect(onEditMessage).toHaveBeenCalledWith("u-att", "no attachments now", undefined, undefined)
   })
 })

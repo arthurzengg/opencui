@@ -84,6 +84,10 @@ vi.mock("vscode", () => {
       getConfiguration: vi.fn(() => ({ get: vi.fn() })),
       openTextDocument: vi.fn(),
       applyEdit: vi.fn().mockResolvedValue(true),
+      asRelativePath: vi.fn((uri: Uri | string) => {
+        const fsPath = typeof uri === "string" ? uri : uri.fsPath
+        return fsPath.replace(/^\/workspace\//, "").replace(/^\/workspace$/, "")
+      }),
       fs: {
         stat: vi.fn().mockResolvedValue({}),
         readFile: vi.fn().mockResolvedValue(new Uint8Array()),
@@ -93,6 +97,7 @@ vi.mock("vscode", () => {
       activeTextEditor: undefined,
       activeTerminal: undefined,
       visibleTextEditors: [],
+      tabGroups: { all: [] as Array<{ tabs: Array<{ input?: unknown }> }> },
       createTerminal: vi.fn(() => ({ show: vi.fn(), sendText: vi.fn(), dispose: vi.fn() })),
       createTextEditorDecorationType: vi.fn(() => ({ dispose: vi.fn() })),
       createWebviewPanel: vi.fn(),

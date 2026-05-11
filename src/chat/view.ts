@@ -60,6 +60,13 @@ export class ChatView implements vscode.WebviewViewProvider {
   private reviewHunks: Record<string, ReviewHunkState> = {}
   private reviewPanel?: vscode.WebviewPanel
   private reviewChange?: ReviewChange
+  /**
+   * True between user-pressed Stop and the subsequent `session.idle` event.
+   * While true, drop incoming SSE message/tool deltas — opencode keeps draining
+   * its in-flight LLM response for a moment after abort, and we don't want to
+   * mutate the already-stopped message with leftover content.
+   */
+  private aborting = false
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -321,7 +328,14 @@ export class ChatView implements vscode.WebviewViewProvider {
         blocks.push({ type: "text", text: msg.text })
         this.messages = [
           ...this.messages,
-          { id: msg.id, role: "user", blocks, ref: msg.ref, backendID: msg.backendID },
+          {
+            id: msg.id,
+            role: "user",
+            blocks,
+            ref: msg.ref,
+            backendID: msg.backendID,
+            mentions: msg.mentions,
+          },
         ]
         this.saveActive()
         return
@@ -375,7 +389,22 @@ export class ChatView implements vscode.WebviewViewProvider {
         )
         this.saveActive()
         return
-      case "aborted":
+      case "aborted": {
+        // Only the LAST pending assistant in the turn carries the Stopped
+        // badge; intermediate ones just clear pending. Otherwise multi-step
+        // turns (subtasks, retries) show several Stopped badges per abort.
+        let lastPendingIdx = -1
+        this.messages.forEach((m, i) => {
+          if (m.role === "assistant" && m.pending) lastPendingIdx = i
+        })
+        this.messages = this.messages.map((m, i) => {
+          if (m.role !== "assistant" || !m.pending) return m
+          if (i === lastPendingIdx) return { ...m, pending: false, stopped: true }
+          return { ...m, pending: false }
+        })
+        this.saveActive()
+        return
+      }
       case "sessionIdle":
         this.messages = this.messages.map((m) =>
           m.role === "assistant" && m.pending ? { ...m, pending: false } : m,
@@ -523,6 +552,8 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async abortCurrent() {
     if (!this.sessionID) return
+    this.aborting = true
+    this.pendingUserBackendID = undefined
     this.post({ type: "aborted" })
     try {
       const backend = await this.servers.ensure()
@@ -531,7 +562,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       log("session.abort failed", e)
     }
     // Do NOT close SSE — opencode will emit the final events telling us the
-    // assistant message ended.
+    // assistant message ended (session.idle clears this.aborting).
   }
 
   private async handleSend(text: string, mentions?: string[], attachments?: Attachment[]) {
@@ -545,6 +576,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       text,
       ref: { path: ctx.filePath, label },
       attachments,
+      mentions,
     })
     this.updateTitleFromPrompt(text)
 
@@ -671,25 +703,32 @@ export class ChatView implements vscode.WebviewViewProvider {
       onAssistantEnd: (mid, payload) => {
         const webviewID = this.messageMap.get(mid)
         if (!webviewID) return
-        if (payload.error) {
+        // While aborting, opencode reports the assistant message's end with an
+        // "Aborted"-style error. That's redundant with the Stopped badge we
+        // already set on `aborted` — suppress to avoid showing both.
+        if (payload.error && !this.aborting) {
           this.post({ type: "assistantError", id: webviewID, message: payload.error })
         }
         this.post({ type: "assistantDone", id: webviewID, usage: payload.usage })
       },
       onTextDelta: (mid, delta) => {
+        if (this.aborting) return
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         this.post({ type: "textDelta", id: webviewID, delta })
       },
       onReasoningDelta: (mid, delta) => {
+        if (this.aborting) return
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         this.post({ type: "reasoningDelta", id: webviewID, delta })
       },
       onTool: (mid, update) => {
+        if (this.aborting) return
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         const wire = toWire(update, backend.directory)
         this.post({ type: "tool", id: webviewID, update: wire })
       },
       onPatch: (mid, files, diff) => {
+        if (this.aborting) return
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         this.post({
           type: "patch",
@@ -714,6 +753,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.post({ type: "sessionBusy" })
       },
       onSessionIdle: () => {
+        this.aborting = false
         this.post({ type: "sessionIdle" })
       },
     })

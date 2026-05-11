@@ -28,22 +28,74 @@ export function invalidateFileCache() {
 
 export async function searchWorkspaceFiles(query: string): Promise<FileSearchHit[]> {
   const all = await loadFiles()
-  return rankHits(all, query).slice(0, MAX_HITS)
+  const recent = getRecentlyOpenedPaths()
+  return rankHits(all, query, recent).slice(0, MAX_HITS)
 }
 
 /**
- * Rank `entries` against `query`. Empty query returns the entries in their
- * original order (capped). Non-empty query orders by:
+ * Workspace-relative paths currently open in VS Code tabs, in their natural
+ * tab order. The active editor's tab usually ends up first; pinned tabs and
+ * recently focused ones cluster near the front. Used to boost the @ picker
+ * so the file you're actually looking at is the most-likely first hit.
+ */
+export function getRecentlyOpenedPaths(): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const active = vscode.window.activeTextEditor?.document.uri
+  const pushUri = (uri: vscode.Uri | undefined) => {
+    if (!uri || uri.scheme !== "file") return
+    const rel = vscode.workspace.asRelativePath(uri)
+    if (seen.has(rel)) return
+    seen.add(rel)
+    out.push(rel)
+  }
+  // Active editor first — that's the file the user is "in".
+  pushUri(active)
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      const input = tab.input
+      if (input && typeof input === "object" && "uri" in input) {
+        pushUri((input as { uri: vscode.Uri }).uri)
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Rank `entries` against `query`. Empty query returns recent files first
+ * (then the rest in original order). Non-empty query orders by:
  *   1. Exact basename match
  *   2. Basename prefix match
  *   3. Basename substring match
  *   4. Path substring match
- * Within each tier, shorter paths win (likely the more "central" file).
+ * Within each tier, recently-opened files come first, then shorter paths.
  */
-export function rankHits(entries: FileSearchHit[], query: string): FileSearchHit[] {
+export function rankHits(
+  entries: FileSearchHit[],
+  query: string,
+  recentPaths: string[] = [],
+): FileSearchHit[] {
+  const recentRank = new Map<string, number>()
+  recentPaths.forEach((path, i) => {
+    if (!recentRank.has(path)) recentRank.set(path, i)
+  })
+
   const q = query.toLowerCase().trim()
-  if (!q) return entries.slice(0, MAX_HITS)
-  const scored: Array<{ hit: FileSearchHit; score: number; len: number }> = []
+  if (!q) {
+    // Empty query: surface recently-opened files at the top, then the rest in
+    // their natural ordering (workspace listing order).
+    const inRecent: FileSearchHit[] = []
+    const others: FileSearchHit[] = []
+    for (const hit of entries) {
+      if (recentRank.has(hit.path)) inRecent.push(hit)
+      else others.push(hit)
+    }
+    inRecent.sort((a, b) => (recentRank.get(a.path) ?? 0) - (recentRank.get(b.path) ?? 0))
+    return [...inRecent, ...others].slice(0, MAX_HITS)
+  }
+
+  const scored: Array<{ hit: FileSearchHit; score: number; recent: number; len: number }> = []
   for (const hit of entries) {
     const name = hit.name.toLowerCase()
     const fullPath = hit.path.toLowerCase()
@@ -53,8 +105,10 @@ export function rankHits(entries: FileSearchHit[], query: string): FileSearchHit
     else if (name.includes(q)) score = 2
     else if (fullPath.includes(q)) score = 3
     else continue
-    scored.push({ hit, score, len: hit.path.length })
+    // recent === Infinity means "not in tabs". A lower number = more recent.
+    const recent = recentRank.get(hit.path) ?? Number.POSITIVE_INFINITY
+    scored.push({ hit, score, recent, len: hit.path.length })
   }
-  scored.sort((a, b) => a.score - b.score || a.len - b.len)
+  scored.sort((a, b) => a.score - b.score || a.recent - b.recent || a.len - b.len)
   return scored.map((s) => s.hit)
 }

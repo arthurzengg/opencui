@@ -62,4 +62,46 @@ describe("rankHits", () => {
     const out = rankHits(fixtures, "   ")
     expect(out.map((h) => h.path)).toEqual(fixtures.map((h) => h.path))
   })
+
+  describe("recent-tabs boost", () => {
+    it("empty query: recently-opened paths sort to the top in tab order", () => {
+      const out = rankHits(fixtures, "", ["deep/very/long/path/to/baz.ts", "src/bar.ts"])
+      expect(out[0]?.path).toBe("deep/very/long/path/to/baz.ts")
+      expect(out[1]?.path).toBe("src/bar.ts")
+    })
+
+    it("non-empty query: within the same score tier, recent files come first", () => {
+      const entries = [
+        { path: "lib/foo.ts", name: "foo.ts" },
+        { path: "src/foo.ts", name: "foo.ts" },
+      ]
+      // Both are exact-basename matches → same score tier. Without recent, the
+      // shorter path wins. With recent, the recent one wins regardless of length.
+      const out = rankHits(entries, "foo.ts", ["lib/foo.ts"])
+      expect(out[0]?.path).toBe("lib/foo.ts")
+    })
+
+    it("recent files that don't match the query are NOT included", () => {
+      const out = rankHits(fixtures, "baz", ["src/foo.ts"])
+      // "src/foo.ts" doesn't match query "baz" → excluded despite being recent
+      expect(out.every((h) => h.path !== "src/foo.ts")).toBe(true)
+      expect(out[0]?.path).toBe("deep/very/long/path/to/baz.ts")
+    })
+
+    it("recency only re-orders within a score tier — higher tiers still beat recent", () => {
+      const entries = [
+        { path: "a/foo.ts", name: "foo.ts" }, // exact basename match, NOT recent
+        { path: "b/foo-bar.ts", name: "foo-bar.ts" }, // basename prefix match, IS recent
+      ]
+      const out = rankHits(entries, "foo.ts", ["b/foo-bar.ts"])
+      // Even though foo-bar.ts is recent, foo.ts has the better score tier.
+      expect(out[0]?.path).toBe("a/foo.ts")
+    })
+
+    it("duplicate recent entries are deduped to their first index", () => {
+      const out = rankHits(fixtures, "", ["src/foo.ts", "src/foo.ts", "src/bar.ts"])
+      expect(out[0]?.path).toBe("src/foo.ts")
+      expect(out[1]?.path).toBe("src/bar.ts")
+    })
+  })
 })

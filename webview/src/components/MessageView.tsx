@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
+import type { Attachment, FileSearchHit } from "../protocol"
+import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
 import { Markdown } from "./Markdown"
+import { PromptBox } from "./PromptBox"
 import { ToolTrace, toolHeadline } from "./ToolCard"
 
 export function MessageView({
@@ -10,17 +13,27 @@ export function MessageView({
   busy,
   onReviewFile,
   onEditMessage,
+  searchFiles,
+  attachFile,
 }: {
   message: Message
   processOpen: boolean
   processOnly: boolean
   busy?: boolean
   onReviewFile?: (path: string) => void
-  onEditMessage?: (id: string, text: string) => void
+  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[]) => void
+  searchFiles?: (query: string) => Promise<FileSearchHit[]>
+  attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
 }) {
   if (message.role === "user") {
     return (
-      <UserMessageView message={message} busy={busy} onEditMessage={onEditMessage} />
+      <UserMessageView
+        message={message}
+        busy={busy}
+        onEditMessage={onEditMessage}
+        searchFiles={searchFiles}
+        attachFile={attachFile}
+      />
     )
   }
   return (
@@ -30,6 +43,7 @@ export function MessageView({
       {message.pending && message.blocks.length === 0 && (
         <div className="thinking-dots" role="status" aria-label="Thinking">thinking</div>
       )}
+      {message.stopped && <div className="msg-stopped">Stopped</div>}
       {message.error && <div className="msg-error">{message.error}</div>}
       {(message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
         <div className="msg-usage">
@@ -50,41 +64,42 @@ function UserMessageView({
   message,
   busy,
   onEditMessage,
+  searchFiles,
+  attachFile,
 }: {
   message: Message
   busy?: boolean
-  onEditMessage?: (id: string, text: string) => void
+  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[]) => void
+  searchFiles?: (query: string) => Promise<FileSearchHit[]>
+  attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
 }) {
   const originalText = message.blocks
     .filter((b): b is Extract<Block, { type: "text" }> => b.type === "text")
     .map((b) => b.text)
     .join("\n\n")
-  const attachments = message.blocks.filter(
+  const attachmentBlocks = message.blocks.filter(
     (b): b is Extract<Block, { type: "attachment" }> => b.type === "attachment",
   )
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(originalText)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => {
-    if (editing) setDraft(originalText)
-  }, [editing, originalText])
-
-  useEffect(() => {
-    const node = textareaRef.current
-    if (!editing || !node) return
-    node.focus()
-    node.setSelectionRange(node.value.length, node.value.length)
-    node.style.height = "auto"
-    node.style.height = Math.min(node.scrollHeight, 240) + "px"
-  }, [editing])
-
-  useEffect(() => {
-    const node = textareaRef.current
-    if (!editing || !node) return
-    node.style.height = "auto"
-    node.style.height = Math.min(node.scrollHeight, 240) + "px"
-  }, [draft, editing])
+  // Re-derive attachment labels (same algorithm PromptBox originally used) and
+  // wrap each attachment block into the Attachment shape, including a synthetic
+  // id and an undefined sourcePath (the original file path is lost after the
+  // first send — host falls back to the dataUrl for restored attachments).
+  const initialAttachments: Attachment[] = attachmentBlocks.map((block, i) => ({
+    id: `att_${message.id}_${i}`,
+    mime: block.mime,
+    filename: block.filename,
+    dataUrl: block.dataUrl,
+    bytes: block.bytes,
+  }))
+  const knownLabels: Set<string> = (() => {
+    const existing = new Set<string>(message.mentions ?? [])
+    for (const a of attachmentBlocks) {
+      existing.add(makeAttachmentLabel(a.filename, new Set(existing)))
+    }
+    return existing
+  })()
 
   const canEdit = Boolean(onEditMessage)
   const editBlocked = busy || !message.backendID
@@ -97,14 +112,20 @@ function UserMessageView({
         ? "Saving your message — try again in a moment"
         : "Edit and regenerate"
 
-  const submit = () => {
-    const trimmed = draft.trim()
-    if (!trimmed) return
-    if (trimmed === originalText.trim()) {
+  const handleSubmit = (text: string, mentions?: string[], attachments?: Attachment[]) => {
+    const trimmed = text.trim()
+    if (!trimmed && !attachments?.length) return
+    // Bail if nothing changed — clicking Save with the original content
+    // shouldn't trigger a regenerate. Compare text + mention set + attachment
+    // count; the text covers the vast majority of cases.
+    const sameText = trimmed === originalText.trim()
+    const sameMentionCount = (mentions?.length ?? 0) === (message.mentions?.length ?? 0)
+    const sameAttachCount = (attachments?.length ?? 0) === attachmentBlocks.length
+    if (sameText && sameMentionCount && sameAttachCount) {
       setEditing(false)
       return
     }
-    onEditMessage?.(message.id, trimmed)
+    onEditMessage?.(message.id, trimmed, mentions, attachments)
     setEditing(false)
   }
 
@@ -118,12 +139,9 @@ function UserMessageView({
     <div
       className={`msg role-user ${editing ? "is-editing" : ""} ${editable ? "is-editable" : ""}`}
       onClick={handleBubbleClick}
-      role={editable ? "button" : undefined}
-      tabIndex={editable ? 0 : undefined}
+      role={editable && !editing ? "button" : undefined}
+      tabIndex={editable && !editing ? 0 : undefined}
       onKeyDown={editable && !editing ? (event) => {
-        // Only react to keydowns on the bubble itself; events bubbled up from
-        // child inputs/textareas (in edit mode) must pass through so the user
-        // can type spaces and Enter normally.
         if (event.target !== event.currentTarget) return
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault()
@@ -134,42 +152,26 @@ function UserMessageView({
     >
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
       {editing ? (
-        <div className="user-edit" onClick={(event) => event.stopPropagation()}>
-          <textarea
-            ref={textareaRef}
-            className="user-edit-input"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault()
-                submit()
-              }
-              if (event.key === "Escape") {
-                event.preventDefault()
-                setEditing(false)
-              }
+        <div onClick={(event) => event.stopPropagation()}>
+          <PromptBox
+            busy={false}
+            onSend={handleSubmit}
+            onAbort={() => setEditing(false)}
+            searchFiles={searchFiles}
+            attachFile={attachFile}
+            variant="edit"
+            initial={{
+              text: originalText,
+              mentions: message.mentions,
+              attachments: initialAttachments,
             }}
           />
-          <div className="user-edit-warning">
-            Replies after this point will be discarded and regenerated.
-          </div>
-          <div className="user-edit-actions">
-            <button className="btn subtle" onClick={() => setEditing(false)}>Cancel</button>
-            <button
-              className="btn primary"
-              onClick={submit}
-              disabled={!draft.trim() || draft.trim() === originalText.trim()}
-            >
-              Save & regenerate
-            </button>
-          </div>
         </div>
       ) : (
         <>
-          {attachments.length > 0 && (
+          {attachmentBlocks.length > 0 && (
             <ul className="msg-attachments" aria-label="Attachments">
-              {attachments.map((a, i) => (
+              {attachmentBlocks.map((a, i) => (
                 <li key={i} className="attachment-tile readonly" title={a.filename}>
                   {a.mime.startsWith("image/") ? (
                     <img className="attachment-thumb" src={a.dataUrl} alt={a.filename} />
@@ -181,7 +183,9 @@ function UserMessageView({
               ))}
             </ul>
           )}
-          {originalText && <div className="user-text">{originalText}</div>}
+          {originalText && (
+            <div className="user-text">{renderMentionedText(originalText, knownLabels)}</div>
+          )}
           {canEdit && (
             <span className="user-edit-hint" aria-hidden="true">
               <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -194,6 +198,30 @@ function UserMessageView({
       )}
     </div>
   )
+}
+
+/**
+ * Wrap @path tokens (whose target is in `knownLabels`) in `.mention-chip`
+ * spans, mirroring the in-editor chip styling so the rendered user bubble
+ * reads as the same content the user composed.
+ */
+export function renderMentionedText(text: string, knownLabels: Set<string>): ReactNode[] {
+  if (knownLabels.size === 0) return [text]
+  const ranges = findMentionRanges(text, knownLabels)
+  if (ranges.length === 0) return [text]
+  const out: ReactNode[] = []
+  let cursor = 0
+  for (const r of ranges) {
+    if (r.start > cursor) out.push(text.slice(cursor, r.start))
+    out.push(
+      <span key={r.start} className="mention-chip">
+        {text.slice(r.start, r.end)}
+      </span>,
+    )
+    cursor = r.end
+  }
+  if (cursor < text.length) out.push(text.slice(cursor))
+  return out
 }
 
 function renderMessageBlocks(message: Message, processOpen: boolean, processOnly: boolean, onReviewFile?: (path: string) => void) {
