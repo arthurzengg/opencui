@@ -15,9 +15,25 @@
     "Chat",
     "Other"
   ],
-  "activationEvents": [
-    "onStartupFinished"
+  "keywords": [
+    "ai",
+    "chat",
+    "opencode",
+    "copilot",
+    "assistant",
+    "agent",
+    "code-generation",
+    "react"
   ],
+  "homepage": "https://github.com/arthurzengg/opencui#readme",
+  "bugs": {
+    "url": "https://github.com/arthurzengg/opencui/issues"
+  },
+  "galleryBanner": {
+    "color": "#0b1115",
+    "theme": "dark"
+  },
+  "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -120,7 +136,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:integration": "tsc -p test/integration/tsconfig.json && vscode-test",
-    "vscode:prepublish": "bun run package"
+    "vscode:prepublish": "bun run package",
+    "vsix": "vsce package --no-dependencies",
+    "publish:marketplace": "vsce publish --no-dependencies"
   },
   "dependencies": {
     "@opencode-ai/sdk": "^1.14.25"
@@ -137,6 +155,7 @@
     "@vitest/coverage-v8": "^4.1.5",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.9.1",
     "esbuild": "^0.25.3",
     "jsdom": "^29.1.1",
     "mocha": "^11.7.5",

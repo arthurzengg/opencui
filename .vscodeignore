@@ -1,11 +1,45 @@
-.vscode/**
-.vscode-test/**
+# Source — only the bundled `dist/extension.js` and `dist/webview/index.html`
+# need to ship in the .vsix; all source TS/TSX/HTML stays out.
 src/**
-.gitignore
-.eslintrc.json
-esbuild.js
-tsconfig.json
-**/*.map
+webview/**
 **/*.ts
+**/*.tsx
+**/*.map
+**/*.test.*
+**/__tests__/**
+
+# Tests + test infra
+test/**
+.vscode-test/**
+.vscode-test.mjs
+dist/test/**
+coverage/**
+vitest.config.ts
+
+# Build tooling
+esbuild.js
+scripts/**
+bun.lock
+tsconfig*.json
+webview/vite.config.ts
+webview/tsconfig*.json
+
+# Editor / VCS / OS / AI-assistant metadata
+.vscode/**
+.github/**
+.git/**
+.gitignore
+.gitattributes
+.eslintrc*
+.prettierrc*
+.DS_Store
+.npmrc
+.claude/**
+
+# Repo-meta docs (Marketplace renders README; CLAUDE.md is internal guidance)
+CLAUDE.md
+
+# Dev node_modules (the published vsix should only carry runtime deps that
+# are actually referenced from dist/extension.js — esbuild bundles them in,
+# so node_modules ships nothing).
 node_modules/**
-out/**
