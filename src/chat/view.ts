@@ -41,7 +41,7 @@ import {
   reviewHunk,
   reviewPathExists,
 } from "./fs-ops"
-import { fallbackHtml, hasPendingReviewHunks, reviewChangeHtml } from "./review-render"
+import { fallbackHtml } from "./review-render"
 
 export class ChatView implements vscode.WebviewViewProvider {
   static viewType = "opencui.chat"
@@ -58,8 +58,6 @@ export class ChatView implements vscode.WebviewViewProvider {
   /** Webview ID of the user message currently awaiting a backend ID from the stream. */
   private pendingUserBackendID?: string
   private reviewHunks: Record<string, ReviewHunkState> = {}
-  private reviewPanel?: vscode.WebviewPanel
-  private reviewChange?: ReviewChange
   /**
    * True between user-pressed Stop and the subsequent `session.idle` event.
    * While true, drop incoming SSE message/tool deltas — opencode keeps draining
@@ -161,8 +159,6 @@ export class ChatView implements vscode.WebviewViewProvider {
   private dispose() {
     this.subscription?.abort()
     this.subscription = undefined
-    this.reviewPanel?.dispose()
-    this.reviewPanel = undefined
   }
 
   private post(msg: Outbound) {
@@ -778,13 +774,20 @@ export class ChatView implements vscode.WebviewViewProvider {
       vscode.window.showWarningMessage(`OpenCUI: ${change.path} cannot be reviewed as text.`)
       return
     }
-    this.reviewChange = change
-    this.reviewPanel?.dispose()
-    this.reviewPanel = undefined
     try {
       const doc = await openFileDocument(change.path)
-      await this.syncReviewDecorations()
-      await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
+      // If the requested file is already the active editor, don't re-show it —
+      // showTextDocument would steal focus + flash the editor pane for no
+      // reason. (Common when the user just clicked a different row and the
+      // editor already moved there.)
+      const active = vscode.window.activeTextEditor?.document.uri.toString()
+      if (active !== doc.uri.toString()) {
+        await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
+      }
+      // Decoration sync (purging missing-file hunks) is independent of where
+      // the editor is pointed — run it AFTER the editor swap so the visible
+      // pane updates immediately rather than waiting on fs.stat I/O.
+      void this.syncReviewDecorations()
     } catch (e) {
       log(`could not open review file ${change.path}`, e)
       vscode.window.showWarningMessage(`OpenCUI: could not open ${change.path} as text.`)
@@ -873,29 +876,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     if (any) await this.syncReviewDecorations()
     else log("reviewAllInChange: no hunks applied", { source, path: requestedPath, action })
-  }
-
-  private async onReviewPanelMessage(msg: { type?: string; key?: string; path?: string; action?: ReviewHunkState; oldText?: string; newText?: string }) {
-    if (msg.type !== "reviewHunk" || !msg.key || !msg.path || !msg.action) return
-    const state = await reviewHunk(msg.path, msg.action, msg.oldText ?? "", msg.newText ?? "") ? msg.action : undefined
-    this.post({ type: "reviewHunkState", key: msg.key, state })
-    if (!state || !this.reviewChange) {
-      this.refreshReviewPanel()
-      return
-    }
-    const nextReviewed = { ...this.reviewHunks, [msg.key]: state }
-    if (hasPendingReviewHunks(this.reviewChange, nextReviewed)) {
-      this.refreshReviewPanel(nextReviewed)
-      return
-    }
-    this.reviewPanel?.dispose()
-    await openFile(msg.path)
-  }
-
-  private refreshReviewPanel(reviewed = this.reviewHunks) {
-    if (!this.reviewPanel || !this.reviewChange) return
-    this.reviewPanel.title = path.basename(this.reviewChange.path)
-    this.reviewPanel.webview.html = reviewChangeHtml(this.reviewChange, reviewed)
   }
 
   private queueReviewDecorationsSync() {

@@ -682,12 +682,10 @@ button {
   }
 }
 .msg.role-user.is-editing {
-  /* When editing the message, drop sticky positioning so the textarea + actions
-     can grow naturally without being constrained against the scroll viewport.
-     Also strip the bubble chrome so the embedded PromptBox provides the only
-     padding/border — otherwise we'd double up on inset spacing. */
-  position: relative;
-  z-index: auto;
+  /* Keep the sticky pinning during edit — dropping it would re-flow the
+     bubble to its natural document position (top of the turn), yanking the
+     user's viewport upward. Strip the bubble chrome so the embedded
+     PromptBox provides the only padding/border. */
   padding: 0;
   background: transparent;
   border-color: transparent;
@@ -1212,19 +1210,54 @@ button {
   border-top: 1px solid var(--vscode-panel-border);
   background: var(--vscode-sideBar-background);
   padding: 7px 10px;
-  animation: review-panel-in 0.18s ease-out;
+}
+.review-head-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 .review-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1;
   min-width: 0;
   padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
+}
+.review-bulk-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.review-bulk-action {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.review-bulk-action:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+.review-bulk-action.accept:hover {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+}
+.review-bulk-action.reject:hover {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+}
+.review-bulk-action:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
 }
 .review-caret {
   display: inline-flex;

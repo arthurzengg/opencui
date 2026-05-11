@@ -43,8 +43,18 @@ export function MessageView({
       {message.pending && message.blocks.length === 0 && (
         <div className="thinking-dots" role="status" aria-label="Thinking">thinking</div>
       )}
-      {message.stopped && <div className="msg-stopped">Stopped</div>}
-      {message.error && <div className="msg-error">{message.error}</div>}
+      {(() => {
+        // Stopped state overrides error: a message can carry both
+        //   1) the new `stopped: true` flag (set by my reducer fix), OR
+        //   2) an `error: "Aborted"` string persisted from older sessions
+        //      that ran before the abort fix shipped.
+        // In either case render ONE neutral grey "Stopped" badge, not the red
+        // error block. Real failures (network, etc.) still render in red.
+        const stopped = message.stopped || /^aborted$/i.test((message.error ?? "").trim())
+        if (stopped) return <div className="msg-stopped">Stopped</div>
+        if (message.error) return <div className="msg-error">{message.error}</div>
+        return null
+      })()}
       {(message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
         <div className="msg-usage">
           {message.usage.model ? <span>{message.usage.model}</span> : null}

@@ -207,6 +207,9 @@ function ChatHistoryMenu({
                         autoFocus
                         onChange={(event) => setRenamingTitle(event.target.value)}
                         onKeyDown={(event) => {
+                          // While IME composition is active, Enter commits
+                          // the IME candidate — don't intercept it as Save.
+                          if (event.nativeEvent.isComposing || event.keyCode === 229) return
                           if (event.key === "Enter") commitRename()
                           if (event.key === "Escape") setRenamingID(undefined)
                         }}

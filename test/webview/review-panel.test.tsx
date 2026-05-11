@@ -200,6 +200,79 @@ describe("ReviewPanel", () => {
     expect(header.getAttribute("aria-expanded")).toBe("false")
   })
 
+  it("renders 'Keep all' / 'Undo all' bulk buttons in the header when there are multiple files", () => {
+    const messages = [
+      editMessage("m1", { filePath: "a.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
+      editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
+    ]
+    render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    expect(screen.getByRole("button", { name: /Keep all/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Undo all/i })).toBeInTheDocument()
+  })
+
+  it("hides the bulk buttons when there is only a single file (the row button suffices)", () => {
+    const messages = [
+      editMessage("m1", { filePath: "only.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
+    ]
+    render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    expect(screen.queryByRole("button", { name: /Keep all/i })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Undo all/i })).toBeNull()
+  })
+
+  it("Keep all calls onReviewAllInChange('accepted') once per pending file", async () => {
+    const user = userEvent.setup()
+    const onReviewAllInChange = vi.fn()
+    const messages = [
+      editMessage("m1", { filePath: "a.ts", patch: "@@\n+a", additions: 1, deletions: 0, callID: "c1" }),
+      editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0, callID: "c2" }),
+    ]
+    render(
+      <ReviewPanel
+        messages={messages}
+        reviewedHunks={{}}
+        onReviewAllInChange={onReviewAllInChange}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /Keep all/i }))
+    expect(onReviewAllInChange).toHaveBeenCalledTimes(2)
+    expect(onReviewAllInChange).toHaveBeenNthCalledWith(1, expect.any(String), "a.ts", "accepted")
+    expect(onReviewAllInChange).toHaveBeenNthCalledWith(2, expect.any(String), "b.ts", "accepted")
+  })
+
+  it("Undo all calls onReviewAllInChange('rejected') once per pending file", async () => {
+    const user = userEvent.setup()
+    const onReviewAllInChange = vi.fn()
+    const messages = [
+      editMessage("m1", { filePath: "a.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
+      editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
+    ]
+    render(
+      <ReviewPanel
+        messages={messages}
+        reviewedHunks={{}}
+        onReviewAllInChange={onReviewAllInChange}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /Undo all/i }))
+    expect(onReviewAllInChange).toHaveBeenCalledTimes(2)
+    expect(onReviewAllInChange.mock.calls.every((c) => c[2] === "rejected")).toBe(true)
+  })
+
+  it("clicking the bulk buttons does NOT toggle the panel collapse", async () => {
+    const user = userEvent.setup()
+    const messages = [
+      editMessage("m1", { filePath: "a.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
+      editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
+    ]
+    const { container } = render(
+      <ReviewPanel messages={messages} reviewedHunks={{}} onReviewAllInChange={vi.fn()} />,
+    )
+    const header = container.querySelector(".review-head") as HTMLButtonElement
+    expect(header.getAttribute("aria-expanded")).toBe("true")
+    await user.click(screen.getByRole("button", { name: /Keep all/i }))
+    expect(header.getAttribute("aria-expanded")).toBe("true") // not collapsed
+  })
+
   it("retains 'created' kind when first change is create then later updated (turnChanges aggregation)", () => {
     const messages = [
       createMessage("m1", { filePath: "new.ts", content: "line1\nline2" }),

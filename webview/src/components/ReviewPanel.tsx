@@ -56,17 +56,48 @@ export function ReviewPanel({
   const isSingle = pendingChanges.length === 1
   const onlyChange = isSingle ? pendingChanges[0].change : undefined
 
+  const bulkAct = (action: ReviewHunkState) => {
+    for (const { change } of pendingChanges) {
+      onReviewAllInChange?.(change.source, change.path, action)
+    }
+  }
+  const stopHead = (event: MouseEvent | KeyboardEvent) => event.stopPropagation()
+
   return (
     <div className={`review-panel ${open ? "" : "is-collapsed"}`}>
-      <button className="review-head" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span className={`review-caret ${open ? "is-open" : ""}`}>›</span>
-        <span className="review-title">{isSingle ? "Review" : "Review changes"}</span>
-        <span className="review-summary" title={onlyChange?.path}>
-          {onlyChange ? (displayNames.get(onlyChange.path) ?? basename(onlyChange.path)) : `${pendingChanges.length} files`}
-        </span>
-        <span className="review-stat add">+{additions}</span>
-        <span className="review-stat del">-{deletions}</span>
-      </button>
+      <div className="review-head-row">
+        <button className="review-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <span className={`review-caret ${open ? "is-open" : ""}`}>›</span>
+          <span className="review-title">{isSingle ? "Review" : "Review changes"}</span>
+          <span className="review-summary" title={onlyChange?.path}>
+            {onlyChange ? (displayNames.get(onlyChange.path) ?? basename(onlyChange.path)) : `${pendingChanges.length} files`}
+          </span>
+          <span className="review-stat add">+{additions}</span>
+          <span className="review-stat del">-{deletions}</span>
+        </button>
+        {!isSingle && (
+          <div className="review-bulk-actions">
+            <button
+              className="review-bulk-action accept"
+              onClick={(event) => { stopHead(event); bulkAct("accepted") }}
+              onKeyDown={stopHead}
+              title={`Keep changes in all ${pendingChanges.length} files`}
+              aria-label="Keep all changes"
+            >
+              Keep all
+            </button>
+            <button
+              className="review-bulk-action reject"
+              onClick={(event) => { stopHead(event); bulkAct("rejected") }}
+              onKeyDown={stopHead}
+              title={`Undo changes in all ${pendingChanges.length} files`}
+              aria-label="Undo all changes"
+            >
+              Undo all
+            </button>
+          </div>
+        )}
+      </div>
       <div className="review-body-clip" aria-hidden={!open}>
         <div className="review-body">
           <div className="review-files">

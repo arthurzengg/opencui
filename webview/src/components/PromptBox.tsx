@@ -220,6 +220,13 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // If an IME composition is in progress (e.g. typing Chinese pinyin),
+    // Enter belongs to the IME — it commits the candidate, NOT submits the
+    // message. Same for Tab (some IMEs use it to cycle candidates) and the
+    // picker's nav keys. Bail out so the textarea keeps the keystroke for
+    // the IME. keyCode 229 is the legacy fallback for older Chromium builds
+    // that don't surface isComposing reliably.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (mention && hits.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault()

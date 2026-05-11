@@ -3,6 +3,24 @@ import type { ServerManager } from "./server"
 import type { Preferences } from "./preferences"
 import { log } from "./output"
 
+/**
+ * opencode ships a few internal agents the user is not meant to pick from a UI:
+ *   - `compaction` — squashes old turns into a summary when the context fills.
+ *   - `summary`    — generates conversation summaries on demand.
+ *   - `title`      — generates the session title from the first prompt.
+ * They show up in `client.app.agents()` alongside primary/sub agents, so we
+ * filter them out by name. Match case-insensitively because opencode's
+ * naming may vary across versions.
+ */
+const INTERNAL_AGENT_NAMES = new Set(["compaction", "summary", "title"])
+
+export function isUserSelectableAgent(agent: { name?: string; mode?: string }): boolean {
+  if (agent.mode === "subagent") return false
+  const name = (agent.name ?? "").toLowerCase()
+  if (INTERNAL_AGENT_NAMES.has(name)) return false
+  return true
+}
+
 export class Picker {
   constructor(private servers: ServerManager, private prefs: Preferences) {}
 
@@ -14,7 +32,7 @@ export class Picker {
         vscode.window.showErrorMessage(`OpenCUI: failed to load agents`)
         return
       }
-      const usable = res.data.filter((a) => a.mode !== "subagent")
+      const usable = res.data.filter(isUserSelectableAgent)
       const items: vscode.QuickPickItem[] = [
         { label: "$(circle-slash) (default)", description: "use opencode default agent" },
         ...usable.map((a) => ({

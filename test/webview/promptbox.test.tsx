@@ -97,6 +97,32 @@ describe("PromptBox", () => {
     expect(screen.getByText("src/foo.ts:5-10")).toBeInTheDocument()
   })
 
+  it("does NOT submit when Enter is pressed during IME composition (Chinese / Japanese / Korean input)", () => {
+    const onSend = vi.fn()
+    render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    // Simulate the IME composition Enter: React's synthetic event exposes
+    // `nativeEvent.isComposing` while a composition is in progress. The
+    // browser's default behavior is to commit the candidate, not bubble Enter
+    // to our handler.
+    const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+    Object.defineProperty(event, "isComposing", { value: true, configurable: true })
+    textarea.value = "你好"
+    textarea.dispatchEvent(event)
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it("does submit when Enter is pressed AFTER IME composition ended", async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "你好")
+    // After IME ends, a normal Enter event has isComposing === false.
+    await user.keyboard("{Enter}")
+    expect(onSend).toHaveBeenCalledWith("你好", undefined, undefined)
+  })
+
   it("does not submit empty/whitespace input on Enter", async () => {
     const user = userEvent.setup()
     const onSend = vi.fn()

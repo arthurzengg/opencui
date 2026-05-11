@@ -31,6 +31,17 @@ export default function App() {
   const openReviewFile = (path: string) => {
     setReviewRequest((current) => ({ path, key: (current?.key ?? 0) + 1 }))
   }
+  // Rapid clicks on different files in the Review panel make the editor pane
+  // flip through them visibly. Debounce: only the final click in a burst
+  // actually opens the editor.
+  const openReviewChangeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const openReviewChangeDebounced = (change: Parameters<typeof openReviewChange>[0]) => {
+    if (openReviewChangeTimer.current) clearTimeout(openReviewChangeTimer.current)
+    openReviewChangeTimer.current = setTimeout(() => openReviewChange(change), 120)
+  }
+  useEffect(() => () => {
+    if (openReviewChangeTimer.current) clearTimeout(openReviewChangeTimer.current)
+  }, [])
 
   const busy = state.busy || state.messages.some((m) => m.pending)
   const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
@@ -132,7 +143,7 @@ export default function App() {
         selectedKey={reviewRequest?.key}
         reviewedHunks={state.reviewHunks}
         onSelectPath={openReviewFile}
-        onOpenReviewChange={openReviewChange}
+        onOpenReviewChange={openReviewChangeDebounced}
         onReviewAllInChange={reviewAllInChange}
       />
       <PromptBox

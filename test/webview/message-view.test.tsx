@@ -362,6 +362,55 @@ describe("MessageView edit preserves mentions + attachments", () => {
     expect(container.querySelector(".msg-error")).toBeNull()
   })
 
+  it("stopped overrides error: shows only Stopped when both fields are set", () => {
+    // Race-state message: it has both the new stopped flag AND an old "Aborted"
+    // error string. Should render exactly one Stopped badge, no red block.
+    const message: Message = {
+      id: "a-both",
+      role: "assistant",
+      blocks: [],
+      stopped: true,
+      error: "Aborted",
+    } as Message
+    const { container } = render(
+      <MessageView message={message} processOpen={false} processOnly={false} />,
+    )
+    expect(container.querySelectorAll(".msg-stopped")).toHaveLength(1)
+    expect(container.querySelector(".msg-error")).toBeNull()
+  })
+
+  it("legacy: error='Aborted' (without stopped flag) renders as Stopped", () => {
+    // Persisted message from before the abort fix shipped: only carries the
+    // old red `error: "Aborted"` string. Treat it as Stopped.
+    const message: Message = {
+      id: "a-legacy",
+      role: "assistant",
+      blocks: [],
+      error: "Aborted",
+    } as Message
+    const { container } = render(
+      <MessageView message={message} processOpen={false} processOnly={false} />,
+    )
+    expect(container.querySelector(".msg-stopped")).not.toBeNull()
+    expect(container.querySelector(".msg-error")).toBeNull()
+  })
+
+  it("real errors (not Aborted) still render in the red error block", () => {
+    const message: Message = {
+      id: "a-err",
+      role: "assistant",
+      blocks: [],
+      error: "Network connection lost",
+    } as Message
+    const { container } = render(
+      <MessageView message={message} processOpen={false} processOnly={false} />,
+    )
+    expect(container.querySelector(".msg-stopped")).toBeNull()
+    const err = container.querySelector(".msg-error")
+    expect(err).not.toBeNull()
+    expect(err!.textContent).toBe("Network connection lost")
+  })
+
   it("renders an attachment label as a chip in the read-only bubble too", () => {
     const message: Message = {
       id: "u-att-chip",
