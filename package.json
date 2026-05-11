@@ -5,7 +5,7 @@
   "description": "OpenCode CUI: opencode-powered AI assistant with a modern React chat UI",
   "version": "0.1.0",
   "private": true,
-  "publisher": "opencui",
+  "publisher": "arthurzeng",
   "license": "MIT",
   "engines": {
     "vscode": "^1.95.0"
