@@ -29,8 +29,8 @@ export class StatusBar {
       error: "$(error)",
       stopped: "$(circle-slash)",
     }
-    this.health.text = `${icons[status]} OpenCUI`
-    this.health.tooltip = detail ?? `OpenCUI: ${status}`
+    this.health.text = `${icons[status]} OpenCode CUI`
+    this.health.tooltip = detail ?? `OpenCode CUI: ${status}`
   }
 
   private renderAgent(sel: Selection) {
@@ -38,6 +38,6 @@ export class StatusBar {
     const model =
       sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : "default"
     this.agent.text = `$(person) ${agent}`
-    this.agent.tooltip = `Agent: ${agent}\nModel: ${model}\nClick to change agent (or run "OpenCUI: Select Model")`
+    this.agent.tooltip = `Agent: ${agent}\nModel: ${model}\nClick to change agent (or run "OpenCode CUI: Select Model")`
   }
 }

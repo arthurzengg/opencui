@@ -146,7 +146,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           id: c.id,
         })),
       ],
-      { title: "Select OpenCUI conversation" },
+      { title: "Select OpenCode CUI conversation" },
     )
     if (!picked) return
     if ("create" in picked) {
@@ -771,7 +771,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async openReviewChange(change: ReviewChange) {
     if (!isTextReviewPath(change.path)) {
-      vscode.window.showWarningMessage(`OpenCUI: ${change.path} cannot be reviewed as text.`)
+      vscode.window.showWarningMessage(`OpenCode CUI: ${change.path} cannot be reviewed as text.`)
       return
     }
     try {
@@ -790,7 +790,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       void this.syncReviewDecorations()
     } catch (e) {
       log(`could not open review file ${change.path}`, e)
-      vscode.window.showWarningMessage(`OpenCUI: could not open ${change.path} as text.`)
+      vscode.window.showWarningMessage(`OpenCode CUI: could not open ${change.path} as text.`)
     }
   }
 
@@ -847,7 +847,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         }
       }
       vscode.window.showInformationMessage(
-        `OpenCUI: ${requestedPath} is no longer present; removed ${purged} pending hunk${purged === 1 ? "" : "s"} from review.`,
+        `OpenCode CUI: ${requestedPath} is no longer present; removed ${purged} pending hunk${purged === 1 ? "" : "s"} from review.`,
       )
       await this.syncReviewDecorations()
       return

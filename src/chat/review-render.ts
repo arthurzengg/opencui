@@ -179,5 +179,5 @@ export function hasPendingReviewHunks(change: ReviewChange, reviewed: Record<str
 
 export function fallbackHtml(message: string): string {
   return `<!doctype html><html><body style="padding:20px;font-family:sans-serif;">
-    <h2>OpenCUI</h2><p>${message}</p></body></html>`
+    <h2>OpenCode CUI</h2><p>${message}</p></body></html>`
 }

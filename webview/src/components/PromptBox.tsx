@@ -316,7 +316,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
           ref={ref}
           value={text}
           rows={2}
-          placeholder="Ask OpenCUI…  (Enter to send, Shift+Enter for newline, @ to attach a file)"
+          placeholder="Ask OpenCode CUI…  (Enter to send, Shift+Enter for newline, @ to attach a file)"
           onChange={(e) => updateText(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onKeyDown={onKeyDown}
           onSelect={onSelect}

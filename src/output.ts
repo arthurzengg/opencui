@@ -4,7 +4,7 @@ let channel: vscode.OutputChannel | undefined
 
 export function getOutputChannel() {
   if (!channel) {
-    channel = vscode.window.createOutputChannel("OpenCUI")
+    channel = vscode.window.createOutputChannel("OpenCode CUI")
   }
   return channel
 }

@@ -89,7 +89,7 @@ export default function App() {
       >
         {state.messages.length === 0 && (
           <div className="welcome">
-            <div className="welcome-title">OpenCUI</div>
+            <div className="welcome-title">OpenCode CUI</div>
             <div className="welcome-sub">Ask about the current file, refactor code, or run a task.</div>
             <div className="welcome-suggestions">
               {WELCOME_PROMPTS.map((prompt) => (

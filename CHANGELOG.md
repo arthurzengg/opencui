@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to OpenCUI are documented here. The format follows
+All notable changes to OpenCode CUI are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -42,7 +42,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Stop button transitions to a disabled "Stopping…" state until opencode emits `session.idle`. While aborting, in-flight `textDelta` / `reasoningDelta` events are dropped so the stopped message does not keep growing.
 
 ### Backend management
-- Single `opencode serve` subprocess per workspace, owned by the extension. Auto-restart via `OpenCUI: Restart Backend`.
+- Single `opencode serve` subprocess per workspace, owned by the extension. Auto-restart via `OpenCode CUI: Restart Backend`.
 - Configurable `opencui.binaryPath` (defaults to `opencode` on PATH) and `opencui.serverPort` (`0` for auto).
 
 ### Tests

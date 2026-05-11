@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencui",
-  "displayName": "OpenCUI",
-  "description": "OpenCUI: opencode-powered AI assistant with a modern React chat UI",
+  "displayName": "OpenCode CUI",
+  "description": "OpenCode CUI: opencode-powered AI assistant with a modern React chat UI",
   "version": "0.1.0",
   "private": true,
   "publisher": "opencui",
@@ -41,7 +41,7 @@
       "activitybar": [
         {
           "id": "opencui",
-          "title": "OpenCUI",
+          "title": "OpenCode CUI",
           "icon": "media/icon.svg"
         }
       ]
@@ -58,35 +58,35 @@
     "commands": [
       {
         "command": "opencui.chat.focus",
-        "title": "OpenCUI: Focus Chat"
+        "title": "OpenCode CUI: Focus Chat"
       },
       {
         "command": "opencui.chat.new",
-        "title": "OpenCUI: New Chat"
+        "title": "OpenCode CUI: New Chat"
       },
       {
         "command": "opencui.conversation.select",
-        "title": "OpenCUI: Select Conversation"
+        "title": "OpenCode CUI: Select Conversation"
       },
       {
         "command": "opencui.inlineEdit",
-        "title": "OpenCUI: Inline Edit"
+        "title": "OpenCode CUI: Inline Edit"
       },
       {
         "command": "opencui.selectAgent",
-        "title": "OpenCUI: Select Agent"
+        "title": "OpenCode CUI: Select Agent"
       },
       {
         "command": "opencui.selectModel",
-        "title": "OpenCUI: Select Model"
+        "title": "OpenCode CUI: Select Model"
       },
       {
         "command": "opencui.server.restart",
-        "title": "OpenCUI: Restart Backend"
+        "title": "OpenCode CUI: Restart Backend"
       },
       {
         "command": "opencui.showLogs",
-        "title": "OpenCUI: Show Logs"
+        "title": "OpenCode CUI: Show Logs"
       }
     ],
     "keybindings": [
@@ -107,7 +107,7 @@
       }
     ],
     "configuration": {
-      "title": "OpenCUI",
+      "title": "OpenCode CUI",
       "properties": {
         "opencui.binaryPath": {
           "type": "string",
