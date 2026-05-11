@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run OpenCUI Extension",
+      "name": "Run OpenCode CUI Extension",
       "type": "extensionHost",
       "request": "launch",
       "args": [

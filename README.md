@@ -1,4 +1,4 @@
-# OpenCUI
+# OpenCode CUI
 
 > A modern React chat sidebar for AI coding in VS Code — powered by
 > [opencode](https://github.com/sst/opencode). Bring your own model
@@ -25,7 +25,7 @@
 
 ## Prerequisites
 
-OpenCUI talks to a locally-running [opencode](https://opencode.ai) server. You need opencode installed and signed in to a provider **once**:
+OpenCode CUI talks to a locally-running [opencode](https://opencode.ai) server. You need opencode installed and signed in to a provider **once**:
 
 ### Install opencode
 
@@ -52,15 +52,15 @@ opencode --version
 
 If `opencode` isn't on your PATH after install, set `opencui.binaryPath` in VS Code settings to its absolute path.
 
-## Install OpenCUI
+## Install OpenCode CUI
 
-Search for **"OpenCUI"** in the VS Code Extensions sidebar, or install from the command line:
+Search for **"OpenCode CUI"** in the VS Code Extensions sidebar, or install from the command line:
 
 ```bash
 code --install-extension opencui.opencui
 ```
 
-Open the OpenCUI sidebar (click the activity-bar icon or press `Cmd+L` / `Ctrl+L`).
+Open the OpenCode CUI sidebar (click the activity-bar icon or press `Cmd+L` / `Ctrl+L`).
 
 ## Settings
 
@@ -115,7 +115,7 @@ Open the OpenCUI sidebar (click the activity-bar icon or press `Cmd+L` / `Ctrl+L
 - **Edit-in-place review flow** — review actions live in the Review Changes card; the editor stays clean (no codelens or decorations).
 
 ### Backend management
-- The extension owns and manages a single `opencode serve` subprocess per workspace. It auto-spawns on activation, exposes the HTTP/SSE endpoint to the SDK, and shuts down cleanly on deactivation or `OpenCUI: Restart Backend`.
+- The extension owns and manages a single `opencode serve` subprocess per workspace. It auto-spawns on activation, exposes the HTTP/SSE endpoint to the SDK, and shuts down cleanly on deactivation or `OpenCode CUI: Restart Backend`.
 - The extension is **decoupled** from opencode at runtime: it only talks to opencode's HTTP server through `@opencode-ai/sdk`. opencode internals are never imported.
 
 ## Develop

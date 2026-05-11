@@ -8,7 +8,7 @@ afterEach(cleanup)
 describe("PromptBox", () => {
   it("renders a textarea with placeholder", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
-    expect(screen.getByPlaceholderText(/Ask OpenCUI/i)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/Ask OpenCode CUI/i)).toBeInTheDocument()
   })
 
   it("Send button is disabled when textarea is empty", () => {
