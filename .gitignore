@@ -1,9 +1,25 @@
+# Dependencies + build output
 node_modules
 dist
 out
 *.vsix
+*.tsbuildinfo
+
+# Test / coverage outputs
 .vscode-test
-.DS_Store
 coverage
+
+# OS junk
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
 # Per-developer workspace overrides (binary paths, etc).
 .vscode/settings.json
+
+# Secrets — never accidentally commit a .env
+.env
+.env.*
+!.env.example
