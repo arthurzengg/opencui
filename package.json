@@ -10,6 +10,7 @@
   "engines": {
     "vscode": "^1.95.0"
   },
+  "icon": "media/icon.png",
   "categories": [
     "AI",
     "Chat",
