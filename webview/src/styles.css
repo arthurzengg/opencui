@@ -1798,16 +1798,32 @@ button {
 .btn.compact { padding: 2px 7px; }
 /* Circular icon-only variant for the PromptBox Send / Stop action. The button
    carries no text — content is a centered SVG — and the accessible name is
-   provided by `aria-label`. */
+   provided by `aria-label`. 22px to match the New chat and Chat history icon
+   buttons in the statusbar. */
 .btn.icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border-radius: 50%;
   flex: 0 0 auto;
+}
+/* The Send button uses a fixed black fill regardless of theme so the
+   icon reads as the chat's primary affordance (matches the ChatGPT /
+   Claude.ai send-button convention). The arrow inside stays white via
+   `color`. */
+.btn.primary.icon {
+  background: #000;
+  color: #fff;
+}
+.btn.primary.icon:hover {
+  background: #222;
+}
+.btn.primary.icon:disabled {
+  background: #000;
+  opacity: 0.4;
 }
 .btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .btn.primary {

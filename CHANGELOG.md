@@ -9,7 +9,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.1.6]
 
 ### Changed
-- **PromptBox Send / Stop buttons are now circular icon buttons.** The "Send" text button became a small circle with an upward arrow (primary color); the "Stop" / "Stopping…" busy-state buttons became the same circle with a filled square (danger color). Accessible names stay "Send" / "Stop" / "Stopping…" via `aria-label`. The "Save & regenerate" and "Cancel" buttons inside the edit-in-place variant are unchanged.
+- **PromptBox Send / Stop buttons are now circular icon buttons.** The "Send" text button became a 22px black circle with an upward arrow (matching the size of the New chat and Chat history icons in the statusbar). The "Stop" / "Stopping…" busy-state buttons became the same circle with a filled square in the danger color. The Send button keeps a fixed black fill regardless of VS Code theme so it reads as the chat's primary affordance. Accessible names stay "Send" / "Stop" / "Stopping…" via `aria-label`. The "Save & regenerate" and "Cancel" buttons inside the edit-in-place variant are unchanged.
 
 ## [0.1.5]
 
