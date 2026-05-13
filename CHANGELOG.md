@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.2]
+
+### Fixed
+- Release workflow: now installs webview deps before running tests, so the auto-publish workflow can reach the `vsce publish` step. No user-visible change vs 0.1.1; v0.1.1 was tagged but never reached the Marketplace because the workflow failed earlier.
+
 ## [0.1.1]
 
 ### Fixed
@@ -56,6 +61,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/arthurzengg/opencui/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/arthurzengg/opencui/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/arthurzengg/opencui/releases/tag/v0.1.0
