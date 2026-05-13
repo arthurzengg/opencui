@@ -1796,6 +1796,69 @@ button {
   font-size: 11px;
 }
 .btn.compact { padding: 2px 7px; }
+/* Circular icon-only variant for the PromptBox Send / Stop action. The button
+   carries no text — content is a centered SVG — and the accessible name is
+   provided by `aria-label`. */
+.btn.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  transition: background-color 160ms ease-out, transform 160ms ease-out, box-shadow 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out;
+}
+.btn.icon:hover:not(:disabled) {
+  transform: scale(1.08);
+}
+.btn.icon:active:not(:disabled) {
+  transform: scale(0.94);
+  transition-duration: 80ms;
+}
+/* Send and Stop share the same look — ringed circle on the chat background,
+   icon inside — and differ only by the SVG content (arrow vs square). The
+   ring and icon use `--vscode-descriptionForeground` (a muted theme color)
+   so they read as quiet affordances rather than competing with the chat
+   content. Hover brightens both to the full foreground color. */
+.btn.primary.icon,
+.btn.danger.icon {
+  background: var(--vscode-sideBar-background);
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-descriptionForeground);
+}
+.btn.primary.icon:hover,
+.btn.danger.icon:hover {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+.btn.primary.icon:disabled,
+.btn.danger.icon:disabled {
+  background: var(--vscode-sideBar-background);
+  opacity: 0.45;
+}
+/* Stop pulses a soft outward ring while the LLM is mid-stream so it reads
+   as the "actively running, click to interrupt" affordance instead of
+   looking identical to Send. The ring's color is a translucent grey close
+   to VS Code's dark-theme foreground (`#cccccc`), so the pulse stays
+   readable against both dark and light theme backgrounds without fading
+   the button's own icon. Pauses on hover and when disabled. */
+.btn.danger.icon:not(:disabled):not(:hover) {
+  animation: send-icon-pulse 1.6s ease-in-out infinite;
+}
+@keyframes send-icon-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(204, 204, 204, 0.35); }
+  70% { box-shadow: 0 0 0 3px rgba(204, 204, 204, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn.icon,
+  .btn.danger.icon:not(:disabled):not(:hover) {
+    animation: none;
+    transition: none;
+  }
+}
 .btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .btn.primary {
   background: var(--vscode-button-background);
