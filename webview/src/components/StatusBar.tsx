@@ -165,18 +165,20 @@ function ChatHistoryMenu({
       </button>
       {open && (
         <div className="history-popover">
-          <div className="history-popover-title">Chat history</div>
-          <button
-            type="button"
-            className="history-new"
-            onClick={() => {
-              setOpen(false)
-              onCreate()
-            }}
-          >
-            <span className="history-new-icon" aria-hidden="true" />
-            <span className="history-new-text">New chat</span>
-          </button>
+          <div className="history-popover-header">
+            <div className="history-popover-title">Chat history</div>
+            <button
+              type="button"
+              className="history-new"
+              onClick={() => {
+                setOpen(false)
+                onCreate()
+              }}
+            >
+              <span className="history-new-icon" aria-hidden="true" />
+              <span className="history-new-text">New chat</span>
+            </button>
+          </div>
           {showSearch && (
             <input
               className="history-search"

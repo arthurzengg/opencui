@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Fixed
+- Chat history popover: title, time, Rename and Delete now sit on the same horizontal line. Replaced baseline alignment with center alignment on the row's "open" button and normalized font-sizes / line-heights across the four elements.
+
+### Changed
+- Moved the "New chat" action from below the popover title to the right side of the title row, so the popover header now reads "Chat history … + New chat" on a single line.
+
 ## [0.1.0] — Initial release
 
 ### Chat
@@ -48,5 +56,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/arthurzengg/opencui/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/arthurzengg/opencui/releases/tag/v0.1.0
