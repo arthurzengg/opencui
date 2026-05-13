@@ -14,11 +14,11 @@ export class InlineEdit {
   async run() {
     const editor = vscode.window.activeTextEditor
     if (!editor) {
-      vscode.window.showWarningMessage("OpenCode CUI: open a file first")
+      vscode.window.showWarningMessage("OpenCode Panel: open a file first")
       return
     }
     if (editor.selection.isEmpty) {
-      vscode.window.showWarningMessage("OpenCode CUI: select code to edit first")
+      vscode.window.showWarningMessage("OpenCode Panel: select code to edit first")
       return
     }
     const instruction = await vscode.window.showInputBox({
@@ -33,7 +33,7 @@ export class InlineEdit {
     const proceed = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: "OpenCode CUI is editing...",
+        title: "OpenCode Panel is editing...",
         cancellable: false,
       },
       async () => {
@@ -47,7 +47,7 @@ export class InlineEdit {
           return replacement
         } catch (e) {
           log("inline edit failed", e)
-          vscode.window.showErrorMessage(`OpenCode CUI: ${(e as Error).message}`)
+          vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
           return undefined
         }
       },
@@ -86,8 +86,8 @@ async function previewAndApply(
   language: string,
 ) {
   const doc = editor.document
-  const leftUri = vscode.Uri.parse(`untitled:OpenCode CUI-original.${ext(language)}`)
-  const rightUri = vscode.Uri.parse(`untitled:OpenCode CUI-proposed.${ext(language)}`)
+  const leftUri = vscode.Uri.parse(`untitled:OpenCode Panel-original.${ext(language)}`)
+  const rightUri = vscode.Uri.parse(`untitled:OpenCode Panel-proposed.${ext(language)}`)
 
   const left = await vscode.workspace.openTextDocument(leftUri)
   const right = await vscode.workspace.openTextDocument(rightUri)
@@ -98,10 +98,10 @@ async function previewAndApply(
   rightEdit.insert(rightUri, new vscode.Position(0, 0), replacement)
   await vscode.workspace.applyEdit(rightEdit)
 
-  await vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, "OpenCode CUI: Proposed change")
+  await vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, "OpenCode Panel: Proposed change")
 
   const choice = await vscode.window.showInformationMessage(
-    "Apply OpenCode CUI's edit?",
+    "Apply OpenCode Panel's edit?",
     { modal: false },
     "Apply",
     "Discard",
