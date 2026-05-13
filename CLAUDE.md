@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-OpenCode CUI is a VS Code extension that wraps [opencode](https://github.com/sst/opencode) into a React chat sidebar. The extension is **decoupled** from opencode internals at runtime — it only talks to opencode's HTTP/SSE server through `@opencode-ai/sdk`. Never `import` anything from `opencode` directly; everything goes through the SDK client.
+OpenCode Panel is a VS Code extension that wraps [opencode](https://github.com/sst/opencode) into a React chat sidebar. The extension is **decoupled** from opencode internals at runtime — it only talks to opencode's HTTP/SSE server through `@opencode-ai/sdk`. Never `import` anything from `opencode` directly; everything goes through the SDK client.
 
 ## Build, test, dev
 
