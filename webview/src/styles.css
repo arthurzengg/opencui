@@ -1803,12 +1803,12 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   border-radius: 50%;
   flex: 0 0 auto;
-  transition: background-color 160ms ease-out, transform 160ms ease-out, box-shadow 160ms ease-out;
+  transition: background-color 160ms ease-out, transform 160ms ease-out, box-shadow 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out;
 }
 .btn.icon:hover:not(:disabled) {
   transform: scale(1.08);
@@ -1819,18 +1819,19 @@ button {
 }
 /* Send and Stop share the same look — ringed circle on the chat background,
    icon inside — and differ only by the SVG content (arrow vs square). The
-   ring and icon use `--vscode-foreground` to match the New chat / Chat
-   history icons in the statusbar (rather than pure white, which is too
-   bright). The fill matches `--vscode-sideBar-background` so the button
-   reads as ring + icon rather than a solid pill. */
+   ring and icon use `--vscode-descriptionForeground` (a muted theme color)
+   so they read as quiet affordances rather than competing with the chat
+   content. Hover brightens both to the full foreground color. */
 .btn.primary.icon,
 .btn.danger.icon {
   background: var(--vscode-sideBar-background);
-  color: var(--vscode-foreground);
-  border: 1.5px solid var(--vscode-foreground);
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-descriptionForeground);
 }
 .btn.primary.icon:hover,
 .btn.danger.icon:hover {
+  color: var(--vscode-foreground);
+  border-color: var(--vscode-foreground);
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
 }
 .btn.primary.icon:disabled,
@@ -1848,8 +1849,8 @@ button {
   animation: send-icon-pulse 1.6s ease-in-out infinite;
 }
 @keyframes send-icon-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(204, 204, 204, 0.5); }
-  70% { box-shadow: 0 0 0 4px rgba(204, 204, 204, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(204, 204, 204, 0.35); }
+  70% { box-shadow: 0 0 0 3px rgba(204, 204, 204, 0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .btn.icon,
