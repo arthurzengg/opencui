@@ -6,20 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.7]
-
-### Added
-- **Attach code and text files.** The paperclip Attach button now accepts a curated set of ~50 common code / plain-text extensions in addition to images and PDFs — `.txt`, `.md`, `.json`, `.js` / `.ts`, `.py`, `.go`, `.rs`, `.yml`, `.html`, `.sh`, and so on. The file dialog adds a "Code & text" filter group and an "All supported" default. Each attached file is forwarded to opencode via its `file://` source path; the LLM sees both the filename and the content. In the message bubble, non-image attachments now render with a small extension badge (`MD`, `JSON`, `PDF`, …) instead of always saying "PDF".
-
-## [0.1.6]
-
-### Changed
-- **PromptBox Send / Stop buttons are now circular icon buttons.** The "Send" text button became a 22px circle with a white outline and a white upward arrow; the circle's fill matches the surrounding sidebar background, so the button reads as a white-ringed icon rather than a solid pill (matching the size of the New chat and Chat history icons in the statusbar). The "Stop" / "Stopping…" busy-state buttons became the same circle with a filled square in the danger color. Accessible names stay "Send" / "Stop" / "Stopping…" via `aria-label`. The "Save & regenerate" and "Cancel" buttons inside the edit-in-place variant are unchanged.
-
-## [0.1.5]
+## [0.2.0]
 
 ### Added
 - **Retry button on stopped messages.** When you press Stop, the assistant message gets a small "Retry" button inline with the "● Stopped" badge. Clicking it reverts the session to before the stopped response and re-sends the preceding user prompt verbatim — same text, same mentions, same attachments. The partial response is discarded and the LLM starts fresh. The button is hidden while another message is in flight.
+- **Attach code and text files.** The paperclip Attach button now accepts a curated set of ~50 common code / plain-text extensions in addition to images and PDFs — `.txt`, `.md`, `.json`, `.js` / `.ts`, `.py`, `.go`, `.rs`, `.yml`, `.html`, `.sh`, and so on. The file dialog adds a "Code & text" filter group and an "All supported" default. Each attached file is forwarded to opencode via its `file://` source path; the LLM sees both the filename and the content. In the message bubble, non-image attachments now render with a small extension badge (`MD`, `JSON`, `PDF`, …) instead of always saying "PDF".
+
+### Changed
+- **PromptBox Send / Stop buttons are now circular icon buttons.** The "Send" text button became an 18px circle with a thin ring and an upward arrow, both in `--vscode-descriptionForeground` so it sits quietly against the chat content. The "Stop" / "Stopping…" busy-state buttons use the same circle with a filled square inside; while the LLM is mid-stream the Stop button gently pulses an outward ring so it reads as "actively running, click to interrupt". Hover scales the icons up to 1.08 and brightens the ring + icon to the full foreground color; `prefers-reduced-motion: reduce` disables both the transitions and the pulse. Accessible names stay "Send" / "Stop" / "Stopping…" via `aria-label` so existing PromptBox tests still match. The "Save & regenerate" and "Cancel" buttons inside the edit-in-place variant are unchanged.
 
 ## [0.1.4]
 
@@ -86,10 +80,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.7...HEAD
-[0.1.7]: https://github.com/arthurzengg/opencui/compare/v0.1.6...v0.1.7
-[0.1.6]: https://github.com/arthurzengg/opencui/compare/v0.1.5...v0.1.6
-[0.1.5]: https://github.com/arthurzengg/opencui/compare/v0.1.4...v0.1.5
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/arthurzengg/opencui/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/arthurzengg/opencui/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/arthurzengg/opencui/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/arthurzengg/opencui/compare/v0.1.1...v0.1.2
