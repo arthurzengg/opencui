@@ -1817,36 +1817,39 @@ button {
   transform: scale(0.94);
   transition-duration: 80ms;
 }
-/* Send and Stop share the same look — white-ringed circle on the chat
-   background, white icon inside — and differ only by the SVG content
-   (arrow vs square). The fill matches `--vscode-sideBar-background` so the
-   button reads as ring + icon rather than a solid pill. Designed for the
-   dark VS Code themes the extension is primarily used in. */
+/* Send and Stop share the same look — ringed circle on the chat background,
+   icon inside — and differ only by the SVG content (arrow vs square). The
+   ring and icon use `--vscode-foreground` to match the New chat / Chat
+   history icons in the statusbar (rather than pure white, which is too
+   bright). The fill matches `--vscode-sideBar-background` so the button
+   reads as ring + icon rather than a solid pill. */
 .btn.primary.icon,
 .btn.danger.icon {
   background: var(--vscode-sideBar-background);
-  color: #fff;
-  border: 1.5px solid #fff;
+  color: var(--vscode-foreground);
+  border: 1.5px solid var(--vscode-foreground);
 }
 .btn.primary.icon:hover,
 .btn.danger.icon:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
 }
 .btn.primary.icon:disabled,
 .btn.danger.icon:disabled {
   background: var(--vscode-sideBar-background);
   opacity: 0.45;
 }
-/* Stop pulses while the LLM is mid-stream so it reads as the "actively
-   running, click to interrupt" affordance instead of looking identical to
-   Send. Pauses when disabled (Stopping… transient state) and respects the
-   user's reduced-motion preference. */
+/* Stop pulses a soft outward ring while the LLM is mid-stream so it reads
+   as the "actively running, click to interrupt" affordance instead of
+   looking identical to Send. The ring's color is a translucent grey close
+   to VS Code's dark-theme foreground (`#cccccc`), so the pulse stays
+   readable against both dark and light theme backgrounds without fading
+   the button's own icon. Pauses on hover and when disabled. */
 .btn.danger.icon:not(:disabled):not(:hover) {
   animation: send-icon-pulse 1.6s ease-in-out infinite;
 }
 @keyframes send-icon-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.42); }
-  70% { box-shadow: 0 0 0 5px rgba(255, 255, 255, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(204, 204, 204, 0.5); }
+  70% { box-shadow: 0 0 0 4px rgba(204, 204, 204, 0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .btn.icon,
