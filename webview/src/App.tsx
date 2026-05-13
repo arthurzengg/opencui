@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useChatState } from "./hooks/useChatState"
 import type { Message } from "./hooks/useChatState"
+import type { Attachment } from "./protocol"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
 import { StatusBar } from "./components/StatusBar"
@@ -42,6 +43,30 @@ export default function App() {
   useEffect(() => () => {
     if (openReviewChangeTimer.current) clearTimeout(openReviewChangeTimer.current)
   }, [])
+
+  // Retry a stopped assistant response: walk back to the user message that
+  // preceded it and re-run the edit flow with the same text / mentions /
+  // attachments. The host's editMessage handler does session.revert + send,
+  // so the partial assistant response is discarded and the LLM starts over.
+  const handleRetry = (assistantID: string) => {
+    const idx = state.messages.findIndex((m) => m.id === assistantID)
+    if (idx <= 0) return
+    for (let i = idx - 1; i >= 0; i--) {
+      const m = state.messages[i]
+      if (m.role !== "user") continue
+      const textBlock = m.blocks.find((b) => b.type === "text")
+      const text = textBlock && textBlock.type === "text" ? textBlock.text : ""
+      if (!text) return
+      const attachments: Attachment[] = []
+      for (const b of m.blocks) {
+        if (b.type === "attachment") {
+          attachments.push({ mime: b.mime, filename: b.filename, dataUrl: b.dataUrl, bytes: b.bytes })
+        }
+      }
+      editMessage(m.id, text, m.mentions, attachments)
+      return
+    }
+  }
 
   const busy = state.busy || state.messages.some((m) => m.pending)
   const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
@@ -124,6 +149,7 @@ export default function App() {
                 busy={busy}
                 onReviewFile={openReviewFile}
                 onEditMessage={editMessage}
+                onRetry={handleRetry}
               />
             ))}
           </div>

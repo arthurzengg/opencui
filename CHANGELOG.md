@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.5]
+
+### Added
+- **Retry button on stopped messages.** When you press Stop, the assistant message gets a small "Retry" button inline with the "● Stopped" badge. Clicking it reverts the session to before the stopped response and re-sends the preceding user prompt verbatim — same text, same mentions, same attachments. The partial response is discarded and the LLM starts fresh. The button is hidden while another message is in flight.
+
 ## [0.1.4]
 
 ### Fixed
@@ -71,7 +76,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/arthurzengg/opencui/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/arthurzengg/opencui/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/arthurzengg/opencui/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/arthurzengg/opencui/compare/v0.1.1...v0.1.2
