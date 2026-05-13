@@ -204,7 +204,7 @@ function UserMessageView({
                   {a.mime.startsWith("image/") ? (
                     <img className="attachment-thumb" src={a.dataUrl} alt={a.filename} />
                   ) : (
-                    <span className="attachment-icon" aria-hidden>PDF</span>
+                    <span className="attachment-icon" aria-hidden>{badgeForFilename(a.filename)}</span>
                   )}
                   <span className="attachment-name">{a.filename}</span>
                 </li>
@@ -226,6 +226,29 @@ function UserMessageView({
       )}
     </div>
   )
+}
+
+/**
+ * Choose a short badge label for a non-image attachment. PDF stays "PDF";
+ * everything else falls back to the file's uppercase extension, capped at
+ * 4 chars so the badge stays compact in the message bubble. Some longer
+ * canonical extensions are abbreviated by hand.
+ */
+function badgeForFilename(filename: string): string {
+  const dot = filename.lastIndexOf(".")
+  if (dot < 0) return "FILE"
+  const ext = filename.slice(dot + 1).toLowerCase()
+  if (!ext) return "FILE"
+  const aliases: Record<string, string> = {
+    markdown: "MD",
+    javascript: "JS",
+    typescript: "TS",
+    yaml: "YML",
+    python: "PY",
+  }
+  if (aliases[ext]) return aliases[ext]
+  if (ext === "pdf") return "PDF"
+  return ext.length <= 4 ? ext.toUpperCase() : ext.slice(0, 4).toUpperCase()
 }
 
 /**
