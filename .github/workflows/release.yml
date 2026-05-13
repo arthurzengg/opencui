@@ -18,8 +18,12 @@ jobs:
         with:
           bun-version: 1.3.13
 
-      - name: Install deps
+      - name: Install deps (root)
         run: bun install --frozen-lockfile
+
+      - name: Install deps (webview)
+        run: bun install --frozen-lockfile
+        working-directory: webview
 
       - name: Verify tag matches package.json version
         run: |
