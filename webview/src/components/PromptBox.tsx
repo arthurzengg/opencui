@@ -388,24 +388,59 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
             </button>
           </>
         ) : aborting ? (
-          <button className="btn danger" disabled aria-busy="true">
-            Stopping…
+          <button
+            className="btn danger icon"
+            disabled
+            aria-busy="true"
+            aria-label="Stopping…"
+            title="Stopping…"
+          >
+            <StopIcon />
           </button>
         ) : busy ? (
-          <button className="btn danger" onClick={onAbort}>
-            Stop
+          <button
+            className="btn danger icon"
+            onClick={onAbort}
+            aria-label="Stop"
+            title="Stop"
+          >
+            <StopIcon />
           </button>
         ) : (
           <button
-            className="btn primary"
+            className="btn primary icon"
             onClick={submit}
             disabled={!text.trim() && !hasActiveAttachment}
+            aria-label="Send"
+            title="Send"
           >
-            Send
+            <SendIcon />
           </button>
         )}
       </div>
     </div>
+  )
+}
+
+function SendIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M8 13.5 V2.5 M3.5 7 L8 2.5 L12.5 7"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function StopIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <rect x="0" y="0" width="10" height="10" rx="1.5" fill="currentColor" />
+    </svg>
   )
 }
 

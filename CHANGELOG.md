@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.6]
+
+### Changed
+- **PromptBox Send / Stop buttons are now circular icon buttons.** The "Send" text button became a small circle with an upward arrow (primary color); the "Stop" / "Stopping…" busy-state buttons became the same circle with a filled square (danger color). Accessible names stay "Send" / "Stop" / "Stopping…" via `aria-label`. The "Save & regenerate" and "Cancel" buttons inside the edit-in-place variant are unchanged.
+
 ## [0.1.5]
 
 ### Added
@@ -76,7 +81,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/arthurzengg/opencui/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/arthurzengg/opencui/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/arthurzengg/opencui/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/arthurzengg/opencui/compare/v0.1.2...v0.1.3
