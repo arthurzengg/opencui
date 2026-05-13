@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.7]
+
+### Added
+- **Attach code and text files.** The paperclip Attach button now accepts a curated set of ~50 common code / plain-text extensions in addition to images and PDFs — `.txt`, `.md`, `.json`, `.js` / `.ts`, `.py`, `.go`, `.rs`, `.yml`, `.html`, `.sh`, and so on. The file dialog adds a "Code & text" filter group and an "All supported" default. Each attached file is forwarded to opencode via its `file://` source path; the LLM sees both the filename and the content. In the message bubble, non-image attachments now render with a small extension badge (`MD`, `JSON`, `PDF`, …) instead of always saying "PDF".
+
 ## [0.1.6]
 
 ### Changed
@@ -81,7 +86,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/arthurzengg/opencui/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/arthurzengg/opencui/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/arthurzengg/opencui/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/arthurzengg/opencui/compare/v0.1.3...v0.1.4
