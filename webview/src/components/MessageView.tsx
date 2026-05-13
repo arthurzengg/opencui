@@ -13,6 +13,7 @@ export function MessageView({
   busy,
   onReviewFile,
   onEditMessage,
+  onRetry,
   searchFiles,
   attachFile,
 }: {
@@ -22,6 +23,7 @@ export function MessageView({
   busy?: boolean
   onReviewFile?: (path: string) => void
   onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[]) => void
+  onRetry?: (assistantID: string) => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
 }) {
@@ -51,7 +53,23 @@ export function MessageView({
         // In either case render ONE neutral grey "Stopped" badge, not the red
         // error block. Real failures (network, etc.) still render in red.
         const stopped = message.stopped || /^aborted$/i.test((message.error ?? "").trim())
-        if (stopped) return <div className="msg-stopped">Stopped</div>
+        if (stopped) {
+          return (
+            <div className="msg-stopped">
+              <span>Stopped</span>
+              {onRetry && !busy && (
+                <button
+                  type="button"
+                  className="msg-retry"
+                  onClick={() => onRetry(message.id)}
+                  title="Resend the same prompt"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )
+        }
         if (message.error) return <div className="msg-error">{message.error}</div>
         return null
       })()}
