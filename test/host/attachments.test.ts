@@ -34,9 +34,20 @@ describe("isAcceptedExt", () => {
     expect(isAcceptedExt("foo.PDF")).toBe(true)
   })
 
-  it("rejects other types", () => {
+  it("accepts code and text files", () => {
+    expect(isAcceptedExt("foo.js")).toBe(true)
+    expect(isAcceptedExt("foo.TS")).toBe(true)
+    expect(isAcceptedExt("foo.py")).toBe(true)
+    expect(isAcceptedExt("foo.md")).toBe(true)
+    expect(isAcceptedExt("foo.json")).toBe(true)
+    expect(isAcceptedExt("foo.txt")).toBe(true)
+    expect(isAcceptedExt("foo.yml")).toBe(true)
+  })
+
+  it("rejects binary office docs and extensionless files", () => {
     expect(isAcceptedExt("foo.docx")).toBe(false)
-    expect(isAcceptedExt("foo.js")).toBe(false)
+    expect(isAcceptedExt("foo.xlsx")).toBe(false)
+    expect(isAcceptedExt("foo.exe")).toBe(false)
     expect(isAcceptedExt("foo")).toBe(false)
   })
 })

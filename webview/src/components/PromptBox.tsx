@@ -359,8 +359,8 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
           <button
             type="button"
             className="icon-btn attach-btn"
-            aria-label="Attach image or PDF"
-            title="Attach image or PDF"
+            aria-label="Attach image, PDF, or code/text file"
+            title="Attach image, PDF, or code/text file"
             disabled={attaching || busy}
             onClick={handleAttachClick}
           >
