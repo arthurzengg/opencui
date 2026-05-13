@@ -17,14 +17,14 @@ const SHELL_LANGS = new Set([
  */
 export async function applyCode(code: string, language?: string) {
   if (language && SHELL_LANGS.has(language.toLowerCase())) {
-    const terminal = vscode.window.activeTerminal ?? vscode.window.createTerminal({ name: "OpenCode CUI" })
+    const terminal = vscode.window.activeTerminal ?? vscode.window.createTerminal({ name: "OpenCode Panel" })
     terminal.show(true)
     terminal.sendText(code.replace(/\n+$/, ""), true)
     return
   }
   const editor = vscode.window.activeTextEditor
   if (!editor) {
-    vscode.window.showWarningMessage("OpenCode CUI: open a file first to apply this snippet")
+    vscode.window.showWarningMessage("OpenCode Panel: open a file first to apply this snippet")
     return
   }
   const doc = editor.document
@@ -118,7 +118,7 @@ export async function reviewHunk(
   const match = findHunkText(current, newText)
   if (!match) {
     if (!silent) {
-      vscode.window.showWarningMessage(`OpenCode CUI: could not undo hunk in ${relPath}; the file changed since the diff was generated.`)
+      vscode.window.showWarningMessage(`OpenCode Panel: could not undo hunk in ${relPath}; the file changed since the diff was generated.`)
       await vscode.window.showTextDocument(doc)
     }
     return false
@@ -127,7 +127,7 @@ export async function reviewHunk(
   edit.replace(uri, new vscode.Range(doc.positionAt(match.start), doc.positionAt(match.end)), oldText)
   const ok = await vscode.workspace.applyEdit(edit)
   if (!ok) {
-    if (!silent) vscode.window.showWarningMessage(`OpenCode CUI: could not undo hunk in ${relPath}`)
+    if (!silent) vscode.window.showWarningMessage(`OpenCode Panel: could not undo hunk in ${relPath}`)
     return false
   }
   await vscode.window.showTextDocument(doc)

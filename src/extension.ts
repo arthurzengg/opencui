@@ -10,7 +10,7 @@ import { getOutputChannel, log } from "./output"
 let servers: ServerManager | undefined
 
 export async function activate(context: vscode.ExtensionContext) {
-  log("activating OpenCode CUI")
+  log("activating OpenCode Panel")
   servers = new ServerManager(context)
   const prefs = new Preferences(context.globalState)
   const status = new StatusBar(context, prefs)
@@ -47,7 +47,7 @@ export async function activate(context: vscode.ExtensionContext) {
     .catch((e) => {
       log("failed to start backend", e)
       status.set("error", String(e))
-      vscode.window.showErrorMessage(`OpenCode CUI: failed to start opencode backend: ${e.message}`)
+      vscode.window.showErrorMessage(`OpenCode Panel: failed to start opencode backend: ${e.message}`)
     })
 }
 

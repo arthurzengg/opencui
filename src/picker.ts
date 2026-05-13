@@ -29,7 +29,7 @@ export class Picker {
       const backend = await this.servers.ensure()
       const res = await backend.client.app.agents()
       if (res.error || !res.data) {
-        vscode.window.showErrorMessage(`OpenCode CUI: failed to load agents`)
+        vscode.window.showErrorMessage(`OpenCode Panel: failed to load agents`)
         return
       }
       const usable = res.data.filter(isUserSelectableAgent)
@@ -41,19 +41,19 @@ export class Picker {
           detail: a.model ? `${a.model.providerID}/${a.model.modelID}` : undefined,
         })),
       ]
-      const picked = await vscode.window.showQuickPick(items, { title: "Select OpenCode CUI agent" })
+      const picked = await vscode.window.showQuickPick(items, { title: "Select OpenCode Panel agent" })
       if (!picked) return
       const name = picked.label.replace(/^\$\([^)]+\)\s*/, "")
       if (name === "(default)") {
         await this.prefs.setAgent(undefined)
-        vscode.window.showInformationMessage("OpenCode CUI: agent reset to default")
+        vscode.window.showInformationMessage("OpenCode Panel: agent reset to default")
       } else {
         await this.prefs.setAgent(name)
-        vscode.window.showInformationMessage(`OpenCode CUI: agent → ${name}`)
+        vscode.window.showInformationMessage(`OpenCode Panel: agent → ${name}`)
       }
     } catch (e) {
       log("pickAgent failed", e)
-      vscode.window.showErrorMessage(`OpenCode CUI: ${(e as Error).message}`)
+      vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
     }
   }
 
@@ -62,7 +62,7 @@ export class Picker {
       const backend = await this.servers.ensure()
       const res = await backend.client.config.providers()
       if (res.error || !res.data) {
-        vscode.window.showErrorMessage(`OpenCode CUI: failed to load providers`)
+        vscode.window.showErrorMessage(`OpenCode Panel: failed to load providers`)
         return
       }
       const providers = res.data.providers ?? []
@@ -79,23 +79,23 @@ export class Picker {
         }
       }
       const picked = await vscode.window.showQuickPick(items, {
-        title: "Select OpenCode CUI model",
+        title: "Select OpenCode Panel model",
         matchOnDescription: true,
       })
       if (!picked) return
       const cleaned = picked.label.replace(/^\$\([^)]+\)\s*/, "")
       if (cleaned === "(default)") {
         await this.prefs.setModel(undefined, undefined)
-        vscode.window.showInformationMessage("OpenCode CUI: model reset to default")
+        vscode.window.showInformationMessage("OpenCode Panel: model reset to default")
         return
       }
       const [providerID, ...rest] = cleaned.split("/")
       const modelID = rest.join("/")
       await this.prefs.setModel(providerID, modelID)
-      vscode.window.showInformationMessage(`OpenCode CUI: model → ${providerID}/${modelID}`)
+      vscode.window.showInformationMessage(`OpenCode Panel: model → ${providerID}/${modelID}`)
     } catch (e) {
       log("pickModel failed", e)
-      vscode.window.showErrorMessage(`OpenCode CUI: ${(e as Error).message}`)
+      vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
     }
   }
 }
