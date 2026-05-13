@@ -29,6 +29,12 @@ button {
 
 /* ===== Status bar ===== */
 .statusbar {
+  /* `position: relative` makes the statusbar the positioning context for
+     both popovers. Without this, each popover anchors to its own menu
+     wrapper — the History popover lands correctly (its wrapper is at the
+     bar's right edge) but the Selector popover overflows left (its
+     wrapper is in the middle of the bar). */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -60,7 +66,6 @@ button {
 .statusbar .spacer { flex: 1; }
 
 .selector-menu {
-  position: relative;
   flex: 0 1 auto;
   min-width: 0;
   /* Ensure the selector never claims more than its share of the bar so the
@@ -118,8 +123,12 @@ button {
 }
 .selector-popover {
   position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  /* `top: 100%` is the bottom of .statusbar; the +2px is a small visual
+     gap. `right: 10px` matches .statusbar's right padding so the popover's
+     right edge lands inside the sidebar, the same place the History
+     popover lands. */
+  top: calc(100% + 2px);
+  right: 10px;
   z-index: 20;
   width: min(300px, calc(100vw - 20px));
   display: flex;
@@ -173,7 +182,6 @@ button {
 }
 
 .history-menu {
-  position: relative;
   flex: 0 0 auto;
 }
 .history-trigger,
@@ -255,8 +263,8 @@ button {
 }
 .history-popover {
   position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  top: calc(100% + 2px);
+  right: 10px;
   z-index: 20;
   width: min(360px, calc(100vw - 20px));
   max-height: min(420px, calc(100vh - 70px));
