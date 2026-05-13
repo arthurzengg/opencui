@@ -424,11 +424,11 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
 
 function SendIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
         d="M8 13.5 V2.5 M3.5 7 L8 2.5 L12.5 7"
         stroke="currentColor"
-        strokeWidth="2.2"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -438,7 +438,7 @@ function SendIcon() {
 
 function StopIcon() {
   return (
-    <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true">
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
       <rect x="0" y="0" width="10" height="10" rx="1.5" fill="currentColor" />
     </svg>
   )
