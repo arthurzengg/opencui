@@ -89,13 +89,11 @@ button {
   background: var(--vscode-button-secondaryHoverBackground);
 }
 .selector-prefix {
-  flex: 0 0 auto;
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.75;
+  /* "MODEL" / "AGENT" labels are hidden globally so the trigger stays
+     compact and leaves more room for the New chat and Chat history icons
+     on narrow side panels. The labels are still rendered in the DOM and
+     covered by the trigger's `title` tooltip. */
+  display: none;
 }
 /* Primary (model) keeps its natural size up to where it can fit; */
 .selector-primary {
@@ -171,12 +169,6 @@ button {
   .statusbar {
     gap: 6px;
     padding-inline: 8px;
-  }
-  /* On narrow panels, drop the small prefix labels so the model and agent
-     values themselves keep room. Both values stay visible (ellipsis-truncated
-     if needed). */
-  .selector-prefix {
-    display: none;
   }
 }
 
