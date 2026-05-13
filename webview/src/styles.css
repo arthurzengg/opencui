@@ -1810,20 +1810,21 @@ button {
   border-radius: 50%;
   flex: 0 0 auto;
 }
-/* The Send button uses a fixed black fill regardless of theme so the
-   icon reads as the chat's primary affordance (matches the ChatGPT /
-   Claude.ai send-button convention). The arrow inside stays white via
-   `color`. */
+/* Send button: the fill matches the surrounding chat background, and the
+   circle outline + arrow are both white. Visually reads as a white-ringed
+   icon on the panel rather than a solid pill. Designed for the dark VS
+   Code themes the extension is primarily used in. */
 .btn.primary.icon {
-  background: #000;
+  background: var(--vscode-sideBar-background);
   color: #fff;
+  border: 1.5px solid #fff;
 }
 .btn.primary.icon:hover {
-  background: #222;
+  background: rgba(255, 255, 255, 0.08);
 }
 .btn.primary.icon:disabled {
-  background: #000;
-  opacity: 0.4;
+  background: var(--vscode-sideBar-background);
+  opacity: 0.45;
 }
 .btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .btn.primary {
