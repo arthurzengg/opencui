@@ -276,8 +276,14 @@ button {
   background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
 }
+.history-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 6px;
+}
 .history-popover-title {
-  padding: 2px 4px 7px;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
   font-weight: 600;
@@ -288,9 +294,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  align-self: flex-start;
   padding: 3px 6px;
-  margin: 2px 0 4px;
   border: 0;
   border-radius: 3px;
   background: transparent;
@@ -385,10 +389,10 @@ button {
 }
 .history-open {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 4px 0;
+  padding: 3px 0;
   border: 0;
   background: transparent;
   color: inherit;
@@ -402,11 +406,13 @@ button {
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 12px;
+  line-height: 1.2;
 }
 .history-date {
   flex: 0 0 auto;
   color: var(--vscode-descriptionForeground);
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.2;
 }
 .history-action {
   padding: 3px 5px;
@@ -414,7 +420,8 @@ button {
   border-radius: 4px;
   background: transparent;
   color: var(--vscode-descriptionForeground);
-  font-size: 10px;
+  font-size: 11px;
+  line-height: 1.2;
   opacity: 0;
   transition: opacity 0.12s ease;
 }
