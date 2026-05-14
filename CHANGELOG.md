@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.3]
+
+### Fixed
+- Question reply / reject now sends a `directory=<workspace>` query parameter so the request lands in the correct workspace's pending-questions map. Without it, opencode's `WorkspaceRoutingMiddleware` routed the reply to a default workspace where the pending request didn't exist; opencode logged "reply for unknown request" and the original `Question.ask` Effect stayed blocked, leaving the chat stuck "Working…" after Send. Also tightened logging — both reply and reject now log the request URL and the response status / body so failures aren't silent anymore.
+
 ## [0.3.2]
 
 ### Fixed
@@ -106,7 +111,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/arthurzengg/opencui/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/arthurzengg/opencui/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/arthurzengg/opencui/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/arthurzengg/opencui/compare/v0.2.0...v0.3.0
