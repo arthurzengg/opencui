@@ -7,6 +7,7 @@ import {
   type PermissionRequest,
   type QuestionRequest,
   type Subscription,
+  type Toast,
 } from "./stream"
 import { getEditorContext, formatContextHeader } from "../context"
 import { searchWorkspaceFiles } from "../file-search"
@@ -52,6 +53,14 @@ export class ChatView implements vscode.WebviewViewProvider {
   private subscription?: Subscription
   private activePermissions = new Map<string, PermissionRequest>()
   private activeQuestions = new Map<string, QuestionRequest>()
+  /**
+   * Last (text + variant) pair we surfaced as a toast plus its timestamp.
+   * opencode can fire identical `tui.toast.show` events dozens of times
+   * per second (e.g. "Used N tools" while Hephaestus iterates) — we
+   * suppress repeats within `TOAST_DEDUP_MS` of the previous identical one.
+   */
+  private lastToast?: { key: string; at: number }
+  private static readonly TOAST_DEDUP_MS = 3000
   /** opencode messageID → webview-side id used in UI */
   private messageMap = new Map<string, string>()
   private conversations: SavedConversation[]
@@ -589,6 +598,49 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * Surface an opencode toast. Warnings and errors go to VS Code's native
+   * notification slot so users actually see them. Info / success goes to the
+   * output channel only — these are typically "MCP server connected" /
+   * "added N tools" chatter and don't deserve a popup. Consecutive identical
+   * toasts within TOAST_DEDUP_MS are dropped (opencode can fire bursts).
+   */
+  private surfaceToast(toast: Toast) {
+    // Normalize the message before computing the dedup key so closely-related
+    // toasts collapse into one:
+    //   - Strip leading whitespace + symbols / punctuation. Some agents
+    //     (OhMyOpenCode etc.) animate a spinner by sending the same toast
+    //     every ~100ms with a different leading glyph (·, •, ●, ○, ◌, ◦, …).
+    //   - Replace digit runs with "N". Countdown-style toasts like "Todo
+    //     Continuation — Resuming in 2s… (4 tasks remaining)" change every
+    //     second; without this they'd each be a distinct popup.
+    //   - Collapse whitespace and lowercase for stable matching.
+    const normalizedMessage = toast.message
+      .replace(/^[\s\p{P}\p{S}]+/u, "")
+      .replace(/\d+/g, "N")
+      .replace(/\s+/g, " ")
+      .toLowerCase()
+      .trim()
+    const key = `${toast.variant}|${toast.title ?? ""}|${normalizedMessage}`
+    const now = Date.now()
+    if (this.lastToast && this.lastToast.key === key && now - this.lastToast.at < ChatView.TOAST_DEDUP_MS) {
+      return
+    }
+    this.lastToast = { key, at: now }
+    const prefix = toast.title ? `OpenCode Panel: ${toast.title}` : "OpenCode Panel"
+    const text = `${prefix} — ${toast.message}`
+    log(`toast [${toast.variant}]`, text)
+    switch (toast.variant) {
+      case "error":
+        void vscode.window.showErrorMessage(text)
+        return
+      case "warning":
+        void vscode.window.showWarningMessage(text)
+        return
+      // info / success stay in the output channel only.
+    }
+  }
+
   private async abortCurrent() {
     if (!this.sessionID) return
     this.aborting = true
@@ -797,6 +849,13 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.activeQuestions.delete(id)
         this.post({ type: "questionResolved", id })
       },
+      onMessageRemoved: (backendID) => {
+        const webviewID = this.messageMap.get(backendID)
+        if (!webviewID) return
+        this.messageMap.delete(backendID)
+        this.post({ type: "messageRemoved", id: webviewID })
+      },
+      onToast: (toast) => this.surfaceToast(toast),
       onSessionError: (message) => {
         log("session error", message)
       },

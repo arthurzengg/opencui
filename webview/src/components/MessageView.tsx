@@ -73,7 +73,18 @@ export function MessageView({
         if (message.error) return <div className="msg-error">{message.error}</div>
         return null
       })()}
-      {(message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
+      {/*
+        Show the per-message `model · cost · tokens` line only when (a) the
+        chat is idle overall (`busy === false`) AND (b) this isn't an
+        intermediate sub-task panel (`processOnly === false`). Hephaestus-
+        style agents emit multi-step turns where every finished sub-task
+        carries its own usage; rendering them mid-flight makes "done"
+        artefacts sit next to the still-running ProcessPanel and the chat
+        looks both finished and working at the same time. Once the
+        conversation settles, the usage lines all appear at once for
+        review.
+      */}
+      {!busy && !processOnly && (message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
         <div className="msg-usage">
           {message.usage.model ? <span>{message.usage.model}</span> : null}
           {message.usage.model && (message.usage.cost || message.usage.tokens) ? " · " : null}
@@ -351,6 +362,22 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
   }
   blocks.forEach((b, i) => {
     if (b.type === "tool") {
+      // Hephaestus and other deep agents sometimes emit "system-reminder"
+      // as a synthetic tool block instead of as an inline `<system-reminder>`
+      // text tag. The generic tool trace renders that with the literal
+      // tool name as the title (e.g. `<system-reminder> ›`) and the
+      // reminder content stuck inside the trace's expand-to-see body.
+      // Surface it as the same collapsible callout used for the inline
+      // form — open by default — or strip entirely when we're already
+      // inside the trace panel.
+      if (isSystemReminderTool(b.update.tool)) {
+        flushTrace()
+        if (!processMode) {
+          const text = systemReminderContentFromTool(b.update)
+          if (text) nodes.push(<SystemReminderCallout key={`tool-reminder-${i}`} text={text} />)
+        }
+        return
+      }
       tools.push(b)
       return
     }
@@ -403,8 +430,24 @@ function ProcessText({ text }: { text: string }) {
 
 export function hasProcessBlocks(blocks: Block[]) {
   return blocks.some((b) => {
-    if (b.type === "text" || b.type === "reasoning") return b.text.trim().length > 0
+    if (b.type === "text" || b.type === "reasoning") {
+      // Treat blocks that are *only* internal scaffolding (e.g. a single
+      // `<system-reminder>` callout with no other prose) as empty for the
+      // purpose of deciding whether to wrap them in a ProcessPanel. Without
+      // this guard, a message that is just a reminder ends up wrapped in
+      // a panel whose title is the literal `<system-reminder>` first line
+      // and whose body collapses to nothing in processMode rendering.
+      if (b.type === "reasoning") return stripInternalMarkers(b.text).trim().length > 0
+      // For text blocks we strip the noise markers but keep reminder text —
+      // those still render as inline callouts inside the panel.
+      return splitWithReminders(b.text).length > 0
+    }
     if (b.type === "attachment") return false
+    if (b.type === "tool") {
+      // Tool blocks for synthetic system-reminders aren't real activity;
+      // skip them too so an all-reminder message doesn't get wrapped.
+      return !isSystemReminderTool(b.update.tool)
+    }
     return true
   })
 }
@@ -435,12 +478,22 @@ export function looksLikeProcessText(text: string) {
 }
 
 export function processTitle(blocks: Block[]) {
-  const fromText = blocks.flatMap((block) =>
-    block.type === "text" || block.type === "reasoning" ? [textTitle(block.text) ?? inferredTextTitle(block.text)] : [],
-  ).find(Boolean)
+  const fromText = blocks.flatMap((block) => {
+    if (block.type !== "text" && block.type !== "reasoning") return []
+    // Strip `<system-reminder>` / command-name / HTML-comment scaffolding
+    // BEFORE picking a title — otherwise the first line of a reminder-only
+    // block leaks through as the literal `<system-reminder>` title.
+    const cleaned = stripInternalMarkers(block.text)
+    if (!cleaned.trim()) return []
+    return [textTitle(cleaned) ?? inferredTextTitle(cleaned)]
+  }).find(Boolean)
   if (fromText) return fromText
 
-  const tools = blocks.flatMap((block) => block.type === "tool" ? [block.update] : [])
+  // Real tool calls become a tool-headline title; pure system-reminder tool
+  // blocks don't count as work and shouldn't drive the headline.
+  const tools = blocks.flatMap((block) =>
+    block.type === "tool" && !isSystemReminderTool(block.update.tool) ? [block.update] : [],
+  )
   if (tools.length) return toolHeadline(tools)
   return "Working"
 }
@@ -517,6 +570,10 @@ export function textTitle(text: string) {
   const [first = ""] = text.trim().split(/\n+/)
   const title = cleanProcessText(first).replace(/[:.]+$/, "")
   if (!title || title.length > 80) return undefined
+  // Reject literal HTML-like tags (e.g. `<system-reminder>`, `<command-name>`)
+  // — these leak in when the model emits raw scaffolding as the first line
+  // and would otherwise become the panel's title verbatim.
+  if (/^<\/?\w[\w-]*\s*(\s[^>]*)?\/?>$/.test(title)) return undefined
   if (/^(i('|’)m|i am|i need|i think|it seems|this|the user|found|next|now)\b/i.test(title)) return undefined
   if (title.split(/\s+/).length > 8) return undefined
   return title
@@ -594,6 +651,43 @@ export function splitWithReminders(text: string): RenderSegment[] {
   }
   pushText(cleanedNoise.slice(cursor))
   return segments
+}
+
+/**
+ * Some deep agents (e.g. Hephaestus) emit reminders as a synthetic tool
+ * call whose name is some variant of "system-reminder" instead of the
+ * inline `<system-reminder>` text tag. Normalize so we catch
+ * `system-reminder`, `<system-reminder>`, `system_reminder`,
+ * `systemreminder`, regardless of case.
+ */
+export function isSystemReminderTool(toolName: string | undefined): boolean {
+  if (!toolName) return false
+  const normalized = toolName.toLowerCase().replace(/[<>_-]/g, "")
+  return normalized === "systemreminder"
+}
+
+/**
+ * Pull the human-readable reminder text out of a `system-reminder` tool
+ * call. Tries the common shapes — `output`, then known string keys on
+ * `input`, then `title`. Falls back to JSON-stringifying the input
+ * object so we never lose information silently.
+ */
+export function systemReminderContentFromTool(update: {
+  output?: string
+  input?: Record<string, unknown>
+  title?: string
+}): string {
+  if (typeof update.output === "string" && update.output.trim()) return update.output.trim()
+  if (update.input) {
+    for (const key of ["text", "content", "message", "reminder", "body", "value"]) {
+      const v = update.input[key]
+      if (typeof v === "string" && v.trim()) return v.trim()
+    }
+    const json = JSON.stringify(update.input)
+    if (json && json !== "{}") return json
+  }
+  if (update.title && update.title.trim()) return update.title.trim()
+  return ""
 }
 
 function SystemReminderCallout({ text }: { text: string }) {
