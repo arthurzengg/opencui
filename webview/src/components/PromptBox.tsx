@@ -349,11 +349,6 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
           </ul>
         )}
       </div>
-      {variant === "edit" && (
-        <div className="user-edit-warning">
-          Replies after this point will be discarded and regenerated.
-        </div>
-      )}
       <div className="promptbox-row">
         {attachFile && (
           <button
@@ -377,16 +372,15 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
         )}
         <div className="spacer" />
         {variant === "edit" ? (
-          <>
-            <button className="btn subtle" onClick={onAbort}>Cancel</button>
-            <button
-              className="btn primary"
-              onClick={submit}
-              disabled={busy || (!text.trim() && !hasActiveAttachment)}
-            >
-              Save & regenerate
-            </button>
-          </>
+          <button
+            className="btn primary icon"
+            onClick={submit}
+            disabled={busy || (!text.trim() && !hasActiveAttachment)}
+            aria-label="Save & regenerate"
+            title="Save & regenerate"
+          >
+            <SendIcon />
+          </button>
         ) : aborting ? (
           <button
             className="btn danger icon"
