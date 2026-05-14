@@ -571,30 +571,45 @@ export class ChatView implements vscode.WebviewViewProvider {
    * POST the user's answers to opencode's question API. The installed SDK
    * (1.14.33) doesn't yet expose typed question methods — those landed in
    * the binary at 1.14.41 — so we use raw fetch against the backend URL.
+   *
+   * The reply / reject endpoints apply `WorkspaceRoutingMiddleware`, which
+   * reads an optional `directory` query parameter to pick the right
+   * workspace's pending-questions map. Without it, opencode falls back to
+   * a different workspace, fails to find the pending request, logs
+   * "reply for unknown request", and the original `Question.ask` Effect
+   * stays blocked forever — exactly the "stuck after submit" symptom.
    */
   private async replyQuestion(requestID: string, answers: string[][]) {
-    try {
-      const backend = await this.servers.ensure()
-      const res = await fetch(`${backend.url}/question/${encodeURIComponent(requestID)}/reply`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers }),
-      })
-      if (!res.ok) log("question reply failed", res.status, await res.text().catch(() => ""))
-    } catch (e) {
-      log("question reply threw", e)
-    }
+    await this.postQuestionEndpoint(requestID, "reply", { answers })
   }
 
   private async rejectQuestion(requestID: string) {
+    await this.postQuestionEndpoint(requestID, "reject")
+  }
+
+  private async postQuestionEndpoint(
+    requestID: string,
+    action: "reply" | "reject",
+    body?: Record<string, unknown>,
+  ) {
     try {
       const backend = await this.servers.ensure()
-      const res = await fetch(`${backend.url}/question/${encodeURIComponent(requestID)}/reject`, {
+      const url = new URL(`${backend.url}/question/${encodeURIComponent(requestID)}/${action}`)
+      if (backend.directory) url.searchParams.set("directory", backend.directory)
+      log(`question ${action} POST`, url.toString(), body ?? {})
+      const res = await fetch(url.toString(), {
         method: "POST",
+        headers: body ? { "Content-Type": "application/json" } : {},
+        body: body ? JSON.stringify(body) : undefined,
       })
-      if (!res.ok) log("question reject failed", res.status, await res.text().catch(() => ""))
+      const text = await res.text().catch(() => "")
+      if (!res.ok) {
+        log(`question ${action} failed`, res.status, text)
+      } else {
+        log(`question ${action} ok`, res.status, text || "(no body)")
+      }
     } catch (e) {
-      log("question reject threw", e)
+      log(`question ${action} threw`, e)
     }
   }
 
