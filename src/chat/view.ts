@@ -606,13 +606,20 @@ export class ChatView implements vscode.WebviewViewProvider {
    * toasts within TOAST_DEDUP_MS are dropped (opencode can fire bursts).
    */
   private surfaceToast(toast: Toast) {
-    // Some agents (OhMyOpenCode etc.) animate a spinner by sending the same
-    // toast many times per second with a different leading glyph each frame
-    // (·, •, ●, ○, ◌, ◦, …). Normalize the message before computing the
-    // dedup key so all frames collapse into one logical toast.
+    // Normalize the message before computing the dedup key so closely-related
+    // toasts collapse into one:
+    //   - Strip leading whitespace + symbols / punctuation. Some agents
+    //     (OhMyOpenCode etc.) animate a spinner by sending the same toast
+    //     every ~100ms with a different leading glyph (·, •, ●, ○, ◌, ◦, …).
+    //   - Replace digit runs with "N". Countdown-style toasts like "Todo
+    //     Continuation — Resuming in 2s… (4 tasks remaining)" change every
+    //     second; without this they'd each be a distinct popup.
+    //   - Collapse whitespace and lowercase for stable matching.
     const normalizedMessage = toast.message
       .replace(/^[\s\p{P}\p{S}]+/u, "")
+      .replace(/\d+/g, "N")
       .replace(/\s+/g, " ")
+      .toLowerCase()
       .trim()
     const key = `${toast.variant}|${toast.title ?? ""}|${normalizedMessage}`
     const now = Date.now()
