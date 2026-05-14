@@ -73,7 +73,18 @@ export function MessageView({
         if (message.error) return <div className="msg-error">{message.error}</div>
         return null
       })()}
-      {!processOnly && (message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
+      {/*
+        Show the per-message `model · cost · tokens` line only when (a) the
+        chat is idle overall (`busy === false`) AND (b) this isn't an
+        intermediate sub-task panel (`processOnly === false`). Hephaestus-
+        style agents emit multi-step turns where every finished sub-task
+        carries its own usage; rendering them mid-flight makes "done"
+        artefacts sit next to the still-running ProcessPanel and the chat
+        looks both finished and working at the same time. Once the
+        conversation settles, the usage lines all appear at once for
+        review.
+      */}
+      {!busy && !processOnly && (message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
         <div className="msg-usage">
           {message.usage.model ? <span>{message.usage.model}</span> : null}
           {message.usage.model && (message.usage.cost || message.usage.tokens) ? " · " : null}
