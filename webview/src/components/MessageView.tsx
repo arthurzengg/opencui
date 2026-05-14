@@ -351,6 +351,22 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
   }
   blocks.forEach((b, i) => {
     if (b.type === "tool") {
+      // Hephaestus and other deep agents sometimes emit "system-reminder"
+      // as a synthetic tool block instead of as an inline `<system-reminder>`
+      // text tag. The generic tool trace renders that with the literal
+      // tool name as the title (e.g. `<system-reminder> ›`) and the
+      // reminder content stuck inside the trace's expand-to-see body.
+      // Surface it as the same collapsible callout used for the inline
+      // form — open by default — or strip entirely when we're already
+      // inside the trace panel.
+      if (isSystemReminderTool(b.update.tool)) {
+        flushTrace()
+        if (!processMode) {
+          const text = systemReminderContentFromTool(b.update)
+          if (text) nodes.push(<SystemReminderCallout key={`tool-reminder-${i}`} text={text} />)
+        }
+        return
+      }
       tools.push(b)
       return
     }
@@ -594,6 +610,43 @@ export function splitWithReminders(text: string): RenderSegment[] {
   }
   pushText(cleanedNoise.slice(cursor))
   return segments
+}
+
+/**
+ * Some deep agents (e.g. Hephaestus) emit reminders as a synthetic tool
+ * call whose name is some variant of "system-reminder" instead of the
+ * inline `<system-reminder>` text tag. Normalize so we catch
+ * `system-reminder`, `<system-reminder>`, `system_reminder`,
+ * `systemreminder`, regardless of case.
+ */
+export function isSystemReminderTool(toolName: string | undefined): boolean {
+  if (!toolName) return false
+  const normalized = toolName.toLowerCase().replace(/[<>_-]/g, "")
+  return normalized === "systemreminder"
+}
+
+/**
+ * Pull the human-readable reminder text out of a `system-reminder` tool
+ * call. Tries the common shapes — `output`, then known string keys on
+ * `input`, then `title`. Falls back to JSON-stringifying the input
+ * object so we never lose information silently.
+ */
+export function systemReminderContentFromTool(update: {
+  output?: string
+  input?: Record<string, unknown>
+  title?: string
+}): string {
+  if (typeof update.output === "string" && update.output.trim()) return update.output.trim()
+  if (update.input) {
+    for (const key of ["text", "content", "message", "reminder", "body", "value"]) {
+      const v = update.input[key]
+      if (typeof v === "string" && v.trim()) return v.trim()
+    }
+    const json = JSON.stringify(update.input)
+    if (json && json !== "{}") return json
+  }
+  if (update.title && update.title.trim()) return update.title.trim()
+  return ""
 }
 
 function SystemReminderCallout({ text }: { text: string }) {

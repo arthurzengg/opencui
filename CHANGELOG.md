@@ -10,6 +10,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 - Handle opencode's `message.removed` SSE event. When opencode drops a message from a session (revert, redo, internal truncation) — including via our own edit-and-regenerate / Retry flows — the matching row is now dropped from the webview state. If the removed message was the only pending one, the `busy` flag clears so the prompt input re-enables. Previously a ghost "Working…" indicator could linger until the user manually cleared the chat.
+- Render Hephaestus-style `system-reminder` **tool blocks** as the same expanded `<SystemReminderCallout>` used for inline text-tag reminders. Previously these slipped into the generic tool trace with the literal tool name as the title (e.g. a row reading `<system-reminder> ›` whose body was empty until expanded). The reminder text is now extracted from `output` / `input.{text,content,message,reminder,body,value}` / `title` and shown directly in the chat. Inside the trace panel (`processMode`) they're stripped entirely, matching the inline-form behavior.
 
 ### Added
 - Surface opencode `tui.toast.show` events as VS Code notifications. **Warnings** route to `showWarningMessage`, **errors** route to `showErrorMessage`. **Info / success** toasts go to the OpenCode Panel output channel only (typically "MCP server connected" / "added N tools" chatter). All toasts are logged. Consecutive identical toasts within 3 seconds are coalesced — Hephaestus and similar deep agents fire bursts and we drop the repeats.
