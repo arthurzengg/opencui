@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.4]
+
+### Fixed
+- Edit-in-place user bubble no longer goes transparent when the mouse leaves it. The `.is-editing` rule previously only had `background: transparent` and relied on the `.is-editable:hover` rule to layer in an opaque fill — once the mouse moved off, the bubble's fill vanished and chat content scrolling behind the sticky bubble showed through. Now the editing bubble carries an explicit `--vscode-input-background` fill at rest.
+
+### Changed
+- Edit-in-place's "Save & regenerate" button is now the same circular Send icon used in the regular prompt box, for visual consistency. The accessible name stays `"Save & regenerate"` so existing tests and screen readers keep working. Cancel remains a labelled text button.
+- The edit-in-place row now shows a subdued italic line — "Replies after this message will be discarded and regenerated." — between the textarea actions and the Cancel / Save buttons, so the destructive side-effect of saving an edit is no longer silent.
+
 ## [0.3.3]
 
 ### Fixed
@@ -19,7 +28,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `ProcessPanel` titles no longer leak `<system-reminder>` (or other raw scaffold tags) as the headline. `processTitle` now strips internal markers from the source text before deriving a title; `textTitle` defensively rejects strings that look like literal HTML tags. `hasProcessBlocks` also treats reminder-only / scaffold-only text and reasoning blocks as empty so a message containing nothing but a reminder doesn't render as an empty collapsible panel.
 - Toast dedup no longer breaks on spinner-frame animations or countdown timers. Some agents animate spinners (`·`, `•`, `●`, `○`, `◌`, `◦`, …) and emit countdown updates (`Resuming in 2s…`, `Resuming in 1s…`) as repeated toasts. The dedup key now strips leading punctuation/symbols, replaces digit runs with `N`, and lowercases before comparing — all spinner/countdown variants now collapse into a single popup.
 - Per-message `model · cost · tokens` usage line is now hidden while the chat is overall busy. Hephaestus-style agents emit multi-step turns where every finished sub-task carries its own usage; rendering those mid-flight made completed sub-tasks sit next to the still-running ProcessPanel and the chat looked both finished and working at the same time. Usage appears once everything settles. (Intermediate `processOnly` messages still suppress usage even when the chat is idle, since their compact panel header is meant as a summary.)
-)" 
 
 ### Added
 - Surface opencode `tui.toast.show` events as VS Code notifications. **Warnings** route to `showWarningMessage`, **errors** route to `showErrorMessage`. **Info / success** toasts go to the OpenCode Panel output channel only (typically "MCP server connected" / "added N tools" chatter). All toasts are logged. Consecutive identical toasts within 3 seconds are coalesced — Hephaestus and similar deep agents fire bursts and we drop the repeats.
@@ -111,7 +119,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/arthurzengg/opencui/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/arthurzengg/opencui/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/arthurzengg/opencui/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/arthurzengg/opencui/compare/v0.3.0...v0.3.1

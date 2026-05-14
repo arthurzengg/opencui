@@ -731,6 +731,10 @@ button {
 .msg.role-user.is-editing {
   cursor: default;
   padding: 8px;
+  /* Keep a solid fill so the sticky-pinned bubble doesn't go transparent
+     the moment the mouse leaves it — without this, chat messages scrolling
+     behind the bubble bleed through and the edit UI looks broken. */
+  background: var(--vscode-input-background);
   border-color: var(--vscode-focusBorder);
 }
 .user-edit-hint {
@@ -1697,6 +1701,20 @@ button {
   min-width: 0;
 }
 .promptbox-row .spacer { flex: 1; }
+/* Subdued note in the edit variant of PromptBox, reminding the user that
+   submitting will revert + regenerate every reply after the edited
+   message. Sits left-aligned in the action row, ahead of the spacer so
+   Cancel + Save stay anchored to the right. */
+.edit-regenerate-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-style: italic;
+}
 
 /* ===== System reminder callout ===== */
 .system-reminder {

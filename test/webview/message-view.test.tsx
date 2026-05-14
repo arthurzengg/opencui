@@ -62,7 +62,7 @@ describe("MessageView (user role)", () => {
     await user.click(bubble)
     // Now in edit mode — textarea should appear
     expect(container.querySelector("textarea")).not.toBeNull()
-    expect(screen.getByText("Save & regenerate")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /save .{0,3}regenerate/i })).toBeInTheDocument()
   })
 
   it("does NOT enter edit mode while busy", async () => {
@@ -111,7 +111,7 @@ describe("MessageView (user role)", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "updated text")
-    await user.click(screen.getByText("Save & regenerate"))
+    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
     expect(onEditMessage).toHaveBeenCalledWith("u-edit", "updated text", undefined, undefined)
   })
 
@@ -127,7 +127,7 @@ describe("MessageView (user role)", () => {
       />,
     )
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
-    await user.click(screen.getByText("Save & regenerate"))
+    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
     // No regenerate triggered, edit mode closed.
     expect(onEditMessage).not.toHaveBeenCalled()
     expect(container.querySelector("textarea")).toBeNull()
@@ -272,7 +272,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "@src/foo.ts rewrite it")
-    await user.click(screen.getByText("Save & regenerate"))
+    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
     expect(onEditMessage).toHaveBeenCalledWith("u-mention", "@src/foo.ts rewrite it", ["src/foo.ts"], undefined)
   })
 
@@ -292,7 +292,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "no mentions here")
-    await user.click(screen.getByText("Save & regenerate"))
+    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
     expect(onEditMessage).toHaveBeenCalledWith("u-mention", "no mentions here", undefined, undefined)
   })
 
@@ -318,7 +318,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "@screen.png what is this")
-    await user.click(screen.getByText("Save & regenerate"))
+    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
     expect(onEditMessage).toHaveBeenCalledTimes(1)
     const call = onEditMessage.mock.calls[0]
     expect(call?.[0]).toBe("u-att")
@@ -451,7 +451,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "no attachments now")
-    await user.click(screen.getByText("Save & regenerate"))
+    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
     expect(onEditMessage).toHaveBeenCalledWith("u-att", "no attachments now", undefined, undefined)
   })
 })

@@ -378,13 +378,19 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
         <div className="spacer" />
         {variant === "edit" ? (
           <>
+            <span className="edit-regenerate-hint">
+              Replies after this message will be discarded and regenerated.
+            </span>
+            <div className="spacer" />
             <button className="btn subtle" onClick={onAbort}>Cancel</button>
             <button
-              className="btn primary"
+              className="btn primary icon"
               onClick={submit}
               disabled={busy || (!text.trim() && !hasActiveAttachment)}
+              aria-label="Save & regenerate"
+              title="Save & regenerate"
             >
-              Save & regenerate
+              <SendIcon />
             </button>
           </>
         ) : aborting ? (
