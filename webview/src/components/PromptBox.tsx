@@ -423,8 +423,11 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
 }
 
 function SendIcon() {
+  // Same `display: block` reasoning as StopIcon — removes the SVG's
+  // default inline baseline drift so the arrow sits on the button's
+  // exact centre line. 10×10 in an 18-px button → 4-px margin per side.
   return (
-    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ display: "block" }}>
       <path
         d="M8 13.5 V2.5 M3.5 7 L8 2.5 L12.5 7"
         stroke="currentColor"
