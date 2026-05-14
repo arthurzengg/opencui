@@ -73,7 +73,7 @@ export function MessageView({
         if (message.error) return <div className="msg-error">{message.error}</div>
         return null
       })()}
-      {(message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
+      {!processOnly && (message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
         <div className="msg-usage">
           {message.usage.model ? <span>{message.usage.model}</span> : null}
           {message.usage.model && (message.usage.cost || message.usage.tokens) ? " · " : null}
