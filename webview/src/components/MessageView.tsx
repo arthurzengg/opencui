@@ -42,8 +42,8 @@ export function MessageView({
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
       {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
-      {message.pending && message.blocks.length === 0 && (
-        <div className="thinking-dots" role="status" aria-label="Thinking">thinking</div>
+      {message.pending && (
+        <div className="thinking-dots" role="status" aria-label="Working">Working…</div>
       )}
       {(() => {
         // Stopped state overrides error: a message can carry both

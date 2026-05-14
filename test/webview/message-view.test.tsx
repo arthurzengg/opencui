@@ -200,15 +200,36 @@ describe("MessageView (user role)", () => {
 })
 
 describe("MessageView (assistant role)", () => {
-  it("renders thinking indicator when message is pending and has no blocks", () => {
-    render(
+  it("renders Working indicator while the message is pending (including after blocks arrive)", () => {
+    const { rerender } = render(
       <MessageView
         message={assistantMessage("", { pending: true })}
         processOpen={false}
         processOnly={false}
       />,
     )
-    expect(screen.getByText("thinking")).toBeInTheDocument()
+    expect(screen.getByText("Working…")).toBeInTheDocument()
+
+    // Once tool / text blocks render, the indicator must still be visible so
+    // the user knows the assistant is still working through them.
+    rerender(
+      <MessageView
+        message={assistantMessage("partial reply", { pending: true })}
+        processOpen={false}
+        processOnly={false}
+      />,
+    )
+    expect(screen.getByText("Working…")).toBeInTheDocument()
+
+    // When the message finalizes (pending=false), the indicator goes away.
+    rerender(
+      <MessageView
+        message={assistantMessage("final reply", { pending: false })}
+        processOpen={false}
+        processOnly={false}
+      />,
+    )
+    expect(screen.queryByText("Working…")).toBeNull()
   })
 
   it("renders error text when message has error", () => {
