@@ -133,20 +133,25 @@ describe("MessageView (user role)", () => {
     expect(container.querySelector("textarea")).toBeNull()
   })
 
-  it("Cancel returns to view mode without firing onEditMessage", async () => {
+  it("clicking outside the edit area cancels without firing onEditMessage", async () => {
     const user = userEvent.setup()
     const onEditMessage = vi.fn()
     const { container } = render(
-      <MessageView
-        message={userMessage("hi", { backendID: "b1" })}
-        processOpen={false}
-        processOnly={false}
-        onEditMessage={onEditMessage}
-      />,
+      <div>
+        <div data-testid="outside">outside the bubble</div>
+        <MessageView
+          message={userMessage("hi", { backendID: "b1" })}
+          processOpen={false}
+          processOnly={false}
+          onEditMessage={onEditMessage}
+        />
+      </div>,
     )
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
     expect(container.querySelector("textarea")).not.toBeNull()
-    await user.click(screen.getByText("Cancel"))
+    // A click anywhere outside the editing container should cancel edit
+    // mode — there is no Cancel button anymore.
+    await user.click(screen.getByTestId("outside"))
     expect(container.querySelector("textarea")).toBeNull()
     expect(onEditMessage).not.toHaveBeenCalled()
   })

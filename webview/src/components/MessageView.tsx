@@ -120,6 +120,20 @@ function UserMessageView({
     (b): b is Extract<Block, { type: "attachment" }> => b.type === "attachment",
   )
   const [editing, setEditing] = useState(false)
+  const editAreaRef = useRef<HTMLDivElement>(null)
+
+  // Click-outside cancels the edit. We listen on the document so any click
+  // outside the editing container — anywhere in the chat panel — drops us
+  // back to view mode. Cheap and matches the "no Cancel button" UX.
+  useEffect(() => {
+    if (!editing) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (editAreaRef.current?.contains(event.target as Node)) return
+      setEditing(false)
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [editing])
 
   // Re-derive attachment labels (same algorithm PromptBox originally used) and
   // wrap each attachment block into the Attachment shape, including a synthetic
@@ -191,7 +205,7 @@ function UserMessageView({
     >
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
       {editing ? (
-        <div onClick={(event) => event.stopPropagation()}>
+        <div ref={editAreaRef} onClick={(event) => event.stopPropagation()}>
           <PromptBox
             busy={false}
             onSend={handleSubmit}

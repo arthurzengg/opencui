@@ -12,8 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Edit-in-place user bubble no longer goes transparent when the mouse leaves it. The `.is-editing` rule previously only had `background: transparent` and relied on the `.is-editable:hover` rule to layer in an opaque fill — once the mouse moved off, the bubble's fill vanished and chat content scrolling behind the sticky bubble showed through. Now the editing bubble carries an explicit `--vscode-input-background` fill at rest.
 
 ### Changed
-- Edit-in-place's "Save & regenerate" button is now the same circular Send icon used in the regular prompt box, for visual consistency. The accessible name stays `"Save & regenerate"` so existing tests and screen readers keep working. Cancel remains a labelled text button.
-- The edit-in-place row now shows a subdued italic line — "Replies after this message will be discarded and regenerated." — between the textarea actions and the Cancel / Save buttons, so the destructive side-effect of saving an edit is no longer silent.
+- Edit-in-place is now compact and self-dismissing. The "Save & regenerate" button is now the same circular Send icon used in the regular prompt box (accessible name `"Save & regenerate"` preserved). The Cancel button is gone — clicking anywhere outside the edit container cancels and returns to view mode, matching the existing Escape behavior. Outer bubble padding tightened from 8 px → 4 px so the textarea + Save button feel like a single in-place editor.
 
 ## [0.3.3]
 
