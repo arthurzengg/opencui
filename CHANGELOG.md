@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0]
+
+### Added
+- **Question dialog for agents that ask for input.** opencode 1.14.41+ (and agents like Hephaestus that depend on it) emits `question.asked` SSE events when the assistant wants the user to choose between options or supply a free-text answer mid-stream. The webview now renders a sticky dialog with the question text, suggested options (single- or multi-select via `multiple`), an optional free-text input (when `custom !== false`), a "Send" button, and a "Skip" button. Replies POST to opencode's `/question/:id/reply` endpoint; rejects POST to `/question/:id/reject`. Companion `question.replied` / `question.rejected` events from other clients clear our local dialog. Without this, sessions that hit a question silently hung "Working…" forever until the user aborted.
+
+### Fixed
+- Retry button's reconstructed attachments now include a synthetic `id` field. Previously TypeScript flagged this as an error; the runtime behavior is unchanged (the host only consumes mime/filename/dataUrl/sourcePath when forwarding the attachment).
+
 ## [0.2.0]
 
 ### Added
@@ -80,7 +88,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/arthurzengg/opencui/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/arthurzengg/opencui/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/arthurzengg/opencui/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/arthurzengg/opencui/compare/v0.1.2...v0.1.3

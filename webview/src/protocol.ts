@@ -25,6 +25,17 @@ export type ToolUpdate = {
   error?: string
 }
 
+export type QuestionOption = { label: string; description: string }
+export type QuestionInfo = {
+  question: string
+  header: string
+  options: QuestionOption[]
+  /** Allow selecting multiple options (default false). */
+  multiple?: boolean
+  /** Allow typing a custom free-text answer (default true). */
+  custom?: boolean
+}
+
 export type ChatBlock =
   | { type: "text"; text: string }
   | { type: "reasoning"; text: string }
@@ -130,6 +141,8 @@ export type Outbound =
   | { type: "sessionBusy" }
   | { type: "sessionIdle" }
   | { type: "permission"; id: string; title: string; pattern?: string | string[] }
+  | { type: "question"; id: string; questions: QuestionInfo[] }
+  | { type: "questionResolved"; id: string }
   | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }
   | { type: "attachmentResult"; requestID: number; attachments: Attachment[]; error?: string }
   | { type: "clear" }
@@ -156,3 +169,5 @@ export type Inbound =
   | { type: "fileSearch"; requestID: number; query: string }
   | { type: "attachFile"; requestID: number }
   | { type: "permissionReply"; id: string; response: "once" | "always" | "reject" }
+  | { type: "questionReply"; id: string; answers: string[][] }
+  | { type: "questionReject"; id: string }
