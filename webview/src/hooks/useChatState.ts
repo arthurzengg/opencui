@@ -275,6 +275,15 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return state.pendingQuestion?.id === action.id
         ? { ...state, pendingQuestion: undefined }
         : state
+    case "messageRemoved": {
+      // opencode dropped a message from the session (revert, redo, internal
+      // truncation). Drop it from local state; if it was pending, recompute
+      // `busy` from the surviving messages so the prompt input re-enables.
+      const next = state.messages.filter((m) => m.id !== action.id)
+      if (next.length === state.messages.length) return state
+      const anyPending = next.some((m) => m.pending)
+      return { ...state, messages: next, busy: state.busy && anyPending }
+    }
     case "clear":
       return { ...initial, selection: state.selection, context: state.context, connected: state.connected }
     default:

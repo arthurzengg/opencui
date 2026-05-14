@@ -40,6 +40,14 @@ export type QuestionRequest = {
   questions: QuestionInfo[]
 }
 
+export type Toast = {
+  title?: string
+  message: string
+  variant: "info" | "success" | "warning" | "error"
+  /** Hint in milliseconds; we don't enforce this on the host side. */
+  duration?: number
+}
+
 export type MessageUsage = {
   model?: string
   cost?: number
@@ -66,6 +74,14 @@ export type StreamHandlers = {
   onQuestionAsked?: (question: QuestionRequest) => void
   /** Fired when a question is answered (by us or another client) or rejected. */
   onQuestionResolved?: (requestID: string) => void
+  /**
+   * Fired when opencode removes a message from the session (revert, redo,
+   * internal truncation). Lets the webview drop a still-pending row that
+   * would otherwise sit there as a ghost "Working…" indicator.
+   */
+  onMessageRemoved?: (messageID: string) => void
+  /** Fired for opencode toasts (`tui.toast.show`). */
+  onToast?: (toast: Toast) => void
   onSessionError?: (message: string) => void
   onSessionIdle?: () => void
   onSessionBusy?: () => void
@@ -139,6 +155,10 @@ export function subscribeSession(
       case "question.replied":
       case "question.rejected":
         return onQuestionResolved(props)
+      case "message.removed":
+        return onMessageRemoved(props)
+      case "tui.toast.show":
+        return onToast(props)
       case "session.error":
         return onSessionError(props?.error)
       case "session.idle":
@@ -287,6 +307,24 @@ export function subscribeSession(
     const id = p.requestID ?? p.id
     if (!id) return
     handlers.onQuestionResolved?.(id)
+  }
+
+  function onMessageRemoved(p: any) {
+    if (!p || p.sessionID !== sessionID) return
+    const id = p.messageID ?? p.id
+    if (!id) return
+    handlers.onMessageRemoved?.(id)
+  }
+
+  function onToast(p: any) {
+    if (!p || typeof p.message !== "string") return
+    const variant = ["info", "success", "warning", "error"].includes(p.variant) ? p.variant : "info"
+    handlers.onToast?.({
+      title: typeof p.title === "string" ? p.title : undefined,
+      message: p.message,
+      variant,
+      duration: typeof p.duration === "number" ? p.duration : undefined,
+    })
   }
 
   function onSessionError(err: any) {

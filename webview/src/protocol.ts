@@ -143,6 +143,7 @@ export type Outbound =
   | { type: "permission"; id: string; title: string; pattern?: string | string[] }
   | { type: "question"; id: string; questions: QuestionInfo[] }
   | { type: "questionResolved"; id: string }
+  | { type: "messageRemoved"; id: string }
   | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }
   | { type: "attachmentResult"; requestID: number; attachments: Attachment[]; error?: string }
   | { type: "clear" }
