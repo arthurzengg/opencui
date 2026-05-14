@@ -1230,6 +1230,98 @@ button {
   flex-wrap: wrap;
 }
 
+/* ===== Question dialog ===== */
+.question {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  margin: 0 10px 8px;
+  padding: 10px;
+  border: 1px solid var(--vscode-focusBorder);
+  border-left: 3px solid var(--vscode-focusBorder);
+  background: var(--vscode-editorWidget-background);
+  border-radius: var(--radius);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.22);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.question-title { font-weight: 600; margin-bottom: 8px; }
+.question-body { display: flex; flex-direction: column; gap: 12px; margin-bottom: 10px; }
+.question-item { display: flex; flex-direction: column; gap: 6px; }
+.question-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vscode-descriptionForeground);
+}
+.question-text { font-size: 12px; line-height: 1.4; }
+.question-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.question-option:hover { background: var(--vscode-list-hoverBackground); }
+.question-option.is-checked {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+}
+.question-option-marker {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+  border: 1px solid var(--vscode-descriptionForeground);
+  color: var(--vscode-foreground);
+  font-size: 10px;
+  line-height: 1;
+}
+.question-option-marker.circle { border-radius: 50%; }
+.question-option-marker.square { border-radius: 3px; }
+.question-option.is-checked .question-option-marker {
+  border-color: var(--vscode-focusBorder);
+  color: var(--vscode-focusBorder);
+}
+.question-option-text { display: flex; flex-direction: column; min-width: 0; }
+.question-option-label { font-size: 12px; font-weight: 600; }
+.question-option-desc {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.35;
+}
+.question-custom {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  resize: vertical;
+  outline: none;
+}
+.question-custom:focus { border-color: var(--vscode-focusBorder); }
+.question-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 /* ===== Review changes ===== */
 .review-panel {
   border-top: 1px solid var(--vscode-panel-border);

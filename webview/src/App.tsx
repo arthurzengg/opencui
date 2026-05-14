@@ -6,6 +6,7 @@ import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
 import { StatusBar } from "./components/StatusBar"
 import { PermissionDialog } from "./components/PermissionDialog"
+import { QuestionDialog } from "./components/QuestionDialog"
 import { ReviewPanel } from "./components/ReviewPanel"
 
 export default function App() {
@@ -20,6 +21,8 @@ export default function App() {
     selectAgent,
     selectModel,
     replyPermission,
+    replyQuestion,
+    rejectQuestion,
     openReviewChange,
     editMessage,
     reviewAllInChange,
@@ -58,9 +61,18 @@ export default function App() {
       const text = textBlock && textBlock.type === "text" ? textBlock.text : ""
       if (!text) return
       const attachments: Attachment[] = []
-      for (const b of m.blocks) {
+      for (const [i, b] of m.blocks.entries()) {
         if (b.type === "attachment") {
-          attachments.push({ mime: b.mime, filename: b.filename, dataUrl: b.dataUrl, bytes: b.bytes })
+          // Synthesize an id from the message + position — the original
+          // upload-time id is lost after persistence, but handleSend only
+          // uses (mime/filename/dataUrl/sourcePath) so any stable id works.
+          attachments.push({
+            id: `att_retry_${m.id}_${i}`,
+            mime: b.mime,
+            filename: b.filename,
+            dataUrl: b.dataUrl,
+            bytes: b.bytes,
+          })
         }
       }
       editMessage(m.id, text, m.mentions, attachments)
@@ -161,6 +173,14 @@ export default function App() {
           title={state.pendingPermission.title}
           pattern={state.pendingPermission.pattern}
           onReply={replyPermission}
+        />
+      )}
+      {state.pendingQuestion && (
+        <QuestionDialog
+          id={state.pendingQuestion.id}
+          questions={state.pendingQuestion.questions}
+          onReply={replyQuestion}
+          onReject={rejectQuestion}
         />
       )}
       <ReviewPanel
