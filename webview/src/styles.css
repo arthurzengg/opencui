@@ -785,14 +785,6 @@ button {
 .user-edit-input:focus {
   border-color: var(--vscode-focusBorder);
 }
-.user-edit-warning {
-  padding: 5px 8px;
-  border-left: 2px solid var(--vscode-charts-yellow, #d29922);
-  border-radius: 0 4px 4px 0;
-  background: var(--vscode-editorWidget-background);
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-}
 .user-edit-actions {
   display: flex;
   justify-content: flex-end;

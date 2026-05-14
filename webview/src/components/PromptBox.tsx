@@ -349,11 +349,6 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
           </ul>
         )}
       </div>
-      {variant === "edit" && (
-        <div className="user-edit-warning">
-          Replies after this point will be discarded and regenerated.
-        </div>
-      )}
       <div className="promptbox-row">
         {attachFile && (
           <button
