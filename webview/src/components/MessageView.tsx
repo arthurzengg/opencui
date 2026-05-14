@@ -419,8 +419,24 @@ function ProcessText({ text }: { text: string }) {
 
 export function hasProcessBlocks(blocks: Block[]) {
   return blocks.some((b) => {
-    if (b.type === "text" || b.type === "reasoning") return b.text.trim().length > 0
+    if (b.type === "text" || b.type === "reasoning") {
+      // Treat blocks that are *only* internal scaffolding (e.g. a single
+      // `<system-reminder>` callout with no other prose) as empty for the
+      // purpose of deciding whether to wrap them in a ProcessPanel. Without
+      // this guard, a message that is just a reminder ends up wrapped in
+      // a panel whose title is the literal `<system-reminder>` first line
+      // and whose body collapses to nothing in processMode rendering.
+      if (b.type === "reasoning") return stripInternalMarkers(b.text).trim().length > 0
+      // For text blocks we strip the noise markers but keep reminder text —
+      // those still render as inline callouts inside the panel.
+      return splitWithReminders(b.text).length > 0
+    }
     if (b.type === "attachment") return false
+    if (b.type === "tool") {
+      // Tool blocks for synthetic system-reminders aren't real activity;
+      // skip them too so an all-reminder message doesn't get wrapped.
+      return !isSystemReminderTool(b.update.tool)
+    }
     return true
   })
 }
@@ -451,12 +467,22 @@ export function looksLikeProcessText(text: string) {
 }
 
 export function processTitle(blocks: Block[]) {
-  const fromText = blocks.flatMap((block) =>
-    block.type === "text" || block.type === "reasoning" ? [textTitle(block.text) ?? inferredTextTitle(block.text)] : [],
-  ).find(Boolean)
+  const fromText = blocks.flatMap((block) => {
+    if (block.type !== "text" && block.type !== "reasoning") return []
+    // Strip `<system-reminder>` / command-name / HTML-comment scaffolding
+    // BEFORE picking a title — otherwise the first line of a reminder-only
+    // block leaks through as the literal `<system-reminder>` title.
+    const cleaned = stripInternalMarkers(block.text)
+    if (!cleaned.trim()) return []
+    return [textTitle(cleaned) ?? inferredTextTitle(cleaned)]
+  }).find(Boolean)
   if (fromText) return fromText
 
-  const tools = blocks.flatMap((block) => block.type === "tool" ? [block.update] : [])
+  // Real tool calls become a tool-headline title; pure system-reminder tool
+  // blocks don't count as work and shouldn't drive the headline.
+  const tools = blocks.flatMap((block) =>
+    block.type === "tool" && !isSystemReminderTool(block.update.tool) ? [block.update] : [],
+  )
   if (tools.length) return toolHeadline(tools)
   return "Working"
 }
@@ -533,6 +559,10 @@ export function textTitle(text: string) {
   const [first = ""] = text.trim().split(/\n+/)
   const title = cleanProcessText(first).replace(/[:.]+$/, "")
   if (!title || title.length > 80) return undefined
+  // Reject literal HTML-like tags (e.g. `<system-reminder>`, `<command-name>`)
+  // — these leak in when the model emits raw scaffolding as the first line
+  // and would otherwise become the panel's title verbatim.
+  if (/^<\/?\w[\w-]*\s*(\s[^>]*)?\/?>$/.test(title)) return undefined
   if (/^(i('|’)m|i am|i need|i think|it seems|this|the user|found|next|now)\b/i.test(title)) return undefined
   if (title.split(/\s+/).length > 8) return undefined
   return title
