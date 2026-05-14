@@ -1736,14 +1736,6 @@ button {
   font-weight: 600;
   flex: 0 0 auto;
 }
-.system-reminder-preview {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  flex: 1;
-  opacity: 0.75;
-}
 .system-reminder-body {
   padding: 4px 12px 10px;
   border-top: 1px solid var(--vscode-panel-border);

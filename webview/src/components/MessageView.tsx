@@ -596,20 +596,16 @@ export function splitWithReminders(text: string): RenderSegment[] {
   return segments
 }
 
-function reminderPreview(content: string): string {
-  const firstLine = content.split("\n", 1)[0]!.trim()
-  if (!firstLine) return ""
-  return firstLine.length > 80 ? firstLine.slice(0, 77).trimEnd() + "…" : firstLine
-}
-
 function SystemReminderCallout({ text }: { text: string }) {
-  const preview = reminderPreview(text)
+  // `open` so the body shows by default — users still get to fold it via
+  // the chevron if they don't want the noise. The first-line preview that
+  // sat next to the label is dropped now that the body is always visible
+  // (it duplicated the first line of the markdown below).
   return (
-    <details className="system-reminder">
+    <details className="system-reminder" open>
       <summary className="system-reminder-summary">
         <span className="system-reminder-chevron" aria-hidden>▸</span>
         <span className="system-reminder-label">System reminder</span>
-        {preview && <span className="system-reminder-preview"> · {preview}</span>}
       </summary>
       <div className="system-reminder-body">
         <Markdown text={text} />
