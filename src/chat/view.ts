@@ -5,6 +5,7 @@ import type { Preferences } from "../preferences"
 import {
   subscribeSession,
   type PermissionRequest,
+  type QuestionRequest,
   type Subscription,
 } from "./stream"
 import { getEditorContext, formatContextHeader } from "../context"
@@ -50,6 +51,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private sessionID?: string
   private subscription?: Subscription
   private activePermissions = new Map<string, PermissionRequest>()
+  private activeQuestions = new Map<string, QuestionRequest>()
   /** opencode messageID → webview-side id used in UI */
   private messageMap = new Map<string, string>()
   private conversations: SavedConversation[]
@@ -127,7 +129,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription = undefined
     this.sessionID = undefined
     this.messageMap.clear()
-    this.activePermissions.clear()
+    this.activePermissions.clear(); this.activeQuestions.clear()
     const conversation = this.addConversation("New conversation")
     this.activeConversationID = conversation.id
     this.messages = []
@@ -212,7 +214,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription?.abort()
     this.subscription = undefined
     this.messageMap.clear()
-    this.activePermissions.clear()
+    this.activePermissions.clear(); this.activeQuestions.clear()
     this.activeConversationID = id
     this.restoreActiveState()
     await this.persistConversations()
@@ -240,7 +242,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.subscription?.abort()
       this.subscription = undefined
       this.messageMap.clear()
-      this.activePermissions.clear()
+      this.activePermissions.clear(); this.activeQuestions.clear()
       this.activeConversationID = this.conversationSummaries()[0]!.id
       this.restoreActiveState()
       await this.persistConversations()
@@ -543,6 +545,47 @@ export class ChatView implements vscode.WebviewViewProvider {
         }
         return
       }
+      case "questionReply": {
+        this.activeQuestions.delete(msg.id)
+        await this.replyQuestion(msg.id, msg.answers)
+        return
+      }
+      case "questionReject": {
+        this.activeQuestions.delete(msg.id)
+        await this.rejectQuestion(msg.id)
+        return
+      }
+    }
+  }
+
+  /**
+   * POST the user's answers to opencode's question API. The installed SDK
+   * (1.14.33) doesn't yet expose typed question methods — those landed in
+   * the binary at 1.14.41 — so we use raw fetch against the backend URL.
+   */
+  private async replyQuestion(requestID: string, answers: string[][]) {
+    try {
+      const backend = await this.servers.ensure()
+      const res = await fetch(`${backend.url}/question/${encodeURIComponent(requestID)}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      })
+      if (!res.ok) log("question reply failed", res.status, await res.text().catch(() => ""))
+    } catch (e) {
+      log("question reply threw", e)
+    }
+  }
+
+  private async rejectQuestion(requestID: string) {
+    try {
+      const backend = await this.servers.ensure()
+      const res = await fetch(`${backend.url}/question/${encodeURIComponent(requestID)}/reject`, {
+        method: "POST",
+      })
+      if (!res.ok) log("question reject failed", res.status, await res.text().catch(() => ""))
+    } catch (e) {
+      log("question reject threw", e)
     }
   }
 
@@ -741,6 +784,18 @@ export class ChatView implements vscode.WebviewViewProvider {
           title: perm.title,
           pattern: perm.pattern,
         })
+      },
+      onQuestionAsked: (q) => {
+        this.activeQuestions.set(q.id, q)
+        this.post({
+          type: "question",
+          id: q.id,
+          questions: q.questions,
+        })
+      },
+      onQuestionResolved: (id) => {
+        this.activeQuestions.delete(id)
+        this.post({ type: "questionResolved", id })
       },
       onSessionError: (message) => {
         log("session error", message)

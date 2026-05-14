@@ -19,6 +19,27 @@ export type PermissionRequest = {
   type?: string
 }
 
+export type QuestionOption = {
+  label: string
+  description: string
+}
+
+export type QuestionInfo = {
+  question: string
+  header: string
+  options: QuestionOption[]
+  /** Allow selecting multiple options (default false). */
+  multiple?: boolean
+  /** Allow typing a custom free-text answer (default true). */
+  custom?: boolean
+}
+
+export type QuestionRequest = {
+  id: string
+  sessionID: string
+  questions: QuestionInfo[]
+}
+
 export type MessageUsage = {
   model?: string
   cost?: number
@@ -42,6 +63,9 @@ export type StreamHandlers = {
   onPatch?: (messageID: string, files: string[], diff?: string) => void
   onFileRead?: (messageID: string, filename: string) => void
   onPermissionNeeded?: (permission: PermissionRequest) => void
+  onQuestionAsked?: (question: QuestionRequest) => void
+  /** Fired when a question is answered (by us or another client) or rejected. */
+  onQuestionResolved?: (requestID: string) => void
   onSessionError?: (message: string) => void
   onSessionIdle?: () => void
   onSessionBusy?: () => void
@@ -110,6 +134,11 @@ export function subscribeSession(
       case "permission.asked":
       case "permission.updated":
         return onPermissionUpdated(props)
+      case "question.asked":
+        return onQuestionAsked(props)
+      case "question.replied":
+      case "question.rejected":
+        return onQuestionResolved(props)
       case "session.error":
         return onSessionError(props?.error)
       case "session.idle":
@@ -242,6 +271,22 @@ export function subscribeSession(
       pattern: p.pattern ?? p.patterns,
       type: p.permission ?? p.type,
     })
+  }
+
+  function onQuestionAsked(p: any) {
+    if (!p || p.sessionID !== sessionID) return
+    handlers.onQuestionAsked?.({
+      id: p.id,
+      sessionID: p.sessionID,
+      questions: Array.isArray(p.questions) ? p.questions : [],
+    })
+  }
+
+  function onQuestionResolved(p: any) {
+    if (!p || p.sessionID !== sessionID) return
+    const id = p.requestID ?? p.id
+    if (!id) return
+    handlers.onQuestionResolved?.(id)
   }
 
   function onSessionError(err: any) {

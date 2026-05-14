@@ -8,6 +8,7 @@ import type {
   EditorContextRef,
   FileSearchHit,
   Outbound,
+  QuestionInfo,
   ReviewChange,
   ReviewHunkState,
   Selection,
@@ -37,9 +38,14 @@ export type ChatState = {
   messages: Message[]
   reviewHunks: Record<string, ReviewHunkState>
   pendingPermission?: { id: string; title: string; pattern?: string | string[] }
+  pendingQuestion?: { id: string; questions: QuestionInfo[] }
 }
 
-type Action = Outbound | { type: "reset" } | { type: "clearPermission" }
+type Action =
+  | Outbound
+  | { type: "reset" }
+  | { type: "clearPermission" }
+  | { type: "clearQuestion"; id: string }
 
 const initial: ChatState = {
   connected: false,
@@ -257,6 +263,18 @@ export function reducer(state: ChatState, action: Action): ChatState {
       }
     case "clearPermission":
       return { ...state, pendingPermission: undefined }
+    case "question":
+      return {
+        ...state,
+        pendingQuestion: { id: action.id, questions: action.questions },
+      }
+    case "questionResolved":
+    case "clearQuestion":
+      // Clear only if the resolved request matches the one we're showing —
+      // a different one could have come in between (rare, but cheap to be safe).
+      return state.pendingQuestion?.id === action.id
+        ? { ...state, pendingQuestion: undefined }
+        : state
     case "clear":
       return { ...initial, selection: state.selection, context: state.context, connected: state.connected }
     default:
@@ -367,6 +385,14 @@ export function useChatState() {
     replyPermission(id: string, response: "once" | "always" | "reject") {
       vscode.post({ type: "permissionReply", id, response })
       dispatch({ type: "clearPermission" })
+    },
+    replyQuestion(id: string, answers: string[][]) {
+      vscode.post({ type: "questionReply", id, answers })
+      dispatch({ type: "clearQuestion", id })
+    },
+    rejectQuestion(id: string) {
+      vscode.post({ type: "questionReject", id })
+      dispatch({ type: "clearQuestion", id })
     },
   }
 }
