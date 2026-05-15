@@ -4,6 +4,7 @@ import type { ConversationSummary, Selection } from "../protocol"
 type Props = {
   connected: boolean
   error?: string
+  continuationPending?: boolean
   selection: Selection
   conversations: ConversationSummary[]
   activeConversationID?: string
@@ -18,6 +19,7 @@ type Props = {
 export function StatusBar({
   connected,
   error,
+  continuationPending,
   selection,
   conversations,
   activeConversationID,
@@ -32,15 +34,23 @@ export function StatusBar({
   const model = selection.model ?? "default"
   const active = conversations.find((c) => c.id === activeConversationID)
 
-  const showStatus = !connected || Boolean(error)
+  const showStatus = !connected || Boolean(error) || Boolean(continuationPending)
+  const statusLabel = error
+    ? `error · ${error}`
+    : !connected
+      ? "connecting…"
+      : continuationPending
+        ? "continuing…"
+        : ""
+  const dotKind = error ? "err" : continuationPending ? "pending" : connected ? "ok" : "warn"
   return (
     <div className={`statusbar ${showStatus ? "" : "is-quiet"}`}>
       <span
-        className={`dot ${connected ? "ok" : error ? "err" : "warn"}`}
-        title={error ? `error · ${error}` : connected ? "connected" : "connecting…"}
+        className={`dot ${dotKind}`}
+        title={error ? `error · ${error}` : continuationPending ? "continuing…" : connected ? "connected" : "connecting…"}
       />
-      {showStatus && (
-        <span className="status-text">{error ? `error · ${error}` : "connecting…"}</span>
+      {showStatus && statusLabel && (
+        <span className="status-text">{statusLabel}</span>
       )}
       <div className="spacer" />
       <SelectorMenu agent={agent} model={model} onSelectAgent={onSelectAgent} onSelectModel={onSelectModel} />
