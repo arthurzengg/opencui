@@ -47,6 +47,11 @@ button {
 .statusbar.is-quiet .status-text { display: none; }
 
 .statusbar .dot {
+  /* Pin both axes so the flex algorithm can't squeeze the dot horizontally
+     when the bar gets tight (which would turn it into a vertical ellipse).
+     Same defence already applied to the .btn.icon and .history-trigger
+     icons. */
+  flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -820,6 +825,9 @@ button {
 .msg-stopped::before {
   content: "";
   display: inline-block;
+  /* Same defence as the statusbar dot — `.msg-stopped` is `inline-flex`
+     so this pseudo-element is a flex item. */
+  flex: 0 0 auto;
   width: 6px;
   height: 6px;
   border-radius: 50%;
