@@ -6,6 +6,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Assistant messages now render proper math, tables, lists, headings, and blockquotes. The previous hand-rolled 49-line markdown parser handled only fenced code blocks, bold, italic, inline code, and links, so reasoning-model responses showed raw LaTeX like `\[ n^3 \equiv 14 \pmod{31} \]` instead of formatted equations, and any structured content (numbered steps, comparison tables, headings) collapsed into a wall of text. The webview now pipes assistant text through `react-markdown` with `remark-gfm` (tables / strikethrough / task lists), `remark-math` + `rehype-katex` (math), and a small pre-pass that normalizes the LaTeX `\(…\)` / `\[…\]` delimiters reasoning models emit into the dollar-form `remark-math` recognises. Code fences keep flowing through the existing `CodeBlock` (Shiki highlight + Copy/Apply buttons preserved). KaTeX's fonts are inlined into the single-file webview bundle by the existing `assetsInlineLimit` config, so no font-loading regressions.
+
 ## [0.3.9]
 
 ### Fixed
