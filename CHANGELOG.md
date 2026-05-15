@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.6]
+
+### Fixed
+- Status-bar text ("connecting…" / "error · …") now sits on the same horizontal centerline as the dot and the right-side icons. The text inherited the bar's default `line-height` (~1.2), which inflated its text-box; `align-items: center` then landed the geometric centre of the inflated box a hair above the dot's centre. Pinned `line-height: 1` on `.statusbar .status-text` and made `.dot` `display: inline-block` so its `<span>` doesn't pick up baseline quirks.
+
 ## [0.3.5]
 
 ### Fixed
@@ -123,7 +128,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/arthurzengg/opencui/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/arthurzengg/opencui/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/arthurzengg/opencui/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/arthurzengg/opencui/compare/v0.3.2...v0.3.3
