@@ -137,6 +137,22 @@ button {
   flex: 0 0 auto;
   opacity: 0.5;
 }
+/* Compact chip rendered next to the model name when an effort variant
+   is active (e.g. "high", "xhigh"). Distinct from `.selector-primary`
+   styling so it reads as a tunable knob rather than part of the model
+   identifier. */
+.selector-variant-chip {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 0.78em;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
 /* Secondary (agent) gives ground first when the bar is tight — much higher
    shrink factor so it ellipsis-truncates before the model name does. */
 .selector-secondary {

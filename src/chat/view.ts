@@ -499,13 +499,8 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private buildSelection(): Selection {
     const sel = this.prefs.get()
-    let model: string | undefined
-    if (sel.modelProviderID && sel.modelID) {
-      model = sel.modelVariant
-        ? `${sel.modelProviderID}/${sel.modelID} · ${sel.modelVariant}`
-        : `${sel.modelProviderID}/${sel.modelID}`
-    }
-    return { agent: sel.agent, model }
+    const model = sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : undefined
+    return { agent: sel.agent, model, modelVariant: sel.modelVariant }
   }
 
   private pushContext() {
@@ -613,6 +608,10 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "selectModel":
         log("selectModel → executing opencui.selectModel")
         await vscode.commands.executeCommand("opencui.selectModel")
+        return
+      case "selectVariant":
+        log("selectVariant → executing opencui.selectVariant")
+        await vscode.commands.executeCommand("opencui.selectVariant")
         return
       case "permissionReply": {
         this.activePermissions.delete(msg.id)

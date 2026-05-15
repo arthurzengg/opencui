@@ -10,6 +10,7 @@ type Props = {
   activeConversationID?: string
   onSelectAgent: () => void
   onSelectModel: () => void
+  onSelectVariant: () => void
   onCreateConversation: () => void
   onOpenConversation: (id: string) => void
   onRenameConversation: (id: string, title: string) => void
@@ -25,6 +26,7 @@ export function StatusBar({
   activeConversationID,
   onSelectAgent,
   onSelectModel,
+  onSelectVariant,
   onCreateConversation,
   onOpenConversation,
   onRenameConversation,
@@ -32,6 +34,7 @@ export function StatusBar({
 }: Props) {
   const agent = selection.agent ?? "default"
   const model = selection.model ?? "default"
+  const variant = selection.modelVariant
   const active = conversations.find((c) => c.id === activeConversationID)
 
   const showStatus = !connected || Boolean(error) || Boolean(continuationPending)
@@ -53,7 +56,14 @@ export function StatusBar({
         <span className="status-text">{statusLabel}</span>
       )}
       <div className="spacer" />
-      <SelectorMenu agent={agent} model={model} onSelectAgent={onSelectAgent} onSelectModel={onSelectModel} />
+      <SelectorMenu
+        agent={agent}
+        model={model}
+        variant={variant}
+        onSelectAgent={onSelectAgent}
+        onSelectModel={onSelectModel}
+        onSelectVariant={onSelectVariant}
+      />
       <button
         type="button"
         className="new-chat-trigger"
@@ -298,13 +308,17 @@ export function formatUpdated(updatedAt: number) {
 function SelectorMenu({
   agent,
   model,
+  variant,
   onSelectAgent,
   onSelectModel,
+  onSelectVariant,
 }: {
   agent: string
   model: string
+  variant?: string
   onSelectAgent: () => void
   onSelectModel: () => void
+  onSelectVariant: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -328,7 +342,8 @@ function SelectorMenu({
 
   const prettyModel = formatModel(model)
   const prettyAgent = formatAgent(agent)
-  const triggerTitle = `Model: ${model}\nAgent: ${agent}`
+  const prettyVariant = variant ?? "default"
+  const triggerTitle = `Model: ${model}${variant ? ` (effort: ${variant})` : ""}\nAgent: ${agent}`
 
   return (
     <div className="selector-menu" ref={ref}>
@@ -336,11 +351,12 @@ function SelectorMenu({
         className={`selector-trigger ${open ? "is-open" : ""}`}
         onClick={() => setOpen(!open)}
         title={triggerTitle}
-        aria-label="Change agent and model"
+        aria-label="Change agent, model, and effort"
         aria-expanded={open}
       >
         <span className="selector-prefix">Model</span>
         <span className="selector-primary">{prettyModel}</span>
+        {variant && <span className="selector-variant-chip">{variant}</span>}
         <span className="selector-sep">·</span>
         <span className="selector-prefix">Agent</span>
         <span className="selector-secondary">{prettyAgent}</span>
@@ -358,6 +374,20 @@ function SelectorMenu({
           >
             <span className="selector-row-label">Model</span>
             <span className="selector-row-value" title={model}>{prettyModel}</span>
+            <span className="selector-row-arrow">›</span>
+          </button>
+          <button
+            type="button"
+            className="selector-row"
+            role="menuitem"
+            onClick={() => {
+              onSelectVariant()
+              setOpen(false)
+            }}
+            title="Change effort / thinking budget for the current model"
+          >
+            <span className="selector-row-label">Effort</span>
+            <span className="selector-row-value" title={variant ?? "default"}>{prettyVariant}</span>
             <span className="selector-row-arrow">›</span>
           </button>
           <button

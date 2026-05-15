@@ -401,6 +401,9 @@ export function useChatState() {
     selectModel() {
       vscode.post({ type: "selectModel" })
     },
+    selectVariant() {
+      vscode.post({ type: "selectVariant" })
+    },
     replyPermission(id: string, response: "once" | "always" | "reject") {
       vscode.post({ type: "permissionReply", id, response })
       dispatch({ type: "clearPermission" })

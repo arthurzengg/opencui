@@ -31,6 +31,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("opencui.inlineEdit", () => inline.run()),
     vscode.commands.registerCommand("opencui.selectAgent", () => picker.pickAgent()),
     vscode.commands.registerCommand("opencui.selectModel", () => picker.pickModel()),
+    vscode.commands.registerCommand("opencui.selectVariant", () => picker.pickVariantForCurrent()),
     vscode.commands.registerCommand("opencui.server.restart", async () => {
       status.set("starting", "restarting backend")
       await servers!.restart().then(

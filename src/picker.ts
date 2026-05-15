@@ -124,6 +124,62 @@ export class Picker {
   }
 
   /**
+   * Variant-only picker for the *current* model. Used by the StatusBar's
+   * Effort row so the user can change effort without re-picking the model.
+   *
+   * Edge cases:
+   *   - No model selected (using opencode default): tell the user — variants
+   *     are model-scoped, we can't pick one without knowing the model.
+   *   - Selected model has no variants: tell the user — there's nothing to
+   *     pick (and surface this via the info channel rather than silently
+   *     opening an empty picker).
+   *   - Esc: abort without changing the current variant.
+   */
+  async pickVariantForCurrent() {
+    try {
+      const current = this.prefs.get()
+      if (!current.modelProviderID || !current.modelID) {
+        vscode.window.showInformationMessage(
+          "OpenCode Panel: pick a model first — effort is a per-model setting.",
+        )
+        return
+      }
+      const backend = await this.servers.ensure()
+      const res = await backend.client.config.providers()
+      if (res.error || !res.data) {
+        vscode.window.showErrorMessage(`OpenCode Panel: failed to load providers`)
+        return
+      }
+      const models = listModels((res.data.providers ?? []) as unknown as ProviderShape[])
+      const model = models.find(
+        (m) => m.providerID === current.modelProviderID && m.modelID === current.modelID,
+      )
+      if (!model) {
+        vscode.window.showWarningMessage(
+          `OpenCode Panel: ${current.modelProviderID}/${current.modelID} no longer reported by opencode — open the model picker to choose another.`,
+        )
+        return
+      }
+      if (model.variants.length === 0) {
+        vscode.window.showInformationMessage(
+          `OpenCode Panel: ${current.modelProviderID}/${current.modelID} has no effort variants.`,
+        )
+        return
+      }
+      const picked = await this.pickVariant(model, current)
+      if (picked === ABORT) return
+      await this.prefs.setModel(model.providerID, model.modelID, picked)
+      const display = picked
+        ? `${model.providerID}/${model.modelID} · ${picked}`
+        : `${model.providerID}/${model.modelID}`
+      vscode.window.showInformationMessage(`OpenCode Panel: model → ${display}`)
+    } catch (e) {
+      log("pickVariantForCurrent failed", e)
+      vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
+    }
+  }
+
+  /**
    * Step 2 of `pickModel`. Returns the chosen variant, `undefined` for the
    * model's default (the `(default)` row), or `ABORT` if the user pressed
    * Esc (so the caller aborts the whole pick instead of clearing the
