@@ -938,15 +938,11 @@ export class ChatView implements vscode.WebviewViewProvider {
         ...(sel.modelVariant ? { variant: sel.modelVariant } : {}),
       } as NonNullable<PromptBody["model"]>
     }
-    log("prompt dispatch", {
-      sessionID: this.sessionID,
-      agent: sel.agent ?? "default",
-      model: sel.modelProviderID && sel.modelID
-        ? sel.modelVariant
-          ? `${sel.modelProviderID}/${sel.modelID}:${sel.modelVariant}`
-          : `${sel.modelProviderID}/${sel.modelID}`
-        : "default",
-    })
+    const modelLog =
+      sel.modelProviderID && sel.modelID
+        ? `${sel.modelProviderID}/${sel.modelID}${sel.modelVariant ? `:${sel.modelVariant}` : ""}`
+        : "default"
+    log("prompt dispatch", { sessionID: this.sessionID, agent: sel.agent ?? "default", model: modelLog })
     try {
       const res = await backend.client.session.promptAsync({
         path: { id: this.sessionID },

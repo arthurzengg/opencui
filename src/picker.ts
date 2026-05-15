@@ -159,7 +159,7 @@ export class Picker {
         )
         return
       }
-      const picked = await this.pickVariant(model, current)
+      const picked = await this.pickVariant(model, current.modelVariant)
       if (picked === ABORT) return
       await this.prefs.setModel(model.providerID, model.modelID, picked)
       const display = picked
@@ -173,26 +173,24 @@ export class Picker {
   }
 
   /**
-   * Step 2 of `pickModel`. Returns the chosen variant, `undefined` for the
-   * model's default (the `(default)` row), or `ABORT` if the user pressed
-   * Esc (so the caller aborts the whole pick instead of clearing the
-   * variant unintentionally).
+   * Helper for `pickVariantForCurrent`. Returns the chosen variant,
+   * `undefined` for the model's default (the `(default)` row), or
+   * `ABORT` if the user pressed Esc (so the caller leaves the active
+   * variant untouched).
    */
   private async pickVariant(
     model: ModelInfo,
-    current: { modelProviderID?: string; modelID?: string; modelVariant?: string },
+    currentVariant?: string,
   ): Promise<string | undefined | typeof ABORT> {
-    const isCurrentModel =
-      current.modelProviderID === model.providerID && current.modelID === model.modelID
     const items: vscode.QuickPickItem[] = [
       {
         label: "$(circle-slash) (default)",
         description: "use the model's default effort",
-        picked: isCurrentModel && !current.modelVariant,
+        picked: !currentVariant,
       },
       ...model.variants.map((v) => ({
         label: `$(zap) ${v}`,
-        picked: isCurrentModel && current.modelVariant === v,
+        picked: currentVariant === v,
       })),
     ]
     const picked = await vscode.window.showQuickPick(items, {
@@ -222,9 +220,9 @@ type ProviderShape = {
 }
 
 /**
- * One entry per `(provider, model)` — variants are attached as a list, not
- * exploded into separate rows. The picker uses a second QuickPick to choose
- * a variant when this list is non-empty.
+ * One entry per `(provider, model)` — variants are attached as a list
+ * for callers that want to surface them separately (the StatusBar's
+ * Effort row reads from this to populate the variant picker).
  */
 export function listModels(providers: ProviderShape[]): ModelInfo[] {
   const models: ModelInfo[] = []
