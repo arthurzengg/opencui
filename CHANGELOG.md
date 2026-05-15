@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.8]
+
+### Fixed
+- Auto-scroll no longer fights the user during streaming. The chat container's `onScroll` handler used to re-engage stick-to-bottom whenever the view was within 80 px of the bottom — but each `textDelta` re-scrolled to the bottom, so a small upward gesture stayed inside the threshold and the next delta yanked the view back down. Replaced the position-only heuristic with a direction-aware one: programmatic scrolls are flagged and ignored, any user-initiated `scrollTop` *decrease* (wheel / touch / keyboard) immediately disengages stick mode, and stick mode only re-engages when the user lands within 8 px of the bottom on their own.
+
 ## [0.3.7]
 
 ### Fixed
@@ -134,7 +139,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.7...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.8...HEAD
+[0.3.8]: https://github.com/arthurzengg/opencui/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/arthurzengg/opencui/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/arthurzengg/opencui/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/arthurzengg/opencui/compare/v0.3.4...v0.3.5
