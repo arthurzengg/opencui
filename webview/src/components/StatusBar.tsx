@@ -356,7 +356,13 @@ function SelectorMenu({
       >
         <span className="selector-prefix">Model</span>
         <span className="selector-primary">{prettyModel}</span>
-        {variant && <span className="selector-variant-chip">{variant}</span>}
+        {variant && (
+          <>
+            <span className="selector-sep">·</span>
+            <span className="selector-prefix">Effort</span>
+            <span className="selector-variant">{variant}</span>
+          </>
+        )}
         <span className="selector-sep">·</span>
         <span className="selector-prefix">Agent</span>
         <span className="selector-secondary">{prettyAgent}</span>

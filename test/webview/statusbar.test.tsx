@@ -94,7 +94,7 @@ describe("StatusBar", () => {
     expect(onSelectAgent).toHaveBeenCalledOnce()
   })
 
-  it("renders the variant chip in the trigger when modelVariant is set", () => {
+  it("renders the variant text in the trigger when modelVariant is set", () => {
     render(
       <StatusBar
         {...baseProps}
