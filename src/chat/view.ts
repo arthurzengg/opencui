@@ -8,6 +8,7 @@ import {
   type QuestionRequest,
   type Subscription,
   type Toast,
+  type ToolUpdate,
 } from "./stream"
 import { getEditorContext, formatContextHeader } from "../context"
 import { searchWorkspaceFiles } from "../file-search"
@@ -45,6 +46,28 @@ import {
 } from "./fs-ops"
 import { fallbackHtml } from "./review-render"
 
+/**
+ * Recognize a toast that signals an imminent continuation. Exported so the
+ * regex is testable in isolation. Patterns matched:
+ *   - `Todo Continuation` / `Resuming in Ns...` — omo TodoContinuationEnforcer
+ *     (`src/hooks/todo-continuation-enforcer/countdown.ts:20-30`).
+ *   - `Background task complete|failed — ... Resuming the main thread.` —
+ *     opencode's `task` tool auto-resume after a background subagent finishes
+ *     (`packages/opencode/src/tool/task.ts:217-225`).
+ *   - `New Background Task` — omo's task-toast-manager when a backgrounded
+ *     subagent spawns (`src/features/task-toast-manager/manager.ts:193`).
+ *   - Any phrasing containing `resuming` as a defensive catch-all.
+ *
+ * Notably we do NOT match `Task Completed` on its own — that toast can fire
+ * for both midway and final task completions, so by itself it isn't a reliable
+ * "expect another turn" signal. The structural check on running `task` tool
+ * parts handles that case more precisely.
+ */
+export function isContinuationToast(toast: Toast): boolean {
+  const haystack = `${toast.title ?? ""} ${toast.message}`.toLowerCase()
+  return /continuation|resuming|new background task|background task (complete|failed)/.test(haystack)
+}
+
 export class ChatView implements vscode.WebviewViewProvider {
   static viewType = "opencui.chat"
 
@@ -62,19 +85,50 @@ export class ChatView implements vscode.WebviewViewProvider {
   private lastToast?: { key: string; at: number }
   private static readonly TOAST_DEDUP_MS = 3000
   /**
-   * Timestamp of the most recent signal that a continuation is imminent:
-   * - a `tui.toast.show` whose title/message matches /continuation|resuming in/i
-   *   (omo's TodoContinuation / Atlas / Ralph-Loop hooks all use this vocabulary)
-   * - a `task` tool call whose output advertises `state: running`
-   *   (opencode's `task` tool with `background: true` writes that into its output)
-   * When `session.idle` arrives within CONTINUATION_SIGNAL_TTL_MS of this
-   * timestamp, the busy clear is deferred so the UI doesn't flash "done"
-   * between the parent turn ending and the continuation turn starting.
+   * Timestamp of the most recent *toast-style* signal that a continuation is
+   * imminent (see `isContinuationToast`). When `session.idle` arrives within
+   * `CONTINUATION_SIGNAL_TTL_MS` of this timestamp, the busy clear is
+   * deferred. This complements the structural check on `activeTaskCallIDs`.
    */
   private lastContinuationSignalAt = 0
   private pendingIdleTimer?: ReturnType<typeof setTimeout>
+  /**
+   * Call IDs of `task` tool parts currently in `running` state — i.e. live
+   * subagents on this parent session. Maintained from `onTool` updates.
+   *
+   * Used as the primary "do not mark parent done" gate: opencode emits
+   * `session.idle` on the parent while a backgrounded `task(run_in_background)`
+   * child is still executing (the parent's LLM has genuinely finished its
+   * tool call), and omo's TodoContinuationEnforcer *suppresses* its own
+   * continuation toast when BackgroundManager knows there are running
+   * background tasks (`src/hooks/todo-continuation-enforcer/continuation-injection.ts:82-89`).
+   * So toast-based detection alone misses the Hephaestus deep-agent path —
+   * structural tracking is required.
+   */
+  private activeTaskCallIDs = new Set<string>()
+  /**
+   * True between `continuationPending: true` and either the deferred
+   * `sessionIdle` firing, or a new `sessionBusy` / `assistantStart` /
+   * abort cancelling the defer.
+   */
+  private idleDeferActive = false
   private static readonly CONTINUATION_SIGNAL_TTL_MS = 30_000
-  private static readonly CONTINUATION_DEFER_MS = 30_000
+  /**
+   * Max wait for a *toast-only* continuation (no active task parts) to
+   * materialize before declaring idle. Bumped from 30 s to 120 s because
+   * deep-agent runs can stretch the gap between parent idle and the omo
+   * plugin injecting the continuation toast. The structural variant
+   * (active task parts) has no fixed cap — it waits for the task parts
+   * themselves to terminate.
+   */
+  private static readonly CONTINUATION_DEFER_MS = 120_000
+  /**
+   * After the last running `task` tool part terminates while we were
+   * deferring, wait this long for a continuation toast / new turn to
+   * arrive before clearing busy. Most omo / opencode wakeups fire within
+   * a couple of seconds.
+   */
+  private static readonly CONTINUATION_GRACE_MS = 10_000
   /** opencode messageID → webview-side id used in UI */
   private messageMap = new Map<string, string>()
   private conversations: SavedConversation[]
@@ -148,7 +202,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   async createConversation() {
-    this.clearPendingIdle()
+    this.resetContinuationState()
     this.subscription?.abort()
     this.subscription = undefined
     this.sessionID = undefined
@@ -183,7 +237,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private dispose() {
-    this.clearPendingIdle()
+    this.resetContinuationState()
     this.subscription?.abort()
     this.subscription = undefined
   }
@@ -236,7 +290,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async selectConversation(id: string) {
     if (id === this.activeConversationID) return
-    this.clearPendingIdle()
+    this.resetContinuationState()
     this.subscription?.abort()
     this.subscription = undefined
     this.messageMap.clear()
@@ -265,6 +319,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.conversations = this.conversations.filter((conversation) => conversation.id !== id)
     if (!this.conversations.length) this.addConversation("New conversation")
     if (this.activeConversationID === id) {
+      this.resetContinuationState()
       this.subscription?.abort()
       this.subscription = undefined
       this.messageMap.clear()
@@ -637,18 +692,53 @@ export class ChatView implements vscode.WebviewViewProvider {
    * "added N tools" chatter and don't deserve a popup. Consecutive identical
    * toasts within TOAST_DEDUP_MS are dropped (opencode can fire bursts).
    */
-  private static isContinuationToast(toast: Toast): boolean {
-    const haystack = `${toast.title ?? ""} ${toast.message}`.toLowerCase()
-    return /continuation|resuming in/.test(haystack)
-  }
 
   private markContinuationSignal(source: string) {
     this.lastContinuationSignalAt = Date.now()
     log(`[continuation] signal observed (${source})`)
+    // If we're already in a *toast-only* defer (no active task parts) and
+    // its cap timer is running, restart the cap so a fresh signal extends
+    // the wait. With omo, a Background-task-complete toast can arrive
+    // late into a Todo-Continuation wait — we want to honour the newer
+    // signal rather than time out on the older one.
+    if (this.idleDeferActive && this.activeTaskCallIDs.size === 0 && this.pendingIdleTimer) {
+      this.scheduleIdleEmit(ChatView.CONTINUATION_DEFER_MS, "signal-re-arm")
+    }
   }
 
   private hasRecentContinuationSignal(): boolean {
     return Date.now() - this.lastContinuationSignalAt < ChatView.CONTINUATION_SIGNAL_TTL_MS
+  }
+
+  private hasContinuationGate(): boolean {
+    return this.activeTaskCallIDs.size > 0 || this.hasRecentContinuationSignal()
+  }
+
+  /**
+   * Update the running-subagent set from a `task` tool state transition.
+   * No-ops for non-task tools. Adds on `running`, removes on terminal
+   * (`completed` / `error`). When the last running task settles while a
+   * deferred idle is pending, arm a short grace timer so the UI doesn't
+   * sit on "Continuing…" forever if no follow-up turn materializes.
+   */
+  private updateTaskTracking(update: ToolUpdate): void {
+    if (update.tool !== "task") return
+    const id = update.callID
+    if (update.status === "running") {
+      if (!this.activeTaskCallIDs.has(id)) {
+        this.activeTaskCallIDs.add(id)
+        log(`[continuation] task running ${id} (active=${this.activeTaskCallIDs.size})`)
+      }
+      return
+    }
+    if (update.status === "completed" || update.status === "error") {
+      if (this.activeTaskCallIDs.delete(id)) {
+        log(`[continuation] task ${update.status} ${id} (active=${this.activeTaskCallIDs.size})`)
+        if (this.idleDeferActive && this.activeTaskCallIDs.size === 0) {
+          this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "tasks-settled")
+        }
+      }
+    }
   }
 
   private clearPendingIdle() {
@@ -661,17 +751,67 @@ export class ChatView implements vscode.WebviewViewProvider {
   /**
    * Cancel any in-flight continuation defer and tell the webview the
    * pending state is over. Used when a new turn starts (sessionBusy /
-   * assistantStart) or when we decide to clear busy ourselves.
+   * assistantStart), when abort takes over, or when we decide to clear
+   * busy ourselves.
    */
   private finishContinuationPending() {
-    if (this.pendingIdleTimer) {
-      this.clearPendingIdle()
+    this.clearPendingIdle()
+    if (this.idleDeferActive) {
+      this.idleDeferActive = false
       this.post({ type: "continuationPending", pending: false })
     }
   }
 
+  /**
+   * Open a continuation defer. While `activeTaskCallIDs` is non-empty,
+   * no timer runs — we wait for task-terminal events to drive the close.
+   * Otherwise (toast-only signal), a cap timer prevents an indefinite
+   * wait if no continuation actually arrives.
+   */
+  private beginContinuationDefer(source: string) {
+    this.clearPendingIdle()
+    if (!this.idleDeferActive) {
+      this.idleDeferActive = true
+      this.post({ type: "continuationPending", pending: true })
+    }
+    log(
+      `[continuation] deferring sessionIdle (${source}, tasks=${this.activeTaskCallIDs.size}, signal=${this.hasRecentContinuationSignal()})`,
+    )
+    if (this.activeTaskCallIDs.size > 0) return
+    this.scheduleIdleEmit(ChatView.CONTINUATION_DEFER_MS, "toast-cap")
+  }
+
+  /**
+   * Schedule the emission of `sessionIdle` after `delay`. Used both for
+   * the post-task grace window and the toast-only cap. On fire, if any
+   * task part has spun up again, the timer no-ops — task tracking will
+   * re-schedule when those parts settle.
+   */
+  private scheduleIdleEmit(delay: number, source: string) {
+    this.clearPendingIdle()
+    this.pendingIdleTimer = setTimeout(() => {
+      this.pendingIdleTimer = undefined
+      if (this.activeTaskCallIDs.size > 0) {
+        log(`[continuation] timer (${source}) fired but tasks still active; staying deferred`)
+        return
+      }
+      log(`[continuation] timer (${source}) resolved; emitting sessionIdle`)
+      this.idleDeferActive = false
+      this.post({ type: "continuationPending", pending: false })
+      this.post({ type: "sessionIdle" })
+    }, delay)
+  }
+
+  /** Clear all continuation tracking — used on conversation switch / dispose / abort tail. */
+  private resetContinuationState() {
+    this.clearPendingIdle()
+    this.idleDeferActive = false
+    this.activeTaskCallIDs.clear()
+    this.lastContinuationSignalAt = 0
+  }
+
   private surfaceToast(toast: Toast) {
-    if (ChatView.isContinuationToast(toast)) {
+    if (isContinuationToast(toast)) {
       this.markContinuationSignal(`toast:${toast.title ?? "(no title)"}`)
     }
     // Normalize the message before computing the dedup key so closely-related
@@ -885,16 +1025,14 @@ export class ChatView implements vscode.WebviewViewProvider {
       },
       onTool: (mid, update) => {
         if (this.aborting) return
-        // opencode's `task` tool with `background: true` writes
-        // `state: running` into the tool output. A backgrounded subagent
-        // means the parent's idle is likely transient — record it.
-        if (
-          update.tool === "task" &&
-          typeof update.output === "string" &&
-          /state:\s*running/.test(update.output)
-        ) {
-          this.markContinuationSignal("tool:task(background)")
-        }
+        // Structural subagent tracking: every `task` tool part on the
+        // parent gets added/removed from `activeTaskCallIDs` as it
+        // transitions running → completed/error. This is the primary
+        // gate against marking the parent done while a subagent is alive
+        // (Hephaestus's `run_in_background` path emits no continuation
+        // toast — only the structural signal — because omo suppresses
+        // its toast when BackgroundManager handles the wakeup itself).
+        this.updateTaskTracking(update)
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         const wire = toWire(update, backend.directory)
         this.post({ type: "tool", id: webviewID, update: wire })
@@ -949,18 +1087,17 @@ export class ChatView implements vscode.WebviewViewProvider {
       onSessionIdle: () => {
         const wasAborting = this.aborting
         this.aborting = false
-        // User-initiated abort bypasses the continuation defer — Stop means
-        // stop now, even if a continuation hook would normally fire next.
-        if (!wasAborting && this.hasRecentContinuationSignal()) {
-          log("[continuation] deferring sessionIdle — recent continuation signal")
-          this.clearPendingIdle()
-          this.post({ type: "continuationPending", pending: true })
-          this.pendingIdleTimer = setTimeout(() => {
-            this.pendingIdleTimer = undefined
-            log("[continuation] defer timeout reached, emitting sessionIdle")
-            this.post({ type: "continuationPending", pending: false })
-            this.post({ type: "sessionIdle" })
-          }, ChatView.CONTINUATION_DEFER_MS)
+        if (wasAborting) {
+          // User-initiated abort bypasses the continuation defer — Stop
+          // means stop now. Clear all continuation tracking so any
+          // in-flight task parts (whose terminal events the SSE may not
+          // send post-abort) don't poison the next turn.
+          this.resetContinuationState()
+          this.post({ type: "sessionIdle" })
+          return
+        }
+        if (this.hasContinuationGate()) {
+          this.beginContinuationDefer("sessionIdle")
           return
         }
         this.finishContinuationPending()
