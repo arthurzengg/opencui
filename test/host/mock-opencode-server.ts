@@ -25,6 +25,13 @@ export type MockOpencodeServer = {
   prompts: Array<{ sessionID: string; body: unknown }>
   /** Records of every revert call. */
   reverts: Array<{ sessionID: string; body: unknown }>
+  /**
+   * Configure what GET /session/status returns. Pass `undefined` to clear
+   * the entry. Tests use this to drive the watchdog's recovery path.
+   */
+  setSessionStatus: (sessionID: string, status: { type: "idle" | "busy" | "retry" } | undefined) => void
+  /** Number of times GET /session/status has been called. */
+  statusPollCount: () => number
   close: () => Promise<void>
 }
 
@@ -32,6 +39,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const sseClients: ServerResponse[] = []
   const prompts: Array<{ sessionID: string; body: unknown }> = []
   const reverts: Array<{ sessionID: string; body: unknown }> = []
+  const sessionStatuses = new Map<string, { type: "idle" | "busy" | "retry" }>()
+  let statusPolls = 0
   let clientResolver: (() => void) | undefined
 
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -134,6 +143,15 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       return
     }
 
+    // Session status (used by the watchdog recovery path)
+    if (path === "/session/status" && req.method === "GET") {
+      statusPolls++
+      const body: Record<string, { type: string }> = {}
+      for (const [sid, status] of sessionStatuses) body[sid] = status
+      reply(res, 200, body)
+      return
+    }
+
     // Health (used by some SDK clients before connecting)
     if (path === "/" && req.method === "GET") {
       reply(res, 200, { ok: true })
@@ -163,6 +181,13 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     prompts,
     reverts,
+    setSessionStatus(sessionID, status) {
+      if (status) sessionStatuses.set(sessionID, status)
+      else sessionStatuses.delete(sessionID)
+    },
+    statusPollCount() {
+      return statusPolls
+    },
     async close() {
       for (const c of sseClients) c.end()
       await new Promise<void>((resolve) => server.close(() => resolve()))
