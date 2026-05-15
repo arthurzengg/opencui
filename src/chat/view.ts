@@ -927,16 +927,18 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     if (sel.agent) body!.agent = sel.agent
     if (sel.modelProviderID && sel.modelID) {
-      // `variant` is a first-class sibling of `modelID` in opencode's prompt
-      // protocol (see opencode source `packages/opencode/src/session/prompt.ts:1082,2070,2102`)
-      // but our bundled `@opencode-ai/sdk` types haven't been regenerated to
-      // expose it yet. The HTTP server accepts it regardless; cast the model
-      // object so TS doesn't reject the variant key.
-      body!.model = {
-        providerID: sel.modelProviderID,
-        modelID: sel.modelID,
-        ...(sel.modelVariant ? { variant: sel.modelVariant } : {}),
-      } as NonNullable<PromptBody["model"]>
+      body!.model = { providerID: sel.modelProviderID, modelID: sel.modelID }
+    }
+    if (sel.modelVariant) {
+      // `variant` is a **top-level** sibling of `model` on opencode's
+      // PromptInput schema — NOT nested inside the model object (see
+      // opencode source `packages/opencode/src/session/prompt.ts` →
+      // `ModelRef = Schema.Struct({ providerID, modelID })` and
+      // `PromptInput = Schema.Struct({ ..., model: …, variant:
+      // Schema.optional(Schema.String), … })`). Our bundled
+      // `@opencode-ai/sdk` types haven't been regenerated to expose
+      // this field yet; the HTTP server accepts it regardless.
+      ;(body as unknown as { variant?: string }).variant = sel.modelVariant
     }
     const modelLog =
       sel.modelProviderID && sel.modelID
