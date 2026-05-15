@@ -65,19 +65,17 @@ export class Picker {
         vscode.window.showErrorMessage(`OpenCode Panel: failed to load providers`)
         return
       }
-      const providers = res.data.providers ?? []
+      // SDK Model type doesn't expose `variants` even though the HTTP
+      // response includes it (see opencode source `packages/opencode/src/provider/provider.ts:923`).
+      // Cast to the local shape that includes the field we care about.
+      const rows = listModelRows((res.data.providers ?? []) as unknown as ProviderShape[])
       const items: vscode.QuickPickItem[] = [
         { label: "$(circle-slash) (default)", description: "use opencode default model" },
+        ...rows.map((row) => ({
+          label: `$(sparkle) ${formatModelRow(row)}`,
+          description: row.providerName ?? "",
+        })),
       ]
-      for (const p of providers) {
-        const modelKeys = Object.keys(p.models ?? {})
-        for (const m of modelKeys) {
-          items.push({
-            label: `$(sparkle) ${p.id}/${m}`,
-            description: p.name ?? "",
-          })
-        }
-      }
       const picked = await vscode.window.showQuickPick(items, {
         title: "Select OpenCode Panel model",
         matchOnDescription: true,
@@ -89,13 +87,55 @@ export class Picker {
         vscode.window.showInformationMessage("OpenCode Panel: model reset to default")
         return
       }
-      const [providerID, ...rest] = cleaned.split("/")
-      const modelID = rest.join("/")
-      await this.prefs.setModel(providerID, modelID)
-      vscode.window.showInformationMessage(`OpenCode Panel: model → ${providerID}/${modelID}`)
+      const row = rows.find((r) => formatModelRow(r) === cleaned)
+      if (!row) {
+        log("pickModel: no matching row for", cleaned)
+        return
+      }
+      await this.prefs.setModel(row.providerID, row.modelID, row.variant)
+      const display = row.variant ? `${row.providerID}/${row.modelID} · ${row.variant}` : `${row.providerID}/${row.modelID}`
+      vscode.window.showInformationMessage(`OpenCode Panel: model → ${display}`)
     } catch (e) {
       log("pickModel failed", e)
       vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
     }
   }
+}
+
+export type ModelRow = {
+  providerID: string
+  modelID: string
+  providerName?: string
+  /** Undefined for the model's default variant (the no-variant baseline). */
+  variant?: string
+}
+
+type ProviderShape = {
+  id: string
+  name?: string
+  models?: Record<string, { variants?: Record<string, unknown> } | undefined>
+}
+
+/**
+ * Flatten `(provider, model, variant)` into one row per pick. For each
+ * model we emit the bare model first (no variant), then one row per
+ * variant key — so a user who never wants to tune effort still picks
+ * the same way as before, and tuning is one extra row away.
+ */
+export function listModelRows(providers: ProviderShape[]): ModelRow[] {
+  const rows: ModelRow[] = []
+  for (const p of providers) {
+    for (const [modelID, model] of Object.entries(p.models ?? {})) {
+      rows.push({ providerID: p.id, modelID, providerName: p.name })
+      const variantKeys = Object.keys(model?.variants ?? {})
+      for (const v of variantKeys) {
+        rows.push({ providerID: p.id, modelID, providerName: p.name, variant: v })
+      }
+    }
+  }
+  return rows
+}
+
+export function formatModelRow(row: ModelRow): string {
+  return row.variant ? `${row.providerID}/${row.modelID} · ${row.variant}` : `${row.providerID}/${row.modelID}`
 }

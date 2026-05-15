@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0]
+
+### Added
+- Model picker now surfaces effort / thinking-budget variants. opencode's `/config/providers` response carries a `variants` field on most modern models (e.g. `openai/gpt-5.5` has `none/minimal/low/medium/high/xhigh`, `anthropic/claude-opus-4-7` has `low/medium/high/xhigh/max`, `anthropic/claude-haiku-4-5` has token-budget-based `high/max`) — the previous picker enumerated only model IDs and dropped this entirely, so users couldn't tune reasoning effort without editing `opencode.json`. The picker now emits one row per `(provider, model, variant)` triple: the bare model row first (the model's default variant), then one row per variant key, formatted as `provider/model · variant`. Selection persists across reloads, the status bar shows the active variant (`gpt-5.5 · high`), and the variant is sent on the prompt body as a sibling of `modelID` — matching opencode's wire protocol (`packages/opencode/src/session/prompt.ts:2070,2102`). Models with no variants are unchanged. The bundled `@opencode-ai/sdk` TS types don't yet expose the `variant` field; the HTTP server accepts it regardless, so the prompt body is cast at the dispatch site. Closes #46.
+
 ## [0.3.9]
 
 ### Fixed

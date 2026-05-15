@@ -494,12 +494,18 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private postSelection() {
+    this.post({ type: "selection", selection: this.buildSelection() })
+  }
+
+  private buildSelection(): Selection {
     const sel = this.prefs.get()
-    const selection: Selection = {
-      agent: sel.agent,
-      model: sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : undefined,
+    let model: string | undefined
+    if (sel.modelProviderID && sel.modelID) {
+      model = sel.modelVariant
+        ? `${sel.modelProviderID}/${sel.modelID} · ${sel.modelVariant}`
+        : `${sel.modelProviderID}/${sel.modelID}`
     }
-    this.post({ type: "selection", selection })
+    return { agent: sel.agent, model }
   }
 
   private pushContext() {
@@ -511,14 +517,10 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async onMessage(msg: Inbound) {
     switch (msg.type) {
       case "mounted": {
-        const sel = this.prefs.get()
         this.post({
           type: "ready",
           connected: false,
-          selection: {
-            agent: sel.agent,
-            model: sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : undefined,
-          },
+          selection: this.buildSelection(),
         })
         this.sendConversationState()
         this.pushContext()
@@ -926,12 +928,25 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     if (sel.agent) body!.agent = sel.agent
     if (sel.modelProviderID && sel.modelID) {
-      body!.model = { providerID: sel.modelProviderID, modelID: sel.modelID }
+      // `variant` is a first-class sibling of `modelID` in opencode's prompt
+      // protocol (see opencode source `packages/opencode/src/session/prompt.ts:1082,2070,2102`)
+      // but our bundled `@opencode-ai/sdk` types haven't been regenerated to
+      // expose it yet. The HTTP server accepts it regardless; cast the model
+      // object so TS doesn't reject the variant key.
+      body!.model = {
+        providerID: sel.modelProviderID,
+        modelID: sel.modelID,
+        ...(sel.modelVariant ? { variant: sel.modelVariant } : {}),
+      } as NonNullable<PromptBody["model"]>
     }
     log("prompt dispatch", {
       sessionID: this.sessionID,
       agent: sel.agent ?? "default",
-      model: sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : "default",
+      model: sel.modelProviderID && sel.modelID
+        ? sel.modelVariant
+          ? `${sel.modelProviderID}/${sel.modelID}:${sel.modelVariant}`
+          : `${sel.modelProviderID}/${sel.modelID}`
+        : "default",
     })
     try {
       const res = await backend.client.session.promptAsync({

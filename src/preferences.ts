@@ -7,6 +7,14 @@ export type Selection = {
   agent?: string
   modelProviderID?: string
   modelID?: string
+  /**
+   * Optional model variant — corresponds to a key under
+   * `provider.models[modelID].variants` in the opencode config. Maps to
+   * `reasoningEffort` (OpenAI) or thinking-budget (Anthropic) at the
+   * server; sent as a sibling of `modelID` on prompt requests. Undefined
+   * = use the model's default variant.
+   */
+  modelVariant?: string
 }
 
 export class Preferences {
@@ -20,6 +28,7 @@ export class Preferences {
       agent: this.state.get<string>(KEY_AGENT) || undefined,
       modelProviderID: this.state.get<string>(`${KEY_MODEL}.providerID`) || undefined,
       modelID: this.state.get<string>(`${KEY_MODEL}.modelID`) || undefined,
+      modelVariant: this.state.get<string>(`${KEY_MODEL}.variant`) || undefined,
     }
   }
 
@@ -28,9 +37,10 @@ export class Preferences {
     this.emitter.fire(this.get())
   }
 
-  async setModel(providerID: string | undefined, modelID: string | undefined) {
+  async setModel(providerID: string | undefined, modelID: string | undefined, variant?: string) {
     await this.state.update(`${KEY_MODEL}.providerID`, providerID ?? "")
     await this.state.update(`${KEY_MODEL}.modelID`, modelID ?? "")
+    await this.state.update(`${KEY_MODEL}.variant`, variant ?? "")
     this.emitter.fire(this.get())
   }
 }
