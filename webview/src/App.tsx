@@ -31,6 +31,22 @@ export default function App() {
   } = useChatState()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
+  // Tracks whether the next onScroll fired from our own scrollTop= write
+  // (so the synthetic event doesn't masquerade as a user gesture and
+  // re-engage stick mode on every text delta).
+  const programmaticScroll = useRef(false)
+  const lastScrollTop = useRef(0)
+  // Distance-from-bottom threshold for *re-engaging* stick mode once the
+  // user has manually disengaged it. Smaller than the old 80 px because we
+  // now use scroll direction, not just position.
+  const STICK_REENGAGE_PX = 8
+
+  const scrollToBottom = () => {
+    if (!scrollRef.current) return
+    programmaticScroll.current = true
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    lastScrollTop.current = scrollRef.current.scrollTop
+  }
   const [reviewRequest, setReviewRequest] = useState<{ path: string; key: number }>()
   const openReviewFile = (path: string) => {
     setReviewRequest((current) => ({ path, key: (current?.key ?? 0) + 1 }))
@@ -84,8 +100,8 @@ export default function App() {
   const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
 
   useEffect(() => {
-    if (!scrollRef.current || !stickToBottom.current) return
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    if (!stickToBottom.current) return
+    scrollToBottom()
   }, [state.messages])
 
   // When the user opens a different conversation from the History menu, jump
@@ -95,9 +111,8 @@ export default function App() {
   useEffect(() => {
     if (!scrollRef.current || !state.conversationID) return
     requestAnimationFrame(() => {
-      if (!scrollRef.current) return
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
       stickToBottom.current = true
+      scrollToBottom()
     })
   }, [state.conversationID])
 
@@ -121,7 +136,28 @@ export default function App() {
         ref={scrollRef}
         onScroll={(e) => {
           const el = e.currentTarget
-          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          // Consume the synthetic onScroll fired by our own scrollTop= write
+          // so it never gets interpreted as a user gesture (which would
+          // re-assert stick mode every text delta).
+          if (programmaticScroll.current) {
+            programmaticScroll.current = false
+            lastScrollTop.current = el.scrollTop
+            return
+          }
+          const prev = lastScrollTop.current
+          const curr = el.scrollTop
+          lastScrollTop.current = curr
+          if (curr < prev) {
+            // Any user-initiated upward movement breaks stick mode regardless
+            // of distance to bottom — even one wheel notch.
+            stickToBottom.current = false
+            return
+          }
+          // Downward (or no) movement: re-engage stick only when the user
+          // has actually reached the bottom on their own.
+          if (el.scrollHeight - curr - el.clientHeight <= STICK_REENGAGE_PX) {
+            stickToBottom.current = true
+          }
         }}
       >
         {state.messages.length === 0 && (
