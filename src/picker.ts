@@ -57,6 +57,18 @@ export class Picker {
     }
   }
 
+  /**
+   * Two-step model picker:
+   *   1) Pick a model — one row per `(provider, model)`. Rows for models with
+   *      variants get a `… effort variants` hint in the detail line.
+   *   2) If the picked model has variants, a second QuickPick opens to pick
+   *      the effort/thinking-budget variant (with a `(default)` row to clear).
+   *      Esc on step 2 aborts the whole pick — the previous selection stays.
+   *
+   * This collapses what would otherwise be N + 1 rows per model (e.g. 7 rows
+   * for `openai/gpt-5.5`'s 6 effort variants + the baseline) into a single
+   * model row plus a focused secondary picker.
+   */
   async pickModel() {
     try {
       const backend = await this.servers.ensure()
@@ -68,12 +80,14 @@ export class Picker {
       // SDK Model type doesn't expose `variants` even though the HTTP
       // response includes it (see opencode source `packages/opencode/src/provider/provider.ts:923`).
       // Cast to the local shape that includes the field we care about.
-      const rows = listModelRows((res.data.providers ?? []) as unknown as ProviderShape[])
+      const models = listModels((res.data.providers ?? []) as unknown as ProviderShape[])
+      const current = this.prefs.get()
       const items: vscode.QuickPickItem[] = [
         { label: "$(circle-slash) (default)", description: "use opencode default model" },
-        ...rows.map((row) => ({
-          label: `$(sparkle) ${formatModelRow(row)}`,
-          description: row.providerName ?? "",
+        ...models.map((m) => ({
+          label: `$(sparkle) ${m.providerID}/${m.modelID}`,
+          description: m.providerName ?? "",
+          detail: variantDetail(m),
         })),
       ]
       const picked = await vscode.window.showQuickPick(items, {
@@ -83,31 +97,73 @@ export class Picker {
       if (!picked) return
       const cleaned = picked.label.replace(/^\$\([^)]+\)\s*/, "")
       if (cleaned === "(default)") {
-        await this.prefs.setModel(undefined, undefined)
+        await this.prefs.setModel(undefined, undefined, undefined)
         vscode.window.showInformationMessage("OpenCode Panel: model reset to default")
         return
       }
-      const row = rows.find((r) => formatModelRow(r) === cleaned)
-      if (!row) {
-        log("pickModel: no matching row for", cleaned)
+      const model = models.find((m) => `${m.providerID}/${m.modelID}` === cleaned)
+      if (!model) {
+        log("pickModel: no matching model for", cleaned)
         return
       }
-      await this.prefs.setModel(row.providerID, row.modelID, row.variant)
-      const display = row.variant ? `${row.providerID}/${row.modelID} · ${row.variant}` : `${row.providerID}/${row.modelID}`
+      let variant: string | undefined
+      if (model.variants.length > 0) {
+        const picked = await this.pickVariant(model, current)
+        if (picked === ABORT) return
+        variant = picked
+      }
+      await this.prefs.setModel(model.providerID, model.modelID, variant)
+      const display = variant
+        ? `${model.providerID}/${model.modelID} · ${variant}`
+        : `${model.providerID}/${model.modelID}`
       vscode.window.showInformationMessage(`OpenCode Panel: model → ${display}`)
     } catch (e) {
       log("pickModel failed", e)
       vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
     }
   }
+
+  /**
+   * Step 2 of `pickModel`. Returns the chosen variant, `undefined` for the
+   * model's default (the `(default)` row), or `ABORT` if the user pressed
+   * Esc (so the caller aborts the whole pick instead of clearing the
+   * variant unintentionally).
+   */
+  private async pickVariant(
+    model: ModelInfo,
+    current: { modelProviderID?: string; modelID?: string; modelVariant?: string },
+  ): Promise<string | undefined | typeof ABORT> {
+    const isCurrentModel =
+      current.modelProviderID === model.providerID && current.modelID === model.modelID
+    const items: vscode.QuickPickItem[] = [
+      {
+        label: "$(circle-slash) (default)",
+        description: "use the model's default effort",
+        picked: isCurrentModel && !current.modelVariant,
+      },
+      ...model.variants.map((v) => ({
+        label: `$(zap) ${v}`,
+        picked: isCurrentModel && current.modelVariant === v,
+      })),
+    ]
+    const picked = await vscode.window.showQuickPick(items, {
+      title: `Effort for ${model.providerID}/${model.modelID}`,
+      placeHolder: "Higher effort = more reasoning tokens, slower, more expensive",
+    })
+    if (!picked) return ABORT
+    const v = picked.label.replace(/^\$\([^)]+\)\s*/, "")
+    return v === "(default)" ? undefined : v
+  }
 }
 
-export type ModelRow = {
+const ABORT = Symbol("pick-variant-aborted")
+
+export type ModelInfo = {
   providerID: string
   modelID: string
   providerName?: string
-  /** Undefined for the model's default variant (the no-variant baseline). */
-  variant?: string
+  /** Variant keys in declared order. Empty if the model has no variants. */
+  variants: string[]
 }
 
 type ProviderShape = {
@@ -117,25 +173,29 @@ type ProviderShape = {
 }
 
 /**
- * Flatten `(provider, model, variant)` into one row per pick. For each
- * model we emit the bare model first (no variant), then one row per
- * variant key — so a user who never wants to tune effort still picks
- * the same way as before, and tuning is one extra row away.
+ * One entry per `(provider, model)` — variants are attached as a list, not
+ * exploded into separate rows. The picker uses a second QuickPick to choose
+ * a variant when this list is non-empty.
  */
-export function listModelRows(providers: ProviderShape[]): ModelRow[] {
-  const rows: ModelRow[] = []
+export function listModels(providers: ProviderShape[]): ModelInfo[] {
+  const models: ModelInfo[] = []
   for (const p of providers) {
     for (const [modelID, model] of Object.entries(p.models ?? {})) {
-      rows.push({ providerID: p.id, modelID, providerName: p.name })
-      const variantKeys = Object.keys(model?.variants ?? {})
-      for (const v of variantKeys) {
-        rows.push({ providerID: p.id, modelID, providerName: p.name, variant: v })
-      }
+      models.push({
+        providerID: p.id,
+        modelID,
+        providerName: p.name,
+        variants: Object.keys(model?.variants ?? {}),
+      })
     }
   }
-  return rows
+  return models
 }
 
-export function formatModelRow(row: ModelRow): string {
-  return row.variant ? `${row.providerID}/${row.modelID} · ${row.variant}` : `${row.providerID}/${row.modelID}`
+/** Right-aligned hint shown on each model row when it has variants. */
+export function variantDetail(model: ModelInfo): string | undefined {
+  if (model.variants.length === 0) return undefined
+  // Show the variant keys directly when there's room (≤4); otherwise just the count.
+  if (model.variants.length <= 4) return `effort: ${model.variants.join(" · ")}`
+  return `${model.variants.length} effort variants: ${model.variants.slice(0, 3).join(" · ")}…`
 }

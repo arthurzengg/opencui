@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { isUserSelectableAgent, listModelRows, formatModelRow } from "../../src/picker"
+import { isUserSelectableAgent, listModels, variantDetail } from "../../src/picker"
 
 describe("isUserSelectableAgent", () => {
   it("accepts a normal primary agent", () => {
@@ -34,47 +34,38 @@ describe("isUserSelectableAgent", () => {
   })
 })
 
-describe("listModelRows", () => {
-  it("yields one row per model when no variants exist", () => {
-    const rows = listModelRows([
+describe("listModels", () => {
+  it("yields one entry per model with an empty variants list when none are declared", () => {
+    const models = listModels([
       { id: "p1", name: "Provider 1", models: { "model-a": {}, "model-b": {} } },
     ])
-    expect(rows).toEqual([
-      { providerID: "p1", modelID: "model-a", providerName: "Provider 1" },
-      { providerID: "p1", modelID: "model-b", providerName: "Provider 1" },
+    expect(models).toEqual([
+      { providerID: "p1", modelID: "model-a", providerName: "Provider 1", variants: [] },
+      { providerID: "p1", modelID: "model-b", providerName: "Provider 1", variants: [] },
     ])
   })
 
-  it("emits the bare model row plus one row per variant key (in declared order)", () => {
-    const rows = listModelRows([
+  it("attaches variant keys (in declared order) without exploding the row count", () => {
+    const models = listModels([
       {
         id: "openai",
         name: "OpenAI",
         models: {
-          "gpt-5.5": {
-            variants: { minimal: {}, low: {}, medium: {}, high: {} },
-          },
+          "gpt-5.5": { variants: { minimal: {}, low: {}, medium: {}, high: {}, xhigh: {} } },
         },
       },
     ])
-    expect(rows.map(formatModelRow)).toEqual([
-      "openai/gpt-5.5",
-      "openai/gpt-5.5 · minimal",
-      "openai/gpt-5.5 · low",
-      "openai/gpt-5.5 · medium",
-      "openai/gpt-5.5 · high",
-    ])
-    expect(rows[0]).toEqual({ providerID: "openai", modelID: "gpt-5.5", providerName: "OpenAI" })
-    expect(rows[4]).toEqual({
+    expect(models).toHaveLength(1)
+    expect(models[0]).toEqual({
       providerID: "openai",
       modelID: "gpt-5.5",
       providerName: "OpenAI",
-      variant: "high",
+      variants: ["minimal", "low", "medium", "high", "xhigh"],
     })
   })
 
   it("handles a mix of variant-having and variant-less models in one provider", () => {
-    const rows = listModelRows([
+    const models = listModels([
       {
         id: "anthropic",
         models: {
@@ -83,35 +74,50 @@ describe("listModelRows", () => {
         },
       },
     ])
-    expect(rows.map(formatModelRow)).toEqual([
-      "anthropic/claude-opus",
-      "anthropic/claude-opus · high",
-      "anthropic/claude-opus · max",
-      "anthropic/claude-haiku",
+    expect(models.map((m) => `${m.modelID}: ${m.variants.join(",")}`)).toEqual([
+      "claude-opus: high,max",
+      "claude-haiku: ",
     ])
   })
 
   it("returns an empty list for an empty provider list", () => {
-    expect(listModelRows([])).toEqual([])
+    expect(listModels([])).toEqual([])
   })
 
   it("tolerates missing models/variants fields", () => {
-    const rows = listModelRows([
+    const models = listModels([
       { id: "p", models: undefined },
       { id: "q", models: { x: { variants: undefined } } },
     ])
-    expect(rows.map(formatModelRow)).toEqual(["q/x"])
+    expect(models).toEqual([{ providerID: "q", modelID: "x", providerName: undefined, variants: [] }])
   })
 })
 
-describe("formatModelRow", () => {
-  it("omits the separator when no variant is set", () => {
-    expect(formatModelRow({ providerID: "openai", modelID: "gpt-5.5" })).toBe("openai/gpt-5.5")
+describe("variantDetail", () => {
+  it("returns undefined when the model has no variants (no detail line rendered)", () => {
+    expect(variantDetail({ providerID: "p", modelID: "m", variants: [] })).toBeUndefined()
   })
 
-  it("renders the variant as a middot-separated suffix", () => {
-    expect(formatModelRow({ providerID: "openai", modelID: "gpt-5.5", variant: "high" })).toBe(
-      "openai/gpt-5.5 · high",
-    )
+  it("inlines variant keys when there are 4 or fewer", () => {
+    expect(
+      variantDetail({ providerID: "anthropic", modelID: "claude", variants: ["high", "max"] }),
+    ).toBe("effort: high · max")
+    expect(
+      variantDetail({
+        providerID: "anthropic",
+        modelID: "claude",
+        variants: ["low", "medium", "high", "max"],
+      }),
+    ).toBe("effort: low · medium · high · max")
+  })
+
+  it("summarizes long variant lists with a count + first few keys", () => {
+    expect(
+      variantDetail({
+        providerID: "openai",
+        modelID: "gpt-5.5",
+        variants: ["none", "minimal", "low", "medium", "high", "xhigh"],
+      }),
+    ).toBe("6 effort variants: none · minimal · low…")
   })
 })
