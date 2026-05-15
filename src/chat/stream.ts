@@ -92,18 +92,39 @@ export type Subscription = {
   abort: () => void
 }
 
+export type SubscriptionOptions = {
+  /**
+   * Watchdog interval. If no SSE events arrive for this many milliseconds
+   * while we believe the session is busy, the host actively polls
+   * `/session/status` to recover from a dropped/missed `session.idle`.
+   * Defaults to 30 s; tests pass shorter values.
+   */
+  watchdogMs?: number
+}
+
+const DEFAULT_WATCHDOG_MS = 30_000
+
 /**
  * Long-lived subscription to session events. Does NOT close on message finish —
  * stays open until abort() is called. This lets the UI capture follow-up
  * assistant turns that are auto-triggered by background-task reminders,
  * permission replies, or any other opencode-side continuation.
+ *
+ * Recovery: a watchdog timer arms while the session is observed busy and
+ * resets on every routed event. If the timer fires (no SSE events for
+ * `watchdogMs`), the host calls `client.session.status({ directory })`
+ * directly — if opencode reports idle, we emit `onSessionIdle` ourselves.
+ * Without this, a dropped SSE connection at the wrong moment leaves the
+ * UI permanently in "Working…".
  */
 export function subscribeSession(
   backend: Backend,
   sessionID: string,
   handlers: StreamHandlers,
+  options: SubscriptionOptions = {},
 ): Subscription {
   const controller = new AbortController()
+  const watchdogMs = options.watchdogMs ?? DEFAULT_WATCHDOG_MS
 
   const seenLen = new Map<string, number>()
   const seenAssistantMessages = new Set<string>()
@@ -111,6 +132,18 @@ export function subscribeSession(
   const assistantFinished = new Set<string>()
   const toolStatus = new Map<string, string>()
   const seenPatches = new Set<string>()
+
+  // messageID → set of tool part IDs that are still pending/running.
+  // Used to defer per-message `assistantEnd` until all tool calls terminate:
+  // some providers return `finish: "stop"` while the message still has
+  // running tool parts, so the finish reason alone isn't sufficient.
+  const activeToolParts = new Map<string, Set<string>>()
+  // messageID → payload waiting on tool-part completion before assistantEnd fires.
+  const pendingFinish = new Map<string, { finish: string; usage?: MessageUsage }>()
+
+  let watchdogTimer: ReturnType<typeof setTimeout> | null = null
+  let busyTracked = false
+  let stopped = false
 
   let readyResolve: () => void = () => {}
   let readyReject: (e: unknown) => void = () => {}
@@ -142,32 +175,101 @@ export function subscribeSession(
     log(`[sse] ${type}`)
     switch (type) {
       case "message.updated":
-        return onMessageUpdated(props?.info)
+        onMessageUpdated(props?.info)
+        markActivity(props?.info?.sessionID)
+        return
       case "message.part.updated":
-        return onPartUpdated(props?.part)
+        onPartUpdated(props?.part)
+        markActivity(props?.part?.sessionID)
+        return
       case "message.part.delta":
-        return onPartDelta(props)
+        onPartDelta(props)
+        markActivity(props?.sessionID)
+        return
       case "permission.asked":
       case "permission.updated":
-        return onPermissionUpdated(props)
+        onPermissionUpdated(props)
+        markActivity(props?.sessionID)
+        return
       case "question.asked":
-        return onQuestionAsked(props)
+        onQuestionAsked(props)
+        markActivity(props?.sessionID)
+        return
       case "question.replied":
       case "question.rejected":
-        return onQuestionResolved(props)
+        onQuestionResolved(props)
+        markActivity(props?.sessionID)
+        return
       case "message.removed":
-        return onMessageRemoved(props)
+        onMessageRemoved(props)
+        markActivity(props?.sessionID)
+        return
       case "tui.toast.show":
         return onToast(props)
       case "session.error":
         return onSessionError(props?.error)
       case "session.idle":
-        if (props?.sessionID === sessionID) handlers.onSessionIdle?.()
+        if (props?.sessionID === sessionID) markIdle()
         return
       case "session.status":
-        if (props?.sessionID === sessionID && props?.status?.type === "idle") handlers.onSessionIdle?.()
-        if (props?.sessionID === sessionID && props?.status?.type && props.status.type !== "idle") handlers.onSessionBusy?.()
+        if (props?.sessionID !== sessionID) return
+        if (props?.status?.type === "idle") {
+          markIdle()
+        } else if (props?.status?.type) {
+          handlers.onSessionBusy?.()
+          markActivity(sessionID)
+        }
         return
+    }
+  }
+
+  function markActivity(eventSessionID: string | undefined) {
+    if (eventSessionID !== sessionID) return
+    busyTracked = true
+    armWatchdog()
+  }
+
+  function markIdle() {
+    busyTracked = false
+    clearWatchdog()
+    handlers.onSessionIdle?.()
+  }
+
+  function clearWatchdog() {
+    if (watchdogTimer) {
+      clearTimeout(watchdogTimer)
+      watchdogTimer = null
+    }
+  }
+
+  function armWatchdog() {
+    clearWatchdog()
+    if (!busyTracked || stopped) return
+    watchdogTimer = setTimeout(runWatchdog, watchdogMs)
+  }
+
+  async function runWatchdog() {
+    watchdogTimer = null
+    if (stopped || !busyTracked) return
+    log(`[watchdog] no SSE events for ${watchdogMs}ms, polling /session/status`)
+    try {
+      const result = await backend.client.session.status({
+        query: { directory: backend.directory },
+      })
+      if (stopped) return
+      const statuses = (result?.data ?? {}) as Record<string, { type?: string } | undefined>
+      const status = statuses[sessionID]
+      if (!status || status.type === "idle") {
+        log("[watchdog] server reports idle — emitting onSessionIdle")
+        markIdle()
+        return
+      }
+      log(`[watchdog] server reports ${status.type} — re-arming`)
+      armWatchdog()
+    } catch (err) {
+      if (stopped) return
+      log("[watchdog] poll failed, re-arming", err)
+      armWatchdog()
     }
   }
 
@@ -201,6 +303,16 @@ export function subscribeSession(
       // receive more parts when the agent resumes, so DO NOT emit assistantEnd
       // for that. Only terminal finish reasons end the message.
       if (isTerminalFinish(info.finish)) {
+        // Some providers return `finish: "stop"` while the assistant message
+        // still has running tool parts — opencode's own loop-exit check
+        // (packages/opencode/src/session/prompt.ts) also gates on no active
+        // tool calls. Mirror that here so we don't clear the spinner before
+        // the tool parts settle.
+        const active = activeToolParts.get(mid)
+        if (active && active.size > 0) {
+          pendingFinish.set(mid, { finish: info.finish, usage: extractUsage(info) })
+          return
+        }
         assistantFinished.add(mid)
         handlers.onAssistantEnd?.(mid, {
           finish: info.finish,
@@ -208,6 +320,17 @@ export function subscribeSession(
         })
       }
     }
+  }
+
+  function maybeFlushPendingFinish(messageID: string) {
+    if (assistantFinished.has(messageID)) return
+    const active = activeToolParts.get(messageID)
+    if (active && active.size > 0) return
+    const pending = pendingFinish.get(messageID)
+    if (!pending) return
+    pendingFinish.delete(messageID)
+    assistantFinished.add(messageID)
+    handlers.onAssistantEnd?.(messageID, pending)
   }
 
   function onPartUpdated(part: any) {
@@ -239,6 +362,18 @@ export function subscribeSession(
       const key = part.callID as string
       const curr = part.state.status as ToolUpdate["status"]
       toolStatus.set(key, curr)
+      // Track unfinished tool parts per message; flush a deferred
+      // assistantEnd once everything settles.
+      const partKey = (part.id as string | undefined) ?? key
+      const isTerminal = curr === "completed" || curr === "error"
+      const set = activeToolParts.get(messageID) ?? new Set<string>()
+      if (isTerminal) {
+        set.delete(partKey)
+      } else {
+        set.add(partKey)
+      }
+      if (set.size > 0) activeToolParts.set(messageID, set)
+      else activeToolParts.delete(messageID)
       if (curr === "running" || curr === "completed" || curr === "error") {
         handlers.onTool?.(messageID, {
           callID: key,
@@ -251,6 +386,7 @@ export function subscribeSession(
           error: part.state.error,
         })
       }
+      if (isTerminal) maybeFlushPendingFinish(messageID)
       return
     }
     if (part.type === "patch" && part.hash && Array.isArray(part.files)) {
@@ -332,7 +468,14 @@ export function subscribeSession(
     handlers.onSessionError?.(msg)
   }
 
-  return { ready, abort: () => controller.abort() }
+  return {
+    ready,
+    abort: () => {
+      stopped = true
+      clearWatchdog()
+      controller.abort()
+    },
+  }
 }
 
 function eventPayload(payload: unknown): { type?: string; properties?: any } | undefined {

@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.7]
+
+### Fixed
+- Conversation-end detection no longer relies solely on the SSE `session.idle` event. A 30-second watchdog now polls `client.session.status({ directory })` when no events have been seen during a busy turn — if opencode reports `idle`, the host emits `sessionIdle` itself. Previously a dropped SSE connection, a server crash mid-turn, or a reconnect after the idle event fired could leave the UI stuck on "Working…" forever. The watchdog resets on every routed event and only fires while busy.
+- `assistantEnd` for a per-message `finish: "stop"` (or any non-`tool-calls` reason) is now also gated on the message having no active tool parts. Some providers return `finish: "stop"` while the assistant message still has running tool calls; the previous check only looked at the finish reason and cleared the per-message spinner prematurely. Matches opencode's own loop-exit condition in `packages/opencode/src/session/prompt.ts`.
+
 ## [0.3.6]
 
 ### Fixed
@@ -128,7 +134,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/arthurzengg/opencui/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/arthurzengg/opencui/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/arthurzengg/opencui/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/arthurzengg/opencui/compare/v0.3.3...v0.3.4
