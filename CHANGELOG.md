@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.9]
+
+### Fixed
+- Chat no longer appears to end mid-turn when sub-agents are running or a continuation hook is imminent. After `session.idle` we now defer the busy clear for up to 30 seconds when either signal is present: (a) a recent `tui.toast.show` whose title or message matches `/continuation|resuming in/i` (omo's TodoContinuation / Atlas / Ralph-Loop hooks), or (b) the last assistant message contains a `task` tool call whose output indicates a background subagent is still running (opencode's `task` tool with `background: true` writes `state: running` into its output). The deferral cancels as soon as a new `sessionBusy` or `assistantStart` arrives (continuation took over); if neither signal is present, idle clears busy immediately as before. While deferred, the status bar shows "Continuing…" instead of "Working…".
+
 ## [0.3.8]
 
 ### Fixed
@@ -139,7 +144,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.8...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.9...HEAD
+[0.3.9]: https://github.com/arthurzengg/opencui/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/arthurzengg/opencui/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/arthurzengg/opencui/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/arthurzengg/opencui/compare/v0.3.5...v0.3.6

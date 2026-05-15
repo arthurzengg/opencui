@@ -61,6 +61,20 @@ export class ChatView implements vscode.WebviewViewProvider {
    */
   private lastToast?: { key: string; at: number }
   private static readonly TOAST_DEDUP_MS = 3000
+  /**
+   * Timestamp of the most recent signal that a continuation is imminent:
+   * - a `tui.toast.show` whose title/message matches /continuation|resuming in/i
+   *   (omo's TodoContinuation / Atlas / Ralph-Loop hooks all use this vocabulary)
+   * - a `task` tool call whose output advertises `state: running`
+   *   (opencode's `task` tool with `background: true` writes that into its output)
+   * When `session.idle` arrives within CONTINUATION_SIGNAL_TTL_MS of this
+   * timestamp, the busy clear is deferred so the UI doesn't flash "done"
+   * between the parent turn ending and the continuation turn starting.
+   */
+  private lastContinuationSignalAt = 0
+  private pendingIdleTimer?: ReturnType<typeof setTimeout>
+  private static readonly CONTINUATION_SIGNAL_TTL_MS = 30_000
+  private static readonly CONTINUATION_DEFER_MS = 30_000
   /** opencode messageID → webview-side id used in UI */
   private messageMap = new Map<string, string>()
   private conversations: SavedConversation[]
@@ -134,6 +148,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   async createConversation() {
+    this.clearPendingIdle()
     this.subscription?.abort()
     this.subscription = undefined
     this.sessionID = undefined
@@ -168,6 +183,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private dispose() {
+    this.clearPendingIdle()
     this.subscription?.abort()
     this.subscription = undefined
   }
@@ -220,6 +236,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async selectConversation(id: string) {
     if (id === this.activeConversationID) return
+    this.clearPendingIdle()
     this.subscription?.abort()
     this.subscription = undefined
     this.messageMap.clear()
@@ -620,7 +637,43 @@ export class ChatView implements vscode.WebviewViewProvider {
    * "added N tools" chatter and don't deserve a popup. Consecutive identical
    * toasts within TOAST_DEDUP_MS are dropped (opencode can fire bursts).
    */
+  private static isContinuationToast(toast: Toast): boolean {
+    const haystack = `${toast.title ?? ""} ${toast.message}`.toLowerCase()
+    return /continuation|resuming in/.test(haystack)
+  }
+
+  private markContinuationSignal(source: string) {
+    this.lastContinuationSignalAt = Date.now()
+    log(`[continuation] signal observed (${source})`)
+  }
+
+  private hasRecentContinuationSignal(): boolean {
+    return Date.now() - this.lastContinuationSignalAt < ChatView.CONTINUATION_SIGNAL_TTL_MS
+  }
+
+  private clearPendingIdle() {
+    if (this.pendingIdleTimer) {
+      clearTimeout(this.pendingIdleTimer)
+      this.pendingIdleTimer = undefined
+    }
+  }
+
+  /**
+   * Cancel any in-flight continuation defer and tell the webview the
+   * pending state is over. Used when a new turn starts (sessionBusy /
+   * assistantStart) or when we decide to clear busy ourselves.
+   */
+  private finishContinuationPending() {
+    if (this.pendingIdleTimer) {
+      this.clearPendingIdle()
+      this.post({ type: "continuationPending", pending: false })
+    }
+  }
+
   private surfaceToast(toast: Toast) {
+    if (ChatView.isContinuationToast(toast)) {
+      this.markContinuationSignal(`toast:${toast.title ?? "(no title)"}`)
+    }
     // Normalize the message before computing the dedup key so closely-related
     // toasts collapse into one:
     //   - Strip leading whitespace + symbols / punctuation. Some agents
@@ -802,6 +855,9 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.post({ type: "userMessageBackendID", id: targetID, backendID: mid })
       },
       onAssistantStart: (mid) => {
+        // A new assistant turn means any deferred idle is moot — clear it
+        // so the timer doesn't accidentally fire mid-stream and clear busy.
+        this.finishContinuationPending()
         const webviewID = "a_" + mid
         this.messageMap.set(mid, webviewID)
         this.post({ type: "assistantStart", id: webviewID })
@@ -829,6 +885,16 @@ export class ChatView implements vscode.WebviewViewProvider {
       },
       onTool: (mid, update) => {
         if (this.aborting) return
+        // opencode's `task` tool with `background: true` writes
+        // `state: running` into the tool output. A backgrounded subagent
+        // means the parent's idle is likely transient — record it.
+        if (
+          update.tool === "task" &&
+          typeof update.output === "string" &&
+          /state:\s*running/.test(update.output)
+        ) {
+          this.markContinuationSignal("tool:task(background)")
+        }
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         const wire = toWire(update, backend.directory)
         this.post({ type: "tool", id: webviewID, update: wire })
@@ -875,10 +941,29 @@ export class ChatView implements vscode.WebviewViewProvider {
         log("session error", message)
       },
       onSessionBusy: () => {
+        // A new busy state means continuation (if any) took over — cancel
+        // any pending idle so we don't accidentally clear busy later.
+        this.finishContinuationPending()
         this.post({ type: "sessionBusy" })
       },
       onSessionIdle: () => {
+        const wasAborting = this.aborting
         this.aborting = false
+        // User-initiated abort bypasses the continuation defer — Stop means
+        // stop now, even if a continuation hook would normally fire next.
+        if (!wasAborting && this.hasRecentContinuationSignal()) {
+          log("[continuation] deferring sessionIdle — recent continuation signal")
+          this.clearPendingIdle()
+          this.post({ type: "continuationPending", pending: true })
+          this.pendingIdleTimer = setTimeout(() => {
+            this.pendingIdleTimer = undefined
+            log("[continuation] defer timeout reached, emitting sessionIdle")
+            this.post({ type: "continuationPending", pending: false })
+            this.post({ type: "sessionIdle" })
+          }, ChatView.CONTINUATION_DEFER_MS)
+          return
+        }
+        this.finishContinuationPending()
         this.post({ type: "sessionIdle" })
       },
     })
