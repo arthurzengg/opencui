@@ -58,16 +58,19 @@ export class Picker {
   }
 
   /**
-   * Two-step model picker:
-   *   1) Pick a model — one row per `(provider, model)`. Rows for models with
-   *      variants get a `… effort variants` hint in the detail line.
-   *   2) If the picked model has variants, a second QuickPick opens to pick
-   *      the effort/thinking-budget variant (with a `(default)` row to clear).
-   *      Esc on step 2 aborts the whole pick — the previous selection stays.
+   * Single-step model picker — pick a model and you're done. Variant /
+   * effort tuning has moved entirely to the StatusBar's Effort row
+   * (`pickVariantForCurrent`) so picking a model never asks a second
+   * question; the dropdown is short and the two concerns stay
+   * orthogonal.
    *
-   * This collapses what would otherwise be N + 1 rows per model (e.g. 7 rows
-   * for `openai/gpt-5.5`'s 6 effort variants + the baseline) into a single
-   * model row plus a focused secondary picker.
+   * Variant is always reset on a successful model change: variants are
+   * model-scoped (e.g. `max` exists on Sonnet 4.6 but not on Haiku
+   * 4.5), so carrying the prior variant string forward to a different
+   * model would silently produce an invalid combo. The Effort row in
+   * the StatusBar lets the user retune effort immediately afterward.
+   * Models with variants show an `effort: …` hint in the detail line
+   * so users know the knob exists.
    */
   async pickModel() {
     try {
@@ -81,7 +84,6 @@ export class Picker {
       // response includes it (see opencode source `packages/opencode/src/provider/provider.ts:923`).
       // Cast to the local shape that includes the field we care about.
       const models = listModels((res.data.providers ?? []) as unknown as ProviderShape[])
-      const current = this.prefs.get()
       const items: vscode.QuickPickItem[] = [
         { label: "$(circle-slash) (default)", description: "use opencode default model" },
         ...models.map((m) => ({
@@ -106,17 +108,11 @@ export class Picker {
         log("pickModel: no matching model for", cleaned)
         return
       }
-      let variant: string | undefined
-      if (model.variants.length > 0) {
-        const picked = await this.pickVariant(model, current)
-        if (picked === ABORT) return
-        variant = picked
-      }
-      await this.prefs.setModel(model.providerID, model.modelID, variant)
-      const display = variant
-        ? `${model.providerID}/${model.modelID} · ${variant}`
-        : `${model.providerID}/${model.modelID}`
-      vscode.window.showInformationMessage(`OpenCode Panel: model → ${display}`)
+      await this.prefs.setModel(model.providerID, model.modelID, undefined)
+      const hint = model.variants.length > 0 ? " — tune effort from the StatusBar" : ""
+      vscode.window.showInformationMessage(
+        `OpenCode Panel: model → ${model.providerID}/${model.modelID}${hint}`,
+      )
     } catch (e) {
       log("pickModel failed", e)
       vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
