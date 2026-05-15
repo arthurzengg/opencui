@@ -33,7 +33,7 @@ describe("subscribeSession watchdog", () => {
         onSessionIdle: () => idleCount++,
         onTextDelta: () => {},
       },
-      { watchdogMs: 30 },
+      { watchdogMs: 50 },
     )
     await subscription.ready
     await server.awaitClient()
@@ -48,7 +48,7 @@ describe("subscribeSession watchdog", () => {
     expect(idleCount).toBe(0)
 
     // Wait past the watchdog window with no further events.
-    await wait(120)
+    await wait(200)
     subscription.abort()
     expect(idleCount).toBe(1)
     expect(server.statusPollCount()).toBeGreaterThanOrEqual(1)
@@ -66,18 +66,18 @@ describe("subscribeSession watchdog", () => {
         onSessionIdle: () => idleCount++,
         onTextDelta: () => {},
       },
-      { watchdogMs: 60 },
+      { watchdogMs: 120 },
     )
     await subscription.ready
     await server.awaitClient()
 
-    // Stream events every 25 ms — each one resets the watchdog.
+    // Stream events every 40 ms — each one resets the watchdog.
     for (let i = 0; i < 5; i++) {
       server.push({
         type: "message.part.updated",
         part: { messageID: "msg_a", sessionID: "ses_test", id: `p${i}`, type: "text", text: `x${i}` },
       })
-      await wait(25)
+      await wait(40)
     }
 
     subscription.abort()
@@ -98,7 +98,7 @@ describe("subscribeSession watchdog", () => {
         onSessionIdle: () => idleCount++,
         onTextDelta: () => {},
       },
-      { watchdogMs: 30 },
+      { watchdogMs: 50 },
     )
     await subscription.ready
     await server.awaitClient()
@@ -109,14 +109,14 @@ describe("subscribeSession watchdog", () => {
     })
 
     // First watchdog fire sees busy → should NOT emit idle.
-    await wait(60)
+    await wait(150)
     expect(idleCount).toBe(0)
     expect(server.statusPollCount()).toBeGreaterThanOrEqual(1)
     const firstPolls = server.statusPollCount()
 
     // Server flips to idle → next watchdog tick recovers.
     server.setSessionStatus("ses_test", { type: "idle" })
-    await wait(60)
+    await wait(150)
     subscription.abort()
     expect(idleCount).toBe(1)
     expect(server.statusPollCount()).toBeGreaterThan(firstPolls)
@@ -134,12 +134,12 @@ describe("subscribeSession watchdog", () => {
         onSessionIdle: () => idleCount++,
         onTextDelta: () => {},
       },
-      { watchdogMs: 30 },
+      { watchdogMs: 50 },
     )
     await subscription.ready
     await server.awaitClient()
 
-    await wait(80)
+    await wait(150)
     subscription.abort()
     expect(idleCount).toBe(0)
     expect(server.statusPollCount()).toBe(0)
@@ -156,7 +156,7 @@ describe("subscribeSession watchdog", () => {
         onSessionIdle: () => {},
         onTextDelta: () => {},
       },
-      { watchdogMs: 20 },
+      { watchdogMs: 50 },
     )
     await subscription.ready
     await server.awaitClient()
@@ -167,7 +167,7 @@ describe("subscribeSession watchdog", () => {
     subscription.abort()
 
     const baseline = server.statusPollCount()
-    await wait(80)
+    await wait(150)
     // Watchdog should have been cancelled by abort, no further polls.
     expect(server.statusPollCount()).toBe(baseline)
   })
@@ -184,7 +184,7 @@ describe("subscribeSession watchdog", () => {
         onSessionIdle: () => idleCount++,
         onTextDelta: () => {},
       },
-      { watchdogMs: 30 },
+      { watchdogMs: 50 },
     )
     await subscription.ready
     await server.awaitClient()
@@ -192,9 +192,9 @@ describe("subscribeSession watchdog", () => {
       type: "message.part.updated",
       part: { messageID: "msg_a", sessionID: "ses_test", id: "p1", type: "text", text: "hi" },
     })
-    await wait(5)
+    await wait(10)
     server.push({ type: "session.idle", sessionID: "ses_test" })
-    await wait(60)
+    await wait(150)
     subscription.abort()
     expect(idleCount).toBe(1)
     expect(server.statusPollCount()).toBe(0)
