@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { isUserSelectableAgent, listModels, variantDetail } from "../../src/picker"
+import { isUserSelectableAgent, listModels } from "../../src/picker"
 
 describe("isUserSelectableAgent", () => {
   it("accepts a normal primary agent", () => {
@@ -93,31 +93,3 @@ describe("listModels", () => {
   })
 })
 
-describe("variantDetail", () => {
-  it("returns undefined when the model has no variants (no detail line rendered)", () => {
-    expect(variantDetail({ providerID: "p", modelID: "m", variants: [] })).toBeUndefined()
-  })
-
-  it("inlines variant keys when there are 4 or fewer", () => {
-    expect(
-      variantDetail({ providerID: "anthropic", modelID: "claude", variants: ["high", "max"] }),
-    ).toBe("effort: high · max")
-    expect(
-      variantDetail({
-        providerID: "anthropic",
-        modelID: "claude",
-        variants: ["low", "medium", "high", "max"],
-      }),
-    ).toBe("effort: low · medium · high · max")
-  })
-
-  it("summarizes long variant lists with a count + first few keys", () => {
-    expect(
-      variantDetail({
-        providerID: "openai",
-        modelID: "gpt-5.5",
-        variants: ["none", "minimal", "low", "medium", "high", "xhigh"],
-      }),
-    ).toBe("6 effort variants: none · minimal · low…")
-  })
-})

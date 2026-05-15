@@ -69,8 +69,6 @@ export class Picker {
    * 4.5), so carrying the prior variant string forward to a different
    * model would silently produce an invalid combo. The Effort row in
    * the StatusBar lets the user retune effort immediately afterward.
-   * Models with variants show an `effort: …` hint in the detail line
-   * so users know the knob exists.
    */
   async pickModel() {
     try {
@@ -89,7 +87,6 @@ export class Picker {
         ...models.map((m) => ({
           label: `$(sparkle) ${m.providerID}/${m.modelID}`,
           description: m.providerName ?? "",
-          detail: variantDetail(m),
         })),
       ]
       const picked = await vscode.window.showQuickPick(items, {
@@ -244,10 +241,3 @@ export function listModels(providers: ProviderShape[]): ModelInfo[] {
   return models
 }
 
-/** Right-aligned hint shown on each model row when it has variants. */
-export function variantDetail(model: ModelInfo): string | undefined {
-  if (model.variants.length === 0) return undefined
-  // Show the variant keys directly when there's room (≤4); otherwise just the count.
-  if (model.variants.length <= 4) return `effort: ${model.variants.join(" · ")}`
-  return `${model.variants.length} effort variants: ${model.variants.slice(0, 3).join(" · ")}…`
-}
