@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.5]
+
+### Fixed
+- Status-bar connection dot stays perfectly round at narrow side-panel widths. The dot is a flex item inside `display: flex; flex-direction: row` and had default `flex-shrink: 1`, so the algorithm squeezed its width below 8 px while keeping height at 8 px — a vertical ellipse. Added `flex: 0 0 auto`. Same defensive `flex: 0 0 auto` added to `.msg-stopped::before` (the dot on Stopped assistant messages) since it lives in an `inline-flex` parent.
+
 ## [0.3.4]
 
 ### Fixed
@@ -118,7 +123,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/arthurzengg/opencui/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/arthurzengg/opencui/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/arthurzengg/opencui/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/arthurzengg/opencui/compare/v0.3.1...v0.3.2
