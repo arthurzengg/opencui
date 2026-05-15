@@ -140,6 +140,15 @@ export type Outbound =
   | { type: "aborted" }
   | { type: "sessionBusy" }
   | { type: "sessionIdle" }
+  /**
+   * Sent when the host is deferring a `sessionIdle` because a continuation
+   * is imminent (background subagents running, or a continuation toast
+   * recently observed). The webview should treat this as "still busy but
+   * waiting on the next turn" — keep busy true, surface a "Continuing…"
+   * indicator. Cleared by a subsequent `sessionBusy` / `assistantStart`
+   * (continuation took over) or `sessionIdle` (defer timed out).
+   */
+  | { type: "continuationPending"; pending: boolean }
   | { type: "permission"; id: string; title: string; pattern?: string | string[] }
   | { type: "question"; id: string; questions: QuestionInfo[] }
   | { type: "questionResolved"; id: string }

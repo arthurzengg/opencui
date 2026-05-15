@@ -64,6 +64,17 @@ button {
 .statusbar .dot.ok { background: #3fb950; }
 .statusbar .dot.warn { background: #d29922; }
 .statusbar .dot.err { background: #f85149; }
+.statusbar .dot.pending {
+  background: #58a6ff;
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .statusbar .dot.pending { animation: none; }
+}
 
 .statusbar .status-text {
   min-width: 0;

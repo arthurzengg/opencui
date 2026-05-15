@@ -30,6 +30,12 @@ export type ChatState = {
    * already-stopped message.
    */
   aborting: boolean
+  /**
+   * True while the host is deferring a `sessionIdle` because a continuation
+   * is imminent (background subagents, todo-continuation toast, etc.).
+   * Busy stays true; the StatusBar surfaces a "Continuing…" indicator.
+   */
+  continuationPending: boolean
   error?: string
   selection: Selection
   conversations: ConversationSummary[]
@@ -51,6 +57,7 @@ const initial: ChatState = {
   connected: false,
   busy: false,
   aborting: false,
+  continuationPending: false,
   selection: {},
   conversations: [],
   messages: [],
@@ -243,7 +250,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
       }
     }
     case "sessionBusy":
-      return { ...state, busy: true }
+      return { ...state, busy: true, continuationPending: false }
     case "sessionIdle":
       // Opencode finished draining its in-flight LLM call. Clear both flags so
       // the Send button comes back; ALSO clear `aborting` regardless of how we
@@ -252,10 +259,13 @@ export function reducer(state: ChatState, action: Action): ChatState {
         ...state,
         busy: false,
         aborting: false,
+        continuationPending: false,
         messages: state.messages.map((m) =>
           m.role === "assistant" && m.pending ? { ...m, pending: false } : m,
         ),
       }
+    case "continuationPending":
+      return { ...state, continuationPending: action.pending }
     case "permission":
       return {
         ...state,

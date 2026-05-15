@@ -121,6 +121,7 @@ export default function App() {
       <StatusBar
         connected={state.connected}
         error={state.error}
+        continuationPending={state.continuationPending}
         selection={state.selection}
         conversations={state.conversations}
         activeConversationID={state.conversationID}

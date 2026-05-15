@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.9]
+
+### Fixed
+- Chat no longer appears to end mid-turn when sub-agents are running or a continuation hook is imminent. Detection is now structural rather than text-based: every `task` tool part on the parent session is tracked through its `running` → `completed`/`error` transitions, and `session.idle` is deferred for as long as any task part is still running. When the last running task settles, a 10-second grace window waits for a continuation toast or new turn before clearing busy. A toast-only path (no active tasks) extends the cap to 120 seconds — Hephaestus-style deep agents can stretch the gap between parent idle and the plugin injecting the continuation, and the previous 30-second cap fired too eagerly. The continuation-toast regex now also covers opencode's auto-resume vocabulary (`Background task complete` / `Background task failed` / `Resuming the main thread`) and omo's `New Background Task`, in addition to the existing `continuation` / `resuming in` patterns. The deferral cancels on `sessionBusy` / `assistantStart` (continuation took over) and on user-initiated abort; if neither signal is present at idle, busy clears immediately as before. While deferred, the status bar shows "Continuing…" instead of "Working…". Background motivation: omo's TodoContinuationEnforcer *suppresses* its own continuation toast when BackgroundManager is handling the wakeup, so toast-based detection alone misses the deep-agent path (`src/hooks/todo-continuation-enforcer/continuation-injection.ts:82-89`); the structural signal closes that gap.
+
 ## [0.3.8]
 
 ### Fixed
@@ -139,7 +144,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Tests
 - 360+ tests across four phases: unit (Vitest + node/jsdom), integration (`@vscode/test-electron`), component (Vitest + React Testing Library), and E2E against a mock opencode HTTP/SSE server.
 
-[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.8...HEAD
+[Unreleased]: https://github.com/arthurzengg/opencui/compare/v0.3.9...HEAD
+[0.3.9]: https://github.com/arthurzengg/opencui/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/arthurzengg/opencui/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/arthurzengg/opencui/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/arthurzengg/opencui/compare/v0.3.5...v0.3.6
