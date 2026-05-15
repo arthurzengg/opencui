@@ -52,6 +52,10 @@ button {
      Same defence already applied to the .btn.icon and .history-trigger
      icons. */
   flex: 0 0 auto;
+  /* The dot is rendered as a <span>; explicit inline-block removes the
+     baseline-alignment quirks some browsers apply to inline boxes, so the
+     flex `align-items: center` lands the dot on the exact bar centerline. */
+  display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -63,6 +67,11 @@ button {
 
 .statusbar .status-text {
   min-width: 0;
+  /* Tight line-height so the text-box hugs the glyph height. Without this,
+     the inherited default (~1.2) inflates the box and `align-items: center`
+     lands the text on the geometric centre of the inflated box — visually
+     a hair above the centre of the 8 px dot next to it. */
+  line-height: 1;
   opacity: 0.75;
   overflow: hidden;
   white-space: nowrap;
