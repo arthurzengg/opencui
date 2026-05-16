@@ -51,6 +51,15 @@ type Props = {
 
 const MAX_VISIBLE_HITS = 8
 
+// Hard upper bound on the auto-grow textarea height. Past this, the
+// textarea's own scrollbar takes over so the prompt box doesn't keep eating
+// chat real estate when the user pastes or types a long message. MUST stay
+// in sync with the CSS variable --message-max-height in styles.css — the
+// same cap is shared with .promptbox textarea (the bottom prompt + the
+// in-place edit textarea) and .msg.role-user .user-text (rendered user
+// message), so all three views collapse to the same visual ceiling.
+const TEXTAREA_MAX_HEIGHT = 160
+
 function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachment> {
   const map = new Map<string, Attachment>()
   if (!initial?.attachments) return map
@@ -94,7 +103,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
   useEffect(() => {
     if (!ref.current) return
     ref.current.style.height = "auto"
-    ref.current.style.height = Math.min(ref.current.scrollHeight, 200) + "px"
+    ref.current.style.height = Math.min(ref.current.scrollHeight, TEXTAREA_MAX_HEIGHT) + "px"
     if (backdropRef.current) {
       backdropRef.current.style.height = ref.current.style.height
     }
