@@ -3,6 +3,14 @@
 :root {
   --radius: 6px;
   --gap: 8px;
+  /* Shared max-height for the bottom prompt textarea AND the rendered
+     user message bubble. Keeping the two in lockstep is what makes the
+     in-place edit affordance feel like "the same input as the bottom
+     box" rather than "a different sized panel". If you change this,
+     also update TEXTAREA_MAX_HEIGHT in webview/src/components/PromptBox.tsx
+     — the JS clamp on textarea.style.height must match this cap or the
+     CSS scrollbar will fight with the inline style. */
+  --message-max-height: 160px;
 }
 
 html, body, #root {
@@ -690,6 +698,16 @@ button {
   /* Soft drop shadow gives the pinned bubble a subtle natural-fade transition
      against the scrolling content below it, regardless of theme contrast. */
   box-shadow: 0 12px 18px -10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
+  /* Animate the chrome on entering / leaving edit mode. The transition lives
+     on the base class (not .is-editable) so it applies regardless of whether
+     the user message was editable at the time the class toggles. Padding is
+     intentionally listed even though display / edit modes now share the same
+     padding — kept here so any future tweak smoothly morphs instead of
+     snapping. */
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    padding 0.18s ease;
 }
 /* Extra gradient strip below the bubble for stronger visual feathering.
    Uses a high-contrast shadow color with explicit alpha so it shows up
@@ -721,18 +739,52 @@ button {
     );
   }
 }
-.msg.role-user.is-editing {
-  /* Keep the sticky pinning during edit — dropping it would re-flow the
-     bubble to its natural document position (top of the turn), yanking the
-     user's viewport upward. Strip the bubble chrome so the embedded
-     PromptBox provides the only padding/border. */
-  padding: 0;
-  background: transparent;
-  border-color: transparent;
-}
 .msg.role-user.is-editing > div > .promptbox {
   padding: 0;
   border-top: 0;
+  background: transparent;
+}
+/* Drop the bottom-prompt's 48 px min-height when the textarea lives inside
+   an edit bubble — for short user messages, the JS already sizes the
+   textarea to its content (Math.min(scrollHeight, …)), and a 48 px floor
+   would force the bubble to suddenly grow ~20 px taller the moment the
+   user clicks to edit a 1-line message. 28 px ≈ one line of text plus the
+   6+6 vertical padding, so a single-line message edits in-place without
+   the bubble jumping. */
+.msg.role-user.is-editing .promptbox textarea {
+  min-height: 28px;
+}
+/* Fade + slide the action row in when entering edit mode so the buttons
+   don't pop into existence below the textarea. The animation only runs
+   on mount (the row stays mounted while editing), and is scoped to
+   .is-editing so the bottom prompt-box at the foot of the chat — which
+   is always present — isn't affected. Kept short (160 ms) so it feels
+   immediate, not slow. */
+.msg.role-user.is-editing .promptbox-row {
+  animation: user-edit-row-in 0.16s ease both;
+}
+@keyframes user-edit-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* The bubble already paints the input-background fill and the focusBorder
+   frame, so the inner .promptbox-input border + bg would draw a second
+   nested frame around the textarea. Suppress it in edit mode — the outer
+   bubble IS the input frame here. This is also what lets the text content
+   inside the textarea sit at the same pixel position as the .user-text
+   below: with no inner border, textarea text starts at
+   (bubble-padding + textarea-padding) which exactly equals
+   (bubble-padding + .user-text-padding) after we add 6px 8px padding to
+   .user-text below. */
+.msg.role-user.is-editing .promptbox-input,
+.msg.role-user.is-editing .promptbox-input:focus-within {
+  border: 0;
   background: transparent;
 }
 .msg.role-user.is-editing::after {
@@ -741,15 +793,25 @@ button {
 .msg.role-user .user-text {
   white-space: pre-wrap;
   word-break: break-word;
-  /* Cap the visible height of the rendered user message at the same 80 px
+  /* Mirror the textarea's padding so the rendered text's pixel position
+     stays the same when the user clicks into edit mode. textarea has
+     `padding: 6px 8px`; .promptbox-input's border is suppressed in edit
+     mode (see .msg.role-user.is-editing .promptbox-input), so matching
+     just the padding here lines up the text glyphs exactly. Without
+     this, clicking to edit causes the first character to jump ~3 px
+     down and ~3 px right because the textarea introduces its own
+     internal padding. */
+  padding: 6px 8px;
+  /* Cap the visible height of the rendered user message at the same height
      used by the in-place edit textarea (.promptbox textarea max-height).
-     Without this, a long user prompt blows the sticky-pinned bubble up to
-     fill the entire chat area, hiding the assistant's reply below it. The
-     edit-mode bubble already self-caps because its textarea has the same
-     max-height, so capping the non-edit view here is what makes the two
-     modes look the same size. overscroll-behavior keeps wheel events from
-     chaining to the outer .messages scroller once we hit the bottom. */
-  max-height: 80px;
+     Both reference --message-max-height so the rendered-message view, the
+     in-place edit view, and the bottom prompt all share one ceiling — a
+     long sent message and a long draft in the input box look the same
+     size. Without this cap, a long user prompt blows the sticky-pinned
+     bubble up to fill the chat area, hiding the assistant's reply below.
+     overscroll-behavior keeps wheel events from chaining to the outer
+     .messages scroller once we hit the bottom. */
+  max-height: var(--message-max-height);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -784,7 +846,9 @@ button {
 }
 .msg.role-user.is-editable {
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  /* Hover/state transitions now live on the base .msg.role-user so they
+     apply during the is-editable ↔ is-editing swap, not just hover.
+     Nothing to add here. */
 }
 .msg.role-user.is-editable:hover {
   /* Layer the (possibly semi-transparent) hover color on TOP of the opaque
@@ -803,14 +867,10 @@ button {
 }
 .msg.role-user.is-editing {
   cursor: default;
-  /* Tight, compact edit affordance — minimal outer padding so the embedded
-     textarea + Save button feel like a single in-place editor rather than
-     a panel. Click-outside cancels the edit, so no Cancel button is
-     needed in the action row. */
-  padding: 4px;
-  /* Keep a solid fill so the sticky-pinned bubble doesn't go transparent
-     the moment the mouse leaves it — without this, chat messages scrolling
-     behind the bubble bleed through and the edit UI looks broken. */
+  /* Inherit padding from the base .msg.role-user so the outer geometry is
+     identical to display mode — that's what eliminates the visual jump
+     when the bubble swaps from `.user-text` to `<textarea>`. Only the
+     chrome (focusBorder) and the click target (cursor) change. */
   background: var(--vscode-input-background);
   border-color: var(--vscode-focusBorder);
 }
@@ -865,6 +925,11 @@ button {
   font-size: 11px;
   opacity: 0.6;
   margin-bottom: 4px;
+  /* Align with the .user-text content below — .user-text now has
+     `padding-left: 8px` to match the textarea, so the ref label needs
+     the same 8 px nudge or it appears 8 px to the left of the text
+     glyphs in the same bubble. */
+  padding-left: 8px;
 }
 
 .msg-error {
@@ -1813,10 +1878,10 @@ button {
   /* Hard upper bound mirrors the JS TEXTAREA_MAX_HEIGHT in PromptBox.tsx —
      once the scroll height exceeds the cap, the textarea's own vertical
      scrollbar takes over rather than letting the input keep eating chat
-     real estate. Kept tight on purpose so send mode and the in-place edit
-     bubble (which share this rule) stay the same compact size even when
-     the user types a wall of text. */
-  max-height: 80px;
+     real estate. Shares --message-max-height with the rendered user
+     message bubble so the bottom prompt and an in-place edit (or a sent
+     long message) all collapse to the same visual ceiling. */
+  max-height: var(--message-max-height);
   overflow-y: auto;
   /* Stop wheel events from chaining to `.messages` once the textarea
      hits its own scroll boundary — without this, scrolling past the
@@ -1991,7 +2056,9 @@ button {
 .msg-attachments {
   list-style: none;
   margin: 0 0 6px 0;
-  padding: 0;
+  /* Align with .user-text content below (which has padding-left: 8 to
+     match the textarea); see comment on .msg-ref. */
+  padding: 0 0 0 8px;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
