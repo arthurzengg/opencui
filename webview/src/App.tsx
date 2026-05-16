@@ -20,6 +20,7 @@ export default function App() {
     deleteConversation,
     selectAgent,
     selectModel,
+    selectVariant,
     replyPermission,
     replyQuestion,
     rejectQuestion,
@@ -127,6 +128,7 @@ export default function App() {
         activeConversationID={state.conversationID}
         onSelectAgent={selectAgent}
         onSelectModel={selectModel}
+        onSelectVariant={selectVariant}
         onCreateConversation={newSession}
         onOpenConversation={openConversation}
         onRenameConversation={renameConversation}

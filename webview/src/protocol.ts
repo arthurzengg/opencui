@@ -91,7 +91,15 @@ export type UsageDelta = {
 
 export type Selection = {
   agent?: string
+  /** Bare `provider/modelID`, without any variant suffix. */
   model?: string
+  /**
+   * Selected effort/thinking variant for the current model (e.g. `high`,
+   * `xhigh`, `max`). Undefined means "use the model's default variant".
+   * Sent as a sibling of `model` so the StatusBar can render an Effort
+   * row without re-parsing the model string.
+   */
+  modelVariant?: string
 }
 
 export type EditorContextRef = {
@@ -176,6 +184,7 @@ export type Inbound =
   | { type: "reviewAllInChange"; source: string; path: string; action: ReviewHunkState }
   | { type: "selectAgent" }
   | { type: "selectModel" }
+  | { type: "selectVariant" }
   | { type: "fileSearch"; requestID: number; query: string }
   | { type: "attachFile"; requestID: number }
   | { type: "permissionReply"; id: string; response: "once" | "always" | "reject" }

@@ -15,6 +15,7 @@ const baseProps = {
   activeConversationID: undefined as string | undefined,
   onSelectAgent: vi.fn(),
   onSelectModel: vi.fn(),
+  onSelectVariant: vi.fn(),
   onCreateConversation: vi.fn(),
   onOpenConversation: vi.fn(),
   onRenameConversation: vi.fn(),
@@ -55,33 +56,60 @@ describe("StatusBar", () => {
     expect(screen.getByText(/error · boom/)).toBeInTheDocument()
   })
 
-  it("opens the selector popover on trigger click", async () => {
+  it("opens the selector popover on trigger click and shows Model, Effort, Agent rows", async () => {
     const user = userEvent.setup()
     render(<StatusBar {...baseProps} selection={{ model: "claude-opus-4-7" }} />)
-    const trigger = screen.getByRole("button", { name: /change agent and model/i })
+    const trigger = screen.getByRole("button", { name: /change agent, model, and effort/i })
     await user.click(trigger)
-    // Popover rows visible
-    expect(screen.getAllByRole("menuitem").length).toBe(2)
+    expect(screen.getAllByRole("menuitem")).toHaveLength(3)
   })
 
   it("invokes onSelectModel when clicking the Model row in popover", async () => {
     const user = userEvent.setup()
     const onSelectModel = vi.fn()
     render(<StatusBar {...baseProps} onSelectModel={onSelectModel} />)
-    await user.click(screen.getByRole("button", { name: /change agent and model/i }))
+    await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
     const items = screen.getAllByRole("menuitem")
-    await user.click(items[0]!) // Model row first
+    await user.click(items[0]!)
     expect(onSelectModel).toHaveBeenCalledOnce()
+  })
+
+  it("invokes onSelectVariant when clicking the Effort row in popover", async () => {
+    const user = userEvent.setup()
+    const onSelectVariant = vi.fn()
+    render(<StatusBar {...baseProps} onSelectVariant={onSelectVariant} />)
+    await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
+    const items = screen.getAllByRole("menuitem")
+    await user.click(items[1]!) // Order: Model, Effort, Agent
+    expect(onSelectVariant).toHaveBeenCalledOnce()
   })
 
   it("invokes onSelectAgent when clicking the Agent row in popover", async () => {
     const user = userEvent.setup()
     const onSelectAgent = vi.fn()
     render(<StatusBar {...baseProps} onSelectAgent={onSelectAgent} />)
-    await user.click(screen.getByRole("button", { name: /change agent and model/i }))
+    await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
     const items = screen.getAllByRole("menuitem")
-    await user.click(items[1]!)
+    await user.click(items[2]!)
     expect(onSelectAgent).toHaveBeenCalledOnce()
+  })
+
+  it("renders the variant text in the trigger when modelVariant is set", () => {
+    render(
+      <StatusBar
+        {...baseProps}
+        selection={{ model: "openai/gpt-5.5", modelVariant: "high" }}
+      />,
+    )
+    expect(screen.getByText("high")).toBeInTheDocument()
+  })
+
+  it("Effort row shows 'default' when no variant is selected", async () => {
+    const user = userEvent.setup()
+    render(<StatusBar {...baseProps} selection={{ model: "openai/gpt-5.5" }} />)
+    await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
+    const items = screen.getAllByRole("menuitem")
+    expect(items[1]!.textContent).toMatch(/default/i)
   })
 
   it("renders the New chat icon button and fires onCreateConversation", async () => {

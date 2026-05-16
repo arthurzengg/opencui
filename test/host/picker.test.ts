@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { isUserSelectableAgent } from "../../src/picker"
+import { isUserSelectableAgent, listModels } from "../../src/picker"
 
 describe("isUserSelectableAgent", () => {
   it("accepts a normal primary agent", () => {
@@ -33,3 +33,63 @@ describe("isUserSelectableAgent", () => {
     expect(isUserSelectableAgent({ name: "" })).toBe(true)
   })
 })
+
+describe("listModels", () => {
+  it("yields one entry per model with an empty variants list when none are declared", () => {
+    const models = listModels([
+      { id: "p1", name: "Provider 1", models: { "model-a": {}, "model-b": {} } },
+    ])
+    expect(models).toEqual([
+      { providerID: "p1", modelID: "model-a", providerName: "Provider 1", variants: [] },
+      { providerID: "p1", modelID: "model-b", providerName: "Provider 1", variants: [] },
+    ])
+  })
+
+  it("attaches variant keys (in declared order) without exploding the row count", () => {
+    const models = listModels([
+      {
+        id: "openai",
+        name: "OpenAI",
+        models: {
+          "gpt-5.5": { variants: { minimal: {}, low: {}, medium: {}, high: {}, xhigh: {} } },
+        },
+      },
+    ])
+    expect(models).toHaveLength(1)
+    expect(models[0]).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5.5",
+      providerName: "OpenAI",
+      variants: ["minimal", "low", "medium", "high", "xhigh"],
+    })
+  })
+
+  it("handles a mix of variant-having and variant-less models in one provider", () => {
+    const models = listModels([
+      {
+        id: "anthropic",
+        models: {
+          "claude-opus": { variants: { high: {}, max: {} } },
+          "claude-haiku": {},
+        },
+      },
+    ])
+    expect(models.map((m) => `${m.modelID}: ${m.variants.join(",")}`)).toEqual([
+      "claude-opus: high,max",
+      "claude-haiku: ",
+    ])
+  })
+
+  it("returns an empty list for an empty provider list", () => {
+    expect(listModels([])).toEqual([])
+  })
+
+  it("tolerates missing models/variants fields", () => {
+    const models = listModels([
+      { id: "p", models: undefined },
+      { id: "q", models: { x: { variants: undefined } } },
+    ])
+    expect(models).toEqual([{ providerID: "q", modelID: "x", providerName: undefined, variants: [] }])
+  })
+})
+
