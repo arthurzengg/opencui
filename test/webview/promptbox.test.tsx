@@ -787,3 +787,102 @@ describe("PromptBox attachments (inline @chip flow)", () => {
   })
 })
 
+
+describe("PromptBox image paste from clipboard", () => {
+  // Build a DataTransfer-shaped stub that matches what the helper reads.
+  // jsdom's DataTransfer doesn't model clipboard items, so we hand-roll.
+  function makePasteData(files: File[], text = ""): DataTransfer {
+    const items = files.map((f) => ({
+      kind: "file",
+      type: f.type,
+      getAsFile: () => f,
+    }))
+    return {
+      items: {
+        length: items.length,
+        [Symbol.iterator]: function* () {
+          for (const it of items) yield it
+        },
+        ...Object.fromEntries(items.map((it, i) => [i, it])),
+      } as unknown as DataTransferItemList,
+      files: { length: 0 } as unknown as FileList,
+      getData: (kind: string) => (kind === "text/plain" ? text : ""),
+    } as unknown as DataTransfer
+  }
+
+  function pasteEvent(data: DataTransfer): ClipboardEvent {
+    const e = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(e, "clipboardData", { value: data, configurable: true })
+    return e
+  }
+
+  it("attaches a pasted image as an @chip in the textarea", async () => {
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(textarea.value).toContain("@pasted-image.png"))
+  })
+
+  it("renders the pasted image as a .mention-chip", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".mention-chip")).not.toBeNull())
+    expect(container.querySelector(".mention-chip")?.textContent).toBe("@pasted-image.png")
+  })
+
+  it("forwards the pasted attachment on submit", async () => {
+    const onSend = vi.fn()
+    render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(textarea.value).toContain("@pasted-image.png"))
+    const user = userEvent.setup()
+    await user.click(textarea)
+    await user.keyboard("look at this{Enter}")
+    expect(onSend).toHaveBeenCalledOnce()
+    const [text, mentions, attachments] = onSend.mock.calls[0]!
+    expect(text).toMatch(/look at this/)
+    expect(mentions).toBeUndefined()
+    expect(attachments).toHaveLength(1)
+    expect(attachments[0].mime).toBe("image/png")
+    expect(attachments[0].dataUrl).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it("does not intercept pure-text paste (default browser behavior runs)", async () => {
+    const user = userEvent.setup()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.click(textarea)
+    // userEvent.paste delivers ONLY text — no image items. Our handler
+    // bails on clipboardHasImage(), so the textarea receives the text
+    // through the default paste path.
+    await user.paste("hello world")
+    expect(textarea.value).toBe("hello world")
+  })
+
+  it("shows an error message when a pasted image is over the size cap", async () => {
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    // 11 MB > 10 MB cap
+    const huge = new File([new Uint8Array(11 * 1024 * 1024)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([huge])))
+    await waitFor(() => expect(screen.getByText(/over 10 MB/i)).toBeInTheDocument())
+    // Nothing inserted, no chip
+    expect(textarea.value).toBe("")
+  })
+
+  it("multiple pasted images get sequential synthesized names", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const a = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    const b = new File([new Uint8Array(100)], "image.png", { type: "image/jpeg" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([a, b])))
+    await waitFor(() => expect(container.querySelectorAll(".mention-chip")).toHaveLength(2))
+    const chips = Array.from(container.querySelectorAll(".mention-chip")).map((c) => c.textContent)
+    expect(chips).toEqual(["@pasted-image.png", "@pasted-image-2.jpg"])
+  })
+})

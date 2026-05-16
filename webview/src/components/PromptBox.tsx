@@ -8,6 +8,7 @@ import {
   makeAttachmentLabel,
   type MentionState,
 } from "../mention-tokens"
+import { clipboardHasImage, readPastedImages } from "../paste-attachments"
 
 // Re-export so existing consumers (tests, integrators) keep working through PromptBox.
 export {
@@ -228,6 +229,59 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     }
   }
 
+  /**
+   * Clipboard paste: if it contains any image, intercept and turn it into
+   * an attachment chip at the caret position. Pure-text paste falls through
+   * to the browser's default handling — no behaviour change for the common
+   * case. Mixed text + image is handled here too (inserts both).
+   */
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!clipboardHasImage(e.clipboardData)) return
+    e.preventDefault()
+    void handlePastedImages(e.clipboardData)
+  }
+
+  const handlePastedImages = async (data: DataTransfer) => {
+    setAttachError(undefined)
+    const result = await readPastedImages(data)
+    if (result.attachments.length === 0 && !result.text) {
+      // All images failed (probably oversize); surface the error and bail.
+      if (result.error) setAttachError(result.error)
+      return
+    }
+    const ta = ref.current
+    const caret = ta?.selectionStart ?? text.length
+    const before = text.slice(0, caret)
+    const after = text.slice(caret)
+    // Dedup chip labels against everything already in the textarea.
+    const existing = new Set([
+      ...knownMentions.current,
+      ...knownAttachments.current.keys(),
+    ])
+    let chipPart = ""
+    for (const att of result.attachments) {
+      const label = makeAttachmentLabel(att.filename, existing)
+      existing.add(label)
+      knownAttachments.current.set(label, att)
+      chipPart += (chipPart ? " " : "") + "@" + label
+    }
+    // Compose: [pasted text][space if both][chip1 chip2 …]
+    let insertion = result.text
+    if (chipPart) {
+      if (insertion && !/\s$/.test(insertion)) insertion += " "
+      insertion += chipPart
+    }
+    // Mirror handleAttachClick's whitespace rules so the chip always has
+    // word boundaries on both sides.
+    const lastBeforeChar = before.slice(-1)
+    if (lastBeforeChar && !/\s/.test(lastBeforeChar)) insertion = " " + insertion
+    if (!after.startsWith(" ") && !insertion.endsWith(" ")) insertion += " "
+    const next = before + insertion + after
+    pendingCursor.current = before.length + insertion.length
+    setText(next)
+    if (result.error) setAttachError(result.error)
+  }
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // If an IME composition is in progress (e.g. typing Chinese pinyin),
     // Enter belongs to the IME — it commits the candidate, NOT submits the
@@ -328,6 +382,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
           placeholder="Ask OpenCode Panel…  (Enter to send, Shift+Enter for newline, @ to attach a file)"
           onChange={(e) => updateText(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           onSelect={onSelect}
           onScroll={(e) => {
             if (backdropRef.current) backdropRef.current.scrollTop = e.currentTarget.scrollTop
