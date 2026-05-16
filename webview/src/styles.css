@@ -741,6 +741,46 @@ button {
 .msg.role-user .user-text {
   white-space: pre-wrap;
   word-break: break-word;
+  /* Cap the visible height of the rendered user message at the same 80 px
+     used by the in-place edit textarea (.promptbox textarea max-height).
+     Without this, a long user prompt blows the sticky-pinned bubble up to
+     fill the entire chat area, hiding the assistant's reply below it. The
+     edit-mode bubble already self-caps because its textarea has the same
+     max-height, so capping the non-edit view here is what makes the two
+     modes look the same size. overscroll-behavior keeps wheel events from
+     chaining to the outer .messages scroller once we hit the bottom. */
+  max-height: 80px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Chromium / WebKit: keep the in-bubble scrollbar invisible until hover /
+   focus / active scroll — same pattern as .messages and the textarea, so
+   short messages stay free of visual clutter. */
+.msg.role-user .user-text {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.18s ease;
+}
+.msg.role-user .user-text:hover {
+  scrollbar-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4)) transparent;
+}
+.msg.role-user .user-text::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+.msg.role-user .user-text::-webkit-scrollbar-track {
+  background: transparent;
+}
+.msg.role-user .user-text::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background-clip: padding-box;
+  transition: background-color 0.18s ease;
+}
+.msg.role-user .user-text:hover::-webkit-scrollbar-thumb,
+.msg.role-user .user-text:active::-webkit-scrollbar-thumb {
+  background-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4));
 }
 .msg.role-user.is-editable {
   cursor: pointer;
@@ -773,9 +813,6 @@ button {
      behind the bubble bleed through and the edit UI looks broken. */
   background: var(--vscode-input-background);
   border-color: var(--vscode-focusBorder);
-}
-.msg.role-user.is-editing .promptbox-row {
-  margin-top: 3px;
 }
 .user-edit-hint {
   position: absolute;
@@ -1681,8 +1718,14 @@ button {
 }
 /* ===== Prompt box ===== */
 .promptbox {
-  padding: 8px 10px;
-  border-top: 1px solid var(--vscode-panel-border);
+  /* Tight chrome to match the in-place edit bubble: 4 px around, no
+     border-top. The send box used to carry an 8 × 10 padding + a
+     panel-border-top separator, which made it visually weigh ~20 % more
+     than the edit affordance for the same content. Without the
+     border-top, the bordered `.promptbox-input` below provides the
+     visual boundary, matching the edit-mode bubble's single-border
+     look. */
+  padding: 4px 8px;
   background: var(--vscode-sideBar-background);
 }
 .conversation-row {
@@ -1767,6 +1810,19 @@ button {
 .promptbox textarea {
   width: 100%;
   min-height: 48px;
+  /* Hard upper bound mirrors the JS TEXTAREA_MAX_HEIGHT in PromptBox.tsx —
+     once the scroll height exceeds the cap, the textarea's own vertical
+     scrollbar takes over rather than letting the input keep eating chat
+     real estate. Kept tight on purpose so send mode and the in-place edit
+     bubble (which share this rule) stay the same compact size even when
+     the user types a wall of text. */
+  max-height: 80px;
+  overflow-y: auto;
+  /* Stop wheel events from chaining to `.messages` once the textarea
+     hits its own scroll boundary — without this, scrolling past the
+     bottom of a long pending prompt (or the textarea in the in-place
+     edit bubble) yanks the chat behind. */
+  overscroll-behavior: contain;
   padding: 6px 8px;
   border: 0;
   background: transparent;
@@ -1783,12 +1839,44 @@ button {
   z-index: 1;
   box-sizing: border-box;
   display: block;
+  /* Firefox: thin scrollbar that brightens on hover, matching .messages. */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.18s ease;
+}
+.promptbox textarea:hover,
+.promptbox textarea:focus {
+  scrollbar-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4)) transparent;
+}
+/* Chromium / WebKit: same pattern as .messages — thumb invisible at rest,
+   appears on hover / focus / active scroll. */
+.promptbox textarea::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+.promptbox textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+.promptbox textarea::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background-clip: padding-box;
+  transition: background-color 0.18s ease;
+}
+.promptbox textarea:hover::-webkit-scrollbar-thumb,
+.promptbox textarea:focus::-webkit-scrollbar-thumb,
+.promptbox textarea:active::-webkit-scrollbar-thumb {
+  background-color: var(--vscode-scrollbarSlider-background, rgba(121, 121, 121, 0.4));
 }
 .promptbox-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
+  /* Match the edit-mode tighter spacing (was 6 px) — the `.is-editing`
+     CSS already overrides this to 3 px; matching it here makes send
+     and edit modes visually consistent. */
+  margin-top: 3px;
   min-width: 0;
 }
 .promptbox-row .spacer { flex: 1; }
