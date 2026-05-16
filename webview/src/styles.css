@@ -137,6 +137,14 @@ button {
   flex: 0 0 auto;
   opacity: 0.5;
 }
+/* Variant text rendered between the model name and the agent name when
+   an effort variant is active. Styled like the agent — plain faded
+   text, separated by the same `·` — so the trigger reads as
+   `<model> · <variant> · <agent>` rather than `<model> [chip] · <agent>`. */
+.selector-variant {
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
 /* Secondary (agent) gives ground first when the bar is tight — much higher
    shrink factor so it ellipsis-truncates before the model name does. */
 .selector-secondary {

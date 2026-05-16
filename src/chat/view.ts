@@ -494,12 +494,13 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private postSelection() {
+    this.post({ type: "selection", selection: this.buildSelection() })
+  }
+
+  private buildSelection(): Selection {
     const sel = this.prefs.get()
-    const selection: Selection = {
-      agent: sel.agent,
-      model: sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : undefined,
-    }
-    this.post({ type: "selection", selection })
+    const model = sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : undefined
+    return { agent: sel.agent, model, modelVariant: sel.modelVariant }
   }
 
   private pushContext() {
@@ -511,14 +512,10 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async onMessage(msg: Inbound) {
     switch (msg.type) {
       case "mounted": {
-        const sel = this.prefs.get()
         this.post({
           type: "ready",
           connected: false,
-          selection: {
-            agent: sel.agent,
-            model: sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : undefined,
-          },
+          selection: this.buildSelection(),
         })
         this.sendConversationState()
         this.pushContext()
@@ -611,6 +608,10 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "selectModel":
         log("selectModel → executing opencui.selectModel")
         await vscode.commands.executeCommand("opencui.selectModel")
+        return
+      case "selectVariant":
+        log("selectVariant → executing opencui.selectVariant")
+        await vscode.commands.executeCommand("opencui.selectVariant")
         return
       case "permissionReply": {
         this.activePermissions.delete(msg.id)
@@ -928,11 +929,22 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (sel.modelProviderID && sel.modelID) {
       body!.model = { providerID: sel.modelProviderID, modelID: sel.modelID }
     }
-    log("prompt dispatch", {
-      sessionID: this.sessionID,
-      agent: sel.agent ?? "default",
-      model: sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : "default",
-    })
+    if (sel.modelVariant) {
+      // `variant` is a **top-level** sibling of `model` on opencode's
+      // PromptInput schema — NOT nested inside the model object (see
+      // opencode source `packages/opencode/src/session/prompt.ts` →
+      // `ModelRef = Schema.Struct({ providerID, modelID })` and
+      // `PromptInput = Schema.Struct({ ..., model: …, variant:
+      // Schema.optional(Schema.String), … })`). Our bundled
+      // `@opencode-ai/sdk` types haven't been regenerated to expose
+      // this field yet; the HTTP server accepts it regardless.
+      ;(body as unknown as { variant?: string }).variant = sel.modelVariant
+    }
+    const modelLog =
+      sel.modelProviderID && sel.modelID
+        ? `${sel.modelProviderID}/${sel.modelID}${sel.modelVariant ? `:${sel.modelVariant}` : ""}`
+        : "default"
+    log("prompt dispatch", { sessionID: this.sessionID, agent: sel.agent ?? "default", model: modelLog })
     try {
       const res = await backend.client.session.promptAsync({
         path: { id: this.sessionID },
