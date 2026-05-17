@@ -1,4 +1,5 @@
 import { useEffect } from "react"
+import { ICON_SIZE } from "../design-tokens"
 
 type Props = {
   src: { dataUrl: string; filename: string } | null
@@ -41,7 +42,7 @@ export function ImagePreviewModal({ src, onClose }: Props) {
           onClose()
         }}
       >
-        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <svg width={ICON_SIZE.lg} height={ICON_SIZE.lg} viewBox="0 0 14 14" aria-hidden="true">
           <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       </button>
