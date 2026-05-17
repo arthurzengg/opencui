@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import type { ConversationSummary, Selection } from "../protocol"
+import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
 
 type Props = {
   connected: boolean
@@ -38,23 +39,34 @@ export function StatusBar({
   const active = conversations.find((c) => c.id === activeConversationID)
 
   const showStatus = !connected || Boolean(error) || Boolean(continuationPending)
-  const statusLabel = error
+  const statusLabel: string | undefined = error
     ? `error · ${error}`
     : !connected
       ? "connecting…"
       : continuationPending
         ? "continuing…"
-        : ""
-  const dotKind = error ? "err" : continuationPending ? "pending" : connected ? "ok" : "warn"
+        : undefined
+  const dotKind: StatusIndicatorKind = error
+    ? "err"
+    : continuationPending
+      ? "pending"
+      : connected
+        ? "ok"
+        : "warn"
+  const statusTitle = error
+    ? `error · ${error}`
+    : continuationPending
+      ? "continuing…"
+      : connected
+        ? "connected"
+        : "connecting…"
   return (
-    <div className={`statusbar ${showStatus ? "" : "is-quiet"}`}>
-      <span
-        className={`dot ${dotKind}`}
-        title={error ? `error · ${error}` : continuationPending ? "continuing…" : connected ? "connected" : "connecting…"}
+    <div className="statusbar">
+      <StatusIndicator
+        kind={dotKind}
+        label={showStatus ? statusLabel : undefined}
+        title={statusTitle}
       />
-      {showStatus && statusLabel && (
-        <span className="status-text">{statusLabel}</span>
-      )}
       <div className="spacer" />
       <SelectorMenu
         agent={agent}
