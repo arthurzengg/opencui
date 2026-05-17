@@ -12,6 +12,7 @@ import { useImageAttachments } from "../hooks/useImageAttachments"
 import { useMentionPicker } from "../hooks/useMentionPicker"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail } from "./ImageThumbnail"
+import { ICON_SIZE } from "../design-tokens"
 
 // Re-export so existing consumers (tests, integrators) keep working through PromptBox.
 export {
@@ -383,7 +384,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
             disabled={attaching || busy}
             onClick={handleAttachClick}
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <svg width={ICON_SIZE.lg} height={ICON_SIZE.lg} viewBox="0 0 16 16" aria-hidden="true">
               <path
                 d="M10.5 2.5a3 3 0 0 1 3 3v6.5a3.5 3.5 0 0 1-7 0V5a2 2 0 1 1 4 0v6.5a1.5 1.5 0 0 1-3 0V5.5"
                 fill="none"
@@ -443,9 +444,9 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
 function SendIcon() {
   // Same `display: block` reasoning as StopIcon — removes the SVG's
   // default inline baseline drift so the arrow sits on the button's
-  // exact centre line. 10×10 in an 18-px button → 4-px margin per side.
+  // exact centre line. `ICON_SIZE.sm` in an 18-px button → 4-px margin per side.
   return (
-    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ display: "block" }}>
+    <svg width={ICON_SIZE.sm} height={ICON_SIZE.sm} viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ display: "block" }}>
       <path
         d="M8 13.5 V2.5 M3.5 7 L8 2.5 L12.5 7"
         stroke="currentColor"
@@ -458,11 +459,12 @@ function SendIcon() {
 }
 
 function StopIcon() {
-  // 8×8 in an 18-px button → 5-px margin on each side. Even numbers avoid
-  // the sub-pixel rounding that made the square look slightly off-centre
-  // at 7×7.
+  // `ICON_SIZE.xs` in an 18-px button → 5-px margin on each side. Even
+  // numbers avoid the sub-pixel rounding that made the square look slightly
+  // off-centre at 7×7. The inner `<rect>` is the icon SHAPE (10×10 viewBox
+  // coordinate), not the icon size — leave it untouched.
   return (
-    <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" style={{ display: "block" }}>
+    <svg width={ICON_SIZE.xs} height={ICON_SIZE.xs} viewBox="0 0 10 10" aria-hidden="true" style={{ display: "block" }}>
       <rect x="0" y="0" width="10" height="10" rx="1.5" fill="currentColor" />
     </svg>
   )
