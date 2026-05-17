@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-17
+
+### Fixed
+- Status-bar dot (`connecting…` / `continuing…` / error states) was visually drifting below the adjacent text glyph because the dot and label were sibling flex children of `.statusbar`, each centred by its own box centre. Extracted a dedicated `<StatusIndicator>` component that gives the dot + label a shared inline line-box with `vertical-align: middle`, aligning by font x-height (the perceived text middle) instead of by box centre. The alignment relationship now lives inside the component rather than as a hidden contract in the bar's JSX, so future edits to `StatusBar` can't re-introduce the drift. Generalises to any future surface that needs a small marker next to text (assistant status, permission badge, tool-trace bullet) — drop in `<StatusIndicator kind="…" label="…" />` instead of redoing the alignment workaround. Closes #81.
+
 ## [0.6.0] - 2026-05-17
 
 ### Changed
