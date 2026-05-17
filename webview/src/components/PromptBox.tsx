@@ -338,7 +338,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
         <textarea
           ref={ref}
           value={text}
-          rows={2}
+          rows={variant === "edit" ? 1 : 2}
           placeholder="Ask OpenCode Panel…  (Enter to send, Shift+Enter for newline, @ to attach a file)"
           onChange={(e) => updateText(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onKeyDown={onKeyDown}

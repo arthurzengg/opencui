@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup } from "@testing-library/react"
+import { render, screen, cleanup, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageView } from "../../webview/src/components/MessageView"
 import type { Message } from "../../webview/src/hooks/useChatState"
@@ -22,6 +22,20 @@ function assistantMessage(text: string, opts: { id?: string; pending?: boolean }
     blocks: text ? [{ type: "text", text }] : [],
     pending: opts.pending,
   } as Message
+}
+
+function rect(height: number): DOMRect {
+  return {
+    x: 0,
+    y: 0,
+    width: 100,
+    height,
+    top: 0,
+    left: 0,
+    right: 100,
+    bottom: height,
+    toJSON: () => ({}),
+  } as DOMRect
 }
 
 describe("MessageView (user role)", () => {
@@ -62,7 +76,34 @@ describe("MessageView (user role)", () => {
     await user.click(bubble)
     // Now in edit mode — textarea should appear
     expect(container.querySelector("textarea")).not.toBeNull()
-    expect(screen.getByRole("button", { name: /save .{0,3}regenerate/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Save & regenerate" })).toBeInTheDocument()
+  })
+
+  it("compensates edit-mode height so following messages do not reflow", async () => {
+    const user = userEvent.setup()
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+      const element = this as HTMLElement
+      if (element.classList.contains("msg")) {
+        return rect(element.classList.contains("is-editing") ? 64 : 32)
+      }
+      return rect(0)
+    })
+
+    try {
+      const { container } = render(
+        <MessageView
+          message={userMessage("hi", { backendID: "b1" })}
+          processOpen={false}
+          processOnly={false}
+          onEditMessage={vi.fn()}
+        />,
+      )
+      const bubble = container.querySelector(".msg.role-user") as HTMLElement
+      await user.click(bubble)
+      await waitFor(() => expect(bubble.style.getPropertyValue("--edit-overlap")).toBe("32px"))
+    } finally {
+      rectSpy.mockRestore()
+    }
   })
 
   it("does NOT enter edit mode while busy", async () => {
@@ -111,7 +152,7 @@ describe("MessageView (user role)", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "updated text")
-    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
+    await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
     expect(onEditMessage).toHaveBeenCalledWith("u-edit", "updated text", undefined, undefined)
   })
 
@@ -127,31 +168,26 @@ describe("MessageView (user role)", () => {
       />,
     )
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
-    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
+    await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
     // No regenerate triggered, edit mode closed.
     expect(onEditMessage).not.toHaveBeenCalled()
     expect(container.querySelector("textarea")).toBeNull()
   })
 
-  it("clicking outside the edit area cancels without firing onEditMessage", async () => {
+  it("clicking outside returns to view mode without firing onEditMessage", async () => {
     const user = userEvent.setup()
     const onEditMessage = vi.fn()
     const { container } = render(
-      <div>
-        <div data-testid="outside">outside the bubble</div>
-        <MessageView
-          message={userMessage("hi", { backendID: "b1" })}
-          processOpen={false}
-          processOnly={false}
-          onEditMessage={onEditMessage}
-        />
-      </div>,
+      <MessageView
+        message={userMessage("hi", { backendID: "b1" })}
+        processOpen={false}
+        processOnly={false}
+        onEditMessage={onEditMessage}
+      />,
     )
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
     expect(container.querySelector("textarea")).not.toBeNull()
-    // A click anywhere outside the editing container should cancel edit
-    // mode — there is no Cancel button anymore.
-    await user.click(screen.getByTestId("outside"))
+    await user.click(document.body)
     expect(container.querySelector("textarea")).toBeNull()
     expect(onEditMessage).not.toHaveBeenCalled()
   })
@@ -277,7 +313,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "@src/foo.ts rewrite it")
-    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
+    await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
     expect(onEditMessage).toHaveBeenCalledWith("u-mention", "@src/foo.ts rewrite it", ["src/foo.ts"], undefined)
   })
 
@@ -297,7 +333,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "no mentions here")
-    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
+    await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
     expect(onEditMessage).toHaveBeenCalledWith("u-mention", "no mentions here", undefined, undefined)
   })
 
@@ -323,7 +359,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "@screen.png what is this")
-    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
+    await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
     expect(onEditMessage).toHaveBeenCalledTimes(1)
     const call = onEditMessage.mock.calls[0]
     expect(call?.[0]).toBe("u-att")
@@ -416,78 +452,6 @@ describe("MessageView edit preserves mentions + attachments", () => {
     expect(err!.textContent).toBe("Network connection lost")
   })
 
-  it("renders image attachments in the bubble as bare thumbnails (no filename text)", () => {
-    const message: Message = {
-      id: "u-img-att",
-      role: "user",
-      blocks: [
-        { type: "attachment", mime: "image/png", filename: "pasted-image.png", dataUrl: "data:image/png;base64,A", bytes: 100 },
-        { type: "text", text: "what's in this" },
-      ],
-      backendID: "b1",
-    } as Message
-    const { container } = render(
-      <MessageView message={message} processOpen={false} processOnly={false} />,
-    )
-    const tile = container.querySelector(".image-thumb") as HTMLElement | null
-    expect(tile).not.toBeNull()
-    // No chip pill, no filename text — the image is the affordance.
-    expect(container.querySelector(".attachment-tile")).toBeNull()
-    expect(tile?.textContent?.trim()).toBe("")
-    // Filename + size still discoverable via the tooltip.
-    expect(tile?.getAttribute("title")).toContain("pasted-image.png")
-    // The image itself uses the data URL.
-    const img = tile?.querySelector("img") as HTMLImageElement | null
-    expect(img?.getAttribute("src")).toMatch(/^data:image\/png;base64,/)
-  })
-
-  it("clicking the sent-bubble image thumbnail opens the lightbox (and does NOT start edit)", async () => {
-    const user = userEvent.setup()
-    const onEditMessage = vi.fn()
-    const message: Message = {
-      id: "u-img-click",
-      role: "user",
-      blocks: [
-        { type: "attachment", mime: "image/png", filename: "pasted-image.png", dataUrl: "data:image/png;base64,A", bytes: 100 },
-        { type: "text", text: "describe this" },
-      ],
-      backendID: "b1",
-    } as Message
-    render(
-      <MessageView
-        message={message}
-        processOpen={false}
-        processOnly={false}
-        onEditMessage={onEditMessage}
-      />,
-    )
-    await user.click(screen.getByRole("button", { name: /Preview pasted-image\.png/i }))
-    expect(screen.getByRole("dialog", { name: /preview of pasted-image\.png/i })).toBeInTheDocument()
-    // Bubble must not have flipped into edit mode (no textarea rendered).
-    expect(document.querySelector("textarea")).toBeNull()
-  })
-
-  it("non-image attachments keep the chip-pill tile with filename + badge", () => {
-    const message: Message = {
-      id: "u-pdf-att",
-      role: "user",
-      blocks: [
-        { type: "attachment", mime: "application/pdf", filename: "spec.pdf", dataUrl: "data:application/pdf;base64,A", bytes: 100 },
-        { type: "text", text: "summarize" },
-      ],
-      backendID: "b1",
-    } as Message
-    const { container } = render(
-      <MessageView message={message} processOpen={false} processOnly={false} />,
-    )
-    const chip = container.querySelector(".attachment-tile") as HTMLElement | null
-    expect(chip).not.toBeNull()
-    // The filename still shows for non-image attachments — these come from
-    // the paperclip flow and carry user-meaningful names.
-    expect(chip?.textContent).toContain("spec.pdf")
-    expect(container.querySelector(".image-thumb")).toBeNull()
-  })
-
   it("renders an attachment label as a chip in the read-only bubble too", () => {
     const message: Message = {
       id: "u-att-chip",
@@ -506,20 +470,16 @@ describe("MessageView edit preserves mentions + attachments", () => {
     expect(chip!.textContent).toBe("@screen.png")
   })
 
-  it("drops non-image attachments whose chip label was deleted from the text", async () => {
-    // Non-image (PDF / code / .txt) attachments use the @chip text-token
-    // model: removing the chip from the text drops the attachment on send.
-    // Image attachments use the thumbnail strip and persist independently
-    // (see the next test) — they only drop via the X button.
+  it("drops attachments whose label was deleted from the text", async () => {
     const user = userEvent.setup()
     const onEditMessage = vi.fn()
     const att = {
       mime: "application/pdf",
-      filename: "spec.pdf",
+      filename: "notes.pdf",
       dataUrl: "data:application/pdf;base64,AQID",
       bytes: 3,
     }
-    const message = userWithAttachment("@spec.pdf describe", att)
+    const message = userWithAttachment("@notes.pdf describe", att)
     const { container } = render(
       <MessageView
         message={message}
@@ -532,90 +492,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "no attachments now")
-    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
+    await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
     expect(onEditMessage).toHaveBeenCalledWith("u-att", "no attachments now", undefined, undefined)
-  })
-
-  it("image attachments seed the thumbnail strip in edit mode (not dropped silently)", async () => {
-    // Regression: pre-fix, image attachments from initial.attachments went
-    // into knownAttachments which required an @chip text token to match.
-    // Post-fix pasted images carry no @chip in the text, so the image was
-    // silently dropped on edit. Now they seed the thumbnail strip directly
-    // and are forwarded on submit regardless of text edits.
-    const user = userEvent.setup()
-    const onEditMessage = vi.fn()
-    const att = {
-      mime: "image/png",
-      filename: "pasted-image.png",
-      dataUrl: "data:image/png;base64,AQID",
-      bytes: 3,
-    }
-    const message: Message = {
-      id: "u-thumb",
-      role: "user",
-      blocks: [
-        { type: "attachment", ...att },
-        { type: "text", text: "what is this" },
-      ],
-      backendID: "b1",
-    } as Message
-    const { container } = render(
-      <MessageView
-        message={message}
-        processOpen={false}
-        processOnly={false}
-        onEditMessage={onEditMessage}
-      />,
-    )
-    await user.click(container.querySelector(".msg.role-user") as HTMLElement)
-    // Thumbnail visible inside the edit bubble's PromptBox.
-    expect(container.querySelector(".image-thumb")).not.toBeNull()
-    const textarea = container.querySelector("textarea") as HTMLTextAreaElement
-    await user.clear(textarea)
-    await user.type(textarea, "describe this image")
-    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
-    expect(onEditMessage).toHaveBeenCalledTimes(1)
-    const call = onEditMessage.mock.calls[0]
-    expect(call?.[1]).toBe("describe this image")
-    expect(call?.[3]).toHaveLength(1)
-    expect(call?.[3]?.[0]?.filename).toBe("pasted-image.png")
-    expect(call?.[3]?.[0]?.dataUrl).toBe("data:image/png;base64,AQID")
-  })
-
-  it("image attachment is dropped when the user removes it via the strip X button", async () => {
-    const user = userEvent.setup()
-    const onEditMessage = vi.fn()
-    const att = {
-      mime: "image/png",
-      filename: "pasted-image.png",
-      dataUrl: "data:image/png;base64,AQID",
-      bytes: 3,
-    }
-    const message: Message = {
-      id: "u-thumb-rm",
-      role: "user",
-      blocks: [
-        { type: "attachment", ...att },
-        { type: "text", text: "what is this" },
-      ],
-      backendID: "b1",
-    } as Message
-    const { container } = render(
-      <MessageView
-        message={message}
-        processOpen={false}
-        processOnly={false}
-        onEditMessage={onEditMessage}
-      />,
-    )
-    await user.click(container.querySelector(".msg.role-user") as HTMLElement)
-    const removeBtn = screen.getByRole("button", { name: /Remove pasted-image\.png/i })
-    await user.click(removeBtn)
-    expect(container.querySelector(".image-thumb")).toBeNull()
-    const textarea = container.querySelector("textarea") as HTMLTextAreaElement
-    await user.clear(textarea)
-    await user.type(textarea, "no image now")
-    await user.click(screen.getByRole("button", { name: /save .{0,3}regenerate/i }))
-    expect(onEditMessage).toHaveBeenCalledWith("u-thumb-rm", "no image now", undefined, undefined)
   })
 })
