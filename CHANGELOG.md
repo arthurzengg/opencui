@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-17
+
+### Changed
+- Internal: introduced a design-token layer so the webview's colors, spacing, icon sizes, radii, and z-index tiers have one source of truth instead of being spread as inline literals. CSS tokens live at the top of `styles.css` (`--space-1` … `--space-6`, `--radius-*`, `--z-*`, `--color-fg`, `--color-bg-input`, `--color-border-focus`, `--color-status-*`, `--bubble-padding`, `--bubble-text-padding`, …); TS constants live in `webview/src/design-tokens.ts` (`ICON_SIZE.{xs,sm,md,lg}`, `Z.*`) for SVG attributes and any inline-style consumers — a typo like `width={11}` is now a compile error. Substituted call-sites in this pass: 6 SVG icons, 7 z-index literals, 5 status dot colors, 6 scrollbar-thumb fallbacks, the coupled bubble-padding chain across five rules (`.msg.role-user`, `.user-text`, `.msg-ref`, `.msg-attachments`, edit-mode textarea + thumbnail strip), and the edit-mode bubble's chrome. The five-rule coupling used to be held together only by code comments cross-referencing each other; "make the padding tighter" is now a one-line change. Pure refactor — zero visual or behavioural change. Closes #77.
+
 ## [0.5.3] - 2026-05-17
 
 ### Fixed
