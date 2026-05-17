@@ -7,6 +7,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Internal: decomposed `PromptBox.tsx` into three focused hooks — `usePromptText` (text state + caret + auto-resize), `useImageAttachments` (thumbnail strip + lightbox preview + initial seeding from `initial.attachments`), and `useMentionPicker` (`@`-mention detection + search debouncing + insertion). PromptBox itself drops ~90 lines and each hook is now testable in isolation. No user-visible change.
 - Internal: extracted the image thumbnail markup + styling into a shared `<ImageThumbnail>` component used by both the prompt-box strip and the sent-bubble attachment list. Previously the two contexts duplicated ~40 lines of JSX + CSS (`.promptbox-thumb*` and `.attachment-image*`) for what was already pixel-identical output. CSS class names unified to `.image-thumb` / `.image-thumb-open` / `.image-thumb-remove`; the old context-specific names are gone. No user-visible change.
 
 ## [0.5.1] - 2026-05-17
