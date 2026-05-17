@@ -11,6 +11,16 @@ describe("PromptBox", () => {
     expect(screen.getByPlaceholderText(/Ask OpenCode Panel/i)).toBeInTheDocument()
   })
 
+  it("uses a compact one-row textarea in edit mode", () => {
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} variant="edit" initial={{ text: "hi" }} />)
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(1)
+  })
+
+  it("keeps the send composer at two rows", () => {
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(2)
+  })
+
   it("Send button is disabled when textarea is empty", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
     expect((screen.getByRole("button", { name: /^Send$/ }) as HTMLButtonElement).disabled).toBe(true)

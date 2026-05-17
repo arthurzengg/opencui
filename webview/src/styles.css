@@ -676,7 +676,8 @@ button {
 }
 
 .msg {
-  margin-bottom: 16px;
+  --message-gap: 16px;
+  margin-bottom: var(--message-gap);
 }
 
 .msg.role-user {
@@ -687,7 +688,7 @@ button {
      pinned slot — Claude.ai / ChatGPT-style "section header" pattern. */
   top: 0;
   z-index: 2;
-  padding: 8px 10px;
+  padding: 4px;
   /* Solid opaque background so scrolling content underneath never bleeds
      through, even when a hover/list color is layered on top. */
   background: var(--vscode-input-background);
@@ -744,22 +745,25 @@ button {
   border-top: 0;
   background: transparent;
 }
-/* In display mode `.msg-attachments` has `padding-left: 8px` to align
+/* In display mode `.msg-attachments` has `padding-left: 4px` to align
    the thumbnail strip with `.user-text` content. The edit-mode
    thumbnail strip needs the same offset or the tile visibly jumps
    leftward when the bubble swaps from display to edit. */
 .msg.role-user.is-editing .promptbox-thumbs {
-  padding-left: 8px;
+  padding-left: 4px;
 }
 /* Drop the bottom-prompt's 48 px min-height when the textarea lives inside
    an edit bubble — for short user messages, the JS already sizes the
    textarea to its content (Math.min(scrollHeight, …)), and a 48 px floor
    would force the bubble to suddenly grow ~20 px taller the moment the
-   user clicks to edit a 1-line message. 28 px ≈ one line of text plus the
-   6+6 vertical padding, so a single-line message edits in-place without
-   the bubble jumping. */
+   user clicks to edit a 1-line message. 24 px ≈ one line of text plus the
+   4+4 vertical padding, so a single-line message edits in-place without
+   the bubble jumping. The padding override drops the textarea from the
+   bottom-prompt's `6px 8px` to a uniform 4 px so the edit-mode glyph
+   position matches `.user-text` above. */
 .msg.role-user.is-editing .promptbox textarea {
-  min-height: 28px;
+  min-height: 24px;
+  padding: 4px;
 }
 /* Fade + slide the action row in when entering edit mode so the buttons
    don't pop into existence below the textarea. The animation only runs
@@ -800,15 +804,14 @@ button {
 .msg.role-user .user-text {
   white-space: pre-wrap;
   word-break: break-word;
-  /* Mirror the textarea's padding so the rendered text's pixel position
-     stays the same when the user clicks into edit mode. textarea has
-     `padding: 6px 8px`; .promptbox-input's border is suppressed in edit
-     mode (see .msg.role-user.is-editing .promptbox-input), so matching
-     just the padding here lines up the text glyphs exactly. Without
-     this, clicking to edit causes the first character to jump ~3 px
-     down and ~3 px right because the textarea introduces its own
-     internal padding. */
-  padding: 6px 8px;
+  /* Mirror the edit-mode textarea's padding so the rendered text's pixel
+     position stays the same when the user clicks into edit mode. The bottom
+     prompt's textarea keeps its native `6px 8px`; the edit-mode override at
+     `.msg.role-user.is-editing .promptbox textarea` brings it down to a
+     uniform 4 px to match this rule. Without matching padding here, clicking
+     to edit causes the first character to jump because the textarea
+     introduces its own internal padding. */
+  padding: 4px;
   /* Cap the visible height of the rendered user message at the same height
      used by the in-place edit textarea (.promptbox textarea max-height).
      Both reference --message-max-height so the rendered-message view, the
@@ -880,6 +883,9 @@ button {
      chrome (focusBorder) and the click target (cursor) change. */
   background: var(--vscode-input-background);
   border-color: var(--vscode-focusBorder);
+  /* Keep later dialogue stationary while the editor grows over that space. */
+  margin-bottom: calc(var(--message-gap) - var(--edit-overlap, 0px));
+  z-index: 4;
 }
 .user-edit-hint {
   position: absolute;
@@ -932,11 +938,10 @@ button {
   font-size: 11px;
   opacity: 0.6;
   margin-bottom: 4px;
-  /* Align with the .user-text content below — .user-text now has
-     `padding-left: 8px` to match the textarea, so the ref label needs
-     the same 8 px nudge or it appears 8 px to the left of the text
-     glyphs in the same bubble. */
-  padding-left: 8px;
+  /* Align with the .user-text content below — .user-text has
+     `padding-left: 4px`, so the ref label needs the same 4 px nudge
+     or it appears 4 px to the left of the text glyphs in the same bubble. */
+  padding-left: 4px;
 }
 
 .msg-error {
@@ -1848,7 +1853,7 @@ button {
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: var(--radius);
 }
-.promptbox-input:focus-within { border-color: var(--vscode-focusBorder); }
+.promptbox-input:focus-within { border-color: var(--vscode-foreground); }
 .promptbox-backdrop {
   position: absolute;
   inset: 0;
@@ -2182,9 +2187,8 @@ button {
 .msg-attachments {
   list-style: none;
   margin: 0 0 6px 0;
-  /* Align with .user-text content below (which has padding-left: 8 to
-     match the textarea); see comment on .msg-ref. */
-  padding: 0 0 0 8px;
+  /* Align with .user-text content below (padding-left: 4); see .msg-ref. */
+  padding: 0 0 0 4px;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
