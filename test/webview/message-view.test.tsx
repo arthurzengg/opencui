@@ -441,6 +441,32 @@ describe("MessageView edit preserves mentions + attachments", () => {
     expect(img?.getAttribute("src")).toMatch(/^data:image\/png;base64,/)
   })
 
+  it("clicking the sent-bubble image thumbnail opens the lightbox (and does NOT start edit)", async () => {
+    const user = userEvent.setup()
+    const onEditMessage = vi.fn()
+    const message: Message = {
+      id: "u-img-click",
+      role: "user",
+      blocks: [
+        { type: "attachment", mime: "image/png", filename: "pasted-image.png", dataUrl: "data:image/png;base64,A", bytes: 100 },
+        { type: "text", text: "describe this" },
+      ],
+      backendID: "b1",
+    } as Message
+    render(
+      <MessageView
+        message={message}
+        processOpen={false}
+        processOnly={false}
+        onEditMessage={onEditMessage}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /Preview pasted-image\.png/i }))
+    expect(screen.getByRole("dialog", { name: /preview of pasted-image\.png/i })).toBeInTheDocument()
+    // Bubble must not have flipped into edit mode (no textarea rendered).
+    expect(document.querySelector("textarea")).toBeNull()
+  })
+
   it("non-image attachments keep the chip-pill tile with filename + badge", () => {
     const message: Message = {
       id: "u-pdf-att",

@@ -933,4 +933,71 @@ describe("PromptBox image paste from clipboard", () => {
     await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
     expect(textarea.value).toBe("from clipboard")
   })
+
+  it("clicking the thumbnail opens a fullscreen lightbox preview", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    const openBtn = screen.getByRole("button", { name: /Preview pasted-image\.png/i })
+    await user.click(openBtn)
+    expect(screen.getByRole("dialog", { name: /preview of pasted-image\.png/i })).toBeInTheDocument()
+    expect(document.querySelector(".image-preview-img")?.getAttribute("src")).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it("clicking the X remove button does NOT open the lightbox", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    const removeBtn = screen.getByRole("button", { name: /Remove pasted-image\.png/i })
+    await user.click(removeBtn)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(container.querySelector(".promptbox-thumb")).toBeNull()
+  })
+
+  it("lightbox closes on Esc key", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: /Preview pasted-image\.png/i }))
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+
+  it("lightbox closes on backdrop click but stays open when clicking the image itself", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: /Preview pasted-image\.png/i }))
+    // Click on the image itself — should NOT close.
+    await user.click(document.querySelector(".image-preview-img") as HTMLImageElement)
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    // Click on the backdrop — closes.
+    await user.click(document.querySelector(".image-preview-overlay") as HTMLDivElement)
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+
+  it("lightbox closes when clicking the modal Close button", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: /Preview pasted-image\.png/i }))
+    await user.click(screen.getByRole("button", { name: /Close preview/i }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
 })

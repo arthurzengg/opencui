@@ -2014,12 +2014,23 @@ button {
    tooltip. The checkerboard background keeps transparent PNGs visible
    against the bubble fill. */
 .attachment-image {
+  /* List wrapper only — same shape / role as .promptbox-thumb. The
+     click-to-preview button below carries all the visuals so the tile
+     is one full-area target. */
   display: inline-block;
   width: 28px;
   height: 28px;
+}
+.attachment-image-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
   border-radius: 4px;
   overflow: hidden;
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  background-color: var(--vscode-input-background);
+  cursor: zoom-in;
   background-image:
     linear-gradient(45deg, rgba(127, 127, 127, 0.18) 25%, transparent 25%),
     linear-gradient(-45deg, rgba(127, 127, 127, 0.18) 25%, transparent 25%),
@@ -2028,11 +2039,59 @@ button {
   background-size: 8px 8px;
   background-position: 0 0, 0 4px, 4px -4px, -4px 0;
 }
-.attachment-image img {
+.attachment-image-open:hover {
+  border-color: var(--vscode-focusBorder, var(--vscode-widget-border));
+}
+.attachment-image-open img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* ===== Image preview lightbox ===== */
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(0, 0, 0, 0.78);
+  /* Block stray gestures from bleeding into the chat behind. */
+  cursor: zoom-out;
+}
+.image-preview-img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  /* Image itself shouldn't show zoom-out cursor — only the backdrop
+     dismisses on click. */
+  cursor: default;
+}
+.image-preview-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.image-preview-close:hover {
+  background: rgba(0, 0, 0, 0.85);
 }
 .attachment-icon {
   width: auto;
@@ -2073,13 +2132,24 @@ button {
   gap: 6px;
 }
 .promptbox-thumb {
+  /* Container only — positioning context for the open-button + remove
+     button siblings below. Visuals (background, border) live on
+     `.promptbox-thumb-open` so the whole tile is one clickable target
+     except for the X corner. */
   position: relative;
   width: 28px;
   height: 28px;
+}
+.promptbox-thumb-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
   border-radius: 4px;
   overflow: hidden;
-  background: var(--vscode-input-background);
+  background-color: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
+  cursor: zoom-in;
   /* Subtle checkerboard so transparent PNGs don't render as a blank
      square against the same-coloured input background. */
   background-image:
@@ -2090,7 +2160,10 @@ button {
   background-size: 8px 8px;
   background-position: 0 0, 0 4px, 4px -4px, -4px 0;
 }
-.promptbox-thumb img {
+.promptbox-thumb-open:hover {
+  border-color: var(--vscode-focusBorder, var(--vscode-input-border, rgba(255, 255, 255, 0.2)));
+}
+.promptbox-thumb-open img {
   display: block;
   width: 100%;
   height: 100%;

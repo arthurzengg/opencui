@@ -10,6 +10,7 @@ import {
   type MentionState,
 } from "../mention-tokens"
 import { clipboardHasImage, readPastedImages } from "../paste-attachments"
+import { ImagePreviewModal } from "./ImagePreviewModal"
 
 // Re-export so existing consumers (tests, integrators) keep working through PromptBox.
 export {
@@ -105,6 +106,11 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
   const [pastedAttachments, setPastedAttachments] = useState<Attachment[]>(
     () => buildInitialThumbnails(initial),
   )
+  // Lightbox state — clicking a thumbnail (anywhere except the X) opens a
+  // fullscreen preview. Local per PromptBox instance: the bottom prompt
+  // and any in-place edit bubble each maintain their own preview, which
+  // is fine because only one is interactive at a time in practice.
+  const [previewImage, setPreviewImage] = useState<Attachment | null>(null)
   // Use lazy init via "first render only" pattern so initial values aren't
   // re-applied every render. After mount these mutate freely.
   const knownMentions = useRef<Set<string>>(undefined as never)
@@ -395,7 +401,14 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
         <ul className="promptbox-thumbs" aria-label="Pasted images">
           {pastedAttachments.map((a) => (
             <li key={a.id} className="promptbox-thumb" title={`${a.filename} · ${formatBytes(a.bytes)}`}>
-              <img src={a.dataUrl} alt="" />
+              <button
+                type="button"
+                className="promptbox-thumb-open"
+                aria-label={`Preview ${a.filename}`}
+                onClick={() => setPreviewImage(a)}
+              >
+                <img src={a.dataUrl} alt="" />
+              </button>
               <button
                 type="button"
                 className="promptbox-thumb-remove"
@@ -411,6 +424,10 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
           ))}
         </ul>
       )}
+      <ImagePreviewModal
+        src={previewImage ? { dataUrl: previewImage.dataUrl, filename: previewImage.filename } : null}
+        onClose={() => setPreviewImage(null)}
+      />
       <div className="promptbox-input">
         <div ref={backdropRef} className="promptbox-backdrop" aria-hidden="true">
           {renderHighlightedText(text, allKnownLabels(), selectedChipStart)}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
 import type { Attachment, FileSearchHit } from "../protocol"
 import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
+import { ImagePreviewModal } from "./ImagePreviewModal"
 import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace, toolHeadline } from "./ToolCard"
@@ -120,6 +121,7 @@ function UserMessageView({
     (b): b is Extract<Block, { type: "attachment" }> => b.type === "attachment",
   )
   const [editing, setEditing] = useState(false)
+  const [previewImage, setPreviewImage] = useState<Attachment | null>(null)
   const editAreaRef = useRef<HTMLDivElement>(null)
 
   // Click-outside cancels the edit. We listen on the document so any click
@@ -230,9 +232,24 @@ function UserMessageView({
                   // pill, no filename text — matching the prompt-box paste
                   // strip. Synthesised paste names ("pasted-image.png")
                   // carry no signal; the image itself is the affordance.
-                  // Filename + size live in the hover tooltip.
+                  // Filename + size live in the hover tooltip. Click opens
+                  // the lightbox.
                   <li key={i} className="attachment-image" title={a.filename}>
-                    <img src={a.dataUrl} alt={a.filename} />
+                    <button
+                      type="button"
+                      className="attachment-image-open"
+                      aria-label={`Preview ${a.filename}`}
+                      onClick={(e) => {
+                        // Don't bubble up — the user-message bubble has an
+                        // outer click handler that flips into edit mode,
+                        // and we don't want previewing an image to also
+                        // start an edit session.
+                        e.stopPropagation()
+                        setPreviewImage(a)
+                      }}
+                    >
+                      <img src={a.dataUrl} alt={a.filename} />
+                    </button>
                   </li>
                 ) : (
                   <li key={i} className="attachment-tile readonly" title={a.filename}>
@@ -256,6 +273,10 @@ function UserMessageView({
           )}
         </>
       )}
+      <ImagePreviewModal
+        src={previewImage ? { dataUrl: previewImage.dataUrl, filename: previewImage.filename } : null}
+        onClose={() => setPreviewImage(null)}
+      />
     </div>
   )
 }
