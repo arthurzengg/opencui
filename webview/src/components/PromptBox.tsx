@@ -67,11 +67,20 @@ function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachm
   if (!initial?.attachments) return map
   const existing = new Set<string>(initial.mentions ?? [])
   for (const a of initial.attachments) {
+    // Image attachments are routed to the thumbnail strip
+    // (`pastedAttachments` state below) — they don't live in the
+    // `@chip` text-token model. Skip them here.
+    if (a.mime.startsWith("image/")) continue
     const label = makeAttachmentLabel(a.filename, existing)
     existing.add(label)
     map.set(label, a)
   }
   return map
+}
+
+function buildInitialThumbnails(initial: Props["initial"]): Attachment[] {
+  if (!initial?.attachments) return []
+  return initial.attachments.filter((a) => a.mime.startsWith("image/"))
 }
 
 export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbort, searchFiles, attachFile, initial, variant = "send" }: Props) {
@@ -88,8 +97,14 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
   // design (the screenshot itself is the affordance). Kept in component
   // state — not in `knownAttachments` — so the same Attachment never
   // ends up rendered twice, and so the strip can be reordered / X'd-out
-  // without poking at the textarea text.
-  const [pastedAttachments, setPastedAttachments] = useState<Attachment[]>([])
+  // without poking at the textarea text. In edit mode, image attachments
+  // from `initial.attachments` seed the strip (see
+  // `buildInitialThumbnails`) so editing a message that contains a
+  // pasted image keeps the thumbnail visible rather than silently
+  // dropping it.
+  const [pastedAttachments, setPastedAttachments] = useState<Attachment[]>(
+    () => buildInitialThumbnails(initial),
+  )
   // Use lazy init via "first render only" pattern so initial values aren't
   // re-applied every render. After mount these mutate freely.
   const knownMentions = useRef<Set<string>>(undefined as never)
