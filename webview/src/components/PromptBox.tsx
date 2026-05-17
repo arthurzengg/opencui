@@ -1,16 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useRef, useState, type ReactNode } from "react"
 import type { Attachment, FileSearchHit } from "../protocol"
 import {
-  detectMention,
   extractMentions,
   findChipAtCaret,
   findMentionRanges,
   makeAttachmentLabel,
-  type MentionState,
 } from "../mention-tokens"
 import { clipboardHasImage, readPastedImages } from "../paste-attachments"
+import { usePromptText } from "../hooks/usePromptText"
+import { useImageAttachments } from "../hooks/useImageAttachments"
+import { useMentionPicker } from "../hooks/useMentionPicker"
 import { ImagePreviewModal } from "./ImagePreviewModal"
-import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
+import { ImageThumbnail } from "./ImageThumbnail"
 
 // Re-export so existing consumers (tests, integrators) keep working through PromptBox.
 export {
@@ -52,17 +53,6 @@ type Props = {
   variant?: "send" | "edit"
 }
 
-const MAX_VISIBLE_HITS = 8
-
-// Hard upper bound on the auto-grow textarea height. Past this, the
-// textarea's own scrollbar takes over so the prompt box doesn't keep eating
-// chat real estate when the user pastes or types a long message. MUST stay
-// in sync with the CSS variable --message-max-height in styles.css — the
-// same cap is shared with .promptbox textarea (the bottom prompt + the
-// in-place edit textarea) and .msg.role-user .user-text (rendered user
-// message), so all three views collapse to the same visual ceiling.
-const TEXTAREA_MAX_HEIGHT = 160
-
 function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachment> {
   const map = new Map<string, Attachment>()
   if (!initial?.attachments) return map
@@ -79,34 +69,19 @@ function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachm
   return map
 }
 
-function buildInitialThumbnails(initial: Props["initial"]): Attachment[] {
-  if (!initial?.attachments) return []
-  return initial.attachments.filter((a) => a.mime.startsWith("image/"))
-}
-
 export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbort, searchFiles, attachFile, initial, variant = "send" }: Props) {
-  const [text, setText] = useState(() => initial?.text ?? "")
-  const [hits, setHits] = useState<FileSearchHit[]>([])
-  const [mention, setMention] = useState<MentionState | undefined>(undefined)
-  const [activeIndex, setActiveIndex] = useState(0)
+  const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
   const [attaching, setAttaching] = useState(false)
-  // Image attachments render as a thumbnail strip above the textarea
-  // instead of as `@filename` text tokens, regardless of source (paste,
-  // paperclip, or restored from initial.attachments on edit). The
-  // screenshot itself is the affordance, filename + size live in the
-  // hover tooltip. Kept in component state — not in `knownAttachments`
-  // — so the same Attachment never ends up rendered twice, and so the
-  // strip can be modified without poking at the textarea text.
-  const [imageAttachments, setImageAttachments] = useState<Attachment[]>(
-    () => buildInitialThumbnails(initial),
-  )
-  // Lightbox state — clicking a thumbnail (anywhere except the X) opens a
-  // fullscreen preview. Local per PromptBox instance: the bottom prompt
-  // and any in-place edit bubble each maintain their own preview, which
-  // is fine because only one is interactive at a time in practice.
-  const [previewImage, setPreviewImage] = useState<Thumbnailable | null>(null)
+  const {
+    imageAttachments,
+    addImages,
+    removeImageAttachment,
+    clearImageAttachments,
+    previewImage,
+    setPreviewImage,
+  } = useImageAttachments(initial)
   // Use lazy init via "first render only" pattern so initial values aren't
   // re-applied every render. After mount these mutate freely.
   const knownMentions = useRef<Set<string>>(undefined as never)
@@ -115,10 +90,8 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     knownMentions.current = new Set<string>(initial?.mentions ?? [])
     knownAttachments.current = buildInitialAttachments(initial)
   }
-  const ref = useRef<HTMLTextAreaElement>(null)
-  const backdropRef = useRef<HTMLDivElement>(null)
-  const queryRef = useRef("")
-  const pendingCursor = useRef<number | null>(null)
+  const { mention, hits, activeIndex, setActiveIndex, detectAtCaret, closeMention, insertMention } =
+    useMentionPicker({ text, setText, searchFiles, knownMentions, pendingCursor })
 
   /** Combined set of @-token labels recognized as chips (mentions + attachments). */
   const allKnownLabels = (): Set<string> => {
@@ -127,66 +100,10 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     return all
   }
 
-  useEffect(() => {
-    if (!ref.current) return
-    ref.current.style.height = "auto"
-    ref.current.style.height = Math.min(ref.current.scrollHeight, TEXTAREA_MAX_HEIGHT) + "px"
-    if (backdropRef.current) {
-      backdropRef.current.style.height = ref.current.style.height
-    }
-  }, [text])
-
-  useLayoutEffect(() => {
-    if (pendingCursor.current !== null && ref.current) {
-      ref.current.focus()
-      ref.current.setSelectionRange(pendingCursor.current, pendingCursor.current)
-      pendingCursor.current = null
-    }
-  }, [text])
-
-  useEffect(() => {
-    if (!mention || !searchFiles) {
-      setHits([])
-      return
-    }
-    queryRef.current = mention.query
-    let cancelled = false
-    void searchFiles(mention.query).then((results) => {
-      if (cancelled) return
-      // Drop stale results — the user may have kept typing while we awaited.
-      if (queryRef.current !== mention.query) return
-      setHits(results.slice(0, MAX_VISIBLE_HITS))
-      setActiveIndex(0)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [mention, searchFiles])
-
-  const closeMention = () => {
-    setMention(undefined)
-    setHits([])
-  }
-
   const updateText = (next: string, caret: number) => {
     setText(next)
     setSelectedChipStart(undefined)
-    if (!searchFiles) return
-    const detected = detectMention(next, caret)
-    setMention(detected)
-  }
-
-  const insertMention = (hit: FileSearchHit) => {
-    if (!mention) return
-    const before = text.slice(0, mention.start)
-    const after = text.slice(mention.start + 1 + mention.query.length)
-    const insert = "@" + hit.path
-    const needsSpace = !after.startsWith(" ")
-    const next = before + insert + (needsSpace ? " " : "") + after
-    knownMentions.current.add(hit.path)
-    pendingCursor.current = before.length + insert.length + 1
-    setText(next)
-    closeMention()
+    detectAtCaret(next, caret)
   }
 
   const submit = () => {
@@ -213,7 +130,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     setText("")
     knownMentions.current.clear()
     knownAttachments.current.clear()
-    setImageAttachments([])
+    clearImageAttachments()
     setSelectedChipStart(undefined)
     setAttachError(undefined)
     closeMention()
@@ -234,9 +151,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
         // signal and the chip is the discoverable mention surface.
         const images = result.attachments.filter((a) => a.mime.startsWith("image/"))
         const nonImages = result.attachments.filter((a) => !a.mime.startsWith("image/"))
-        if (images.length > 0) {
-          setImageAttachments((prev) => [...prev, ...images])
-        }
+        addImages(images)
         if (nonImages.length > 0) {
           const ta = ref.current
           const caret = ta?.selectionStart ?? text.length
@@ -294,9 +209,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
       if (result.error) setAttachError(result.error)
       return
     }
-    if (result.attachments.length > 0) {
-      setImageAttachments((prev) => [...prev, ...result.attachments])
-    }
+    addImages(result.attachments)
     // Mixed text+image pastes still insert the text portion at the caret
     // (the image goes to the thumbnail strip independently).
     if (result.text) {
@@ -309,10 +222,6 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
       setText(next)
     }
     if (result.error) setAttachError(result.error)
-  }
-
-  const removeImageAttachment = (id: string) => {
-    setImageAttachments((prev) => prev.filter((a) => a.id !== id))
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
