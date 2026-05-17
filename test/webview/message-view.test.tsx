@@ -416,6 +416,52 @@ describe("MessageView edit preserves mentions + attachments", () => {
     expect(err!.textContent).toBe("Network connection lost")
   })
 
+  it("renders image attachments in the bubble as bare thumbnails (no filename text)", () => {
+    const message: Message = {
+      id: "u-img-att",
+      role: "user",
+      blocks: [
+        { type: "attachment", mime: "image/png", filename: "pasted-image.png", dataUrl: "data:image/png;base64,A", bytes: 100 },
+        { type: "text", text: "what's in this" },
+      ],
+      backendID: "b1",
+    } as Message
+    const { container } = render(
+      <MessageView message={message} processOpen={false} processOnly={false} />,
+    )
+    const tile = container.querySelector(".attachment-image") as HTMLElement | null
+    expect(tile).not.toBeNull()
+    // No chip pill, no filename text — the image is the affordance.
+    expect(container.querySelector(".attachment-tile")).toBeNull()
+    expect(tile?.textContent?.trim()).toBe("")
+    // Filename + size still discoverable via the tooltip.
+    expect(tile?.getAttribute("title")).toBe("pasted-image.png")
+    // The image itself uses the data URL.
+    const img = tile?.querySelector("img") as HTMLImageElement | null
+    expect(img?.getAttribute("src")).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it("non-image attachments keep the chip-pill tile with filename + badge", () => {
+    const message: Message = {
+      id: "u-pdf-att",
+      role: "user",
+      blocks: [
+        { type: "attachment", mime: "application/pdf", filename: "spec.pdf", dataUrl: "data:application/pdf;base64,A", bytes: 100 },
+        { type: "text", text: "summarize" },
+      ],
+      backendID: "b1",
+    } as Message
+    const { container } = render(
+      <MessageView message={message} processOpen={false} processOnly={false} />,
+    )
+    const chip = container.querySelector(".attachment-tile") as HTMLElement | null
+    expect(chip).not.toBeNull()
+    // The filename still shows for non-image attachments — these come from
+    // the paperclip flow and carry user-meaningful names.
+    expect(chip?.textContent).toContain("spec.pdf")
+    expect(container.querySelector(".attachment-image")).toBeNull()
+  })
+
   it("renders an attachment label as a chip in the read-only bubble too", () => {
     const message: Message = {
       id: "u-att-chip",

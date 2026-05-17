@@ -224,16 +224,23 @@ function UserMessageView({
         <>
           {attachmentBlocks.length > 0 && (
             <ul className="msg-attachments" aria-label="Attachments">
-              {attachmentBlocks.map((a, i) => (
-                <li key={i} className="attachment-tile readonly" title={a.filename}>
-                  {a.mime.startsWith("image/") ? (
-                    <img className="attachment-thumb" src={a.dataUrl} alt={a.filename} />
-                  ) : (
+              {attachmentBlocks.map((a, i) =>
+                a.mime.startsWith("image/") ? (
+                  // Image attachments render as a bare thumbnail — no chip
+                  // pill, no filename text — matching the prompt-box paste
+                  // strip. Synthesised paste names ("pasted-image.png")
+                  // carry no signal; the image itself is the affordance.
+                  // Filename + size live in the hover tooltip.
+                  <li key={i} className="attachment-image" title={a.filename}>
+                    <img src={a.dataUrl} alt={a.filename} />
+                  </li>
+                ) : (
+                  <li key={i} className="attachment-tile readonly" title={a.filename}>
                     <span className="attachment-icon" aria-hidden>{badgeForFilename(a.filename)}</span>
-                  )}
-                  <span className="attachment-name">{a.filename}</span>
-                </li>
-              ))}
+                    <span className="attachment-name">{a.filename}</span>
+                  </li>
+                ),
+              )}
             </ul>
           )}
           {originalText && (
