@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
 import type { Attachment, FileSearchHit } from "../protocol"
 import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
@@ -122,8 +122,11 @@ function UserMessageView({
     (b): b is Extract<Block, { type: "attachment" }> => b.type === "attachment",
   )
   const [editing, setEditing] = useState(false)
+  const [editOverlap, setEditOverlap] = useState(0)
   const [previewImage, setPreviewImage] = useState<Thumbnailable | null>(null)
+  const bubbleRef = useRef<HTMLDivElement>(null)
   const editAreaRef = useRef<HTMLDivElement>(null)
+  const collapsedBubbleHeight = useRef<number | null>(null)
 
   // Click-outside cancels the edit. We listen on the document so any click
   // outside the editing container — anywhere in the chat panel — drops us
@@ -136,6 +139,31 @@ function UserMessageView({
     }
     document.addEventListener("pointerdown", onPointerDown)
     return () => document.removeEventListener("pointerdown", onPointerDown)
+  }, [editing])
+
+  useLayoutEffect(() => {
+    if (!editing) {
+      collapsedBubbleHeight.current = null
+      setEditOverlap(0)
+      return
+    }
+    const bubble = bubbleRef.current
+    const baseline = collapsedBubbleHeight.current
+    if (!bubble || !baseline || baseline <= 0) {
+      setEditOverlap(0)
+      return
+    }
+
+    const measureOverlap = () => {
+      const next = Math.max(0, bubble.getBoundingClientRect().height - baseline)
+      setEditOverlap((current) => Math.abs(current - next) < 0.5 ? current : next)
+    }
+
+    measureOverlap()
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(measureOverlap)
+    observer.observe(bubble)
+    return () => observer.disconnect()
   }, [editing])
 
   // Re-derive attachment labels (same algorithm PromptBox originally used) and
@@ -185,23 +213,27 @@ function UserMessageView({
     setEditing(false)
   }
 
-  const handleBubbleClick = () => {
+  const enterEditing = () => {
     if (!editable || editing) return
     if (typeof window !== "undefined" && window.getSelection?.()?.toString()) return
+    collapsedBubbleHeight.current = bubbleRef.current?.getBoundingClientRect().height ?? null
+    setEditOverlap(0)
     setEditing(true)
   }
 
   return (
     <div
+      ref={bubbleRef}
       className={`msg role-user ${editing ? "is-editing" : ""} ${editable ? "is-editable" : ""}`}
-      onClick={handleBubbleClick}
+      style={editing ? ({ "--edit-overlap": `${editOverlap}px` } as CSSProperties) : undefined}
+      onClick={enterEditing}
       role={editable && !editing ? "button" : undefined}
       tabIndex={editable && !editing ? 0 : undefined}
       onKeyDown={editable && !editing ? (event) => {
         if (event.target !== event.currentTarget) return
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault()
-          setEditing(true)
+          enterEditing()
         }
       } : undefined}
       title={editing ? undefined : editTitle}
@@ -749,4 +781,3 @@ export function inferredTextTitle(text: string) {
   if (/\bconsidering\b/i.test(value)) return "Considering next step"
   return undefined
 }
-
