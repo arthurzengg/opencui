@@ -649,58 +649,58 @@ describe("PromptBox attachments (inline @chip flow)", () => {
     expect(screen.getByRole("button", { name: /Attach/i })).toBeInTheDocument()
   })
 
-  it("inserts @filename text into the textarea when paperclip returns a file", async () => {
+  it("inserts @filename text into the textarea when paperclip returns a non-image file", async () => {
     const user = userEvent.setup()
-    const attachFile = vi.fn().mockResolvedValue({ attachments: [makeImage()] })
+    const attachFile = vi.fn().mockResolvedValue({ attachments: [makePdf()] })
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={attachFile} />)
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
     await user.click(screen.getByRole("button", { name: /Attach/i }))
-    await waitFor(() => expect(textarea.value).toContain("@screen.png"))
+    await waitFor(() => expect(textarea.value).toContain("@doc.pdf"))
   })
 
   it("renders the inserted @filename as a .mention-chip in the backdrop", async () => {
     const user = userEvent.setup()
-    const attachFile = vi.fn().mockResolvedValue({ attachments: [makeImage()] })
+    const attachFile = vi.fn().mockResolvedValue({ attachments: [makePdf()] })
     const { container } = render(
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={attachFile} />,
     )
     await user.click(screen.getByRole("button", { name: /Attach/i }))
     await waitFor(() => expect(container.querySelector(".mention-chip")).not.toBeNull())
-    expect(container.querySelector(".mention-chip")?.textContent).toBe("@screen.png")
+    expect(container.querySelector(".mention-chip")?.textContent).toBe("@doc.pdf")
   })
 
-  it("multiple attachments insert in order separated by spaces", async () => {
+  it("multiple non-image attachments insert in order separated by spaces", async () => {
     const user = userEvent.setup()
     const attachFile = vi.fn().mockResolvedValue({
-      attachments: [makeImage("first.png"), makePdf("second.pdf")],
+      attachments: [makePdf("first.pdf"), makePdf("second.pdf")],
     })
     const { container } = render(
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={attachFile} />,
     )
     await user.click(screen.getByRole("button", { name: /Attach/i }))
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await waitFor(() => expect(textarea.value).toBe("@first.png @second.pdf "))
+    await waitFor(() => expect(textarea.value).toBe("@first.pdf @second.pdf "))
     const chips = container.querySelectorAll(".mention-chip")
-    expect(Array.from(chips).map((c) => c.textContent)).toEqual(["@first.png", "@second.pdf"])
+    expect(Array.from(chips).map((c) => c.textContent)).toEqual(["@first.pdf", "@second.pdf"])
   })
 
   it("inserts at the current caret position, not always at the end", async () => {
     const user = userEvent.setup()
-    const attachFile = vi.fn().mockResolvedValue({ attachments: [makeImage()] })
+    const attachFile = vi.fn().mockResolvedValue({ attachments: [makePdf()] })
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={attachFile} />)
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
     await user.type(textarea, "hello world")
     textarea.setSelectionRange(5, 5) // caret right after "hello"
     await user.click(screen.getByRole("button", { name: /Attach/i }))
-    await waitFor(() => expect(textarea.value).toBe("hello @screen.png world"))
+    await waitFor(() => expect(textarea.value).toBe("hello @doc.pdf world"))
   })
 
-  it("two attachments with the same filename get disambiguated labels", async () => {
+  it("two non-image attachments with the same filename get disambiguated labels", async () => {
     const user = userEvent.setup()
     const attachFile = vi
       .fn()
-      .mockResolvedValueOnce({ attachments: [makeImage("screen.png")] })
-      .mockResolvedValueOnce({ attachments: [makeImage("screen.png")] })
+      .mockResolvedValueOnce({ attachments: [makePdf("report.pdf")] })
+      .mockResolvedValueOnce({ attachments: [makePdf("report.pdf")] })
     const { container } = render(
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={attachFile} />,
     )
@@ -710,24 +710,73 @@ describe("PromptBox attachments (inline @chip flow)", () => {
     await user.click(attachBtn)
     await waitFor(() => expect(container.querySelectorAll(".mention-chip")).toHaveLength(2))
     const chipTexts = Array.from(container.querySelectorAll(".mention-chip")).map((c) => c.textContent)
-    expect(chipTexts).toEqual(["@screen.png", "@screen_2.png"])
+    expect(chipTexts).toEqual(["@report.pdf", "@report_2.pdf"])
   })
 
   it("Send forwards the Attachment objects whose chips appear in text", async () => {
     const user = userEvent.setup()
     const onSend = vi.fn()
-    const img = makeImage()
-    const attachFile = vi.fn().mockResolvedValue({ attachments: [img] })
+    const pdf = makePdf()
+    const attachFile = vi.fn().mockResolvedValue({ attachments: [pdf] })
     render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={attachFile} />)
     await user.click(screen.getByRole("button", { name: /Attach/i }))
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await waitFor(() => expect(textarea.value).toContain("@screen.png"))
+    await waitFor(() => expect(textarea.value).toContain("@doc.pdf"))
     await user.type(textarea, "what is this")
     await user.keyboard("{Enter}")
     expect(onSend).toHaveBeenCalledTimes(1)
     const args = onSend.mock.calls[0]
-    expect(args?.[0]).toBe("@screen.png what is this")
+    expect(args?.[0]).toBe("@doc.pdf what is this")
     expect(args?.[1]).toBeUndefined()
+    expect(args?.[2]).toEqual([pdf])
+  })
+
+  it("paperclip-uploaded images render as a thumbnail (no @chip text token)", async () => {
+    const user = userEvent.setup()
+    const attachFile = vi.fn().mockResolvedValue({ attachments: [makeImage()] })
+    const { container } = render(
+      <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={attachFile} />,
+    )
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.click(screen.getByRole("button", { name: /Attach/i }))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    // Image attachment goes to the thumbnail strip — no `@chip` text and no mention-chip
+    expect(textarea.value).toBe("")
+    expect(container.querySelector(".mention-chip")).toBeNull()
+  })
+
+  it("paperclip mixed (image + PDF) splits: image to thumbnail, PDF to @chip", async () => {
+    const user = userEvent.setup()
+    const attachFile = vi.fn().mockResolvedValue({
+      attachments: [makeImage("shot.png"), makePdf("spec.pdf")],
+    })
+    const { container } = render(
+      <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={attachFile} />,
+    )
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.click(screen.getByRole("button", { name: /Attach/i }))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    expect(textarea.value).toBe("@spec.pdf ")
+    expect(container.querySelectorAll(".mention-chip")).toHaveLength(1)
+    expect(container.querySelectorAll(".promptbox-thumb")).toHaveLength(1)
+  })
+
+  it("Send forwards a paperclip-uploaded image via the thumbnail flow", async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    const img = makeImage()
+    const attachFile = vi.fn().mockResolvedValue({ attachments: [img] })
+    const { container } = render(
+      <PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={attachFile} />,
+    )
+    await user.click(screen.getByRole("button", { name: /Attach/i }))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.click(textarea)
+    await user.keyboard("describe this{Enter}")
+    expect(onSend).toHaveBeenCalledTimes(1)
+    const args = onSend.mock.calls[0]
+    expect(args?.[0]).toBe("describe this")
     expect(args?.[2]).toEqual([img])
   })
 
@@ -742,16 +791,16 @@ describe("PromptBox attachments (inline @chip flow)", () => {
     )
   })
 
-  it("two-step Backspace removes an attachment chip too", async () => {
+  it("two-step Backspace removes a non-image attachment chip too", async () => {
     const user = userEvent.setup()
     const onSend = vi.fn()
-    const attachFile = vi.fn().mockResolvedValue({ attachments: [makeImage()] })
+    const attachFile = vi.fn().mockResolvedValue({ attachments: [makePdf()] })
     const { container } = render(
       <PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={attachFile} />,
     )
     await user.click(screen.getByRole("button", { name: /Attach/i }))
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await waitFor(() => expect(textarea.value).toBe("@screen.png "))
+    await waitFor(() => expect(textarea.value).toBe("@doc.pdf "))
     // Backspace once: highlight
     await user.keyboard("{Backspace}")
     expect(container.querySelector(".mention-chip-selected")).not.toBeNull()
@@ -761,14 +810,14 @@ describe("PromptBox attachments (inline @chip flow)", () => {
     expect(textarea.value).toBe("")
   })
 
-  it("if the attachment chip is deleted, Send does NOT include the attachment", async () => {
+  it("if the non-image attachment chip is deleted, Send does NOT include the attachment", async () => {
     const user = userEvent.setup()
     const onSend = vi.fn()
-    const attachFile = vi.fn().mockResolvedValue({ attachments: [makeImage()] })
+    const attachFile = vi.fn().mockResolvedValue({ attachments: [makePdf()] })
     render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={attachFile} />)
     await user.click(screen.getByRole("button", { name: /Attach/i }))
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await waitFor(() => expect(textarea.value).toContain("@screen.png"))
+    await waitFor(() => expect(textarea.value).toContain("@doc.pdf"))
     await user.clear(textarea)
     await user.type(textarea, "no attachments here")
     await user.keyboard("{Enter}")

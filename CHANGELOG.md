@@ -6,6 +6,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Paperclip-uploaded image files now render as thumbnail tiles in the prompt strip too, matching the behavior added for clipboard paste in v0.5.0. Previously only pasted images got the thumbnail treatment — paperclip images went through the `@filename.png` text-token chip flow, which looked inconsistent and read awkwardly when the same file picker also returned PDFs / code files. Now `handleAttachClick` splits the picker result by mime: image-mime attachments push to the thumbnail strip, non-image attachments (PDFs / `.txt` / code) keep the existing chip-text-token flow because their filenames carry user-meaningful signal. The strip state was renamed `pastedAttachments` → `imageAttachments` to reflect that it now represents any image regardless of source. Closes #60.
+
 ## [0.5.0] - 2026-05-16
 
 ### Added
