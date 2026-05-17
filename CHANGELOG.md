@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-16
+
 ### Added
 - Image paste from the clipboard. `Cmd+V` / `Ctrl+V` of a screenshot or any clipboard image (PNG / JPEG / GIF / WEBP / BMP / SVG) now attaches it directly to the prompt — no paperclip → file-dialog → save-to-disk round-trip. Pasted images render as a small thumbnail strip *above* the textarea (with a hover-X to remove and the filename + size in the tooltip), not as `@filename` text tokens — paste names like `pasted-image.png` carry no signal, so the screenshot itself is the affordance. Implemented entirely in the webview (the bytes are already in `clipboardData.items`, no host hop needed); pasted attachments fall through the existing send path that uses their inline data URL, so opencode receives them exactly like paperclip attachments. Pure-text paste keeps the default browser behaviour; mixed text + image pastes split — text goes to the textarea at the caret, image to the thumbnail strip. Send is enabled with only a thumbnail (no typed text required). Individual images cap at 10 MB to match `MAX_ATTACHMENT_BYTES` on the host. Closes #56.
 
