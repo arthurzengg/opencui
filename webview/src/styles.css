@@ -113,27 +113,38 @@ button {
   background: var(--vscode-sideBarSectionHeader-background);
   min-width: 0;
 }
-.statusbar.is-quiet .status-text { display: none; }
+.statusbar .spacer { flex: 1; }
 
-.statusbar .dot {
-  /* Pin both axes so the flex algorithm can't squeeze the dot horizontally
-     when the bar gets tight (which would turn it into a vertical ellipse).
-     Same defence already applied to the .btn.icon and .history-trigger
-     icons. */
-  flex: 0 0 auto;
-  /* The dot is rendered as a <span>; explicit inline-block removes the
-     baseline-alignment quirks some browsers apply to inline boxes, so the
-     flex `align-items: center` lands the dot on the exact bar centerline. */
+/* ===== StatusIndicator =====
+   Coloured marker dot + optional label. Component-scoped so any surface
+   (status bar, permission badge, etc.) can drop one in without redoing
+   the alignment dance.
+
+   Why the inline-block wrapper + `vertical-align: middle` on children:
+   sibling flex children get centred by their own box centres, which
+   makes a small 8 px dot visually sit below the larger text glyph next
+   to it. Giving the pair a shared inline line-box (`display: inline-block`
+   with `line-height: 1` to hug the glyph height) and using
+   `vertical-align: middle` aligns by font x-height — the perceived text
+   midpoint — instead. The two pieces stay locked together regardless of
+   what the parent flex layout does. */
+.status-indicator {
+  display: inline-block;
+  white-space: nowrap;
+  line-height: 1;
+}
+.status-indicator-dot {
+  vertical-align: middle;
   display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: var(--radius-pill);
   background: var(--color-status-default);
 }
-.statusbar .dot.ok { background: var(--color-status-ok); }
-.statusbar .dot.warn { background: var(--color-status-warn); }
-.statusbar .dot.err { background: var(--color-status-err); }
-.statusbar .dot.pending {
+.status-indicator-dot.ok      { background: var(--color-status-ok); }
+.status-indicator-dot.warn    { background: var(--color-status-warn); }
+.status-indicator-dot.err     { background: var(--color-status-err); }
+.status-indicator-dot.pending {
   background: var(--color-status-pending);
   animation: dot-pulse 1.4s ease-in-out infinite;
 }
@@ -142,22 +153,14 @@ button {
   50% { opacity: 0.4; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .statusbar .dot.pending { animation: none; }
+  .status-indicator-dot.pending { animation: none; }
 }
-
-.statusbar .status-text {
-  min-width: 0;
-  /* Tight line-height so the text-box hugs the glyph height. Without this,
-     the inherited default (~1.2) inflates the box and `align-items: center`
-     lands the text on the geometric centre of the inflated box — visually
-     a hair above the centre of the 8 px dot next to it. */
-  line-height: 1;
+.status-indicator-label {
+  vertical-align: middle;
+  margin-left: var(--space-3);
   opacity: 0.75;
-  overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
-.statusbar .spacer { flex: 1; }
 
 .selector-menu {
   flex: 0 1 auto;
