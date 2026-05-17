@@ -2015,8 +2015,8 @@ button {
    against the bubble fill. */
 .attachment-image {
   display: inline-block;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border-radius: 4px;
   overflow: hidden;
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
@@ -2074,8 +2074,8 @@ button {
 }
 .promptbox-thumb {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border-radius: 4px;
   overflow: hidden;
   background: var(--vscode-input-background);
@@ -2098,10 +2098,10 @@ button {
 }
 .promptbox-thumb-remove {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 14px;
-  height: 14px;
+  top: 1px;
+  right: 1px;
+  width: 12px;
+  height: 12px;
   padding: 0;
   border: 0;
   border-radius: 50%;
