@@ -3,6 +3,7 @@ import type { Block, Message } from "../hooks/useChatState"
 import type { Attachment, FileSearchHit } from "../protocol"
 import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
 import { ImagePreviewModal } from "./ImagePreviewModal"
+import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
 import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace, toolHeadline } from "./ToolCard"
@@ -121,7 +122,7 @@ function UserMessageView({
     (b): b is Extract<Block, { type: "attachment" }> => b.type === "attachment",
   )
   const [editing, setEditing] = useState(false)
-  const [previewImage, setPreviewImage] = useState<Attachment | null>(null)
+  const [previewImage, setPreviewImage] = useState<Thumbnailable | null>(null)
   const editAreaRef = useRef<HTMLDivElement>(null)
 
   // Click-outside cancels the edit. We listen on the document so any click
@@ -228,29 +229,13 @@ function UserMessageView({
             <ul className="msg-attachments" aria-label="Attachments">
               {attachmentBlocks.map((a, i) =>
                 a.mime.startsWith("image/") ? (
-                  // Image attachments render as a bare thumbnail — no chip
-                  // pill, no filename text — matching the prompt-box paste
-                  // strip. Synthesised paste names ("pasted-image.png")
-                  // carry no signal; the image itself is the affordance.
-                  // Filename + size live in the hover tooltip. Click opens
-                  // the lightbox.
-                  <li key={i} className="attachment-image" title={a.filename}>
-                    <button
-                      type="button"
-                      className="attachment-image-open"
-                      aria-label={`Preview ${a.filename}`}
-                      onClick={(e) => {
-                        // Don't bubble up — the user-message bubble has an
-                        // outer click handler that flips into edit mode,
-                        // and we don't want previewing an image to also
-                        // start an edit session.
-                        e.stopPropagation()
-                        setPreviewImage(a)
-                      }}
-                    >
-                      <img src={a.dataUrl} alt={a.filename} />
-                    </button>
-                  </li>
+                  // Image attachments render as a bare thumbnail — matches
+                  // the prompt-box strip. ImageThumbnail's open-button
+                  // stopPropagations so previewing doesn't also flip the
+                  // bubble into edit mode (the surrounding `.msg.role-user`
+                  // listens for click-to-edit). No `onRemove` here — the
+                  // sent bubble is read-only.
+                  <ImageThumbnail key={i} attachment={a} onPreview={setPreviewImage} />
                 ) : (
                   <li key={i} className="attachment-tile readonly" title={a.filename}>
                     <span className="attachment-icon" aria-hidden>{badgeForFilename(a.filename)}</span>
