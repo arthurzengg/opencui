@@ -816,40 +816,84 @@ describe("PromptBox image paste from clipboard", () => {
     return e
   }
 
-  it("attaches a pasted image as an @chip in the textarea", async () => {
-    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
-    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
-    await waitFor(() => expect(textarea.value).toContain("@pasted-image.png"))
-  })
-
-  it("renders the pasted image as a .mention-chip", async () => {
+  it("renders a pasted image as a thumbnail (no text in the textarea, no @chip)", async () => {
     const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
     const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
     textarea.dispatchEvent(pasteEvent(makePasteData([file])))
-    await waitFor(() => expect(container.querySelector(".mention-chip")).not.toBeNull())
-    expect(container.querySelector(".mention-chip")?.textContent).toBe("@pasted-image.png")
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    // Textarea stays empty — no `@pasted-image.png` text token.
+    expect(textarea.value).toBe("")
+    // No mention-chip either.
+    expect(container.querySelector(".mention-chip")).toBeNull()
+    // The thumbnail has an <img> with the base64 data URL.
+    const img = container.querySelector(".promptbox-thumb img") as HTMLImageElement | null
+    expect(img?.getAttribute("src")).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it("filename + size live in the tooltip, never as visible text", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const tile = container.querySelector(".promptbox-thumb")!
+    expect(tile.getAttribute("title")).toMatch(/pasted-image\.png/)
+    expect(tile.textContent?.trim()).toBe("")
   })
 
   it("forwards the pasted attachment on submit", async () => {
     const onSend = vi.fn()
-    render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const { container } = render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={vi.fn()} />)
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
     const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
     textarea.dispatchEvent(pasteEvent(makePasteData([file])))
-    await waitFor(() => expect(textarea.value).toContain("@pasted-image.png"))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
     const user = userEvent.setup()
     await user.click(textarea)
     await user.keyboard("look at this{Enter}")
     expect(onSend).toHaveBeenCalledOnce()
     const [text, mentions, attachments] = onSend.mock.calls[0]!
-    expect(text).toMatch(/look at this/)
+    expect(text).toBe("look at this")
     expect(mentions).toBeUndefined()
     expect(attachments).toHaveLength(1)
     expect(attachments[0].mime).toBe("image/png")
     expect(attachments[0].dataUrl).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it("clears the thumbnail strip after submit", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    await user.click(textarea)
+    await user.keyboard("ok{Enter}")
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).toBeNull())
+  })
+
+  it("enables send with only a pasted image (no text required)", async () => {
+    const onSend = vi.fn()
+    const { container } = render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const sendBtn = screen.getByRole("button", { name: /^Send$/i })
+    expect((sendBtn as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it("hover-X removes a pasted thumbnail", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    const removeBtn = screen.getByRole("button", { name: /Remove pasted-image\.png/i })
+    await user.click(removeBtn)
+    expect(container.querySelector(".promptbox-thumb")).toBeNull()
   })
 
   it("does not intercept pure-text paste (default browser behavior runs)", async () => {
@@ -857,32 +901,36 @@ describe("PromptBox image paste from clipboard", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
     await user.click(textarea)
-    // userEvent.paste delivers ONLY text — no image items. Our handler
-    // bails on clipboardHasImage(), so the textarea receives the text
-    // through the default paste path.
     await user.paste("hello world")
     expect(textarea.value).toBe("hello world")
   })
 
   it("shows an error message when a pasted image is over the size cap", async () => {
-    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    // 11 MB > 10 MB cap
     const huge = new File([new Uint8Array(11 * 1024 * 1024)], "image.png", { type: "image/png" })
     textarea.dispatchEvent(pasteEvent(makePasteData([huge])))
     await waitFor(() => expect(screen.getByText(/over 10 MB/i)).toBeInTheDocument())
-    // Nothing inserted, no chip
+    // No thumbnail, no text.
+    expect(container.querySelector(".promptbox-thumb")).toBeNull()
     expect(textarea.value).toBe("")
   })
 
-  it("multiple pasted images get sequential synthesized names", async () => {
+  it("renders multiple pasted images as separate thumbnails", async () => {
     const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
     const a = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
     const b = new File([new Uint8Array(100)], "image.png", { type: "image/jpeg" })
     textarea.dispatchEvent(pasteEvent(makePasteData([a, b])))
-    await waitFor(() => expect(container.querySelectorAll(".mention-chip")).toHaveLength(2))
-    const chips = Array.from(container.querySelectorAll(".mention-chip")).map((c) => c.textContent)
-    expect(chips).toEqual(["@pasted-image.png", "@pasted-image-2.jpg"])
+    await waitFor(() => expect(container.querySelectorAll(".promptbox-thumb").length).toBe(2))
+  })
+
+  it("pasted text alongside an image goes into the textarea, image to thumbnail", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file], "from clipboard")))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    expect(textarea.value).toBe("from clipboard")
   })
 })
