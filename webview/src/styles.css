@@ -2006,17 +2006,18 @@ button {
   line-height: 1.4;
   max-width: 220px;
 }
-/* Image attachments in the rendered user bubble. No chip pill, no
-   filename text — matches the prompt-box paste thumbnail strip so the
-   "before send" and "after send" affordance is consistent. Bigger
-   than the strip thumbnails (72 vs 36 px) so the user can actually
-   see what they sent without hovering. The checkerboard background
-   keeps transparent PNGs visible against the bubble fill. */
+/* Image attachments in the rendered user bubble. Same 36 × 36 size as
+   the prompt-box paste thumbnail strip so the "before send" and
+   "after send" views are visually consistent — sender sees the same
+   tile shape in both contexts. No chip pill, no filename text; the
+   image itself is the affordance, filename + size live in the hover
+   tooltip. The checkerboard background keeps transparent PNGs visible
+   against the bubble fill. */
 .attachment-image {
   display: inline-block;
-  width: 72px;
-  height: 72px;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
   overflow: hidden;
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
   background-image:
@@ -2024,8 +2025,8 @@ button {
     linear-gradient(-45deg, rgba(127, 127, 127, 0.18) 25%, transparent 25%),
     linear-gradient(45deg, transparent 75%, rgba(127, 127, 127, 0.18) 75%),
     linear-gradient(-45deg, transparent 75%, rgba(127, 127, 127, 0.18) 75%);
-  background-size: 10px 10px;
-  background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
 }
 .attachment-image img {
   display: block;
