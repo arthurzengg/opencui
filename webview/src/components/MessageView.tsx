@@ -7,6 +7,7 @@ import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
 import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace, toolHeadline } from "./ToolCard"
+import { ICON_SIZE } from "../design-tokens"
 
 export function MessageView({
   message,
@@ -282,7 +283,7 @@ function UserMessageView({
           )}
           {canEdit && (
             <span className="user-edit-hint" aria-hidden="true">
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="0 0 16 16" width={ICON_SIZE.md} height={ICON_SIZE.md} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 8h7a3 3 0 0 1 0 6H6.5"/>
                 <polyline points="5.5,5 3,8 5.5,11"/>
               </svg>
