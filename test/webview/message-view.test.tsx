@@ -429,13 +429,13 @@ describe("MessageView edit preserves mentions + attachments", () => {
     const { container } = render(
       <MessageView message={message} processOpen={false} processOnly={false} />,
     )
-    const tile = container.querySelector(".attachment-image") as HTMLElement | null
+    const tile = container.querySelector(".image-thumb") as HTMLElement | null
     expect(tile).not.toBeNull()
     // No chip pill, no filename text — the image is the affordance.
     expect(container.querySelector(".attachment-tile")).toBeNull()
     expect(tile?.textContent?.trim()).toBe("")
     // Filename + size still discoverable via the tooltip.
-    expect(tile?.getAttribute("title")).toBe("pasted-image.png")
+    expect(tile?.getAttribute("title")).toContain("pasted-image.png")
     // The image itself uses the data URL.
     const img = tile?.querySelector("img") as HTMLImageElement | null
     expect(img?.getAttribute("src")).toMatch(/^data:image\/png;base64,/)
@@ -485,7 +485,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     // The filename still shows for non-image attachments — these come from
     // the paperclip flow and carry user-meaningful names.
     expect(chip?.textContent).toContain("spec.pdf")
-    expect(container.querySelector(".attachment-image")).toBeNull()
+    expect(container.querySelector(".image-thumb")).toBeNull()
   })
 
   it("renders an attachment label as a chip in the read-only bubble too", () => {
@@ -569,7 +569,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     )
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
     // Thumbnail visible inside the edit bubble's PromptBox.
-    expect(container.querySelector(".promptbox-thumb")).not.toBeNull()
+    expect(container.querySelector(".image-thumb")).not.toBeNull()
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "describe this image")
@@ -611,7 +611,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
     const removeBtn = screen.getByRole("button", { name: /Remove pasted-image\.png/i })
     await user.click(removeBtn)
-    expect(container.querySelector(".promptbox-thumb")).toBeNull()
+    expect(container.querySelector(".image-thumb")).toBeNull()
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, "no image now")

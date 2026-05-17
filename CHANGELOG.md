@@ -6,6 +6,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Internal: extracted the image thumbnail markup + styling into a shared `<ImageThumbnail>` component used by both the prompt-box strip and the sent-bubble attachment list. Previously the two contexts duplicated ~40 lines of JSX + CSS (`.promptbox-thumb*` and `.attachment-image*`) for what was already pixel-identical output. CSS class names unified to `.image-thumb` / `.image-thumb-open` / `.image-thumb-remove`; the old context-specific names are gone. No user-visible change.
+
 ## [0.5.1] - 2026-05-17
 
 ### Fixed

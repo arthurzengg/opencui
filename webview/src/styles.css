@@ -2013,48 +2013,9 @@ button {
   line-height: 1.4;
   max-width: 220px;
 }
-/* Image attachments in the rendered user bubble. Same 36 × 36 size as
-   the prompt-box paste thumbnail strip so the "before send" and
-   "after send" views are visually consistent — sender sees the same
-   tile shape in both contexts. No chip pill, no filename text; the
-   image itself is the affordance, filename + size live in the hover
-   tooltip. The checkerboard background keeps transparent PNGs visible
-   against the bubble fill. */
-.attachment-image {
-  /* List wrapper only — same shape / role as .promptbox-thumb. The
-     click-to-preview button below carries all the visuals so the tile
-     is one full-area target. */
-  display: inline-block;
-  width: 28px;
-  height: 28px;
-}
-.attachment-image-open {
-  display: block;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border-radius: 4px;
-  overflow: hidden;
-  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  background-color: var(--vscode-input-background);
-  cursor: zoom-in;
-  background-image:
-    linear-gradient(45deg, rgba(127, 127, 127, 0.18) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(127, 127, 127, 0.18) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(127, 127, 127, 0.18) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(127, 127, 127, 0.18) 75%);
-  background-size: 8px 8px;
-  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
-}
-.attachment-image-open:hover {
-  border-color: var(--vscode-focusBorder, var(--vscode-widget-border));
-}
-.attachment-image-open img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+/* Image attachments in the rendered user bubble use the shared
+   `.image-thumb` tile (see definition above near `.promptbox-thumbs`).
+   The `.msg-attachments` `<ul>` container handles padding and gap. */
 
 /* ===== Image preview lightbox ===== */
 .image-preview-overlay {
@@ -2138,16 +2099,18 @@ button {
   flex-wrap: wrap;
   gap: 6px;
 }
-.promptbox-thumb {
-  /* Container only — positioning context for the open-button + remove
-     button siblings below. Visuals (background, border) live on
-     `.promptbox-thumb-open` so the whole tile is one clickable target
-     except for the X corner. */
+/* Shared 28 × 28 image tile used by both the prompt-box thumbnail strip
+   (`.promptbox-thumbs > .image-thumb`) and the sent-bubble attachment
+   list (`.msg-attachments > .image-thumb`). The `<li>` is just a
+   positioning shell; visuals live on `.image-thumb-open` and the
+   optional remove button on `.image-thumb-remove`. */
+.image-thumb {
   position: relative;
+  display: inline-block;
   width: 28px;
   height: 28px;
 }
-.promptbox-thumb-open {
+.image-thumb-open {
   display: block;
   width: 100%;
   height: 100%;
@@ -2155,7 +2118,7 @@ button {
   border-radius: 4px;
   overflow: hidden;
   background-color: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border, transparent);
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent));
   cursor: zoom-in;
   /* Subtle checkerboard so transparent PNGs don't render as a blank
      square against the same-coloured input background. */
@@ -2167,16 +2130,16 @@ button {
   background-size: 8px 8px;
   background-position: 0 0, 0 4px, 4px -4px, -4px 0;
 }
-.promptbox-thumb-open:hover {
-  border-color: var(--vscode-focusBorder, var(--vscode-input-border, rgba(255, 255, 255, 0.2)));
+.image-thumb-open:hover {
+  border-color: var(--vscode-focusBorder, var(--vscode-widget-border));
 }
-.promptbox-thumb-open img {
+.image-thumb-open img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.promptbox-thumb-remove {
+.image-thumb-remove {
   position: absolute;
   top: 1px;
   right: 1px;
@@ -2194,11 +2157,11 @@ button {
   opacity: 0;
   transition: opacity 0.12s ease;
 }
-.promptbox-thumb:hover .promptbox-thumb-remove,
-.promptbox-thumb-remove:focus-visible {
+.image-thumb:hover .image-thumb-remove,
+.image-thumb-remove:focus-visible {
   opacity: 1;
 }
-.promptbox-thumb-remove:hover {
+.image-thumb-remove:hover {
   background: rgba(0, 0, 0, 0.78);
 }
 .icon-btn.attach-btn {

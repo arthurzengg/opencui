@@ -5,12 +5,12 @@ import {
   extractMentions,
   findChipAtCaret,
   findMentionRanges,
-  formatBytes,
   makeAttachmentLabel,
   type MentionState,
 } from "../mention-tokens"
 import { clipboardHasImage, readPastedImages } from "../paste-attachments"
 import { ImagePreviewModal } from "./ImagePreviewModal"
+import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
 
 // Re-export so existing consumers (tests, integrators) keep working through PromptBox.
 export {
@@ -106,7 +106,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
   // fullscreen preview. Local per PromptBox instance: the bottom prompt
   // and any in-place edit bubble each maintain their own preview, which
   // is fine because only one is interactive at a time in practice.
-  const [previewImage, setPreviewImage] = useState<Attachment | null>(null)
+  const [previewImage, setPreviewImage] = useState<Thumbnailable | null>(null)
   // Use lazy init via "first render only" pattern so initial values aren't
   // re-applied every render. After mount these mutate freely.
   const knownMentions = useRef<Set<string>>(undefined as never)
@@ -409,27 +409,12 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
       {imageAttachments.length > 0 && (
         <ul className="promptbox-thumbs" aria-label="Image attachments">
           {imageAttachments.map((a) => (
-            <li key={a.id} className="promptbox-thumb" title={`${a.filename} · ${formatBytes(a.bytes)}`}>
-              <button
-                type="button"
-                className="promptbox-thumb-open"
-                aria-label={`Preview ${a.filename}`}
-                onClick={() => setPreviewImage(a)}
-              >
-                <img src={a.dataUrl} alt="" />
-              </button>
-              <button
-                type="button"
-                className="promptbox-thumb-remove"
-                aria-label={`Remove ${a.filename}`}
-                title="Remove"
-                onClick={() => removeImageAttachment(a.id)}
-              >
-                <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
-                  <path d="M1 1l6 6M7 1l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </button>
-            </li>
+            <ImageThumbnail
+              key={a.id}
+              attachment={a}
+              onPreview={setPreviewImage}
+              onRemove={removeImageAttachment}
+            />
           ))}
         </ul>
       )}
