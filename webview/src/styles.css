@@ -744,6 +744,13 @@ button {
   border-top: 0;
   background: transparent;
 }
+/* In display mode `.msg-attachments` has `padding-left: 8px` to align
+   the thumbnail strip with `.user-text` content. The edit-mode
+   thumbnail strip needs the same offset or the tile visibly jumps
+   leftward when the bubble swaps from display to edit. */
+.msg.role-user.is-editing .promptbox-thumbs {
+  padding-left: 8px;
+}
 /* Drop the bottom-prompt's 48 px min-height when the textarea lives inside
    an edit bubble — for short user messages, the JS already sizes the
    textarea to its content (Math.min(scrollHeight, …)), and a 48 px floor
