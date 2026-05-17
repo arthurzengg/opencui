@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-05-17
+
+### Fixed
+- Editing a sent user-message bubble no longer shoves the assistant reply (and everything below it) down the page. `UserMessageView` measures the bubble's collapsed height on edit-entry, observes the editing height with `ResizeObserver`, and exposes the delta as a `--edit-overlap` CSS variable that the bubble subtracts from its own `margin-bottom`. Combined with a raised `z-index`, the editor visually overlaps the subsequent content while it's expanded, so the surrounding dialogue stays anchored in place. Exiting edit mode restores the original layout without a snap. Closes #73.
+
+### Changed
+- Edit-mode prompt uses a compact one-row textarea (`rows={1}`) as its starting height so the initial editor matches the collapsed bubble; the bottom send composer keeps its two-row default.
+- User-message bubble padding is now uniform 4 px on all sides (was 8 × 10 outer + 6 × 8 inner), so the text-to-border distance is consistent vertically and horizontally and the edit-mode height delta is smaller to begin with. Sibling rules (`.msg-ref`, `.msg-attachments`, `.promptbox-thumbs`, the edit-mode textarea) move in lockstep to keep glyphs aligned across display and edit modes.
+- Bottom prompt's focus border switches from `--vscode-focusBorder` (hard blue) to `--vscode-foreground` (theme-adaptive, matches the text color) so the active-state cue reads as a calm divider rather than a screaming accent.
+
 ## [0.5.2] - 2026-05-17
 
 ### Changed
