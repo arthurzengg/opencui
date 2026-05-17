@@ -787,3 +787,217 @@ describe("PromptBox attachments (inline @chip flow)", () => {
   })
 })
 
+
+describe("PromptBox image paste from clipboard", () => {
+  // Build a DataTransfer-shaped stub that matches what the helper reads.
+  // jsdom's DataTransfer doesn't model clipboard items, so we hand-roll.
+  function makePasteData(files: File[], text = ""): DataTransfer {
+    const items = files.map((f) => ({
+      kind: "file",
+      type: f.type,
+      getAsFile: () => f,
+    }))
+    return {
+      items: {
+        length: items.length,
+        [Symbol.iterator]: function* () {
+          for (const it of items) yield it
+        },
+        ...Object.fromEntries(items.map((it, i) => [i, it])),
+      } as unknown as DataTransferItemList,
+      files: { length: 0 } as unknown as FileList,
+      getData: (kind: string) => (kind === "text/plain" ? text : ""),
+    } as unknown as DataTransfer
+  }
+
+  function pasteEvent(data: DataTransfer): ClipboardEvent {
+    const e = new Event("paste", { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(e, "clipboardData", { value: data, configurable: true })
+    return e
+  }
+
+  it("renders a pasted image as a thumbnail (no text in the textarea, no @chip)", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    // Textarea stays empty — no `@pasted-image.png` text token.
+    expect(textarea.value).toBe("")
+    // No mention-chip either.
+    expect(container.querySelector(".mention-chip")).toBeNull()
+    // The thumbnail has an <img> with the base64 data URL.
+    const img = container.querySelector(".promptbox-thumb img") as HTMLImageElement | null
+    expect(img?.getAttribute("src")).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it("filename + size live in the tooltip, never as visible text", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const tile = container.querySelector(".promptbox-thumb")!
+    expect(tile.getAttribute("title")).toMatch(/pasted-image\.png/)
+    expect(tile.textContent?.trim()).toBe("")
+  })
+
+  it("forwards the pasted attachment on submit", async () => {
+    const onSend = vi.fn()
+    const { container } = render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    await user.click(textarea)
+    await user.keyboard("look at this{Enter}")
+    expect(onSend).toHaveBeenCalledOnce()
+    const [text, mentions, attachments] = onSend.mock.calls[0]!
+    expect(text).toBe("look at this")
+    expect(mentions).toBeUndefined()
+    expect(attachments).toHaveLength(1)
+    expect(attachments[0].mime).toBe("image/png")
+    expect(attachments[0].dataUrl).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it("clears the thumbnail strip after submit", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    await user.click(textarea)
+    await user.keyboard("ok{Enter}")
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).toBeNull())
+  })
+
+  it("enables send with only a pasted image (no text required)", async () => {
+    const onSend = vi.fn()
+    const { container } = render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const sendBtn = screen.getByRole("button", { name: /^Send$/i })
+    expect((sendBtn as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it("hover-X removes a pasted thumbnail", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    const removeBtn = screen.getByRole("button", { name: /Remove pasted-image\.png/i })
+    await user.click(removeBtn)
+    expect(container.querySelector(".promptbox-thumb")).toBeNull()
+  })
+
+  it("does not intercept pure-text paste (default browser behavior runs)", async () => {
+    const user = userEvent.setup()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.click(textarea)
+    await user.paste("hello world")
+    expect(textarea.value).toBe("hello world")
+  })
+
+  it("shows an error message when a pasted image is over the size cap", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const huge = new File([new Uint8Array(11 * 1024 * 1024)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([huge])))
+    await waitFor(() => expect(screen.getByText(/over 10 MB/i)).toBeInTheDocument())
+    // No thumbnail, no text.
+    expect(container.querySelector(".promptbox-thumb")).toBeNull()
+    expect(textarea.value).toBe("")
+  })
+
+  it("renders multiple pasted images as separate thumbnails", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const a = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    const b = new File([new Uint8Array(100)], "image.png", { type: "image/jpeg" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([a, b])))
+    await waitFor(() => expect(container.querySelectorAll(".promptbox-thumb").length).toBe(2))
+  })
+
+  it("pasted text alongside an image goes into the textarea, image to thumbnail", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file], "from clipboard")))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    expect(textarea.value).toBe("from clipboard")
+  })
+
+  it("clicking the thumbnail opens a fullscreen lightbox preview", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    const openBtn = screen.getByRole("button", { name: /Preview pasted-image\.png/i })
+    await user.click(openBtn)
+    expect(screen.getByRole("dialog", { name: /preview of pasted-image\.png/i })).toBeInTheDocument()
+    expect(document.querySelector(".image-preview-img")?.getAttribute("src")).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it("clicking the X remove button does NOT open the lightbox", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    const removeBtn = screen.getByRole("button", { name: /Remove pasted-image\.png/i })
+    await user.click(removeBtn)
+    expect(screen.queryByRole("dialog")).toBeNull()
+    expect(container.querySelector(".promptbox-thumb")).toBeNull()
+  })
+
+  it("lightbox closes on Esc key", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: /Preview pasted-image\.png/i }))
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+
+  it("lightbox closes on backdrop click but stays open when clicking the image itself", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: /Preview pasted-image\.png/i }))
+    // Click on the image itself — should NOT close.
+    await user.click(document.querySelector(".image-preview-img") as HTMLImageElement)
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+    // Click on the backdrop — closes.
+    await user.click(document.querySelector(".image-preview-overlay") as HTMLDivElement)
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+
+  it("lightbox closes when clicking the modal Close button", async () => {
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
+    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
+    await waitFor(() => expect(container.querySelector(".promptbox-thumb")).not.toBeNull())
+    const user = userEvent.setup()
+    await user.click(screen.getByRole("button", { name: /Preview pasted-image\.png/i }))
+    await user.click(screen.getByRole("button", { name: /Close preview/i }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+})

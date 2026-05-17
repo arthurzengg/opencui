@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Image paste from the clipboard. `Cmd+V` / `Ctrl+V` of a screenshot or any clipboard image (PNG / JPEG / GIF / WEBP / BMP / SVG) now attaches it directly to the prompt — no paperclip → file-dialog → save-to-disk round-trip. Pasted images render as a small thumbnail strip *above* the textarea (with a hover-X to remove and the filename + size in the tooltip), not as `@filename` text tokens — paste names like `pasted-image.png` carry no signal, so the screenshot itself is the affordance. Implemented entirely in the webview (the bytes are already in `clipboardData.items`, no host hop needed); pasted attachments fall through the existing send path that uses their inline data URL, so opencode receives them exactly like paperclip attachments. Pure-text paste keeps the default browser behaviour; mixed text + image pastes split — text goes to the textarea at the caret, image to the thumbnail strip. Send is enabled with only a thumbnail (no typed text required). Individual images cap at 10 MB to match `MAX_ATTACHMENT_BYTES` on the host. Closes #56.
+
+### Changed
+- Image attachments in sent user-message bubbles now render as bare thumbnails (28 × 28, rounded, with a checkerboard background for transparent PNGs), not as a chip pill with `pasted-image.png` text next to a 16-px icon. The screenshot itself is the affordance, the filename + size live in the hover tooltip — matching the prompt-box paste strip so the "before send" and "after send" views are visually consistent. Non-image attachments (PDFs / `.txt` / code files from the paperclip flow) keep the existing chip-pill tile because their filenames carry user-meaningful signal.
+- Clicking any image thumbnail (in the prompt-box paste strip or in a sent user bubble) now opens a fullscreen lightbox preview. Dismiss with Esc, the X button, or by clicking the dim backdrop; clicking the image itself keeps it open. The X-remove button on prompt-box thumbnails is a sibling button (not nested in the open button), so it does its own thing without bubbling up to open the preview. Clicking a bubble's thumbnail also doesn't flip the bubble into edit mode (`stopPropagation` on the open button).
+
 ## [0.4.0] - 2026-05-15
 
 ### Added

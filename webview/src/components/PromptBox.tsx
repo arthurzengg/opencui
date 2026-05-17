@@ -5,9 +5,12 @@ import {
   extractMentions,
   findChipAtCaret,
   findMentionRanges,
+  formatBytes,
   makeAttachmentLabel,
   type MentionState,
 } from "../mention-tokens"
+import { clipboardHasImage, readPastedImages } from "../paste-attachments"
+import { ImagePreviewModal } from "./ImagePreviewModal"
 
 // Re-export so existing consumers (tests, integrators) keep working through PromptBox.
 export {
@@ -65,11 +68,20 @@ function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachm
   if (!initial?.attachments) return map
   const existing = new Set<string>(initial.mentions ?? [])
   for (const a of initial.attachments) {
+    // Image attachments are routed to the thumbnail strip
+    // (`pastedAttachments` state below) — they don't live in the
+    // `@chip` text-token model. Skip them here.
+    if (a.mime.startsWith("image/")) continue
     const label = makeAttachmentLabel(a.filename, existing)
     existing.add(label)
     map.set(label, a)
   }
   return map
+}
+
+function buildInitialThumbnails(initial: Props["initial"]): Attachment[] {
+  if (!initial?.attachments) return []
+  return initial.attachments.filter((a) => a.mime.startsWith("image/"))
 }
 
 export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbort, searchFiles, attachFile, initial, variant = "send" }: Props) {
@@ -80,6 +92,25 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
   const [attaching, setAttaching] = useState(false)
+  // Pasted images render as a thumbnail strip above the textarea instead
+  // of as `@filename` text tokens. Synthesised paste names like
+  // `pasted-image.png` carry no meaning, so the strip is name-less by
+  // design (the screenshot itself is the affordance). Kept in component
+  // state — not in `knownAttachments` — so the same Attachment never
+  // ends up rendered twice, and so the strip can be reordered / X'd-out
+  // without poking at the textarea text. In edit mode, image attachments
+  // from `initial.attachments` seed the strip (see
+  // `buildInitialThumbnails`) so editing a message that contains a
+  // pasted image keeps the thumbnail visible rather than silently
+  // dropping it.
+  const [pastedAttachments, setPastedAttachments] = useState<Attachment[]>(
+    () => buildInitialThumbnails(initial),
+  )
+  // Lightbox state — clicking a thumbnail (anywhere except the X) opens a
+  // fullscreen preview. Local per PromptBox instance: the bottom prompt
+  // and any in-place edit bubble each maintain their own preview, which
+  // is fine because only one is interactive at a time in practice.
+  const [previewImage, setPreviewImage] = useState<Attachment | null>(null)
   // Use lazy init via "first render only" pattern so initial values aren't
   // re-applied every render. After mount these mutate freely.
   const knownMentions = useRef<Set<string>>(undefined as never)
@@ -172,6 +203,10 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
         if (att) activeAttachments.push(att)
       }
     }
+    // Append pasted-image thumbnails after any chip-resolved attachments
+    // so display order in the bubble matches input order: chip-cited
+    // files first, pasted images second.
+    for (const a of pastedAttachments) activeAttachments.push(a)
     if ((!trimmed && activeAttachments.length === 0) || busy) return
     const mentions = extractMentions(text, knownMentions.current)
     onSend(
@@ -182,6 +217,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     setText("")
     knownMentions.current.clear()
     knownAttachments.current.clear()
+    setPastedAttachments([])
     setSelectedChipStart(undefined)
     setAttachError(undefined)
     closeMention()
@@ -226,6 +262,48 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     } finally {
       setAttaching(false)
     }
+  }
+
+  /**
+   * Clipboard paste: if it contains any image, intercept and push each one
+   * onto the thumbnail strip above the textarea (no `@filename` text
+   * token — pasted images have synthesised names that mean nothing, so
+   * the screenshot itself is the affordance). Any pasted text accompanying
+   * the image still goes into the textarea at the caret position.
+   * Pure-text paste falls through to the browser's default handling.
+   */
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!clipboardHasImage(e.clipboardData)) return
+    e.preventDefault()
+    void handlePastedImages(e.clipboardData)
+  }
+
+  const handlePastedImages = async (data: DataTransfer) => {
+    setAttachError(undefined)
+    const result = await readPastedImages(data)
+    if (result.attachments.length === 0 && !result.text) {
+      if (result.error) setAttachError(result.error)
+      return
+    }
+    if (result.attachments.length > 0) {
+      setPastedAttachments((prev) => [...prev, ...result.attachments])
+    }
+    // Mixed text+image pastes still insert the text portion at the caret
+    // (the image goes to the thumbnail strip independently).
+    if (result.text) {
+      const ta = ref.current
+      const caret = ta?.selectionStart ?? text.length
+      const before = text.slice(0, caret)
+      const after = text.slice(caret)
+      const next = before + result.text + after
+      pendingCursor.current = before.length + result.text.length
+      setText(next)
+    }
+    if (result.error) setAttachError(result.error)
+  }
+
+  const removePastedAttachment = (id: string) => {
+    setPastedAttachments((prev) => prev.filter((a) => a.id !== id))
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -307,8 +385,10 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     }
   }
 
-  // Send is enabled if there's text OR an attachment chip currently in the text.
+  // Send is enabled if there's text OR a chip-cited attachment in the text
+  // OR a thumbnail in the pasted strip.
   const hasActiveAttachment = (() => {
+    if (pastedAttachments.length > 0) return true
     if (knownAttachments.current.size === 0) return false
     return findMentionRanges(text, new Set(knownAttachments.current.keys())).length > 0
   })()
@@ -317,6 +397,37 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     <div className={"promptbox" + (variant === "edit" ? " promptbox--edit" : "")}>
       {contextLabel && <div className="context-chip">{contextLabel}</div>}
       {attachError && <div className="attachment-error">{attachError}</div>}
+      {pastedAttachments.length > 0 && (
+        <ul className="promptbox-thumbs" aria-label="Pasted images">
+          {pastedAttachments.map((a) => (
+            <li key={a.id} className="promptbox-thumb" title={`${a.filename} · ${formatBytes(a.bytes)}`}>
+              <button
+                type="button"
+                className="promptbox-thumb-open"
+                aria-label={`Preview ${a.filename}`}
+                onClick={() => setPreviewImage(a)}
+              >
+                <img src={a.dataUrl} alt="" />
+              </button>
+              <button
+                type="button"
+                className="promptbox-thumb-remove"
+                aria-label={`Remove ${a.filename}`}
+                title="Remove"
+                onClick={() => removePastedAttachment(a.id)}
+              >
+                <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
+                  <path d="M1 1l6 6M7 1l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ImagePreviewModal
+        src={previewImage ? { dataUrl: previewImage.dataUrl, filename: previewImage.filename } : null}
+        onClose={() => setPreviewImage(null)}
+      />
       <div className="promptbox-input">
         <div ref={backdropRef} className="promptbox-backdrop" aria-hidden="true">
           {renderHighlightedText(text, allKnownLabels(), selectedChipStart)}
@@ -328,6 +439,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
           placeholder="Ask OpenCode Panel…  (Enter to send, Shift+Enter for newline, @ to attach a file)"
           onChange={(e) => updateText(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           onSelect={onSelect}
           onScroll={(e) => {
             if (backdropRef.current) backdropRef.current.scrollTop = e.currentTarget.scrollTop
