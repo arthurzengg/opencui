@@ -69,7 +69,7 @@ function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachm
   const existing = new Set<string>(initial.mentions ?? [])
   for (const a of initial.attachments) {
     // Image attachments are routed to the thumbnail strip
-    // (`pastedAttachments` state below) — they don't live in the
+    // (`imageAttachments` state below) — they don't live in the
     // `@chip` text-token model. Skip them here.
     if (a.mime.startsWith("image/")) continue
     const label = makeAttachmentLabel(a.filename, existing)
@@ -92,18 +92,14 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
   const [attaching, setAttaching] = useState(false)
-  // Pasted images render as a thumbnail strip above the textarea instead
-  // of as `@filename` text tokens. Synthesised paste names like
-  // `pasted-image.png` carry no meaning, so the strip is name-less by
-  // design (the screenshot itself is the affordance). Kept in component
-  // state — not in `knownAttachments` — so the same Attachment never
-  // ends up rendered twice, and so the strip can be reordered / X'd-out
-  // without poking at the textarea text. In edit mode, image attachments
-  // from `initial.attachments` seed the strip (see
-  // `buildInitialThumbnails`) so editing a message that contains a
-  // pasted image keeps the thumbnail visible rather than silently
-  // dropping it.
-  const [pastedAttachments, setPastedAttachments] = useState<Attachment[]>(
+  // Image attachments render as a thumbnail strip above the textarea
+  // instead of as `@filename` text tokens, regardless of source (paste,
+  // paperclip, or restored from initial.attachments on edit). The
+  // screenshot itself is the affordance, filename + size live in the
+  // hover tooltip. Kept in component state — not in `knownAttachments`
+  // — so the same Attachment never ends up rendered twice, and so the
+  // strip can be modified without poking at the textarea text.
+  const [imageAttachments, setImageAttachments] = useState<Attachment[]>(
     () => buildInitialThumbnails(initial),
   )
   // Lightbox state — clicking a thumbnail (anywhere except the X) opens a
@@ -206,7 +202,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     // Append pasted-image thumbnails after any chip-resolved attachments
     // so display order in the bubble matches input order: chip-cited
     // files first, pasted images second.
-    for (const a of pastedAttachments) activeAttachments.push(a)
+    for (const a of imageAttachments) activeAttachments.push(a)
     if ((!trimmed && activeAttachments.length === 0) || busy) return
     const mentions = extractMentions(text, knownMentions.current)
     onSend(
@@ -217,7 +213,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     setText("")
     knownMentions.current.clear()
     knownAttachments.current.clear()
-    setPastedAttachments([])
+    setImageAttachments([])
     setSelectedChipStart(undefined)
     setAttachError(undefined)
     closeMention()
@@ -230,33 +226,46 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     try {
       const result = await attachFile()
       if (result.attachments.length > 0) {
-        const ta = ref.current
-        const caret = ta?.selectionStart ?? text.length
-        const before = text.slice(0, caret)
-        const after = text.slice(caret)
-        // Build "@label1 @label2 " insertion, registering each label.
-        let insertion = ""
-        const existing = new Set([
-          ...knownMentions.current,
-          ...knownAttachments.current.keys(),
-        ])
-        for (const att of result.attachments) {
-          const label = makeAttachmentLabel(att.filename, existing)
-          existing.add(label)
-          knownAttachments.current.set(label, att)
-          insertion += "@" + label + " "
+        // Image-mime attachments go to the thumbnail strip regardless of
+        // source — paperclip-uploaded images get the same affordance as
+        // pasted ones for visual consistency. Non-image attachments
+        // (PDFs / .txt / code files) keep the existing `@chip` text-
+        // token flow because their filenames carry user-meaningful
+        // signal and the chip is the discoverable mention surface.
+        const images = result.attachments.filter((a) => a.mime.startsWith("image/"))
+        const nonImages = result.attachments.filter((a) => !a.mime.startsWith("image/"))
+        if (images.length > 0) {
+          setImageAttachments((prev) => [...prev, ...images])
         }
-        // If the char before the caret is non-whitespace, we need a leading
-        // space so the @ token has a whitespace boundary on its left.
-        const lastBeforeChar = before.slice(-1)
-        const needsLeadingSpace = lastBeforeChar !== "" && !/\s/.test(lastBeforeChar)
-        const lead = needsLeadingSpace ? " " : ""
-        // Trim our trailing space if there's already whitespace after the caret.
-        const trimTrailing = after.startsWith(" ")
-        const finalInsertion = lead + (trimTrailing ? insertion.trimEnd() : insertion)
-        const next = before + finalInsertion + after
-        pendingCursor.current = before.length + finalInsertion.length
-        setText(next)
+        if (nonImages.length > 0) {
+          const ta = ref.current
+          const caret = ta?.selectionStart ?? text.length
+          const before = text.slice(0, caret)
+          const after = text.slice(caret)
+          // Build "@label1 @label2 " insertion, registering each label.
+          let insertion = ""
+          const existing = new Set([
+            ...knownMentions.current,
+            ...knownAttachments.current.keys(),
+          ])
+          for (const att of nonImages) {
+            const label = makeAttachmentLabel(att.filename, existing)
+            existing.add(label)
+            knownAttachments.current.set(label, att)
+            insertion += "@" + label + " "
+          }
+          // If the char before the caret is non-whitespace, we need a leading
+          // space so the @ token has a whitespace boundary on its left.
+          const lastBeforeChar = before.slice(-1)
+          const needsLeadingSpace = lastBeforeChar !== "" && !/\s/.test(lastBeforeChar)
+          const lead = needsLeadingSpace ? " " : ""
+          // Trim our trailing space if there's already whitespace after the caret.
+          const trimTrailing = after.startsWith(" ")
+          const finalInsertion = lead + (trimTrailing ? insertion.trimEnd() : insertion)
+          const next = before + finalInsertion + after
+          pendingCursor.current = before.length + finalInsertion.length
+          setText(next)
+        }
       }
       if (result.error) setAttachError(result.error)
     } finally {
@@ -286,7 +295,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
       return
     }
     if (result.attachments.length > 0) {
-      setPastedAttachments((prev) => [...prev, ...result.attachments])
+      setImageAttachments((prev) => [...prev, ...result.attachments])
     }
     // Mixed text+image pastes still insert the text portion at the caret
     // (the image goes to the thumbnail strip independently).
@@ -302,8 +311,8 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     if (result.error) setAttachError(result.error)
   }
 
-  const removePastedAttachment = (id: string) => {
-    setPastedAttachments((prev) => prev.filter((a) => a.id !== id))
+  const removeImageAttachment = (id: string) => {
+    setImageAttachments((prev) => prev.filter((a) => a.id !== id))
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -388,7 +397,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
   // Send is enabled if there's text OR a chip-cited attachment in the text
   // OR a thumbnail in the pasted strip.
   const hasActiveAttachment = (() => {
-    if (pastedAttachments.length > 0) return true
+    if (imageAttachments.length > 0) return true
     if (knownAttachments.current.size === 0) return false
     return findMentionRanges(text, new Set(knownAttachments.current.keys())).length > 0
   })()
@@ -397,9 +406,9 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
     <div className={"promptbox" + (variant === "edit" ? " promptbox--edit" : "")}>
       {contextLabel && <div className="context-chip">{contextLabel}</div>}
       {attachError && <div className="attachment-error">{attachError}</div>}
-      {pastedAttachments.length > 0 && (
-        <ul className="promptbox-thumbs" aria-label="Pasted images">
-          {pastedAttachments.map((a) => (
+      {imageAttachments.length > 0 && (
+        <ul className="promptbox-thumbs" aria-label="Image attachments">
+          {imageAttachments.map((a) => (
             <li key={a.id} className="promptbox-thumb" title={`${a.filename} · ${formatBytes(a.bytes)}`}>
               <button
                 type="button"
@@ -414,7 +423,7 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
                 className="promptbox-thumb-remove"
                 aria-label={`Remove ${a.filename}`}
                 title="Remove"
-                onClick={() => removePastedAttachment(a.id)}
+                onClick={() => removeImageAttachment(a.id)}
               >
                 <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
                   <path d="M1 1l6 6M7 1l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
