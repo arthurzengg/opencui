@@ -6,12 +6,6 @@
 > review flow, your files. Everything runs locally; nothing leaves your
 > machine except the API call to your chosen LLM provider.
 
-<!-- TODO: screenshots
-![Chat panel](media/screenshots/chat.png)
-![@file picker](media/screenshots/mention-picker.png)
-![Review Changes](media/screenshots/review-changes.png)
--->
-
 ## Highlights
 
 - **Workspace-aware chat** with streaming, reasoning blocks, and an inline tool-call trace.
@@ -22,6 +16,24 @@
 - **Inline edit** via `Cmd+K` / `Ctrl+K` — rewrite the selection with natural language.
 - **Per-workspace conversation history** with search, rename, and delete.
 - **Cmd+L** opens the chat sidebar.
+
+## Screenshots
+
+**Welcome panel** — workspace-aware chat with one-click suggestion prompts.
+
+![OpenCode Panel overview](media/screenshots/panel-overview.png)
+
+**Pick your model, agent, and effort** — one popover in the chat header swaps any of the three without leaving the conversation.
+
+![Model, agent, and effort picker](media/screenshots/model-picker.png)
+
+**Per-workspace chat history** — searchable list with hover-revealed Rename / Delete; each project keeps its own conversation timeline.
+
+![Chat history](media/screenshots/chat-history.png)
+
+**Edit + regenerate any past prompt** — click a previous user message to revise it; the conversation rewinds via opencode's `session.revert` and the AI re-answers from there.
+
+![Edit and regenerate](media/screenshots/edit-message.png)
 
 ## Prerequisites
 
