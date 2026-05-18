@@ -762,16 +762,11 @@ button {
   /* Soft drop shadow gives the pinned bubble a subtle natural-fade transition
      against the scrolling content below it, regardless of theme contrast. */
   box-shadow: 0 12px 18px -10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
-  /* Animate the chrome on entering / leaving edit mode. The transition lives
-     on the base class (not .is-editable) so it applies regardless of whether
-     the user message was editable at the time the class toggles. Padding is
-     intentionally listed even though display / edit modes now share the same
-     padding — kept here so any future tweak smoothly morphs instead of
-     snapping. */
+  /* Animate only paint changes. Size-affecting properties stay out of this
+     transition so entering/exiting edit mode cannot briefly resize the row. */
   transition:
     background-color 0.18s ease,
-    border-color 0.18s ease,
-    padding 0.18s ease;
+    border-color 0.18s ease;
 }
 /* Extra gradient strip below the bubble for stronger visual feathering.
    Uses a high-contrast shadow color with explicit alpha so it shows up
@@ -803,7 +798,12 @@ button {
     );
   }
 }
-.msg.role-user.is-editing > div > .promptbox {
+/* All rules in this block target `editing` AND `closing` phases (the overlay
+   is mounted throughout both — closing is just the border-out animation
+   playing on its way to `view`). `:not([data-edit-phase="view"])` keeps the
+   selector concise and ensures any future phase added between editing and
+   view automatically inherits these edit-mode styles. */
+.msg.role-user:not([data-edit-phase="view"]) > .user-edit-layer > .promptbox {
   padding: 0;
   border-top: 0;
   background: transparent;
@@ -813,7 +813,7 @@ button {
    inline content align with the `.user-text` glyphs above/below. The edit-mode
    thumbnail strip needs the same offset or the tile visibly jumps leftward
    when the bubble swaps from display to edit. */
-.msg.role-user.is-editing .promptbox-thumbs {
+.msg.role-user:not([data-edit-phase="view"]) .promptbox-thumbs {
   padding-left: var(--bubble-text-padding);
 }
 /* Drop the bottom-prompt's 48 px min-height when the textarea lives inside
@@ -825,17 +825,17 @@ button {
    so a single-line message edits in-place without the bubble jumping. The
    padding token matches `.user-text` so the edit-mode glyph position is
    identical to display mode. */
-.msg.role-user.is-editing .promptbox textarea {
+.msg.role-user:not([data-edit-phase="view"]) .promptbox textarea {
   min-height: 24px;
   padding: var(--bubble-text-padding);
 }
 /* Fade + slide the action row in when entering edit mode so the buttons
    don't pop into existence below the textarea. The animation only runs
    on mount (the row stays mounted while editing), and is scoped to
-   .is-editing so the bottom prompt-box at the foot of the chat — which
+   non-view phases so the bottom prompt-box at the foot of the chat — which
    is always present — isn't affected. Kept short (160 ms) so it feels
    immediate, not slow. */
-.msg.role-user.is-editing .promptbox-row {
+.msg.role-user:not([data-edit-phase="view"]) .promptbox-row {
   animation: user-edit-row-in 0.16s ease both;
 }
 @keyframes user-edit-row-in {
@@ -857,12 +857,12 @@ button {
    (bubble-padding + textarea-padding) which exactly equals
    (bubble-padding + .user-text-padding) after we add 6px 8px padding to
    .user-text below. */
-.msg.role-user.is-editing .promptbox-input,
-.msg.role-user.is-editing .promptbox-input:focus-within {
+.msg.role-user:not([data-edit-phase="view"]) .promptbox-input,
+.msg.role-user:not([data-edit-phase="view"]) .promptbox-input:focus-within {
   border: 0;
   background: transparent;
 }
-.msg.role-user.is-editing::after {
+.msg.role-user:not([data-edit-phase="view"])::after {
   display: none;
 }
 .msg.role-user .user-text {
@@ -871,10 +871,11 @@ button {
   /* `--bubble-text-padding` is shared with the edit-mode textarea override so
      the rendered text's pixel position stays the same when the user clicks
      into edit mode. The bottom prompt's textarea keeps its native `6px 8px`;
-     the edit-mode override at `.msg.role-user.is-editing .promptbox textarea`
-     uses the same token. Without matching padding here, clicking to edit
-     causes the first character to jump because the textarea introduces its
-     own internal padding. */
+     the edit-mode override at
+     `.msg.role-user:not([data-edit-phase="view"]) .promptbox textarea` uses
+     the same token. Without matching padding here, clicking to edit causes
+     the first character to jump because the textarea introduces its own
+     internal padding. */
   padding: var(--bubble-text-padding);
   /* Cap the visible height of the rendered user message at the same height
      used by the in-place edit textarea (.promptbox textarea max-height).
@@ -918,38 +919,79 @@ button {
 .msg.role-user .user-text:active::-webkit-scrollbar-thumb {
   background-color: var(--vscode-scrollbarSlider-background, var(--color-scrollbar-thumb));
 }
-.msg.role-user.is-editable {
+/* Hover / focus rules are scoped to `[data-edit-phase="view"]` so they
+   physically cannot fire during `editing` or `closing` phases — that's the
+   structural guarantee the EditPhase state machine is meant to enforce.
+   Without this scope, a hover during the closing animation could repaint
+   the bubble's border underneath the overlay and produce a flash. */
+.msg.role-user.is-editable[data-edit-phase="view"] {
   cursor: pointer;
-  /* Hover/state transitions now live on the base .msg.role-user so they
-     apply during the is-editable ↔ is-editing swap, not just hover.
-     Nothing to add here. */
 }
-.msg.role-user.is-editable:hover {
+.msg.role-user.is-editable[data-edit-phase="view"]:hover {
   /* Layer the (possibly semi-transparent) hover color on TOP of the opaque
      input-background so scrolling text behind the pinned bubble never shows
      through during hover. Without this, on themes where
      --vscode-list-hoverBackground is rgba(...) with low alpha, hover would
-     reveal the chat content scrolling beneath the sticky message. */
+     reveal the chat content scrolling beneath the sticky message.
+     Keep the resting border color on hover: the bottom prompt only switches
+     to the focus/white border while focused, and letting hover do the same
+     caused a white flash after the edit overlay finished closing. */
   background:
     linear-gradient(0deg, var(--vscode-list-hoverBackground), var(--vscode-list-hoverBackground)),
     var(--vscode-input-background);
-  border-color: var(--vscode-input-border, var(--vscode-focusBorder));
+  border-color: var(--color-border);
 }
-.msg.role-user.is-editable:focus-visible {
+.msg.role-user.is-editable[data-edit-phase="view"]:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }
-.msg.role-user.is-editing {
+/* Placeholder freeze for editing AND closing. The bubble's flow box is
+   locked to `--edit-placeholder-height` so the absolute `.user-edit-layer`
+   can grow over it without nudging subsequent content. */
+.msg.role-user:not([data-edit-phase="view"]) {
   cursor: default;
-  /* Inherit padding from the base .msg.role-user so the outer geometry is
-     identical to display mode — that's what eliminates the visual jump
-     when the bubble swaps from `.user-text` to `<textarea>`. Only the
-     chrome (focusBorder) and the click target (cursor) change. */
+  height: var(--edit-placeholder-height, auto);
+  padding: 0;
+  /* Keep the hidden placeholder's border/background at the same resting values
+     as the normal bubble. If edit mode uses `border: 0`, Chromium restores the
+     normal border through `currentColor` for a frame after the overlay closes,
+     which reads as a second white-to-gray flash. */
+  border: 1px solid var(--color-border);
   background: var(--color-bg-input);
-  border-color: var(--color-accent);
-  /* Keep later dialogue stationary while the editor grows over that space. */
-  margin-bottom: calc(var(--message-gap) - var(--edit-overlap, 0px));
+  box-shadow: none;
+  overflow: visible;
+  transition: none;
   z-index: var(--z-overlay);
+}
+.user-edit-layer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: var(--z-overlay);
+  padding: var(--bubble-padding);
+  border: 1px solid var(--color-border-focus);
+  border-radius: var(--radius);
+  background: var(--color-bg-input);
+  box-shadow: 0 12px 18px -10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
+  animation: user-edit-border-in 0.18s ease both;
+}
+.msg.role-user[data-edit-phase="closing"] .user-edit-layer {
+  pointer-events: none;
+  /* MUST stay named `user-edit-border-out` — `MessageView`'s
+     `handleOverlayAnimationEnd` filters on this name to advance the phase
+     from `closing` to `view`. Renaming the keyframes without updating the
+     `CLOSING_ANIMATION` constant in TS will leave the bubble stuck in the
+     closing state forever. */
+  animation: user-edit-border-out 0.18s ease both;
+}
+@keyframes user-edit-border-in {
+  from { border-color: var(--color-border); }
+  to { border-color: var(--color-border-focus); }
+}
+@keyframes user-edit-border-out {
+  from { border-color: var(--color-border-focus); }
+  to { border-color: var(--color-border); }
 }
 .user-edit-hint {
   position: absolute;
@@ -965,7 +1007,7 @@ button {
   pointer-events: none;
   transition: opacity 0.12s ease, color 0.12s ease;
 }
-.msg.role-user.is-editable:hover .user-edit-hint {
+.msg.role-user.is-editable[data-edit-phase="view"]:hover .user-edit-hint {
   opacity: 1;
   color: var(--vscode-foreground);
 }
@@ -2013,9 +2055,9 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  /* Match the edit-mode tighter spacing (was 6 px) — the `.is-editing`
-     CSS already overrides this to 3 px; matching it here makes send
-     and edit modes visually consistent. */
+  /* Match the edit-mode tighter spacing (was 6 px) — the non-view phase
+     selector overrides this to 3 px; matching it here keeps the send
+     prompt and edit overlay visually consistent. */
   margin-top: 3px;
   min-width: 0;
 }
