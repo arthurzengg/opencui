@@ -798,11 +798,8 @@ button {
     );
   }
 }
-/* All rules in this block target `editing` AND `closing` phases (the overlay
-   is mounted throughout both — closing is just the border-out animation
-   playing on its way to `view`). `:not([data-edit-phase="view"])` keeps the
-   selector concise and ensures any future phase added between editing and
-   view automatically inherits these edit-mode styles. */
+/* All rules in this block target the non-view edit phase. Keeping them keyed
+   to `[data-edit-phase]` makes it clear the overlay owns edit-mode chrome. */
 .msg.role-user:not([data-edit-phase="view"]) > .user-edit-layer > .promptbox {
   padding: 0;
   border-top: 0;
@@ -832,7 +829,7 @@ button {
 /* Fade + slide the action row in when entering edit mode so the buttons
    don't pop into existence below the textarea. The animation only runs
    on mount (the row stays mounted while editing), and is scoped to
-   non-view phases so the bottom prompt-box at the foot of the chat — which
+   the non-view phase so the bottom prompt-box at the foot of the chat — which
    is always present — isn't affected. Kept short (160 ms) so it feels
    immediate, not slow. */
 .msg.role-user:not([data-edit-phase="view"]) .promptbox-row {
@@ -920,10 +917,7 @@ button {
   background-color: var(--vscode-scrollbarSlider-background, var(--color-scrollbar-thumb));
 }
 /* Hover / focus rules are scoped to `[data-edit-phase="view"]` so they
-   physically cannot fire during `editing` or `closing` phases — that's the
-   structural guarantee the EditPhase state machine is meant to enforce.
-   Without this scope, a hover during the closing animation could repaint
-   the bubble's border underneath the overlay and produce a flash. */
+   physically cannot fire while the edit overlay is mounted. */
 .msg.role-user.is-editable[data-edit-phase="view"] {
   cursor: pointer;
 }
@@ -934,8 +928,7 @@ button {
      --vscode-list-hoverBackground is rgba(...) with low alpha, hover would
      reveal the chat content scrolling beneath the sticky message.
      Keep the resting border color on hover: the bottom prompt only switches
-     to the focus/white border while focused, and letting hover do the same
-     caused a white flash after the edit overlay finished closing. */
+     to the focus/white border while focused. */
   background:
     linear-gradient(0deg, var(--vscode-list-hoverBackground), var(--vscode-list-hoverBackground)),
     var(--vscode-input-background);
@@ -945,9 +938,9 @@ button {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }
-/* Placeholder freeze for editing AND closing. The bubble's flow box is
-   locked to `--edit-placeholder-height` so the absolute `.user-edit-layer`
-   can grow over it without nudging subsequent content. */
+/* Placeholder freeze for editing. The bubble's flow box is locked to
+   `--edit-placeholder-height` so the absolute `.user-edit-layer` can grow
+   over it without nudging subsequent content. */
 .msg.role-user:not([data-edit-phase="view"]) {
   cursor: default;
   height: var(--edit-placeholder-height, auto);
@@ -976,22 +969,9 @@ button {
   box-shadow: 0 12px 18px -10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
   animation: user-edit-border-in 0.18s ease both;
 }
-.msg.role-user[data-edit-phase="closing"] .user-edit-layer {
-  pointer-events: none;
-  /* MUST stay named `user-edit-border-out` — `MessageView`'s
-     `handleOverlayAnimationEnd` filters on this name to advance the phase
-     from `closing` to `view`. Renaming the keyframes without updating the
-     `CLOSING_ANIMATION` constant in TS will leave the bubble stuck in the
-     closing state forever. */
-  animation: user-edit-border-out 0.18s ease both;
-}
 @keyframes user-edit-border-in {
   from { border-color: var(--color-border); }
   to { border-color: var(--color-border-focus); }
-}
-@keyframes user-edit-border-out {
-  from { border-color: var(--color-border-focus); }
-  to { border-color: var(--color-border); }
 }
 .user-edit-hint {
   position: absolute;
