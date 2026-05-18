@@ -1,10 +1,31 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup, waitFor } from "@testing-library/react"
+import { render, screen, cleanup, waitFor, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageView } from "../../webview/src/components/MessageView"
 import type { Message } from "../../webview/src/hooks/useChatState"
 
 afterEach(cleanup)
+
+/** jsdom does not run CSS animations, so the overlay's `animationend` event
+ *  is never dispatched automatically. Tests that exercise the close path
+ *  (cancel / save-no-change / click-outside / Escape) manually fire it with
+ *  the closing animation's name so `MessageView`'s phase advances. */
+function endClosingAnimation(container: HTMLElement) {
+  const overlay = container.querySelector(".user-edit-layer")
+  if (!overlay) throw new Error("endClosingAnimation: no .user-edit-layer found")
+  // jsdom's `AnimationEvent` constructor ignores `animationName` in its init
+  // dict, so `fireEvent.animationEnd(target, { animationName })` dispatches
+  // an event whose `animationName` is `undefined` — and `MessageView`'s
+  // closing listener filters on that name. Construct the event manually and
+  // set the property via `Object.defineProperty` (read-only on the real
+  // AnimationEvent interface, but Object.defineProperty bypasses that on
+  // the plain Event we're using here).
+  const event = new Event("animationend", { bubbles: true })
+  Object.defineProperty(event, "animationName", { value: "user-edit-border-out" })
+  act(() => {
+    overlay.dispatchEvent(event)
+  })
+}
 
 function userMessage(text: string, opts: { id?: string; backendID?: string } = {}): Message {
   return {
@@ -79,12 +100,12 @@ describe("MessageView (user role)", () => {
     expect(screen.getByRole("button", { name: "Save & regenerate" })).toBeInTheDocument()
   })
 
-  it("compensates edit-mode height so following messages do not reflow", async () => {
+  it("freezes the message footprint while the edit overlay expands", async () => {
     const user = userEvent.setup()
     const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
       const element = this as HTMLElement
       if (element.classList.contains("msg")) {
-        return rect(element.classList.contains("is-editing") ? 64 : 32)
+        return rect(32)
       }
       return rect(0)
     })
@@ -100,7 +121,9 @@ describe("MessageView (user role)", () => {
       )
       const bubble = container.querySelector(".msg.role-user") as HTMLElement
       await user.click(bubble)
-      await waitFor(() => expect(bubble.style.getPropertyValue("--edit-overlap")).toBe("32px"))
+      expect(bubble.style.getPropertyValue("--edit-placeholder-height")).toBe("32px")
+      expect(container.querySelector(".user-edit-layer")).not.toBeNull()
+      expect(bubble.getAttribute("data-edit-phase")).toBe("editing")
     } finally {
       rectSpy.mockRestore()
     }
@@ -169,9 +192,14 @@ describe("MessageView (user role)", () => {
     )
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
     await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
-    // No regenerate triggered, edit mode closed.
+    // No regenerate triggered. Phase advances to closing (overlay still mounted
+    // while the border-out animation plays); the simulated animationend then
+    // advances to view and unmounts the overlay.
     expect(onEditMessage).not.toHaveBeenCalled()
-    expect(container.querySelector("textarea")).toBeNull()
+    expect(container.querySelector(".msg.role-user")?.getAttribute("data-edit-phase")).toBe("closing")
+    endClosingAnimation(container)
+    await waitFor(() => expect(container.querySelector("textarea")).toBeNull())
+    expect(container.querySelector(".msg.role-user")?.getAttribute("data-edit-phase")).toBe("view")
   })
 
   it("clicking outside returns to view mode without firing onEditMessage", async () => {
@@ -188,7 +216,8 @@ describe("MessageView (user role)", () => {
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
     expect(container.querySelector("textarea")).not.toBeNull()
     await user.click(document.body)
-    expect(container.querySelector("textarea")).toBeNull()
+    endClosingAnimation(container)
+    await waitFor(() => expect(container.querySelector("textarea")).toBeNull())
     expect(onEditMessage).not.toHaveBeenCalled()
   })
 
@@ -206,7 +235,8 @@ describe("MessageView (user role)", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     textarea.focus()
     await user.keyboard("{Escape}")
-    expect(container.querySelector("textarea")).toBeNull()
+    endClosingAnimation(container)
+    await waitFor(() => expect(container.querySelector("textarea")).toBeNull())
   })
 
   it("Cmd+Enter in textarea fires Save with the new content", async () => {
