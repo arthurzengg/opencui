@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-05-17
+
+### Changed
+- Internal: simplified the EditPhase state machine from three values (`view | editing | closing`) to two (`view | editing`). The `closing` phase existed only to host a 180 ms border-out CSS fade between editing and view; the visual payoff didn't justify the machinery. Removed: the `useEffect` attaching an `animationend` listener on the overlay, the `CLOSING_ANIMATION` constant coupling JS to a CSS keyframes name, the `@keyframes user-edit-border-out` rule + its `[data-edit-phase="closing"]` selector, and the test-side `endClosingAnimation` helper that constructed a synthetic `AnimationEvent` with `animationName` set via `Object.defineProperty` to work around jsdom's constructor limitation. Every structural benefit of the state machine is preserved — single source of truth, scoped hover/focus rules, attribute-driven CSS, placeholder freeze. `exitEditing` now sets phase to `view` and clears the placeholder height in the same call; the overlay unmounts immediately. If a surface ever genuinely needs an exit animation, re-introduce a 3-phase variant locally there. Closes #89.
+
 ## [0.6.2] - 2026-05-17
 
 ### Fixed
