@@ -1,31 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup, waitFor, act } from "@testing-library/react"
+import { render, screen, cleanup, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageView } from "../../webview/src/components/MessageView"
 import type { Message } from "../../webview/src/hooks/useChatState"
 
 afterEach(cleanup)
-
-/** jsdom does not run CSS animations, so the overlay's `animationend` event
- *  is never dispatched automatically. Tests that exercise the close path
- *  (cancel / save-no-change / click-outside / Escape) manually fire it with
- *  the closing animation's name so `MessageView`'s phase advances. */
-function endClosingAnimation(container: HTMLElement) {
-  const overlay = container.querySelector(".user-edit-layer")
-  if (!overlay) throw new Error("endClosingAnimation: no .user-edit-layer found")
-  // jsdom's `AnimationEvent` constructor ignores `animationName` in its init
-  // dict, so `fireEvent.animationEnd(target, { animationName })` dispatches
-  // an event whose `animationName` is `undefined` — and `MessageView`'s
-  // closing listener filters on that name. Construct the event manually and
-  // set the property via `Object.defineProperty` (read-only on the real
-  // AnimationEvent interface, but Object.defineProperty bypasses that on
-  // the plain Event we're using here).
-  const event = new Event("animationend", { bubbles: true })
-  Object.defineProperty(event, "animationName", { value: "user-edit-border-out" })
-  act(() => {
-    overlay.dispatchEvent(event)
-  })
-}
 
 function userMessage(text: string, opts: { id?: string; backendID?: string } = {}): Message {
   return {
@@ -192,13 +171,9 @@ describe("MessageView (user role)", () => {
     )
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
     await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
-    // No regenerate triggered. Phase advances to closing (overlay still mounted
-    // while the border-out animation plays); the simulated animationend then
-    // advances to view and unmounts the overlay.
+    // No regenerate triggered, edit mode closed.
     expect(onEditMessage).not.toHaveBeenCalled()
-    expect(container.querySelector(".msg.role-user")?.getAttribute("data-edit-phase")).toBe("closing")
-    endClosingAnimation(container)
-    await waitFor(() => expect(container.querySelector("textarea")).toBeNull())
+    expect(container.querySelector("textarea")).toBeNull()
     expect(container.querySelector(".msg.role-user")?.getAttribute("data-edit-phase")).toBe("view")
   })
 
@@ -216,7 +191,6 @@ describe("MessageView (user role)", () => {
     await user.click(container.querySelector(".msg.role-user") as HTMLElement)
     expect(container.querySelector("textarea")).not.toBeNull()
     await user.click(document.body)
-    endClosingAnimation(container)
     await waitFor(() => expect(container.querySelector("textarea")).toBeNull())
     expect(onEditMessage).not.toHaveBeenCalled()
   })
@@ -235,7 +209,6 @@ describe("MessageView (user role)", () => {
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement
     textarea.focus()
     await user.keyboard("{Escape}")
-    endClosingAnimation(container)
     await waitFor(() => expect(container.querySelector("textarea")).toBeNull())
   })
 
