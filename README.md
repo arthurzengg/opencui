@@ -5,11 +5,28 @@
 > (Anthropic / OpenAI / Gemini / local). Everything runs locally — nothing
 > leaves your machine except the API call to your chosen provider.
 
-<!-- TODO: screenshots
-![Chat panel](media/screenshots/chat.png)
-![@file picker](media/screenshots/mention-picker.png)
-![Review Changes](media/screenshots/review-changes.png)
--->
+<table>
+<tr>
+<td width="50%" align="center">
+  <img src="media/screenshots/panel-overview.png" alt="Panel overview" width="340"><br>
+  <sub><b>Welcome panel</b></sub>
+</td>
+<td width="50%" align="center">
+  <img src="media/screenshots/model-picker.png" alt="Model · Agent · Effort picker" width="340"><br>
+  <sub><b>Model · Agent · Effort picker</b></sub>
+</td>
+</tr>
+<tr>
+<td align="center">
+  <img src="media/screenshots/chat-history.png" alt="Chat history" width="340"><br>
+  <sub><b>Per-workspace chat history</b></sub>
+</td>
+<td align="center">
+  <img src="media/screenshots/edit-message.png" alt="Edit + regenerate" width="340"><br>
+  <sub><b>Edit + regenerate</b></sub>
+</td>
+</tr>
+</table>
 
 ## Highlights
 
