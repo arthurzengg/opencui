@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-05-17
+
+### Fixed
+- Editing a sent user-message bubble in the middle or bottom of the conversation no longer pushes the surrounding dialogue down. The editing UI now renders inside an absolute-positioned `.user-edit-layer` overlay; the bubble's flow box is locked to its collapsed height via a `--edit-placeholder-height` CSS variable captured on edit-entry. The overlay can grow without affecting flow, so assistant text below the editing bubble stays anchored regardless of how much the editor expands. `usePromptText`'s textarea auto-resize moved from `useEffect` to `useLayoutEffect` so the textarea reaches its content-fit height before paint, eliminating a one-frame lag where the bubble had grown but the placeholder hadn't yet.
+
+### Changed
+- Internal: replaced the bubble's three-boolean edit lifecycle (`editing` + `editClosing` + `editPlaceholderHeight`) and a `setTimeout(180)` with a single discriminated union `type EditPhase = "view" | "editing" | "closing"`. The row carries `data-edit-phase={editPhase}` as the sole state attribute; CSS keys on `[data-edit-phase="…"]` and `:not([data-edit-phase="view"])` (which scopes editing+closing rules together). Hover and `:focus-visible` rules are scoped to `[data-edit-phase="view"]` so they physically cannot fire during editing or closing — preventing the class of bug where a hover repainted the border underneath the closing-animation overlay. The `setTimeout` is gone; a native `addEventListener("animationend", …)` on the overlay ref (filtered to the `user-edit-border-out` animation name) advances `closing → view`. CSS animation duration is the sole source of truth — the JS reads it via the event, not a magic number, so bumping the duration on one side can't silently desynchronise from the other. Becomes the canonical pattern in the codebase for any future mode-switching surface. Closes #85.
+
 ## [0.6.1] - 2026-05-17
 
 ### Fixed
