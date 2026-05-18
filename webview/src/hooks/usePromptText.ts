@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useLayoutEffect, useRef, useState } from "react"
 
 // Hard upper bound on the auto-grow textarea height. Past this, the
 // textarea's own scrollbar takes over so the prompt box doesn't keep eating
@@ -28,7 +28,7 @@ export function usePromptText(initialText: string = "") {
   const backdropRef = useRef<HTMLDivElement>(null)
   const pendingCursor = useRef<number | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!ref.current) return
     ref.current.style.height = "auto"
     ref.current.style.height = Math.min(ref.current.scrollHeight, TEXTAREA_MAX_HEIGHT) + "px"

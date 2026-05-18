@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
 import type { Attachment, FileSearchHit } from "../protocol"
 import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
@@ -8,6 +8,29 @@ import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace, toolHeadline } from "./ToolCard"
 import { ICON_SIZE } from "../design-tokens"
+
+/**
+ * Discriminated edit lifecycle for user-message bubbles.
+ *
+ * - `view`     — read-only; hover/focus affordances are enabled here ONLY.
+ * - `editing`  — overlay rendered, border-in animation, click-outside cancels.
+ * - `closing`  — overlay still mounted, border-out animation running; the
+ *                overlay's `onAnimationEnd` advances `closing → view`.
+ *
+ * One value drives both the JSX (`data-edit-phase` attribute on the row) and
+ * the CSS (selectors keyed on that attribute). Previously this lifecycle was
+ * three booleans + a `setTimeout` that had to stay in lockstep with the CSS
+ * animation duration. The state machine collapses them into a single source
+ * of truth so the visual state can never be the *combination* of overlapping
+ * boolean flags, and so a CSS animation-duration tweak can never silently
+ * drift away from a hardcoded JS timer.
+ */
+type EditPhase = "view" | "editing" | "closing"
+
+/** CSS animation name played by `.user-edit-layer` while phase is `closing`.
+ *  The `onAnimationEnd` handler filters on this name so the entering
+ *  animation doesn't accidentally trigger a phase advance. */
+const CLOSING_ANIMATION = "user-edit-border-out"
 
 export function MessageView({
   message,
@@ -122,50 +145,57 @@ function UserMessageView({
   const attachmentBlocks = message.blocks.filter(
     (b): b is Extract<Block, { type: "attachment" }> => b.type === "attachment",
   )
-  const [editing, setEditing] = useState(false)
-  const [editOverlap, setEditOverlap] = useState(0)
+  const [editPhase, setEditPhase] = useState<EditPhase>("view")
+  const [editPlaceholderHeight, setEditPlaceholderHeight] = useState<number | null>(null)
   const [previewImage, setPreviewImage] = useState<Thumbnailable | null>(null)
   const bubbleRef = useRef<HTMLDivElement>(null)
   const editAreaRef = useRef<HTMLDivElement>(null)
-  const collapsedBubbleHeight = useRef<number | null>(null)
+
+  const exitEditing = () => {
+    // Only the editing phase can transition to closing. If we're already
+    // closing or in view, ignore — calling exit during closing is a no-op
+    // by design so click-outside listeners don't re-trigger the animation.
+    if (editPhase !== "editing") return
+    setEditPhase("closing")
+  }
+
+  // Animation-driven phase advance: when the overlay's border-out animation
+  // finishes, transition from `closing` to `view`. Using a native
+  // addEventListener on the overlay ref (rather than React's onAnimationEnd
+  // prop) for two reasons: (1) it matches the architectural intent — the CSS
+  // animation duration is the sole source of truth, and the listener fires
+  // exactly when CSS says the animation is done; (2) it's reliably dispatched
+  // in jsdom test environments where React's synthetic onAnimationEnd is not
+  // always invoked by `fireEvent.animationEnd`.
+  useEffect(() => {
+    if (editPhase !== "closing") return
+    const overlay = editAreaRef.current
+    if (!overlay) return
+    const handler = (event: Event) => {
+      // Overlay plays two animations (`user-edit-border-in` on enter,
+      // `user-edit-border-out` on exit); only the closing one advances the
+      // phase, otherwise the entering animation would bounce us straight
+      // back to `view` the moment edit opens.
+      if ((event as globalThis.AnimationEvent).animationName !== CLOSING_ANIMATION) return
+      setEditPhase("view")
+      setEditPlaceholderHeight(null)
+    }
+    overlay.addEventListener("animationend", handler)
+    return () => overlay.removeEventListener("animationend", handler)
+  }, [editPhase])
 
   // Click-outside cancels the edit. We listen on the document so any click
   // outside the editing container — anywhere in the chat panel — drops us
   // back to view mode. Cheap and matches the "no Cancel button" UX.
   useEffect(() => {
-    if (!editing) return
+    if (editPhase !== "editing") return
     const onPointerDown = (event: PointerEvent) => {
       if (editAreaRef.current?.contains(event.target as Node)) return
-      setEditing(false)
+      exitEditing()
     }
     document.addEventListener("pointerdown", onPointerDown)
     return () => document.removeEventListener("pointerdown", onPointerDown)
-  }, [editing])
-
-  useLayoutEffect(() => {
-    if (!editing) {
-      collapsedBubbleHeight.current = null
-      setEditOverlap(0)
-      return
-    }
-    const bubble = bubbleRef.current
-    const baseline = collapsedBubbleHeight.current
-    if (!bubble || !baseline || baseline <= 0) {
-      setEditOverlap(0)
-      return
-    }
-
-    const measureOverlap = () => {
-      const next = Math.max(0, bubble.getBoundingClientRect().height - baseline)
-      setEditOverlap((current) => Math.abs(current - next) < 0.5 ? current : next)
-    }
-
-    measureOverlap()
-    if (typeof ResizeObserver === "undefined") return
-    const observer = new ResizeObserver(measureOverlap)
-    observer.observe(bubble)
-    return () => observer.disconnect()
-  }, [editing])
+  }, [editPhase])
 
   // Re-derive attachment labels (same algorithm PromptBox originally used) and
   // wrap each attachment block into the Attachment shape, including a synthetic
@@ -207,45 +237,63 @@ function UserMessageView({
     const sameMentionCount = (mentions?.length ?? 0) === (message.mentions?.length ?? 0)
     const sameAttachCount = (attachments?.length ?? 0) === attachmentBlocks.length
     if (sameText && sameMentionCount && sameAttachCount) {
-      setEditing(false)
+      exitEditing()
       return
     }
     onEditMessage?.(message.id, trimmed, mentions, attachments)
-    setEditing(false)
+    exitEditing()
   }
 
   const enterEditing = () => {
-    if (!editable || editing) return
+    if (!editable) return
+    if (editPhase === "editing") return
     if (typeof window !== "undefined" && window.getSelection?.()?.toString()) return
-    collapsedBubbleHeight.current = bubbleRef.current?.getBoundingClientRect().height ?? null
-    setEditOverlap(0)
-    setEditing(true)
+    // Re-entering during a closing animation: cancel the close by jumping
+    // straight back to editing. The overlay's CSS animation property
+    // switches from `user-edit-border-out` to `user-edit-border-in`, so the
+    // outgoing animation simply stops (no orphaned animationend event since
+    // animation replacement doesn't dispatch one) and the entering animation
+    // plays from its current intermediate border colour. Placeholder height
+    // is still set from the original measurement — no re-measure needed.
+    if (editPhase === "view") {
+      setEditPlaceholderHeight(bubbleRef.current?.getBoundingClientRect().height ?? null)
+    }
+    setEditPhase("editing")
   }
+
+  const inEditMode = editPhase !== "view"
 
   return (
     <div
       ref={bubbleRef}
-      className={`msg role-user ${editing ? "is-editing" : ""} ${editable ? "is-editable" : ""}`}
-      style={editing ? ({ "--edit-overlap": `${editOverlap}px` } as CSSProperties) : undefined}
+      className={`msg role-user ${editable ? "is-editable" : ""}`}
+      data-edit-phase={editPhase}
+      style={inEditMode && editPlaceholderHeight
+        ? ({ "--edit-placeholder-height": `${editPlaceholderHeight}px` } as CSSProperties)
+        : undefined}
       onClick={enterEditing}
-      role={editable && !editing ? "button" : undefined}
-      tabIndex={editable && !editing ? 0 : undefined}
-      onKeyDown={editable && !editing ? (event) => {
+      role={editable && !inEditMode ? "button" : undefined}
+      tabIndex={editable && !inEditMode ? 0 : undefined}
+      onKeyDown={editable && !inEditMode ? (event) => {
         if (event.target !== event.currentTarget) return
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault()
           enterEditing()
         }
       } : undefined}
-      title={editing ? undefined : editTitle}
+      title={inEditMode ? undefined : editTitle}
     >
-      {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
-      {editing ? (
-        <div ref={editAreaRef} onClick={(event) => event.stopPropagation()}>
+      {inEditMode ? (
+        <div
+          ref={editAreaRef}
+          className="user-edit-layer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
           <PromptBox
             busy={false}
             onSend={handleSubmit}
-            onAbort={() => setEditing(false)}
+            onAbort={exitEditing}
             searchFiles={searchFiles}
             attachFile={attachFile}
             variant="edit"
@@ -258,6 +306,7 @@ function UserMessageView({
         </div>
       ) : (
         <>
+          {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
           {attachmentBlocks.length > 0 && (
             <ul className="msg-attachments" aria-label="Attachments">
               {attachmentBlocks.map((a, i) =>
