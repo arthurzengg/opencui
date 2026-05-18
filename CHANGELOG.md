@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-05-18
+
+### Changed
+- Docs: trimmed the README from 176 lines to 69 by dropping the maintainer-focused sections (Tests, Packaging, Backend management, six per-feature subsections) and folding the remaining user-facing prose into an 8-bullet Highlights list. Adds four screenshots (welcome panel, Model · Agent · Effort picker, per-workspace chat history, edit-and-regenerate flow) in a compact 2×2 grid above the fold. Each image is width-constrained via an HTML `<table>` + `<img width="340">` so the two tall portrait shots don't dominate. The VS Code Marketplace listing renders relative-path PNGs and inline HTML natively, so the new listing has an actual visual hook for first-time browsers instead of just text. Closes #71, #93.
+
 ## [0.6.3] - 2026-05-17
 
 ### Changed
