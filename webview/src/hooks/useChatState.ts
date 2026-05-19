@@ -176,6 +176,13 @@ export function reducer(state: ChatState, action: Action): ChatState {
           m.id === action.id ? { ...m, backendID: action.backendID } : m,
         ),
       }
+    case "userMessageContext":
+      return {
+        ...state,
+        messages: state.messages.map((m) =>
+          m.id === action.id ? { ...m, context: action.context } : m,
+        ),
+      }
     case "assistantStart":
       return {
         ...state,
