@@ -71,9 +71,14 @@ describe("readMentions", () => {
     vi.mocked(vscode.workspace.fs.readFile).mockReset()
   })
 
-  it("returns undefined for empty mentions", async () => {
-    expect(await readMentions(undefined)).toBeUndefined()
-    expect(await readMentions([])).toBeUndefined()
+  it("returns empty state for empty mentions", async () => {
+    const a = await readMentions(undefined)
+    expect(a.block).toBeUndefined()
+    expect(a.bytes).toEqual({})
+    expect(a.capped).toEqual([])
+    expect(a.failed).toEqual([])
+    const b = await readMentions([])
+    expect(b.block).toBeUndefined()
   })
 
   it("returns a fenced block per file with the @path header", async () => {
@@ -81,10 +86,14 @@ describe("readMentions", () => {
       new TextEncoder().encode("export const x = 1\n"),
     )
     const out = await readMentions(["src/foo.ts"])
-    expect(out).toContain("Files attached:")
-    expect(out).toContain("@src/foo.ts")
-    expect(out).toContain("```ts")
-    expect(out).toContain("export const x = 1")
+    expect(out.block).toContain("Files attached:")
+    expect(out.block).toContain("@src/foo.ts")
+    expect(out.block).toContain("```ts")
+    expect(out.block).toContain("export const x = 1")
+    expect(out.bytes["src/foo.ts"]).toMatchObject({
+      included: expect.any(Number),
+      original: expect.any(Number),
+    })
   })
 
   it("dedups repeated mention paths", async () => {
@@ -92,26 +101,28 @@ describe("readMentions", () => {
       new TextEncoder().encode("hello"),
     )
     const out = await readMentions(["src/foo.ts", "src/foo.ts"])
-    expect(out).toBeDefined()
-    // Only one occurrence of the @path header
-    const matches = out!.match(/@src\/foo\.ts/g)
+    expect(out.block).toBeDefined()
+    const matches = out.block!.match(/@src\/foo\.ts/g)
     expect(matches).toHaveLength(1)
   })
 
-  it("skips files that fail to read but keeps going", async () => {
+  it("records failed reads in `failed`", async () => {
     vi.mocked(vscode.workspace.fs.readFile)
       .mockRejectedValueOnce(new Error("ENOENT"))
       .mockResolvedValueOnce(new TextEncoder().encode("good"))
     const out = await readMentions(["bad.ts", "good.ts"])
-    expect(out).toBeDefined()
-    expect(out).toContain("@good.ts")
-    expect(out).not.toContain("@bad.ts")
+    expect(out.block).toContain("@good.ts")
+    expect(out.block).not.toContain("@bad.ts")
+    expect(out.failed).toEqual(["bad.ts"])
+    expect(out.bytes["good.ts"]).toBeDefined()
+    expect(out.bytes["bad.ts"]).toBeUndefined()
   })
 
-  it("returns undefined when every read fails", async () => {
+  it("returns no block when every read fails", async () => {
     vi.mocked(vscode.workspace.fs.readFile).mockRejectedValue(new Error("nope"))
     const out = await readMentions(["x.ts", "y.ts"])
-    expect(out).toBeUndefined()
+    expect(out.block).toBeUndefined()
+    expect(out.failed).toEqual(["x.ts", "y.ts"])
   })
 
   it("picks a sensible fence language from extension", async () => {
@@ -119,6 +130,6 @@ describe("readMentions", () => {
       new TextEncoder().encode("body { color: red; }"),
     )
     const out = await readMentions(["styles.css"])
-    expect(out).toContain("```css")
+    expect(out.block).toContain("```css")
   })
 })

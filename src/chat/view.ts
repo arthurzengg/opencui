@@ -38,6 +38,7 @@ import { relativeToCwd, samePath } from "./paths"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { reviewChanges } from "./review-changes"
 import { buildPrompt, readMentions } from "./prompt-builder"
+import { buildManifest } from "../workspace-context/manifest"
 import { toWire } from "./wire-format"
 import {
   applyCode,
@@ -429,6 +430,12 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "userMessageBackendID":
         this.messages = this.messages.map((m) =>
           m.id === msg.id ? { ...m, backendID: msg.backendID } : m,
+        )
+        this.saveActive()
+        return
+      case "userMessageContext":
+        this.messages = this.messages.map((m) =>
+          m.id === msg.id ? { ...m, context: msg.context } : m,
         )
         this.saveActive()
         return
@@ -932,7 +939,42 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
 
     const sel = this.prefs.get()
-    const mentionBlock = await readMentions(mentions)
+    const mentionResult = await readMentions(mentions)
+    const manifest = buildManifest({
+      workspace: backend.workspace,
+      workspaceInfo: this.workspaceInfo(),
+      configMode: backend.configMode,
+      editor: ctx,
+      mentions,
+      attachments,
+      mentionBytes: mentionResult.bytes,
+    })
+    // Tag capped/failed mentions explicitly so the manifest shows them.
+    for (const rel of mentionResult.capped) {
+      manifest.items.push({
+        id: `mention_skipped_${rel}`,
+        source: "mention",
+        kind: "file",
+        label: rel,
+        path: rel,
+        reason: "Skipped: per-prompt mention cap exceeded",
+        status: "skipped",
+      })
+      manifest.totals.skippedItems += 1
+    }
+    for (const rel of mentionResult.failed) {
+      manifest.items.push({
+        id: `mention_failed_${rel}`,
+        source: "mention",
+        kind: "file",
+        label: rel,
+        path: rel,
+        reason: "Skipped: file unreadable (ENOENT or permission denied)",
+        status: "skipped",
+      })
+      manifest.totals.skippedItems += 1
+    }
+    this.post({ type: "userMessageContext", id: userMessageID, context: manifest })
     const parts: Array<Record<string, unknown>> = []
     if (attachments) {
       for (const a of attachments) {
@@ -949,7 +991,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         })
       }
     }
-    parts.push({ type: "text", text: buildPrompt(text, ctx, mentionBlock, backend.workspace) })
+    parts.push({ type: "text", text: buildPrompt(text, ctx, mentionResult.block, backend.workspace) })
     type PromptBody = NonNullable<Parameters<typeof backend.client.session.prompt>[0]["body"]>
     const body: PromptBody = {
       parts: parts as PromptBody["parts"],

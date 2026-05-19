@@ -65,6 +65,12 @@ export type ChatMessage = {
    * tokens in the text should still be treated as file context attachments.
    */
   mentions?: string[]
+  /**
+   * Manifest of context the host attached when this turn was sent. Persisted
+   * so historical messages can show what was included. Always set for new
+   * messages, undefined for messages from before the manifest landed.
+   */
+  context?: PromptContextManifest
 }
 
 export type ConversationSummary = {
@@ -128,6 +134,72 @@ export type WorkspaceInfo = {
 
 export type FileSearchHit = { path: string; name: string }
 
+/**
+ * Per-prompt manifest of what context the host attached to a user turn.
+ * Built by the host in `src/workspace-context/manifest.ts`, rendered by the
+ * `ContextManifest` component in the user-message bubble. Persisted on
+ * `ChatMessage.context` so historical turns can still surface what they
+ * actually sent. Phases 3+ append more items (collectors, semantic hits);
+ * the shape stays stable.
+ */
+export type PromptContextManifest = {
+  version: 1
+  workspace?: WorkspaceInfo
+  opencode?: {
+    directory?: string
+    configMode: "isolated" | "user"
+  }
+  totals: {
+    includedItems: number
+    skippedItems: number
+    truncatedItems: number
+    includedBytes: number
+    /** Phase 4+ budget; 0 means "no budget enforced yet". */
+    budgetBytes: number
+  }
+  items: PromptContextManifestItem[]
+}
+
+export type PromptContextManifestItemSource =
+  | "editor"
+  | "mention"
+  | "attachment"
+  | "openTab"
+  | "git"
+  | "diagnostic"
+  | "recentEdit"
+  | "doc"
+  | "symbol"
+  | "semantic"
+  | "opencode"
+  | "omo"
+  | "external"
+
+export type PromptContextManifestItemKind =
+  | "file"
+  | "selection"
+  | "snippet"
+  | "diff"
+  | "diagnostic"
+  | "symbol"
+  | "summary"
+  | "indexResult"
+
+export type PromptContextManifestItem = {
+  id: string
+  source: PromptContextManifestItemSource
+  kind: PromptContextManifestItemKind
+  label: string
+  path?: string
+  root?: string
+  reason: string
+  status: "included" | "skipped" | "truncated" | "available"
+  bytes?: number
+  budgetBytes?: number
+  external?: boolean
+  priority?: number
+}
+
 export type Attachment = {
   /** Stable id used to dedup / remove an attachment in the prompt UI. */
   id: string
@@ -155,8 +227,15 @@ export type Outbound =
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
   | { type: "workspace"; workspace?: WorkspaceInfo }
-  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[] }
+  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[]; context?: PromptContextManifest }
   | { type: "userMessageBackendID"; id: string; backendID: string }
+  /**
+   * Followup to `userMessage` after the host finishes reading mentions and
+   * builds the full manifest. Sent as a separate event so the user message
+   * bubble appears instantly (no waiting on file I/O) and the manifest pill
+   * fills in once the host knows the included/truncated/skipped state.
+   */
+  | { type: "userMessageContext"; id: string; context: PromptContextManifest }
   | { type: "assistantStart"; id: string }
   | { type: "textDelta"; id: string; delta: string }
   | { type: "reasoningDelta"; id: string; delta: string }
