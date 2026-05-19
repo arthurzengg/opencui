@@ -271,6 +271,45 @@ describe("MessageView (assistant role)", () => {
     expect(screen.getByText(/0\.0025/)).toBeInTheDocument()
     expect(screen.getByText(/150 tokens/)).toBeInTheDocument()
   })
+
+  it("renders markdown in reasoning body when a title is extracted", () => {
+    const msg = {
+      id: "a-reason-titled",
+      role: "assistant",
+      blocks: [
+        {
+          type: "reasoning",
+          text: "## Approach\n\n- decode the input\n- dispatch to `handler`\n- emit a result",
+        },
+      ],
+    } as Message
+    const { container } = render(
+      <MessageView message={msg} processOpen={true} processOnly={false} />,
+    )
+    expect(container.querySelector(".process-text-title")?.textContent).toBe("Approach")
+    expect(container.querySelectorAll(".process-text li").length).toBe(3)
+    expect(container.querySelector(".process-text code")?.textContent).toBe("handler")
+  })
+
+  it("renders markdown headings in reasoning body when no title is extracted", () => {
+    const msg = {
+      id: "a-reason-notitle",
+      role: "assistant",
+      blocks: [
+        {
+          type: "reasoning",
+          // Long first line defeats textTitle's <8-word guard, so the whole
+          // block flows through Markdown without title extraction.
+          text: "This reasoning has a very long first sentence that should never be promoted to a panel title field.\n\n## Sub-Heading\n\n- one\n- two",
+        },
+      ],
+    } as Message
+    const { container } = render(
+      <MessageView message={msg} processOpen={true} processOnly={false} />,
+    )
+    expect(container.querySelector(".process-text h2")?.textContent).toBe("Sub-Heading")
+    expect(container.querySelectorAll(".process-text li").length).toBe(2)
+  })
 })
 
 describe("MessageView edit preserves mentions + attachments", () => {

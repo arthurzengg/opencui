@@ -1196,6 +1196,10 @@ button {
   line-height: 1.45;
   white-space: pre-wrap;
 }
+/* Markdown body inside ProcessText (reasoning blocks emit headings/lists/code).
+   `remarkBreaks` handles line breaks via <br>, so pre-wrap would only
+   re-introduce visual gaps around block elements — reset it here. */
+.process-text .md { white-space: normal; }
 .process-text-title {
   margin-bottom: 8px;
   color: var(--vscode-descriptionForeground);
