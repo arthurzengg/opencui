@@ -14,6 +14,8 @@ import { getEditorContext, formatContextHeader } from "../context"
 import { searchWorkspaceFiles } from "../file-search"
 import { pickAttachments } from "../attachments"
 import { log } from "../output"
+import { getWorkspaceRoots, primaryWorkspaceRoot } from "../workspace-root"
+import type { WorkspaceInfo } from "../protocol"
 import type {
   Attachment,
   ChatBlock,
@@ -187,6 +189,11 @@ export class ChatView implements vscode.WebviewViewProvider {
     }, null, this.context.subscriptions)
     vscode.window.onDidChangeTextEditorSelection(
       () => this.pushContext(),
+      null,
+      this.context.subscriptions,
+    )
+    vscode.workspace.onDidChangeWorkspaceFolders(
+      () => this.pushWorkspace(),
       null,
       this.context.subscriptions,
     )
@@ -509,6 +516,27 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.post({ type: "context", ref: { path: ctx.filePath, label } })
   }
 
+  private pushWorkspace() {
+    this.post({ type: "workspace", workspace: this.workspaceInfo() })
+  }
+
+  private workspaceInfo(): WorkspaceInfo | undefined {
+    const root = primaryWorkspaceRoot()
+    if (!root) return undefined
+    const all = getWorkspaceRoots()
+    const configMode =
+      vscode.workspace.getConfiguration("opencui").get<string>("opencodeConfigMode") === "user"
+        ? "user"
+        : "isolated"
+    return {
+      name: root.name,
+      root: root.fsPath,
+      isDefault: root.isDefault,
+      multiRoot: all.length > 1,
+      configMode,
+    }
+  }
+
   private async onMessage(msg: Inbound) {
     switch (msg.type) {
       case "mounted": {
@@ -519,6 +547,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         })
         this.sendConversationState()
         this.pushContext()
+        this.pushWorkspace()
         try {
           await this.servers.ensure()
           this.post({ type: "connected", connected: true })
@@ -920,7 +949,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         })
       }
     }
-    parts.push({ type: "text", text: buildPrompt(text, ctx, mentionBlock) })
+    parts.push({ type: "text", text: buildPrompt(text, ctx, mentionBlock, backend.workspace) })
     type PromptBody = NonNullable<Parameters<typeof backend.client.session.prompt>[0]["body"]>
     const body: PromptBody = {
       parts: parts as PromptBody["parts"],

@@ -123,6 +123,16 @@
           "type": "string",
           "default": "",
           "description": "Default model id (provider/model)"
+        },
+        "opencui.opencodeConfigMode": {
+          "type": "string",
+          "enum": ["isolated", "user"],
+          "enumDescriptions": [
+            "Ignore the user's opencode config and plugins — use an empty config for predictable extension behavior.",
+            "Load the user's normal opencode config, agents, and plugins from disk."
+          ],
+          "default": "isolated",
+          "description": "Whether the opencode server started by OpenCode Panel loads the user's opencode config or runs with an empty isolated config."
         }
       }
     }
