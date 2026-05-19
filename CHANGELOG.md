@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-18
+
+### Fixed
+- Reasoning blocks emitted by thinking-enabled models (Claude Opus 4.7 with extended thinking, GPT-5.5, Gemini 2.5 Pro) now render their markdown correctly. Previously, the `ProcessText` component that backs both the reasoning trace and the in-panel text scaffolding wrapped body content in a plain `<div>`, which leaked `## Headings`, `- bullet items`, ` ``` fenced code blocks ` and `` `inline code` `` as literal glyphs — even when the markdown engine for assistant messages elsewhere on the page was rendering identical strings as proper DOM. The body now flows through the existing `<Markdown>` component (same `remark-gfm` + `remark-breaks` + `remark-math` + `rehype-katex` + Shiki pipeline as final answers), so reasoning streams that arrive as structured markdown look structurally identical to their final-answer counterparts. The title-extraction heuristic at `textTitle()` is unchanged: a short single-line first sentence (≤8 words, not pronouns, not raw HTML tags) is still pulled out and rendered as the bold `.process-text-title` chip; only the *rest* — the part the heuristic stripped away — now passes through the markdown pipeline. Two new tests cover both code paths (titled-and-stripped vs. long-first-line-with-mid-block-`##`). CSS-side, `white-space: pre-wrap` is neutralised inside nested `.md` so block elements (which already supply their own line breaks via `remarkBreaks` `<br>` insertion) don't get double-spaced around `<p>` / `<ul>` boundaries. Surfaces every other markdown affordance the chat already supports — GFM tables, task lists, inline + block LaTeX, fenced code with syntax highlighting, links, strikethrough — uniformly inside reasoning traces too. Closes #105.
+
 ## [0.6.6] - 2026-05-18
 
 ### Changed
