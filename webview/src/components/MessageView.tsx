@@ -482,12 +482,12 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
 function ProcessText({ text }: { text: string }) {
   if (!text.trim()) return null
   const title = textTitle(text)
-  if (!title) return <div className="process-text">{text}</div>
+  if (!title) return <div className="process-text"><Markdown text={text} /></div>
   const body = stripDuplicateTitle(text, title)
   return (
     <div className="process-text">
       <div className="process-text-title">{title}</div>
-      {body && <div>{body}</div>}
+      {body && <Markdown text={body} />}
     </div>
   )
 }
