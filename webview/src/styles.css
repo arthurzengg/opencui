@@ -60,6 +60,13 @@
      textarea aligned — they used to be coupled only by code comments. */
   --bubble-padding:      var(--space-1);
   --bubble-text-padding: var(--space-1);
+  /* Border width of `.msg.role-user`. Referenced by `.user-edit-layer` so the
+     overlay's `top/left/right` offset and its own border-width stay in lock-
+     step with the placeholder's resting border — bump this once and the
+     placeholder + overlay realign together. Without this coupling the two
+     surfaces silently drift by exactly this many pixels (the original cause
+     of issue #97). */
+  --bubble-border-width: 1px;
   --message-gap:         var(--space-6);
   /* Shared max-height for the bottom prompt textarea AND the rendered
      user message bubble. Keeping the two in lockstep is what makes the
@@ -756,7 +763,7 @@ button {
      through, even when a hover/list color is layered on top. */
   background: var(--color-bg-input);
   background-color: var(--color-bg-input);
-  border: 1px solid var(--color-border);
+  border: var(--bubble-border-width) solid var(--color-border);
   border-radius: var(--radius);
   word-break: break-word;
   /* Soft drop shadow gives the pinned bubble a subtle natural-fade transition
@@ -949,7 +956,7 @@ button {
      as the normal bubble. If edit mode uses `border: 0`, Chromium restores the
      normal border through `currentColor` for a frame after the overlay closes,
      which reads as a second white-to-gray flash. */
-  border: 1px solid var(--color-border);
+  border: var(--bubble-border-width) solid var(--color-border);
   background: var(--color-bg-input);
   box-shadow: none;
   overflow: visible;
@@ -958,16 +965,19 @@ button {
 }
 .user-edit-layer {
   position: absolute;
-  /* Cover the placeholder's border box, not its padding box. The placeholder
-     keeps a real 1px resting border to avoid close-time color flashes; without
-     this offset the edit overlay starts inside that border and the textarea
-     glyphs land 1px lower/right than `.user-text`. */
-  top: -1px;
-  right: -1px;
-  left: -1px;
+  /* Cover the placeholder's border box, not its padding box. With
+     `box-sizing: border-box` the placeholder's border lives inside its outer
+     rect, and `position: absolute; top/left/right: 0` resolves relative to
+     the padding box — so the overlay would land inside the border and the
+     textarea glyphs would sit 1px lower/right than `.user-text`. The offset
+     and the overlay's own border-width both derive from `--bubble-border-width`
+     so bumping the placeholder border auto-updates this overlay (issue #101). */
+  top: calc(-1 * var(--bubble-border-width));
+  right: calc(-1 * var(--bubble-border-width));
+  left: calc(-1 * var(--bubble-border-width));
   z-index: var(--z-overlay);
   padding: var(--bubble-padding);
-  border: 1px solid var(--color-border-focus);
+  border: var(--bubble-border-width) solid var(--color-border-focus);
   border-radius: var(--radius);
   background: var(--color-bg-input);
   box-shadow: 0 12px 18px -10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
