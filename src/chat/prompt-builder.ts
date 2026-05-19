@@ -1,6 +1,7 @@
 import * as vscode from "vscode"
 import * as path from "path"
 import type { getEditorContext } from "../context"
+import type { WorkspaceRoot } from "../workspace-root"
 import { log } from "../output"
 
 const MENTION_MAX_BYTES = 200_000
@@ -10,8 +11,16 @@ export function buildPrompt(
   userText: string,
   ctx: ReturnType<typeof getEditorContext>,
   mentionBlock?: string,
+  workspace?: WorkspaceRoot,
 ): string {
   const lines: string[] = []
+  if (workspace) {
+    lines.push("Workspace:")
+    lines.push(`- Name: ${workspace.name}`)
+    lines.push(`- Root: ${workspace.fsPath}`)
+    lines.push("- Paths below are workspace-relative unless marked absolute.")
+    lines.push("")
+  }
   if (mentionBlock) {
     lines.push(mentionBlock)
     lines.push("")

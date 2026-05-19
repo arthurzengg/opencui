@@ -3,8 +3,11 @@ import * as path from "path"
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk"
 import { log } from "./output"
+import { primaryWorkspaceRoot, type WorkspaceRoot } from "./workspace-root"
 
 const SERVER_START_TIMEOUT_MS = 60000
+
+export type OpencodeConfigMode = "isolated" | "user"
 
 type ServerHandle = {
   url: string
@@ -15,12 +18,23 @@ export type Backend = {
   url: string
   client: OpencodeClient
   directory: string
+  /**
+   * Workspace root the server was bound to at start time. Undefined when no
+   * folder was open — callers should treat that as "no automatic context"
+   * and avoid running git/find/etc. against an unknown cwd.
+   */
+  workspace?: WorkspaceRoot
+  /** Active opencode config-mode for this server lifecycle. */
+  configMode: OpencodeConfigMode
 }
 
 export class ServerManager {
   private server: ServerHandle | undefined
   private client: OpencodeClient | undefined
   private starting: Promise<Backend> | undefined
+  /** Workspace root captured at start time so subsequent `ensure()` calls return a stable Backend. */
+  private workspace: WorkspaceRoot | undefined
+  private configMode: OpencodeConfigMode = "isolated"
 
   constructor(private context: vscode.ExtensionContext) {}
 
@@ -40,20 +54,32 @@ export class ServerManager {
     const port = config.get<number>("serverPort") ?? 0
     const configuredBinaryPath = config.get<string>("binaryPath") || "opencode"
     const binaryPath = resolveBinaryPath(configuredBinaryPath, this.context.extensionPath)
+    const configMode = readConfigMode(config)
+    const workspace = primaryWorkspaceRoot()
 
-    log("starting opencode server", { configuredBinaryPath, resolved: binaryPath, port })
+    log("starting opencode server", {
+      configuredBinaryPath,
+      resolved: binaryPath,
+      port,
+      configMode,
+      workspace: workspace?.fsPath ?? "(no workspace)",
+    })
     const server = await startOpencodeServer(binaryPath, {
       hostname: "127.0.0.1",
       port: port || randomPort(),
       timeout: SERVER_START_TIMEOUT_MS,
+      cwd: workspace?.fsPath,
+      configMode,
     })
     log("opencode server ready at", server.url)
     const client = createOpencodeClient({
       baseUrl: server.url,
-      directory: workspaceDir(),
+      directory: workspace?.fsPath ?? process.cwd(),
     })
     this.server = server
     this.client = client
+    this.workspace = workspace
+    this.configMode = configMode
     return this.toBackend(server, client)
   }
 
@@ -68,11 +94,23 @@ export class ServerManager {
       this.server.close()
       this.server = undefined
       this.client = undefined
+      this.workspace = undefined
     }
   }
 
+  /** Workspace the running server is bound to, or undefined if not started yet. */
+  currentWorkspace(): WorkspaceRoot | undefined {
+    return this.workspace
+  }
+
   private toBackend(server: ServerHandle, client: OpencodeClient): Backend {
-    return { url: server.url, client, directory: workspaceDir() }
+    return {
+      url: server.url,
+      client,
+      directory: this.workspace?.fsPath ?? process.cwd(),
+      workspace: this.workspace,
+      configMode: this.configMode,
+    }
   }
 }
 
@@ -80,8 +118,9 @@ function randomPort() {
   return Math.floor(Math.random() * (65535 - 16384 + 1)) + 16384
 }
 
-function workspaceDir() {
-  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()
+function readConfigMode(config: vscode.WorkspaceConfiguration): OpencodeConfigMode {
+  const value = config.get<string>("opencodeConfigMode")
+  return value === "user" ? "user" : "isolated"
 }
 
 function resolveBinaryPath(binaryPath: string, extensionPath: string): string {
@@ -111,13 +150,28 @@ function bundledBinaryPath(extensionPath: string): string | undefined {
 
 function startOpencodeServer(
   binaryPath: string,
-  options: { hostname: string; port: number; timeout: number },
+  options: {
+    hostname: string
+    port: number
+    timeout: number
+    /** Workspace root for the subprocess `cwd`. Undefined means inherit. */
+    cwd?: string
+    configMode: OpencodeConfigMode
+  },
 ): Promise<ServerHandle> {
+  // `isolated` keeps the historical behavior: hand opencode an empty config so
+  // the user's `~/.config/opencode` and any local config/plugins are ignored —
+  // gives the extension predictable defaults. `user` opts back in to the
+  // user's normal opencode environment (config, agents, plugins).
+  const env: NodeJS.ProcessEnv = { ...process.env }
+  if (options.configMode === "isolated") {
+    env.OPENCODE_CONFIG_CONTENT = "{}"
+  } else {
+    delete env.OPENCODE_CONFIG_CONTENT
+  }
   const proc = spawn(binaryPath, ["serve", `--hostname=${options.hostname}`, `--port=${options.port}`], {
-    env: {
-      ...process.env,
-      OPENCODE_CONFIG_CONTENT: "{}",
-    },
+    cwd: options.cwd,
+    env,
   })
 
   return new Promise((resolve, reject) => {

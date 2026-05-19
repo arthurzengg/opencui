@@ -1,6 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import * as vscode from "vscode"
 import { buildPrompt, readMentions } from "../../src/chat/prompt-builder"
+import type { WorkspaceRoot } from "../../src/workspace-root"
+
+const FAKE_ROOT: WorkspaceRoot = {
+  uri: { fsPath: "/repo", scheme: "file" } as unknown as vscode.Uri,
+  fsPath: "/repo",
+  name: "repo",
+  index: 0,
+  isDefault: true,
+}
 
 describe("buildPrompt", () => {
   it("returns the user text when there is no editor context or mentions", () => {
@@ -40,6 +49,20 @@ describe("buildPrompt", () => {
     const out = buildPrompt("explain", {}, "Files attached:\n@a.ts\n```ts\nx\n```")
     expect(out).toContain("Files attached:")
     expect(out).toContain("explain")
+  })
+
+  it("prepends a workspace declaration when a root is provided", () => {
+    const out = buildPrompt("hi", { relativePath: "src/foo.ts" }, undefined, FAKE_ROOT)
+    expect(out.indexOf("Workspace:")).toBe(0)
+    expect(out).toContain("- Name: repo")
+    expect(out).toContain("- Root: /repo")
+    // Workspace block precedes the editor context line.
+    expect(out.indexOf("Workspace:")).toBeLessThan(out.indexOf("Context: src/foo.ts"))
+  })
+
+  it("omits the workspace declaration when no root is provided", () => {
+    const out = buildPrompt("hi", { relativePath: "src/foo.ts" }, undefined, undefined)
+    expect(out).not.toContain("Workspace:")
   })
 })
 

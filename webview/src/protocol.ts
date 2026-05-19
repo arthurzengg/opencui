@@ -107,6 +107,25 @@ export type EditorContextRef = {
   label?: string
 }
 
+/**
+ * Workspace root the host is currently operating against. Undefined means no
+ * folder is open — automatic context features should treat that as a no-op
+ * state. Phase 2+ of the workspace-context plan attaches a richer manifest
+ * per prompt; this `workspace` message is the unconditional "what root are
+ * we in?" surface the UI uses today.
+ */
+export type WorkspaceInfo = {
+  name: string
+  /** Absolute filesystem path of the workspace root. */
+  root: string
+  /** True for the first folder in a multi-root workspace. */
+  isDefault: boolean
+  /** True when this workspace is one of several open folders. */
+  multiRoot: boolean
+  /** Active opencode config-mode the running server was started with. */
+  configMode?: "isolated" | "user"
+}
+
 export type FileSearchHit = { path: string; name: string }
 
 export type Attachment = {
@@ -135,6 +154,7 @@ export type Outbound =
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
+  | { type: "workspace"; workspace?: WorkspaceInfo }
   | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[] }
   | { type: "userMessageBackendID"; id: string; backendID: string }
   | { type: "assistantStart"; id: string }
