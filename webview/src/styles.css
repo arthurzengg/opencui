@@ -958,9 +958,13 @@ button {
 }
 .user-edit-layer {
   position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
+  /* Cover the placeholder's border box, not its padding box. The placeholder
+     keeps a real 1px resting border to avoid close-time color flashes; without
+     this offset the edit overlay starts inside that border and the textarea
+     glyphs land 1px lower/right than `.user-text`. */
+  top: -1px;
+  right: -1px;
+  left: -1px;
   z-index: var(--z-overlay);
   padding: var(--bubble-padding);
   border: 1px solid var(--color-border-focus);
