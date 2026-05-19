@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-05-18
+
+### Changed
+- Internal: hoisted the bubble's border width into a shared CSS token (`--bubble-border-width: 1px`) so the placeholder bubble and the absolute edit overlay stay structurally coupled instead of agreeing only through hand-matched literals. The 0.6.5 fix that pulled `.user-edit-layer` outward by `-1px` on top/left/right correctly aligned the overlay's border with the placeholder's, but the relationship between the two was encoded in two unrelated declarations (`.msg.role-user { border: 1px }` and `.user-edit-layer { top/left/right: -1px; border: 1px }`) — bumping the placeholder's border to 2px would have silently broken alignment again. Three rules now reference `var(--bubble-border-width)`: the resting `.msg.role-user` border, the edit-mode placeholder border (re-asserted to prevent the close-time color flash), and the overlay's `top/left/right` offsets + its own border-width. Identical pattern to how `--bubble-padding` / `--bubble-text-padding` already couple `.user-text` and the edit-mode textarea. Zero visual or behavioural change at the current `1px` value — the alignment invariant is now enforced by structure instead of by code review. Closes #101.
+
 ## [0.6.5] - 2026-05-18
 
 ### Fixed
