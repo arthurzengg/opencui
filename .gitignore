@@ -19,6 +19,9 @@ npm-debug.log*
 # Per-developer workspace overrides (binary paths, etc).
 .vscode/settings.json
 
+# Contributor-private assistant instructions (Claude Code).
+CLAUDE.md
+
 # Secrets — never accidentally commit a .env
 .env
 .env.*
