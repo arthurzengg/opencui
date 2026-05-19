@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-05-18
+
+### Fixed
+- Entering edit mode on a user-message bubble no longer shifts the textarea glyphs 1px down + inset from where the rendered `.user-text` painted in view mode. With `box-sizing: border-box` set globally, the placeholder bubble's `border: 1px` lives inside its outer rect, and `position: absolute; top/left/right: 0` on `.user-edit-layer` resolves relative to the placeholder's *padding box* (per the CSS spec) — not its border box — so the overlay's own border landed 1px inside the placeholder's edge, and the textarea inside cascaded that offset. Pulling the overlay outward by `-1px` on top, left, and right makes the overlay's border overlap the placeholder's border pixel-for-pixel; glyph positions are now identical across view and edit. Bottom intentionally stays `auto` — the overlay still grows downward when its action row makes it taller than the placeholder, which is correct (the placeholder freeze keeps following content anchored regardless). Closes #97.
+
 ## [0.6.4] - 2026-05-18
 
 ### Changed
