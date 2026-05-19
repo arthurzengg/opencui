@@ -17,6 +17,68 @@ const I_OPEN = ""
 const I_CLOSE = ""
 
 /**
+ * Some agent packs (notably oh-my-openagent's `explore` agent) emit their
+ * answer wrapped in literal XML envelopes:
+ *
+ *   <analysis>…reasoning…</analysis>
+ *   <results>
+ *     <files>/abs/path/foo.ts\n/abs/path/bar.ts</files>
+ *     <answer>…</answer>
+ *     <next_steps>…</next_steps>
+ *   </results>
+ *
+ * react-markdown escapes raw HTML, so without this pre-processor the user
+ * sees the literal tags in their bubble. We don't accept arbitrary HTML
+ * pass-through (XSS risk in a webview), so instead we transform a small
+ * known set of envelope tags into bold-labelled markdown sections.
+ *
+ * Applied OUTSIDE fenced code blocks so that a teaching example like
+ * ```ts
+ *   "<analysis>..."
+ * ```
+ * survives unmodified.
+ */
+const ENVELOPE_LABELS: Record<string, string> = {
+  analysis: "Analysis",
+  answer: "Answer",
+  next_steps: "Next steps",
+}
+
+export function normalizeAgentEnvelopes(input: string): string {
+  const out: string[] = []
+  const fence = /```[\s\S]*?```|~~~[\s\S]*?~~~/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = fence.exec(input)) !== null) {
+    out.push(rewriteEnvelopesOutsideCode(input.slice(last, m.index)))
+    out.push(m[0])
+    last = m.index + m[0].length
+  }
+  out.push(rewriteEnvelopesOutsideCode(input.slice(last)))
+  return out.join("")
+}
+
+function rewriteEnvelopesOutsideCode(s: string): string {
+  // Strip the outer <results>…</results> wrapper — its inner tags carry the
+  // meaningful content. We leave any unrecognized inner tags as-is on
+  // purpose; surfacing them as raw text is a useful signal that the agent
+  // pack has shapes opencui doesn't render yet.
+  let out = s.replace(/<\/?results>\s*/gi, "\n\n")
+  // <files>: one path per line → bulleted list of code-spanned paths so the
+  // narrow sidebar renders each on its own row.
+  out = out.replace(/<files>([\s\S]*?)<\/files>/gi, (_, body: string) => {
+    const items = body.split("\n").map((l) => l.trim()).filter(Boolean)
+    if (items.length === 0) return ""
+    return `\n\n**Files**\n\n${items.map((p) => `- \`${p}\``).join("\n")}\n\n`
+  })
+  for (const [tag, label] of Object.entries(ENVELOPE_LABELS)) {
+    const re = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "gi")
+    out = out.replace(re, (_, body: string) => `\n\n**${label}**\n\n${body.trim()}\n\n`)
+  }
+  return out
+}
+
+/**
  * remark-math wants `$…$` (inline) and `$$…$$` (display). Reasoning models
  * commonly emit LaTeX `\(…\)` / `\[…\]` instead, and prose containing
  * currency like `$5 and $10` would otherwise parse as accidental math.
@@ -124,7 +186,7 @@ export function Markdown({ text }: Props) {
         rehypePlugins={[[rehypeKatex, katexOptions]]}
         components={components}
       >
-        {normalizeMath(text)}
+        {normalizeMath(normalizeAgentEnvelopes(text))}
       </ReactMarkdown>
     </div>
   )
