@@ -83,10 +83,26 @@ export function ContextManifest({ context }: Props) {
                 <span className="context-row-meta">{context.workspace.root}</span>
               </div>
               {context.opencode && (
-                <div className="context-section-row">
-                  <span className="context-row-label">Config mode</span>
-                  <span className="context-row-meta">{context.opencode.configMode}</span>
-                </div>
+                <>
+                  <div className="context-section-row">
+                    <span className="context-row-label">Config mode</span>
+                    <span className="context-row-meta">
+                      <span className={`context-badge mode-${context.opencode.configMode}`}>
+                        {context.opencode.configMode}
+                      </span>
+                    </span>
+                  </div>
+                  {context.opencode.toolFamilies && context.opencode.toolFamilies.length > 0 && (
+                    <div className="context-section-row">
+                      <span className="context-row-label">Tool families</span>
+                      <span className="context-row-meta">
+                        {context.opencode.toolFamilies.map((f) => (
+                          <span key={f} className="context-badge tool-family">{f}</span>
+                        ))}
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

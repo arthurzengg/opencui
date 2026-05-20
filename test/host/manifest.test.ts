@@ -173,4 +173,28 @@ describe("buildManifest", () => {
     })
     expect(m.opencode?.configMode).toBe("user")
   })
+
+  it("populates expected tool families based on config mode", () => {
+    const isolated = buildManifest({
+      workspace: ROOT,
+      workspaceInfo: WORKSPACE_INFO,
+      configMode: "isolated",
+      editor: {},
+    })
+    expect(isolated.opencode?.toolFamilies).toEqual(["opencode", "shell", "lsp"])
+
+    const user = buildManifest({
+      workspace: ROOT,
+      workspaceInfo: WORKSPACE_INFO,
+      configMode: "user",
+      editor: {},
+    })
+    expect(user.opencode?.toolFamilies).toEqual([
+      "opencode",
+      "shell",
+      "lsp",
+      "omo",
+      "semantic",
+    ])
+  })
 })

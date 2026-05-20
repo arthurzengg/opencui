@@ -1217,6 +1217,9 @@ button {
 .context-badge.truncated { color: var(--vscode-charts-yellow); }
 .context-badge.skipped   { color: var(--vscode-descriptionForeground); }
 .context-badge.external  { color: var(--vscode-charts-blue); }
+.context-badge.mode-isolated { color: var(--vscode-descriptionForeground); }
+.context-badge.mode-user     { color: var(--vscode-charts-green); }
+.context-badge.tool-family   { color: var(--vscode-descriptionForeground); margin-left: 2px; }
 
 
 .thinking-dots {
