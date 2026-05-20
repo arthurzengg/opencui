@@ -54,27 +54,81 @@ function task(overrides: Partial<AgentTask> = {}): AgentTask {
 
 describe("summarizeAgentTasks", () => {
   it("returns zeros for an empty list", () => {
-    expect(summarizeAgentTasks([])).toEqual({ running: 0, waiting: 0, error: 0, total: 0 })
+    expect(summarizeAgentTasks([])).toEqual({
+      running: 0,
+      waiting: 0,
+      error: 0,
+      total: 0,
+      tasks: [],
+    })
   })
 
   it("counts running / waiting / error states", () => {
-    expect(
-      summarizeAgentTasks([
-        task({ id: "a", status: "running" }),
-        task({ id: "b", status: "running" }),
-        task({ id: "c", status: "waiting" }),
-        task({ id: "d", status: "error" }),
-      ]),
-    ).toEqual({ running: 2, waiting: 1, error: 1, total: 4 })
+    const result = summarizeAgentTasks([
+      task({ id: "a", status: "running" }),
+      task({ id: "b", status: "running" }),
+      task({ id: "c", status: "waiting" }),
+      task({ id: "d", status: "error" }),
+    ])
+    expect(result.running).toBe(2)
+    expect(result.waiting).toBe(1)
+    expect(result.error).toBe(1)
+    expect(result.total).toBe(4)
+    expect(result.tasks.map((t) => t.id).sort()).toEqual(["a", "b", "c", "d"])
   })
 
   it("ignores completed and cancelled tasks", () => {
-    expect(
-      summarizeAgentTasks([
-        task({ id: "a", status: "completed" }),
-        task({ id: "b", status: "cancelled" }),
-      ]),
-    ).toEqual({ running: 0, waiting: 0, error: 0, total: 0 })
+    const result = summarizeAgentTasks([
+      task({ id: "a", status: "completed" }),
+      task({ id: "b", status: "cancelled" }),
+    ])
+    expect(result.tasks).toEqual([])
+    expect(result.total).toBe(0)
+  })
+
+  it("filters by conversationID when provided", () => {
+    const result = summarizeAgentTasks(
+      [
+        task({ id: "x", conversationID: "convA", status: "running" }),
+        task({ id: "y", conversationID: "convB", status: "running" }),
+        task({ id: "z", conversationID: "convA", kind: "subagent", status: "error" }),
+      ],
+      "convA",
+    )
+    expect(result.running).toBe(1)
+    expect(result.error).toBe(1)
+    expect(result.total).toBe(2)
+    expect(result.tasks.map((t) => t.id)).toEqual(["x", "z"])
+  })
+
+  it("orders Main first, then Subagents, both by startedAt ascending", () => {
+    const result = summarizeAgentTasks([
+      task({ id: "sub-late", kind: "subagent", status: "running", startedAt: 3000 }),
+      task({ id: "sub-early", kind: "subagent", status: "running", startedAt: 2000 }),
+      task({ id: "main", kind: "main", status: "running", startedAt: 5000 }),
+    ])
+    expect(result.tasks.map((t) => t.id)).toEqual(["main", "sub-early", "sub-late"])
+  })
+
+  it("strips host-only fields and keeps only the wire shape", () => {
+    const result = summarizeAgentTasks([
+      task({
+        id: "a",
+        kind: "main",
+        title: "Refactor",
+        status: "running",
+        startedAt: 1000,
+        error: undefined,
+      }),
+    ])
+    expect(result.tasks[0]).toEqual({
+      id: "a",
+      kind: "main",
+      title: "Refactor",
+      status: "running",
+      error: undefined,
+      startedAt: 1000,
+    })
   })
 })
 

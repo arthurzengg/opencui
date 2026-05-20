@@ -148,15 +148,33 @@ export type IndexStatusInfo = {
 }
 
 /**
- * Snapshot of live main-agent + subagent activity, driven by the host-side
- * AgentTaskStore. The webview header renders an `Agents` pill that is
- * hidden when total === 0 and breathes green while `running > 0`.
+ * One agent task as seen by the webview popover. The host strips
+ * conversationID / sessionID / messageID / parentTaskID / callID before
+ * sending because the popover only needs to render — it doesn't action
+ * on those fields.
+ */
+export type AgentsTaskInfo = {
+  id: string
+  kind: "main" | "subagent"
+  title: string
+  status: "running" | "waiting" | "error"
+  error?: string
+  startedAt: number
+}
+
+/**
+ * Snapshot of live main-agent + subagent activity for the currently-active
+ * conversation, driven by the host-side AgentTaskStore. The webview header
+ * renders an `Agents` pill that is hidden when `total === 0` and breathes
+ * green while `running > 0`. Clicking the pill opens a popover that lists
+ * `tasks` grouped by kind.
  */
 export type AgentsStatusInfo = {
   running: number
   waiting: number
   error: number
   total: number
+  tasks: AgentsTaskInfo[]
 }
 
 /**
@@ -324,4 +342,3 @@ export type Inbound =
   | { type: "questionReject"; id: string }
   | { type: "startIndex" }
   | { type: "stopIndex" }
-  | { type: "openAgents" }

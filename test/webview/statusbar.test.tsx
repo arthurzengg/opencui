@@ -20,7 +20,6 @@ const baseProps = {
   onOpenConversation: vi.fn(),
   onRenameConversation: vi.fn(),
   onDeleteConversation: vi.fn(),
-  onOpenAgents: vi.fn(),
 }
 
 describe("StatusBar", () => {
@@ -258,7 +257,23 @@ describe("StatusBar: history popover", () => {
   })
 })
 
-describe("AgentsPill (StatusBar inline)", () => {
+describe("AgentsMenu (StatusBar inline popover)", () => {
+  const baseStatus = {
+    running: 1,
+    waiting: 0,
+    error: 0,
+    total: 1,
+    tasks: [
+      {
+        id: "main:c:s",
+        kind: "main" as const,
+        title: "Explain this file",
+        status: "running" as const,
+        startedAt: Date.now() - 12_000,
+      },
+    ],
+  }
+
   it("is hidden when no agentsStatus is set", () => {
     render(<StatusBar {...baseProps} />)
     expect(screen.queryByText("Agents")).not.toBeInTheDocument()
@@ -266,29 +281,21 @@ describe("AgentsPill (StatusBar inline)", () => {
 
   it("is hidden when total === 0", () => {
     render(
-      <StatusBar {...baseProps} agentsStatus={{ running: 0, waiting: 0, error: 0, total: 0 }} />,
+      <StatusBar
+        {...baseProps}
+        agentsStatus={{ running: 0, waiting: 0, error: 0, total: 0, tasks: [] }}
+      />,
     )
     expect(screen.queryByText("Agents")).not.toBeInTheDocument()
   })
 
-  it("renders 'Agents' between the dot and the selector when a task is running", () => {
-    render(
-      <StatusBar
-        {...baseProps}
-        selection={{ model: "openai/gpt-5", agent: "deep-agent" }}
-        agentsStatus={{ running: 1, waiting: 0, error: 0, total: 1 }}
-      />,
-    )
+  it("renders 'Agents' when a task is running in this chat", () => {
+    render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
     expect(screen.getByText("Agents")).toBeInTheDocument()
   })
 
   it("applies is-running class so the breathing animation can trigger", () => {
-    render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{ running: 2, waiting: 0, error: 0, total: 2 }}
-      />,
-    )
+    render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
     const pill = screen.getByText("Agents")
     expect(pill.className).toContain("agents-pill")
     expect(pill.className).toContain("is-running")
@@ -298,7 +305,22 @@ describe("AgentsPill (StatusBar inline)", () => {
     render(
       <StatusBar
         {...baseProps}
-        agentsStatus={{ running: 0, waiting: 0, error: 1, total: 1 }}
+        agentsStatus={{
+          running: 0,
+          waiting: 0,
+          error: 1,
+          total: 1,
+          tasks: [
+            {
+              id: "main:c:s",
+              kind: "main",
+              title: "Failed",
+              status: "error",
+              error: "boom",
+              startedAt: 0,
+            },
+          ],
+        }}
       />,
     )
     const pill = screen.getByText("Agents")
@@ -306,37 +328,85 @@ describe("AgentsPill (StatusBar inline)", () => {
     expect(pill.className).not.toContain("is-running")
   })
 
-  it("uses static is-waiting class for waiting-only state", () => {
+  it("opens an inline popover on click and lists tasks", async () => {
+    const user = userEvent.setup()
     render(
       <StatusBar
         {...baseProps}
-        agentsStatus={{ running: 0, waiting: 1, error: 0, total: 1 }}
+        agentsStatus={{
+          ...baseStatus,
+          running: 2,
+          total: 2,
+          tasks: [
+            {
+              id: "main:c:s",
+              kind: "main",
+              title: "Refactor module",
+              status: "running",
+              startedAt: Date.now() - 5_000,
+            },
+            {
+              id: "subagent:s:c1",
+              kind: "subagent",
+              title: "Fix lint errors",
+              status: "running",
+              startedAt: Date.now() - 2_000,
+            },
+          ],
+        }}
       />,
     )
-    const pill = screen.getByText("Agents")
-    expect(pill.className).toContain("is-waiting")
-    expect(pill.className).not.toContain("is-running")
+    expect(screen.queryByText("Refactor module")).not.toBeInTheDocument()
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText("Refactor module")).toBeInTheDocument()
+    expect(screen.getByText("Fix lint errors")).toBeInTheDocument()
+    expect(screen.getByText("Main")).toBeInTheDocument()
+    expect(screen.getByText("Subagents")).toBeInTheDocument()
   })
 
-  it("calls onOpenAgents when clicked", async () => {
+  it("groups separators are omitted when only one kind is present", async () => {
     const user = userEvent.setup()
-    const onOpenAgents = vi.fn()
-    render(
+    render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText("Main")).toBeInTheDocument()
+    expect(screen.queryByText("Subagents")).not.toBeInTheDocument()
+  })
+
+  it("closes the popover when the chat goes idle (total → 0)", async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText("Explain this file")).toBeInTheDocument()
+    rerender(
       <StatusBar
         {...baseProps}
-        onOpenAgents={onOpenAgents}
-        agentsStatus={{ running: 1, waiting: 0, error: 0, total: 1 }}
+        agentsStatus={{ running: 0, waiting: 0, error: 0, total: 0, tasks: [] }}
       />,
     )
+    expect(screen.queryByText("Explain this file")).not.toBeInTheDocument()
+    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
+  })
+
+  it("closes the popover when Escape is pressed", async () => {
+    const user = userEvent.setup()
+    render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
     await user.click(screen.getByText("Agents"))
-    expect(onOpenAgents).toHaveBeenCalledTimes(1)
+    expect(screen.getByText("Explain this file")).toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    expect(screen.queryByText("Explain this file")).not.toBeInTheDocument()
   })
 
   it("shows a tooltip summarizing the counts", () => {
     render(
       <StatusBar
         {...baseProps}
-        agentsStatus={{ running: 2, waiting: 1, error: 0, total: 3 }}
+        agentsStatus={{
+          running: 2,
+          waiting: 1,
+          error: 0,
+          total: 3,
+          tasks: [],
+        }}
       />,
     )
     const pill = screen.getByText("Agents")

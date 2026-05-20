@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import type { AgentsStatusInfo, ConversationSummary, Selection } from "../protocol"
+import type { AgentsStatusInfo, AgentsTaskInfo, ConversationSummary, Selection } from "../protocol"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
 
 type Props = {
@@ -17,7 +17,6 @@ type Props = {
   onOpenConversation: (id: string) => void
   onRenameConversation: (id: string, title: string) => void
   onDeleteConversation: (id: string) => void
-  onOpenAgents: () => void
 }
 
 export function StatusBar({
@@ -35,7 +34,6 @@ export function StatusBar({
   onOpenConversation,
   onRenameConversation,
   onDeleteConversation,
-  onOpenAgents,
 }: Props) {
   const agent = selection.agent ?? "default"
   const model = selection.model ?? "default"
@@ -71,7 +69,7 @@ export function StatusBar({
         label={showStatus ? statusLabel : undefined}
         title={statusTitle}
       />
-      <AgentsPill status={agentsStatus} onOpen={onOpenAgents} />
+      <AgentsMenu status={agentsStatus} />
       <div className="spacer" />
       <SelectorMenu
         agent={agent}
@@ -296,35 +294,103 @@ function ChatHistoryMenu({
 }
 
 /**
- * Hidden-by-default `Agents` pill rendered between the connection dot and the
- * model/agent selector. Visibility tracks the host-side AgentTaskStore counts
- * — hidden when total === 0, shown while any task is running/waiting/errored.
- * Running state breathes via CSS animation (`.agents-pill.is-running`).
+ * Hidden-by-default `Agents` menu rendered between the connection dot and the
+ * model/agent selector. The host scopes the snapshot to the active
+ * conversation, so `tasks` only contains work for THIS chat. Clicking the
+ * pill toggles an inline popover (matching the SelectorMenu pattern) that
+ * lists tasks grouped by Main / Subagents.
  */
-function AgentsPill({
-  status,
-  onOpen,
-}: {
-  status?: AgentsStatusInfo
-  onOpen: () => void
-}) {
+function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (ref.current?.contains(event.target as Node)) return
+      setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false)
+    }
+    window.addEventListener("pointerdown", onPointerDown)
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown)
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [open])
+
+  // Close the popover automatically when the chat goes idle so the menu
+  // doesn't sit open after the last task it was showing terminates.
+  useEffect(() => {
+    if (status && status.total === 0) setOpen(false)
+  }, [status?.total])
+
   if (!status || status.total === 0) return null
   const running = status.running > 0
   const className =
     "agents-pill" +
+    (open ? " is-open" : "") +
     (running ? " is-running" : "") +
     (!running && status.error > 0 ? " is-error" : "") +
     (!running && status.waiting > 0 ? " is-waiting" : "")
+  const main = status.tasks.filter((t) => t.kind === "main")
+  const sub = status.tasks.filter((t) => t.kind === "subagent")
   return (
-    <button
-      type="button"
-      className={className}
-      onClick={onOpen}
-      title={buildAgentsTitle(status)}
-      aria-label="Open agents"
-    >
-      Agents
-    </button>
+    <div className="agents-menu" ref={ref}>
+      <button
+        type="button"
+        className={className}
+        onClick={() => setOpen((value) => !value)}
+        title={buildAgentsTitle(status)}
+        aria-label="Open agents for this chat"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        Agents
+      </button>
+      {open && (
+        <div className="agents-popover" role="menu">
+          <div className="agents-popover-title">Agents in this chat</div>
+          {main.length > 0 && (
+            <>
+              <div className="agents-popover-section">Main</div>
+              {main.map((task) => (
+                <AgentsRow key={task.id} task={task} />
+              ))}
+            </>
+          )}
+          {sub.length > 0 && (
+            <>
+              <div className="agents-popover-section">Subagents</div>
+              {sub.map((task) => (
+                <AgentsRow key={task.id} task={task} />
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AgentsRow({ task }: { task: AgentsTaskInfo }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (task.status !== "running" && task.status !== "waiting") return
+    const handle = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(handle)
+  }, [task.status])
+  const elapsed = formatElapsed(now - task.startedAt)
+  const statusText = task.status === "error" && task.error
+    ? `error · ${task.error}`
+    : task.status
+  return (
+    <div className={`agents-row agents-row-${task.status}`} title={`${task.title} · ${statusText} · ${elapsed}`}>
+      <span className="agents-row-title">{task.title}</span>
+      <span className="agents-row-meta">{statusText} · {elapsed}</span>
+    </div>
   )
 }
 
@@ -336,6 +402,16 @@ export function buildAgentsTitle(status: AgentsStatusInfo): string {
   if (status.error > 0) lines.push(`${status.error} with errors`)
   lines.push("Click to view")
   return lines.join("\n")
+}
+
+export function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remMin = minutes - hours * 60
+  return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`
 }
 
 export function formatUpdated(updatedAt: number) {
