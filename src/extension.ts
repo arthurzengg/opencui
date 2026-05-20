@@ -7,11 +7,14 @@ import { Preferences } from "./preferences"
 import { Picker } from "./picker"
 import { RecentEditsTracker } from "./workspace-context/recent-edits"
 import { IndexManager, readIndexSettings } from "./indexing/index-manager"
+import { AgentTaskStore } from "./agents/task-store"
+import { showAgentsQuickPick } from "./agents/quickpick"
 import { getOutputChannel, log } from "./output"
 
 let servers: ServerManager | undefined
 let recentEdits: RecentEditsTracker | undefined
 let indexManager: IndexManager | undefined
+let agentTaskStore: AgentTaskStore | undefined
 
 export async function activate(context: vscode.ExtensionContext) {
   log("activating OpenCode Panel")
@@ -19,13 +22,15 @@ export async function activate(context: vscode.ExtensionContext) {
   recentEdits = new RecentEditsTracker()
   const indexSettings = readIndexSettings(vscode.workspace.getConfiguration("opencui"))
   indexManager = new IndexManager(indexSettings)
+  agentTaskStore = new AgentTaskStore(context.workspaceState)
   context.subscriptions.push(
     { dispose: () => recentEdits?.dispose() },
     { dispose: () => void indexManager?.stop() },
+    { dispose: () => agentTaskStore?.dispose() },
   )
   const prefs = new Preferences(context.globalState)
-  const status = new StatusBar(context, prefs)
-  const chat = new ChatView(context, servers, prefs, recentEdits, indexManager)
+  const status = new StatusBar(context, prefs, agentTaskStore)
+  const chat = new ChatView(context, servers, prefs, recentEdits, indexManager, agentTaskStore)
   const inline = new InlineEdit(servers, prefs)
   const picker = new Picker(servers, prefs)
 
@@ -43,6 +48,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("opencui.selectAgent", () => picker.pickAgent()),
     vscode.commands.registerCommand("opencui.selectModel", () => picker.pickModel()),
     vscode.commands.registerCommand("opencui.selectVariant", () => picker.pickVariantForCurrent()),
+    vscode.commands.registerCommand("opencui.agents.open", () => showAgentsQuickPick(agentTaskStore!)),
     vscode.commands.registerCommand("opencui.server.restart", async () => {
       status.set("starting", "restarting backend")
       await servers!.restart().then(
