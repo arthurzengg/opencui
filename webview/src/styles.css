@@ -184,21 +184,30 @@ button {
 }
 .agents-pill {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
   background: transparent;
-  border: none;
-  padding: 0 2px;
+  border: 0;
+  /* Match .selector-trigger so the hover bubble (when it appears) has the
+     same visual weight as the model / agent trigger. Padding stays applied
+     all the time so the layout doesn't jump on hover — only the background
+     fades in. */
+  padding: 2px 9px;
+  min-height: 22px;
+  border-radius: 10px;
   margin: 0;
   font: inherit;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--vscode-foreground);
   cursor: pointer;
-  line-height: 1;
+  line-height: 1.5;
   white-space: nowrap;
+  transition: background-color 0.12s ease;
 }
 .agents-pill:hover,
 .agents-pill.is-open {
-  text-decoration: underline;
+  background: var(--vscode-button-secondaryHoverBackground);
 }
 .agents-pill.is-idle {
   color: var(--vscode-foreground);
