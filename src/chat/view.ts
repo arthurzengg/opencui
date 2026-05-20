@@ -102,17 +102,19 @@ export class ChatView implements vscode.WebviewViewProvider {
   private lastContinuationSignalAt = 0
   private pendingIdleTimer?: ReturnType<typeof setTimeout>
   /**
-   * Call IDs of `task` tool parts currently in `running` state — i.e. live
-   * subagents on this parent session. Maintained from `onTool` updates.
+   * Call IDs of subagent-launching tool parts currently in `running` state —
+   * i.e. live subagents on this parent session. Maintained from `onTool`
+   * updates that match `SUBAGENT_TOOLS` (`task` + `call_omo_agent` + name
+   * variants).
    *
    * Used as the primary "do not mark parent done" gate: opencode emits
-   * `session.idle` on the parent while a backgrounded `task(run_in_background)`
-   * child is still executing (the parent's LLM has genuinely finished its
-   * tool call), and omo's TodoContinuationEnforcer *suppresses* its own
+   * `session.idle` on the parent while a backgrounded subagent child is
+   * still executing (the parent's LLM has genuinely finished its tool
+   * call), and omo's TodoContinuationEnforcer *suppresses* its own
    * continuation toast when BackgroundManager knows there are running
-   * background tasks (`src/hooks/todo-continuation-enforcer/continuation-injection.ts:82-89`).
-   * So toast-based detection alone misses the Hephaestus deep-agent path —
-   * structural tracking is required.
+   * background tasks. So toast-based detection alone misses the
+   * Hephaestus / Sisyphus deep-agent paths — structural tracking is
+   * required.
    */
   private activeTaskCallIDs = new Set<string>()
   /**
@@ -179,6 +181,9 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private postAgentsStatus(tasks: AgentTask[]) {
     const status = summarizeAgentTasks(tasks, this.activeConversationID)
+    log(
+      `[agents-status] post snapshot conv=${this.activeConversationID} total=${status.total} (running=${status.running} waiting=${status.waiting} error=${status.error}) ids=[${status.tasks.map((t) => `${t.kind}:${t.id}`).join(", ")}]`,
+    )
     this.post({ type: "agentsStatus", status })
   }
 
@@ -787,26 +792,39 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Update the running-subagent set from a `task` tool state transition.
-   * No-ops for non-task tools. Adds on `running`, removes on terminal
-   * (`completed` / `error`). When the last running task settles while a
-   * deferred idle is pending, arm a short grace timer so the UI doesn't
-   * sit on "Continuing…" forever if no follow-up turn materializes.
+   * Update the running-subagent set from a subagent-launching tool's state
+   * transition. Adds on `running`, removes on terminal (`completed` / `error`).
+   * When the last running subagent settles while a deferred idle is pending,
+   * arm a short grace timer so the UI doesn't sit on "Continuing…" forever
+   * if no follow-up turn materializes.
+   *
+   * Tracked tools — see oh-my-opencode dist/index.js `TASK_TOOLS` and
+   * `TARGET_TOOLS2`:
+   *   - `task` — opencode's built-in subagent dispatcher.
+   *   - `Task` / `task_tool` — name variants that omo also treats as the
+   *     same family (defensive).
+   *   - `call_omo_agent` — omo's parallel subagent dispatcher used by
+   *     Hephaestus / Sisyphus / Prometheus deep agents. Without this we
+   *     never see Hephaestus's background work and the popover lists only
+   *     the main turn.
    */
   private updateTaskTracking(update: ToolUpdate, messageID?: string): void {
-    if (update.tool !== "task") return
+    log(
+      `[agents-status] tool event tool=${update.tool} status=${update.status} callID=${update.callID}`,
+    )
+    if (!SUBAGENT_TOOLS.has(update.tool)) return
     const id = update.callID
     if (update.status === "running") {
       if (!this.activeTaskCallIDs.has(id)) {
         this.activeTaskCallIDs.add(id)
-        log(`[continuation] task running ${id} (active=${this.activeTaskCallIDs.size})`)
+        log(`[continuation] subagent running ${update.tool}:${id} (active=${this.activeTaskCallIDs.size})`)
       }
       void this.recordSubagentTask(update, messageID, "running")
       return
     }
     if (update.status === "completed" || update.status === "error") {
       if (this.activeTaskCallIDs.delete(id)) {
-        log(`[continuation] task ${update.status} ${id} (active=${this.activeTaskCallIDs.size})`)
+        log(`[continuation] subagent ${update.status} ${update.tool}:${id} (active=${this.activeTaskCallIDs.size})`)
         if (this.idleDeferActive && this.activeTaskCallIDs.size === 0) {
           this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "tasks-settled")
         }
@@ -825,6 +843,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     const id = subagentTaskID(this.sessionID, update.callID)
     const now = Date.now()
     const title = taskTitleFromUpdate(update)
+    log(`[agents-status] recordSubagentTask ${id} status=${status} title="${title}"`)
     if (status === "running") {
       const existing = this.taskStore.get(id)
       await this.taskStore.upsert({
@@ -1493,6 +1512,24 @@ export class ChatView implements vscode.WebviewViewProvider {
     html = html.replace("<head>", `<head><meta http-equiv="Content-Security-Policy" content="${csp}">`)
     return html
   }
+}
+
+/**
+ * Tool names that represent dispatching a subagent. Includes opencode's
+ * built-in `task` (plus defensive name variants) and omo's `call_omo_agent`,
+ * which Hephaestus / Sisyphus / Prometheus deep agents use for parallel
+ * background subagents. Mirrors `TASK_TOOLS` + `TARGET_TOOLS2` from
+ * oh-my-opencode's source.
+ */
+export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set([
+  "task",
+  "Task",
+  "task_tool",
+  "call_omo_agent",
+])
+
+export function isSubagentTool(toolName: string): boolean {
+  return SUBAGENT_TOOLS.has(toolName)
 }
 
 export function summarizeAgentTasks(

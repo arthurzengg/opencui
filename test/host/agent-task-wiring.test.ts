@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest"
-import { taskTitleFromUpdate, summarizePrompt, summarizeAgentTasks } from "../../src/chat/view"
+import {
+  taskTitleFromUpdate,
+  summarizePrompt,
+  summarizeAgentTasks,
+  isSubagentTool,
+} from "../../src/chat/view"
 import type { ToolUpdate } from "../../src/chat/stream"
 import type { AgentTask } from "../../src/agents/task-store"
 
@@ -129,6 +134,27 @@ describe("summarizeAgentTasks", () => {
       error: undefined,
       startedAt: 1000,
     })
+  })
+})
+
+describe("isSubagentTool", () => {
+  it("matches opencode's built-in `task` tool", () => {
+    expect(isSubagentTool("task")).toBe(true)
+  })
+
+  it("matches omo's `call_omo_agent` used by Hephaestus / Sisyphus subagents", () => {
+    expect(isSubagentTool("call_omo_agent")).toBe(true)
+  })
+
+  it("matches defensive name variants (Task, task_tool)", () => {
+    expect(isSubagentTool("Task")).toBe(true)
+    expect(isSubagentTool("task_tool")).toBe(true)
+  })
+
+  it("returns false for non-subagent tools", () => {
+    for (const name of ["read", "edit", "bash", "grep", "glob", "webfetch", "tasks", "callomoagent"]) {
+      expect(isSubagentTool(name)).toBe(false)
+    }
   })
 })
 
