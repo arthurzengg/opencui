@@ -69,6 +69,7 @@ export function StatusBar({
         label={showStatus ? statusLabel : undefined}
         title={statusTitle}
       />
+      <div className="spacer" />
       <AgentsMenu status={agentsStatus} />
       <div className="spacer" />
       <SelectorMenu
@@ -294,11 +295,14 @@ function ChatHistoryMenu({
 }
 
 /**
- * Hidden-by-default `Agents` menu rendered between the connection dot and the
- * model/agent selector. The host scopes the snapshot to the active
- * conversation, so `tasks` only contains work for THIS chat. Clicking the
- * pill toggles an inline popover (matching the SelectorMenu pattern) that
- * lists tasks grouped by Main / Subagents.
+ * Always-visible `Agents` menu centered in the chat header. The host scopes
+ * the snapshot to the active conversation, so `tasks` only contains work for
+ * THIS chat. Clicking the pill toggles an inline popover (matching the
+ * SelectorMenu pattern) that lists tasks grouped by Main / Subagents.
+ *
+ * The pill text never changes (always literally `Agents`); state is signalled
+ * by color — muted when idle, breathing green while running, attention red
+ * for error, amber for waiting.
  */
 function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
   const [open, setOpen] = useState(false)
@@ -321,22 +325,22 @@ function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
     }
   }, [open])
 
-  // Close the popover automatically when the chat goes idle so the menu
-  // doesn't sit open after the last task it was showing terminates.
-  useEffect(() => {
-    if (status && status.total === 0) setOpen(false)
-  }, [status?.total])
-
-  if (!status || status.total === 0) return null
-  const running = status.running > 0
+  const running = (status?.running ?? 0) > 0
+  const errorOnly = !running && (status?.error ?? 0) > 0
+  const waitingOnly = !running && !errorOnly && (status?.waiting ?? 0) > 0
+  const idle = !running && !errorOnly && !waitingOnly
   const className =
     "agents-pill" +
     (open ? " is-open" : "") +
     (running ? " is-running" : "") +
-    (!running && status.error > 0 ? " is-error" : "") +
-    (!running && status.waiting > 0 ? " is-waiting" : "")
-  const main = status.tasks.filter((t) => t.kind === "main")
-  const sub = status.tasks.filter((t) => t.kind === "subagent")
+    (errorOnly ? " is-error" : "") +
+    (waitingOnly ? " is-waiting" : "") +
+    (idle ? " is-idle" : "")
+  const tasks = status?.tasks ?? []
+  const main = tasks.filter((t) => t.kind === "main")
+  const sub = tasks.filter((t) => t.kind === "subagent")
+  const empty = tasks.length === 0
+
   return (
     <div className="agents-menu" ref={ref}>
       <button
@@ -353,6 +357,7 @@ function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
       {open && (
         <div className="agents-popover" role="menu">
           <div className="agents-popover-title">Agents in this chat</div>
+          {empty && <div className="agents-popover-empty">No agents in this chat</div>}
           {main.length > 0 && (
             <>
               <div className="agents-popover-section">Main</div>
@@ -394,7 +399,10 @@ function AgentsRow({ task }: { task: AgentsTaskInfo }) {
   )
 }
 
-export function buildAgentsTitle(status: AgentsStatusInfo): string {
+export function buildAgentsTitle(status?: AgentsStatusInfo): string {
+  if (!status || status.total === 0) {
+    return "No agents in this chat\nClick to view"
+  }
   const lines: string[] = []
   if (status.running > 0)
     lines.push(`${status.running} agent${status.running === 1 ? "" : "s"} running`)

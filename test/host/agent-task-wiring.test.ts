@@ -106,6 +106,37 @@ describe("summarizeAgentTasks", () => {
     expect(result.tasks.map((t) => t.id)).toEqual(["x", "z"])
   })
 
+  it("keeps completed subagents in the list while the parent main task is still alive", () => {
+    const result = summarizeAgentTasks([
+      task({ id: "main:c:s", kind: "main", status: "running" }),
+      task({ id: "subagent:s:c1", kind: "subagent", status: "completed", startedAt: 100 }),
+      task({ id: "subagent:s:c2", kind: "subagent", status: "running", startedAt: 200 }),
+    ])
+    // Counts only reflect live work — the completed subagent doesn't bump
+    // running, but it remains visible in the task list.
+    expect(result.running).toBe(2)
+    expect(result.total).toBe(2)
+    expect(result.tasks.map((t) => t.id)).toEqual(["main:c:s", "subagent:s:c1", "subagent:s:c2"])
+    expect(result.tasks.find((t) => t.id === "subagent:s:c1")!.status).toBe("completed")
+  })
+
+  it("drops completed subagents once the parent main task settles", () => {
+    const result = summarizeAgentTasks([
+      task({ id: "main:c:s", kind: "main", status: "completed" }),
+      task({ id: "subagent:s:c1", kind: "subagent", status: "completed" }),
+    ])
+    expect(result.total).toBe(0)
+    expect(result.tasks).toEqual([])
+  })
+
+  it("does NOT keep cancelled subagents visible even when parent is alive", () => {
+    const result = summarizeAgentTasks([
+      task({ id: "main:c:s", kind: "main", status: "running" }),
+      task({ id: "subagent:s:c1", kind: "subagent", status: "cancelled" }),
+    ])
+    expect(result.tasks.map((t) => t.id)).toEqual(["main:c:s"])
+  })
+
   it("orders Main first, then Subagents, both by startedAt ascending", () => {
     const result = summarizeAgentTasks([
       task({ id: "sub-late", kind: "subagent", status: "running", startedAt: 3000 }),

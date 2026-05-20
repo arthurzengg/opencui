@@ -1536,21 +1536,45 @@ export function summarizeAgentTasks(
   tasks: AgentTask[],
   conversationID?: string,
 ): AgentsStatusInfo {
+  const scoped = conversationID
+    ? tasks.filter((task) => task.conversationID === conversationID)
+    : tasks
+
+  // Sessions whose parent main task is still alive ("turn ongoing"). While
+  // any such session exists, we keep ALL of its subagents visible — even
+  // ones that have already completed — so the user can see what the
+  // currently-active turn dispatched, not just the agents racing at the
+  // millisecond of inspection. Without this, Hephaestus-style runs where a
+  // subagent finishes seconds before the parent finishes the prose leave
+  // the popover showing only the main entry.
+  const liveSessions = new Set(
+    scoped
+      .filter((t) => t.kind === "main" && (t.status === "running" || t.status === "waiting"))
+      .map((t) => t.sessionID),
+  )
+
   const items: AgentsTaskInfo[] = []
   let running = 0
   let waiting = 0
   let error = 0
-  for (const task of tasks) {
-    if (conversationID && task.conversationID !== conversationID) continue
+  for (const task of scoped) {
+    const liveStatus =
+      task.status === "running" || task.status === "waiting" || task.status === "error"
+    const parentAlive = task.kind === "subagent" && liveSessions.has(task.sessionID)
+    if (task.kind === "main" && !liveStatus) continue
+    if (task.kind === "subagent" && !liveStatus && !parentAlive) continue
+    if (task.kind === "subagent" && task.status === "cancelled") continue
     if (task.status === "running") running += 1
     else if (task.status === "waiting") waiting += 1
     else if (task.status === "error") error += 1
-    else continue
+    const wireStatus: AgentsTaskInfo["status"] = liveStatus
+      ? (task.status as "running" | "waiting" | "error")
+      : "completed"
     items.push({
       id: task.id,
       kind: task.kind,
       title: task.title,
-      status: task.status,
+      status: wireStatus,
       error: task.error,
       startedAt: task.startedAt,
     })

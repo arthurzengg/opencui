@@ -200,6 +200,10 @@ button {
 .agents-pill.is-open {
   text-decoration: underline;
 }
+.agents-pill.is-idle {
+  color: var(--vscode-foreground);
+  opacity: 0.55;
+}
 .agents-pill.is-running {
   color: #7ee787;
   animation: agents-breathe 1.6s ease-in-out infinite;
@@ -271,6 +275,14 @@ button {
 .agents-row-running .agents-row-title { color: #7ee787; }
 .agents-row-error .agents-row-meta { color: var(--vscode-errorForeground, #f85149); }
 .agents-row-waiting .agents-row-meta { color: var(--vscode-notificationsWarningIcon-foreground, #d29922); }
+.agents-row-completed {
+  opacity: 0.6;
+}
+.agents-popover-empty {
+  padding: 6px 12px;
+  opacity: 0.6;
+  font-style: italic;
+}
 
 .selector-menu {
   flex: 0 1 auto;
