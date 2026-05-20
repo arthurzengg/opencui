@@ -138,6 +138,26 @@
           "type": "boolean",
           "default": true,
           "description": "Attach automatic workspace context (open tabs, diagnostics, git diff, recent edits, docs, symbols) to each prompt. Disable to send only the user's text + mentions."
+        },
+        "opencui.context.maxBytes": {
+          "type": "number",
+          "default": 300000,
+          "description": "Approximate cap (UTF-8 bytes) on the total context attached to a single prompt. The manifest reports this as `budgetBytes`."
+        },
+        "opencui.context.maxAutoBytes": {
+          "type": "number",
+          "default": 120000,
+          "description": "Cap on automatic-context bytes (open tabs, diagnostics, git diff, recent edits, docs, symbols). Lower-priority blocks are dropped first when the budget bites."
+        },
+        "opencui.context.maxMentionBytes": {
+          "type": "number",
+          "default": 200000,
+          "description": "Cap on bytes read from manual @-file mentions. Files past this cap are skipped and shown as 'skipped' in the manifest."
+        },
+        "opencui.context.showManifest": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the context-manifest pill under each user message in the chat panel."
         }
       }
     }

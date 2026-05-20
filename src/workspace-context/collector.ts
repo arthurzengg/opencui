@@ -7,6 +7,7 @@ import { RecentEditsTracker } from "./recent-edits"
 import { collectDocs } from "./docs"
 import { collectSymbols } from "./symbols"
 import type { CollectorOutput } from "./types"
+import { applyAutoContextBudget } from "./budget"
 
 export type AutoContext = CollectorOutput
 
@@ -16,6 +17,7 @@ export type CollectInputs = {
   /** Paths to query for symbol outlines: active editor + mentions. */
   symbolFocus: string[]
   enabled: boolean
+  maxAutoBytes: number
 }
 
 /**
@@ -46,5 +48,9 @@ export async function collectAutoContext(input: CollectInputs): Promise<AutoCont
       log("auto context: collector failed", r.reason)
     }
   }
-  return { items, blocks }
+  const budgeted = applyAutoContextBudget(blocks, items, { maxAutoBytes: input.maxAutoBytes })
+  if (budgeted.droppedBytes > 0) {
+    log("auto context: dropped", budgeted.droppedBytes, "bytes over budget", input.maxAutoBytes)
+  }
+  return { items: budgeted.items, blocks: budgeted.blocks }
 }

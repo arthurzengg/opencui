@@ -5,7 +5,7 @@ import type { WorkspaceRoot } from "../workspace-root"
 import type { PromptContextBlock } from "../workspace-context/types"
 import { log } from "../output"
 
-const MENTION_MAX_BYTES = 200_000
+export const DEFAULT_MENTION_MAX_BYTES = 200_000
 const MENTION_MAX_FILES = 20
 
 export function buildPrompt(
@@ -73,7 +73,10 @@ export type MentionReadResult = {
   failed: string[]
 }
 
-export async function readMentions(mentions?: string[]): Promise<MentionReadResult> {
+export async function readMentions(
+  mentions?: string[],
+  maxBytes: number = DEFAULT_MENTION_MAX_BYTES,
+): Promise<MentionReadResult> {
   if (!mentions || mentions.length === 0) {
     return { bytes: {}, capped: [], failed: [] }
   }
@@ -95,7 +98,7 @@ export async function readMentions(mentions?: string[]): Promise<MentionReadResu
     const uri = path.isAbsolute(rel) ? vscode.Uri.file(rel) : vscode.Uri.joinPath(folder.uri, rel)
     try {
       const buf = await vscode.workspace.fs.readFile(uri)
-      const remaining = MENTION_MAX_BYTES - totalBytes
+      const remaining = maxBytes - totalBytes
       if (remaining <= 0) {
         capped.push(rel)
         continue
