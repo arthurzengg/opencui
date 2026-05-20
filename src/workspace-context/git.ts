@@ -6,31 +6,34 @@ import { log } from "../output"
 
 const execFileAsync = promisify(execFile)
 
-const MAX_DIFF_BYTES = 60_000
+const MAX_GIT_CONTEXT_BYTES = 16_000
 const TIMEOUT_MS = 5_000
 
 /**
- * Collect a compact git diff against the workspace root: `git status --short`
- * + `git diff --unified=3` for unstaged + `git diff --cached --unified=3` for
- * staged. Each diff is truncated to `MAX_DIFF_BYTES` so a sweeping refactor
- * doesn't drown the prompt. Returns empty output when the workspace isn't a
- * git repo (the usual `fatal: not a git repository` exit code).
+ * Collect a compact git diff scoped to the VS Code workspace folder.
+ *
+ * Important: Git commands run from a subdirectory still discover the parent
+ * repository. Without a pathspec, `git status` can report sibling projects as
+ * `../other-project/...` when the user opened only one folder inside a larger
+ * repo. The explicit `-- .` keeps automatic context bounded to the opened
+ * workspace.
  */
 export async function collectGitDiff(workspace: WorkspaceRoot): Promise<CollectorOutput> {
   const cwd = workspace.fsPath
   const [status, unstaged, staged] = await Promise.all([
-    runGit(cwd, ["status", "--short"]),
-    runGit(cwd, ["diff", "--unified=3", "--no-color"]),
-    runGit(cwd, ["diff", "--cached", "--unified=3", "--no-color"]),
+    runGit(cwd, ["status", "--short", "--", "."]),
+    runGit(cwd, ["diff", "--unified=3", "--no-color", "--", "."]),
+    runGit(cwd, ["diff", "--cached", "--unified=3", "--no-color", "--", "."]),
   ])
   const parts: string[] = []
   if (status) parts.push(`### Status\n${status}`)
-  if (unstaged) parts.push(`### Unstaged diff\n${truncate(unstaged)}`)
-  if (staged) parts.push(`### Staged diff\n${truncate(staged)}`)
+  if (unstaged) parts.push(`### Unstaged diff\n${unstaged}`)
+  if (staged) parts.push(`### Staged diff\n${staged}`)
   if (parts.length === 0) return { items: [], blocks: [] }
-  const content = parts.join("\n\n")
+  const rawContent = parts.join("\n\n")
+  const content = truncate(rawContent)
   const bytes = Buffer.byteLength(content, "utf8")
-  const truncated = unstaged.length > MAX_DIFF_BYTES || staged.length > MAX_DIFF_BYTES
+  const truncated = Buffer.byteLength(rawContent, "utf8") > MAX_GIT_CONTEXT_BYTES
   const id = `git_${Date.now()}`
   return {
     items: [
@@ -39,7 +42,7 @@ export async function collectGitDiff(workspace: WorkspaceRoot): Promise<Collecto
         source: "git",
         kind: "diff",
         label: "Git changes",
-        reason: "Local git diff against the workspace root",
+        reason: "Local git changes scoped to the opened workspace folder",
         status: truncated ? "truncated" : "included",
         bytes,
         priority: 4,
@@ -59,8 +62,9 @@ export async function collectGitDiff(workspace: WorkspaceRoot): Promise<Collecto
 }
 
 function truncate(s: string): string {
-  if (s.length <= MAX_DIFF_BYTES) return s
-  return s.slice(0, MAX_DIFF_BYTES) + `\n… (truncated to ${MAX_DIFF_BYTES} bytes)`
+  if (Buffer.byteLength(s, "utf8") <= MAX_GIT_CONTEXT_BYTES) return s
+  return Buffer.from(s, "utf8").subarray(0, MAX_GIT_CONTEXT_BYTES).toString("utf8")
+    + `\n... (truncated to ${MAX_GIT_CONTEXT_BYTES} bytes)`
 }
 
 async function runGit(cwd: string, args: string[]): Promise<string> {

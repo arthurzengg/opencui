@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import * as vscode from "vscode"
+import * as fs from "fs/promises"
+import * as os from "os"
+import * as path from "path"
+import { execFile } from "child_process"
+import { promisify } from "util"
 import { collectOpenTabs } from "../../src/workspace-context/open-tabs"
 import { collectDiagnostics } from "../../src/workspace-context/diagnostics"
 import { collectGitDiff } from "../../src/workspace-context/git"
@@ -21,6 +26,7 @@ type MutableWindow = {
   tabGroups: { all: Array<{ tabs: Array<{ input?: unknown }> }> }
 }
 const win = vscode.window as unknown as MutableWindow
+const execFileAsync = promisify(execFile)
 
 function setTabs(paths: string[]) {
   win.tabGroups = {
@@ -132,6 +138,41 @@ describe("collectGitDiff", () => {
     const out = await collectGitDiff({ ...WORKSPACE, fsPath: "/tmp/definitely-not-a-repo-xyzzy" })
     expect(out.items).toEqual([])
     expect(out.blocks).toEqual([])
+  })
+
+  it("scopes parent-repo git output to the opened workspace folder", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "opencui-git-scope-"))
+    const workspace = path.join(root, "test")
+    const sibling = path.join(root, "ExamHelper")
+    await fs.mkdir(workspace)
+    await fs.mkdir(sibling)
+    await fs.writeFile(path.join(workspace, "app.ts"), "export const value = 1\n")
+    await fs.writeFile(path.join(sibling, "app.py"), "print('old')\n")
+
+    await execFileAsync("git", ["init"], { cwd: root })
+    await execFileAsync("git", ["add", "."], { cwd: root })
+    await execFileAsync(
+      "git",
+      ["-c", "user.name=OpenCode Panel", "-c", "user.email=test@example.com", "commit", "-m", "initial"],
+      { cwd: root },
+    )
+
+    await fs.writeFile(path.join(workspace, "app.ts"), "export const value = 2\n")
+    await fs.writeFile(path.join(sibling, "app.py"), "print('new')\n")
+
+    const out = await collectGitDiff({
+      ...WORKSPACE,
+      fsPath: workspace,
+      uri: vscode.Uri.file(workspace),
+      name: "test",
+    })
+
+    expect(out.blocks).toHaveLength(1)
+    expect(out.blocks[0].content).toContain("app.ts")
+    expect(out.blocks[0].content).toContain("value = 2")
+    expect(out.blocks[0].content).not.toContain("ExamHelper")
+    expect(out.blocks[0].content).not.toContain("app.py")
+    expect(out.blocks[0].content).not.toContain("../")
   })
 })
 
