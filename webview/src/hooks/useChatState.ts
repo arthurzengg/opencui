@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef } from "react"
 import { vscode } from "../vscode"
 import type {
+  AgentsStatusInfo,
   Attachment,
   ChatBlock,
   ChatMessage,
@@ -47,6 +48,7 @@ export type ChatState = {
   pendingPermission?: { id: string; title: string; pattern?: string | string[] }
   pendingQuestion?: { id: string; questions: QuestionInfo[] }
   indexStatus?: IndexStatusInfo
+  agentsStatus?: AgentsStatusInfo
 }
 
 type Action =
@@ -296,6 +298,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
         : state
     case "indexStatus":
       return { ...state, indexStatus: action.status }
+    case "agentsStatus":
+      return { ...state, agentsStatus: action.status }
     case "messageRemoved": {
       // opencode dropped a message from the session (revert, redo, internal
       // truncation). Drop it from local state; if it was pending, recompute
@@ -432,6 +436,9 @@ export function useChatState() {
     },
     stopIndex() {
       vscode.post({ type: "stopIndex" })
+    },
+    openAgents() {
+      vscode.post({ type: "openAgents" })
     },
   }
 }

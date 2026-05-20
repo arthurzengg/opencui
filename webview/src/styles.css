@@ -169,6 +169,47 @@ button {
   white-space: nowrap;
 }
 
+/* ===== AgentsPill =====
+   Hidden-by-default text-only pill that surfaces live main-agent + subagent
+   activity. Sits between the connection dot and the model/agent selector.
+   While at least one task is running, the text breathes via a 1.6s opacity +
+   green color animation. Waiting / error states use a steady amber / red
+   foreground without animation. */
+.agents-pill {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  line-height: 1;
+  white-space: nowrap;
+}
+.agents-pill:hover {
+  text-decoration: underline;
+}
+.agents-pill.is-running {
+  color: #7ee787;
+  animation: agents-breathe 1.6s ease-in-out infinite;
+}
+.agents-pill.is-error {
+  color: var(--vscode-errorForeground, #f85149);
+}
+.agents-pill.is-waiting {
+  color: var(--vscode-notificationsWarningIcon-foreground, #d29922);
+}
+@keyframes agents-breathe {
+  0%, 100% { opacity: 1; color: #7ee787; }
+  50%      { opacity: 0.55; color: #39d353; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agents-pill.is-running { animation: none; }
+}
+
 .selector-menu {
   flex: 0 1 auto;
   min-width: 0;

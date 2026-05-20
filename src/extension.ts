@@ -29,7 +29,7 @@ export async function activate(context: vscode.ExtensionContext) {
     { dispose: () => agentTaskStore?.dispose() },
   )
   const prefs = new Preferences(context.globalState)
-  const status = new StatusBar(context, prefs, agentTaskStore)
+  const status = new StatusBar(context, prefs)
   const chat = new ChatView(context, servers, prefs, recentEdits, indexManager, agentTaskStore)
   const inline = new InlineEdit(servers, prefs)
   const picker = new Picker(servers, prefs)

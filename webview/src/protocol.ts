@@ -148,6 +148,18 @@ export type IndexStatusInfo = {
 }
 
 /**
+ * Snapshot of live main-agent + subagent activity, driven by the host-side
+ * AgentTaskStore. The webview header renders an `Agents` pill that is
+ * hidden when total === 0 and breathes green while `running > 0`.
+ */
+export type AgentsStatusInfo = {
+  running: number
+  waiting: number
+  error: number
+  total: number
+}
+
+/**
  * Per-prompt manifest of what context the host attached to a user turn.
  * Built by the host in `src/workspace-context/manifest.ts`, rendered by the
  * `ContextManifest` component in the user-message bubble. Persisted on
@@ -280,6 +292,7 @@ export type Outbound =
   | { type: "questionResolved"; id: string }
   | { type: "messageRemoved"; id: string }
   | { type: "indexStatus"; status: IndexStatusInfo }
+  | { type: "agentsStatus"; status: AgentsStatusInfo }
   | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }
   | { type: "attachmentResult"; requestID: number; attachments: Attachment[]; error?: string }
   | { type: "clear" }
@@ -311,3 +324,4 @@ export type Inbound =
   | { type: "questionReject"; id: string }
   | { type: "startIndex" }
   | { type: "stopIndex" }
+  | { type: "openAgents" }

@@ -32,6 +32,7 @@ export default function App() {
     attachFile,
     startIndex,
     stopIndex,
+    openAgents,
   } = useChatState()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
@@ -129,6 +130,7 @@ export default function App() {
         selection={state.selection}
         conversations={state.conversations}
         activeConversationID={state.conversationID}
+        agentsStatus={state.agentsStatus}
         onSelectAgent={selectAgent}
         onSelectModel={selectModel}
         onSelectVariant={selectVariant}
@@ -136,6 +138,7 @@ export default function App() {
         onOpenConversation={openConversation}
         onRenameConversation={renameConversation}
         onDeleteConversation={deleteConversation}
+        onOpenAgents={openAgents}
       />
       {state.indexStatus && state.indexStatus.state !== "disabled" && (
         <div className="index-status-wrap">

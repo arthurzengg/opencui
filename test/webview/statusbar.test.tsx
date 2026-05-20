@@ -20,6 +20,7 @@ const baseProps = {
   onOpenConversation: vi.fn(),
   onRenameConversation: vi.fn(),
   onDeleteConversation: vi.fn(),
+  onOpenAgents: vi.fn(),
 }
 
 describe("StatusBar", () => {
@@ -254,5 +255,93 @@ describe("StatusBar: history popover", () => {
     await user.clear(input)
     await user.type(input, "renamed{Enter}")
     expect(onRename).toHaveBeenCalledWith("c1", "renamed")
+  })
+})
+
+describe("AgentsPill (StatusBar inline)", () => {
+  it("is hidden when no agentsStatus is set", () => {
+    render(<StatusBar {...baseProps} />)
+    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
+  })
+
+  it("is hidden when total === 0", () => {
+    render(
+      <StatusBar {...baseProps} agentsStatus={{ running: 0, waiting: 0, error: 0, total: 0 }} />,
+    )
+    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
+  })
+
+  it("renders 'Agents' between the dot and the selector when a task is running", () => {
+    render(
+      <StatusBar
+        {...baseProps}
+        selection={{ model: "openai/gpt-5", agent: "deep-agent" }}
+        agentsStatus={{ running: 1, waiting: 0, error: 0, total: 1 }}
+      />,
+    )
+    expect(screen.getByText("Agents")).toBeInTheDocument()
+  })
+
+  it("applies is-running class so the breathing animation can trigger", () => {
+    render(
+      <StatusBar
+        {...baseProps}
+        agentsStatus={{ running: 2, waiting: 0, error: 0, total: 2 }}
+      />,
+    )
+    const pill = screen.getByText("Agents")
+    expect(pill.className).toContain("agents-pill")
+    expect(pill.className).toContain("is-running")
+  })
+
+  it("uses static is-error class when only error tasks remain", () => {
+    render(
+      <StatusBar
+        {...baseProps}
+        agentsStatus={{ running: 0, waiting: 0, error: 1, total: 1 }}
+      />,
+    )
+    const pill = screen.getByText("Agents")
+    expect(pill.className).toContain("is-error")
+    expect(pill.className).not.toContain("is-running")
+  })
+
+  it("uses static is-waiting class for waiting-only state", () => {
+    render(
+      <StatusBar
+        {...baseProps}
+        agentsStatus={{ running: 0, waiting: 1, error: 0, total: 1 }}
+      />,
+    )
+    const pill = screen.getByText("Agents")
+    expect(pill.className).toContain("is-waiting")
+    expect(pill.className).not.toContain("is-running")
+  })
+
+  it("calls onOpenAgents when clicked", async () => {
+    const user = userEvent.setup()
+    const onOpenAgents = vi.fn()
+    render(
+      <StatusBar
+        {...baseProps}
+        onOpenAgents={onOpenAgents}
+        agentsStatus={{ running: 1, waiting: 0, error: 0, total: 1 }}
+      />,
+    )
+    await user.click(screen.getByText("Agents"))
+    expect(onOpenAgents).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows a tooltip summarizing the counts", () => {
+    render(
+      <StatusBar
+        {...baseProps}
+        agentsStatus={{ running: 2, waiting: 1, error: 0, total: 3 }}
+      />,
+    )
+    const pill = screen.getByText("Agents")
+    expect(pill.getAttribute("title")).toMatch(/2 agents running/)
+    expect(pill.getAttribute("title")).toMatch(/1 waiting for input/)
+    expect(pill.getAttribute("title")).toMatch(/Click to view/)
   })
 })
