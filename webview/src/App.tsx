@@ -8,6 +8,7 @@ import { StatusBar } from "./components/StatusBar"
 import { PermissionDialog } from "./components/PermissionDialog"
 import { QuestionDialog } from "./components/QuestionDialog"
 import { ReviewPanel } from "./components/ReviewPanel"
+import { IndexStatus } from "./components/IndexStatus"
 
 export default function App() {
   const {
@@ -29,6 +30,8 @@ export default function App() {
     reviewAllInChange,
     searchFiles,
     attachFile,
+    startIndex,
+    stopIndex,
   } = useChatState()
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
@@ -134,6 +137,11 @@ export default function App() {
         onRenameConversation={renameConversation}
         onDeleteConversation={deleteConversation}
       />
+      {state.indexStatus && state.indexStatus.state !== "disabled" && (
+        <div className="index-status-wrap">
+          <IndexStatus status={state.indexStatus} onStart={startIndex} onStop={stopIndex} />
+        </div>
+      )}
       <div
         className="messages"
         ref={scrollRef}

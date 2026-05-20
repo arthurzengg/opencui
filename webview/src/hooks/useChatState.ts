@@ -7,6 +7,7 @@ import type {
   ConversationSummary,
   EditorContextRef,
   FileSearchHit,
+  IndexStatusInfo,
   Outbound,
   QuestionInfo,
   ReviewChange,
@@ -45,6 +46,7 @@ export type ChatState = {
   reviewHunks: Record<string, ReviewHunkState>
   pendingPermission?: { id: string; title: string; pattern?: string | string[] }
   pendingQuestion?: { id: string; questions: QuestionInfo[] }
+  indexStatus?: IndexStatusInfo
 }
 
 type Action =
@@ -292,6 +294,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return state.pendingQuestion?.id === action.id
         ? { ...state, pendingQuestion: undefined }
         : state
+    case "indexStatus":
+      return { ...state, indexStatus: action.status }
     case "messageRemoved": {
       // opencode dropped a message from the session (revert, redo, internal
       // truncation). Drop it from local state; if it was pending, recompute
@@ -422,6 +426,12 @@ export function useChatState() {
     rejectQuestion(id: string) {
       vscode.post({ type: "questionReject", id })
       dispatch({ type: "clearQuestion", id })
+    },
+    startIndex() {
+      vscode.post({ type: "startIndex" })
+    },
+    stopIndex() {
+      vscode.post({ type: "stopIndex" })
     },
   }
 }

@@ -42,6 +42,7 @@ import { buildManifest } from "../workspace-context/manifest"
 import { collectAutoContext } from "../workspace-context/collector"
 import { RecentEditsTracker } from "../workspace-context/recent-edits"
 import { readContextSettings } from "../workspace-context/budget"
+import type { IndexManager } from "../indexing/index-manager"
 import { toWire } from "./wire-format"
 import {
   applyCode,
@@ -156,6 +157,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     private servers: ServerManager,
     private prefs: Preferences,
     private recentEdits: RecentEditsTracker,
+    private indexManager: IndexManager,
   ) {
     migrateConversationsToWorkspace(context)
     this.conversations = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
@@ -559,6 +561,12 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.sendConversationState()
         this.pushContext()
         this.pushWorkspace()
+        this.indexManager.onStatusChange((status) => {
+          this.post({ type: "indexStatus", status })
+        })
+        // Send current state immediately so the UI can render even before
+        // the first lifecycle event.
+        this.post({ type: "indexStatus", status: this.indexManager.currentStatus() })
         try {
           await this.servers.ensure()
           this.post({ type: "connected", connected: true })
@@ -677,6 +685,12 @@ export class ChatView implements vscode.WebviewViewProvider {
         await this.rejectQuestion(msg.id)
         return
       }
+      case "startIndex":
+        void this.indexManager.start()
+        return
+      case "stopIndex":
+        void this.indexManager.stop()
+        return
     }
   }
 
