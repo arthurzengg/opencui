@@ -92,6 +92,12 @@ vi.mock("vscode", () => {
         stat: vi.fn().mockResolvedValue({}),
         readFile: vi.fn().mockResolvedValue(new Uint8Array()),
       },
+      onDidChangeTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidCreateFiles: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidDeleteFiles: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidRenameFiles: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidChangeWorkspaceFolders: vi.fn(() => ({ dispose: vi.fn() })),
     },
     window: {
       activeTextEditor: undefined,
@@ -125,6 +131,15 @@ vi.mock("vscode", () => {
     },
     languages: {
       registerCodeLensProvider: vi.fn(() => ({ dispose: vi.fn() })),
+      getDiagnostics: vi.fn(() => [] as Array<[Uri, unknown[]]>),
+    },
+    DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
+    SymbolKind: {
+      File: 0, Module: 1, Namespace: 2, Package: 3, Class: 4, Method: 5,
+      Property: 6, Field: 7, Constructor: 8, Enum: 9, Interface: 10,
+      Function: 11, Variable: 12, Constant: 13, String: 14, Number: 15,
+      Boolean: 16, Array: 17, Object: 18, Key: 19, Null: 20, EnumMember: 21,
+      Struct: 22, Event: 23, Operator: 24, TypeParameter: 25,
     },
   }
   return {

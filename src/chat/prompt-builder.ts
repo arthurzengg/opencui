@@ -2,6 +2,7 @@ import * as vscode from "vscode"
 import * as path from "path"
 import type { getEditorContext } from "../context"
 import type { WorkspaceRoot } from "../workspace-root"
+import type { PromptContextBlock } from "../workspace-context/types"
 import { log } from "../output"
 
 const MENTION_MAX_BYTES = 200_000
@@ -12,6 +13,7 @@ export function buildPrompt(
   ctx: ReturnType<typeof getEditorContext>,
   mentionBlock?: string,
   workspace?: WorkspaceRoot,
+  autoBlocks?: PromptContextBlock[],
 ): string {
   const lines: string[] = []
   if (workspace) {
@@ -34,6 +36,22 @@ export function buildPrompt(
       lines.push("```")
     }
     lines.push("")
+  }
+  if (autoBlocks && autoBlocks.length > 0) {
+    // Lowest-priority-number first so the most useful blocks land near the
+    // user request and the noisier hints (symbols, recent edits) sit higher.
+    const sorted = [...autoBlocks].sort((a, b) => a.priority - b.priority)
+    for (const block of sorted) {
+      lines.push(`## ${block.title}`)
+      if (block.path && block.language) {
+        lines.push("```" + block.language)
+        lines.push(block.content)
+        lines.push("```")
+      } else {
+        lines.push(block.content)
+      }
+      lines.push("")
+    }
   }
   lines.push(userText)
   return lines.join("\n")
