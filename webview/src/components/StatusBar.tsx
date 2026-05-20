@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import type { ConversationSummary, Selection } from "../protocol"
+import type { AgentsStatusInfo, ConversationSummary, Selection } from "../protocol"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
 
 type Props = {
@@ -9,6 +9,7 @@ type Props = {
   selection: Selection
   conversations: ConversationSummary[]
   activeConversationID?: string
+  agentsStatus?: AgentsStatusInfo
   onSelectAgent: () => void
   onSelectModel: () => void
   onSelectVariant: () => void
@@ -16,6 +17,7 @@ type Props = {
   onOpenConversation: (id: string) => void
   onRenameConversation: (id: string, title: string) => void
   onDeleteConversation: (id: string) => void
+  onOpenAgents: () => void
 }
 
 export function StatusBar({
@@ -25,6 +27,7 @@ export function StatusBar({
   selection,
   conversations,
   activeConversationID,
+  agentsStatus,
   onSelectAgent,
   onSelectModel,
   onSelectVariant,
@@ -32,6 +35,7 @@ export function StatusBar({
   onOpenConversation,
   onRenameConversation,
   onDeleteConversation,
+  onOpenAgents,
 }: Props) {
   const agent = selection.agent ?? "default"
   const model = selection.model ?? "default"
@@ -67,6 +71,7 @@ export function StatusBar({
         label={showStatus ? statusLabel : undefined}
         title={statusTitle}
       />
+      <AgentsPill status={agentsStatus} onOpen={onOpenAgents} />
       <div className="spacer" />
       <SelectorMenu
         agent={agent}
@@ -288,6 +293,49 @@ function ChatHistoryMenu({
       )}
     </div>
   )
+}
+
+/**
+ * Hidden-by-default `Agents` pill rendered between the connection dot and the
+ * model/agent selector. Visibility tracks the host-side AgentTaskStore counts
+ * — hidden when total === 0, shown while any task is running/waiting/errored.
+ * Running state breathes via CSS animation (`.agents-pill.is-running`).
+ */
+function AgentsPill({
+  status,
+  onOpen,
+}: {
+  status?: AgentsStatusInfo
+  onOpen: () => void
+}) {
+  if (!status || status.total === 0) return null
+  const running = status.running > 0
+  const className =
+    "agents-pill" +
+    (running ? " is-running" : "") +
+    (!running && status.error > 0 ? " is-error" : "") +
+    (!running && status.waiting > 0 ? " is-waiting" : "")
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={onOpen}
+      title={buildAgentsTitle(status)}
+      aria-label="Open agents"
+    >
+      Agents
+    </button>
+  )
+}
+
+export function buildAgentsTitle(status: AgentsStatusInfo): string {
+  const lines: string[] = []
+  if (status.running > 0)
+    lines.push(`${status.running} agent${status.running === 1 ? "" : "s"} running`)
+  if (status.waiting > 0) lines.push(`${status.waiting} waiting for input`)
+  if (status.error > 0) lines.push(`${status.error} with errors`)
+  lines.push("Click to view")
+  return lines.join("\n")
 }
 
 export function formatUpdated(updatedAt: number) {

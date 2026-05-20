@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { taskTitleFromUpdate, summarizePrompt } from "../../src/chat/view"
+import { taskTitleFromUpdate, summarizePrompt, summarizeAgentTasks } from "../../src/chat/view"
 import type { ToolUpdate } from "../../src/chat/stream"
+import type { AgentTask } from "../../src/agents/task-store"
 
 function makeUpdate(overrides: Partial<ToolUpdate> = {}): ToolUpdate {
   return {
@@ -34,6 +35,46 @@ describe("taskTitleFromUpdate", () => {
     expect(
       taskTitleFromUpdate(makeUpdate({ input: { description: "   " }, title: "Fallback" })),
     ).toBe("Fallback")
+  })
+})
+
+function task(overrides: Partial<AgentTask> = {}): AgentTask {
+  return {
+    id: "main:c:s",
+    kind: "main",
+    conversationID: "c",
+    sessionID: "s",
+    title: "Main",
+    status: "running",
+    startedAt: 0,
+    updatedAt: 0,
+    ...overrides,
+  }
+}
+
+describe("summarizeAgentTasks", () => {
+  it("returns zeros for an empty list", () => {
+    expect(summarizeAgentTasks([])).toEqual({ running: 0, waiting: 0, error: 0, total: 0 })
+  })
+
+  it("counts running / waiting / error states", () => {
+    expect(
+      summarizeAgentTasks([
+        task({ id: "a", status: "running" }),
+        task({ id: "b", status: "running" }),
+        task({ id: "c", status: "waiting" }),
+        task({ id: "d", status: "error" }),
+      ]),
+    ).toEqual({ running: 2, waiting: 1, error: 1, total: 4 })
+  })
+
+  it("ignores completed and cancelled tasks", () => {
+    expect(
+      summarizeAgentTasks([
+        task({ id: "a", status: "completed" }),
+        task({ id: "b", status: "cancelled" }),
+      ]),
+    ).toEqual({ running: 0, waiting: 0, error: 0, total: 0 })
   })
 })
 
