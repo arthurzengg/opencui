@@ -179,6 +179,9 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private postAgentsStatus(tasks: AgentTask[]) {
     const status = summarizeAgentTasks(tasks, this.activeConversationID)
+    log(
+      `[agents-status] post snapshot conv=${this.activeConversationID} total=${status.total} (running=${status.running} waiting=${status.waiting} error=${status.error}) ids=[${status.tasks.map((t) => `${t.kind}:${t.id}`).join(", ")}]`,
+    )
     this.post({ type: "agentsStatus", status })
   }
 
@@ -794,6 +797,9 @@ export class ChatView implements vscode.WebviewViewProvider {
    * sit on "Continuing…" forever if no follow-up turn materializes.
    */
   private updateTaskTracking(update: ToolUpdate, messageID?: string): void {
+    log(
+      `[agents-status] tool event tool=${update.tool} status=${update.status} callID=${update.callID}`,
+    )
     if (update.tool !== "task") return
     const id = update.callID
     if (update.status === "running") {
@@ -825,6 +831,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     const id = subagentTaskID(this.sessionID, update.callID)
     const now = Date.now()
     const title = taskTitleFromUpdate(update)
+    log(`[agents-status] recordSubagentTask ${id} status=${status} title="${title}"`)
     if (status === "running") {
       const existing = this.taskStore.get(id)
       await this.taskStore.upsert({
