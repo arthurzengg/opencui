@@ -41,6 +41,7 @@ import { buildPrompt, readMentions } from "./prompt-builder"
 import { buildManifest } from "../workspace-context/manifest"
 import { collectAutoContext } from "../workspace-context/collector"
 import { RecentEditsTracker } from "../workspace-context/recent-edits"
+import { readContextSettings } from "../workspace-context/budget"
 import { toWire } from "./wire-format"
 import {
   applyCode,
@@ -942,16 +943,17 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
 
     const sel = this.prefs.get()
-    const contextEnabled = vscode.workspace.getConfiguration("opencui").get<boolean>("context.enabled") ?? true
+    const settings = readContextSettings(vscode.workspace.getConfiguration("opencui"))
     const symbolFocus = collectSymbolFocus(ctx.relativePath, mentions)
     const [mentionResult, auto] = await Promise.all([
-      readMentions(mentions),
+      readMentions(mentions, settings.maxMentionBytes),
       backend.workspace
         ? collectAutoContext({
             workspace: backend.workspace,
             recentEdits: this.recentEdits,
             symbolFocus,
-            enabled: contextEnabled,
+            enabled: settings.enabled,
+            maxAutoBytes: settings.maxAutoBytes,
           })
         : Promise.resolve({ items: [], blocks: [] }),
     ])
@@ -1003,7 +1005,10 @@ export class ChatView implements vscode.WebviewViewProvider {
       })
       manifest.totals.skippedItems += 1
     }
-    this.post({ type: "userMessageContext", id: userMessageID, context: manifest })
+    manifest.totals.budgetBytes = settings.maxBytes
+    if (settings.showManifest) {
+      this.post({ type: "userMessageContext", id: userMessageID, context: manifest })
+    }
     const parts: Array<Record<string, unknown>> = []
     if (attachments) {
       for (const a of attachments) {
