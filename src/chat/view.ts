@@ -43,6 +43,7 @@ import { collectAutoContext } from "../workspace-context/collector"
 import { RecentEditsTracker } from "../workspace-context/recent-edits"
 import { readContextSettings } from "../workspace-context/budget"
 import type { IndexManager } from "../indexing/index-manager"
+import { AgentTaskStore, mainTaskID, subagentTaskID } from "../agents/task-store"
 import { toWire } from "./wire-format"
 import {
   applyCode,
@@ -158,6 +159,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     private prefs: Preferences,
     private recentEdits: RecentEditsTracker,
     private indexManager: IndexManager,
+    private taskStore?: AgentTaskStore,
   ) {
     migrateConversationsToWorkspace(context)
     this.conversations = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
@@ -776,7 +778,7 @@ export class ChatView implements vscode.WebviewViewProvider {
    * deferred idle is pending, arm a short grace timer so the UI doesn't
    * sit on "Continuing…" forever if no follow-up turn materializes.
    */
-  private updateTaskTracking(update: ToolUpdate): void {
+  private updateTaskTracking(update: ToolUpdate, messageID?: string): void {
     if (update.tool !== "task") return
     const id = update.callID
     if (update.status === "running") {
@@ -784,6 +786,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.activeTaskCallIDs.add(id)
         log(`[continuation] task running ${id} (active=${this.activeTaskCallIDs.size})`)
       }
+      void this.recordSubagentTask(update, messageID, "running")
       return
     }
     if (update.status === "completed" || update.status === "error") {
@@ -793,7 +796,71 @@ export class ChatView implements vscode.WebviewViewProvider {
           this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "tasks-settled")
         }
       }
+      void this.recordSubagentTask(update, messageID, update.status)
     }
+  }
+
+  private async recordSubagentTask(
+    update: ToolUpdate,
+    messageID: string | undefined,
+    status: "running" | "completed" | "error",
+  ): Promise<void> {
+    if (!this.taskStore) return
+    if (!this.sessionID) return
+    const id = subagentTaskID(this.sessionID, update.callID)
+    const now = Date.now()
+    const title = taskTitleFromUpdate(update)
+    if (status === "running") {
+      const existing = this.taskStore.get(id)
+      await this.taskStore.upsert({
+        id,
+        kind: "subagent",
+        conversationID: this.activeConversationID,
+        sessionID: this.sessionID,
+        messageID,
+        callID: update.callID,
+        title,
+        status: "running",
+        startedAt: existing?.startedAt ?? now,
+        updatedAt: now,
+      })
+      return
+    }
+    await this.taskStore.update(id, {
+      status,
+      title,
+      error: status === "error" ? update.error : undefined,
+      updatedAt: now,
+    })
+  }
+
+  private async recordMainTaskStart(text: string): Promise<void> {
+    if (!this.taskStore || !this.sessionID) return
+    const conversationID = this.activeConversationID
+    const sessionID = this.sessionID
+    const id = mainTaskID(conversationID, sessionID)
+    const existing = this.taskStore.get(id)
+    const now = Date.now()
+    await this.taskStore.upsert({
+      id,
+      kind: "main",
+      conversationID,
+      sessionID,
+      title: this.activeConversation().title || summarizePrompt(text),
+      status: "running",
+      startedAt: existing?.startedAt ?? now,
+      updatedAt: now,
+    })
+  }
+
+  private async recordMainTaskFinish(status: "completed" | "error" | "cancelled", error?: string): Promise<void> {
+    if (!this.taskStore || !this.sessionID) return
+    const id = mainTaskID(this.activeConversationID, this.sessionID)
+    await this.taskStore.update(id, {
+      status,
+      error,
+      updatedAt: Date.now(),
+    })
   }
 
   private clearPendingIdle() {
@@ -909,6 +976,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.aborting = true
     this.pendingUserBackendID = undefined
     this.post({ type: "aborted" })
+    void this.recordMainTaskFinish("cancelled")
     try {
       const backend = await this.servers.ensure()
       await backend.client.session.abort({ path: { id: this.sessionID } })
@@ -955,6 +1023,8 @@ export class ChatView implements vscode.WebviewViewProvider {
     } else if (!this.subscription) {
       await this.attachSubscription(backend, this.sessionID)
     }
+
+    await this.recordMainTaskStart(text)
 
     const sel = this.prefs.get()
     const settings = readContextSettings(vscode.workspace.getConfiguration("opencui"))
@@ -1144,6 +1214,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         // already set on `aborted` — suppress to avoid showing both.
         if (payload.error && !this.aborting) {
           this.post({ type: "assistantError", id: webviewID, message: payload.error })
+          void this.recordMainTaskFinish("error", payload.error)
         }
         this.post({ type: "assistantDone", id: webviewID, usage: payload.usage })
       },
@@ -1166,7 +1237,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         // (Hephaestus's `run_in_background` path emits no continuation
         // toast — only the structural signal — because omo suppresses
         // its toast when BackgroundManager handles the wakeup itself).
-        this.updateTaskTracking(update)
+        this.updateTaskTracking(update, mid)
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         const wire = toWire(update, backend.directory)
         this.post({ type: "tool", id: webviewID, update: wire })
@@ -1227,6 +1298,9 @@ export class ChatView implements vscode.WebviewViewProvider {
           // in-flight task parts (whose terminal events the SSE may not
           // send post-abort) don't poison the next turn.
           this.resetContinuationState()
+          if (this.sessionID && this.taskStore) {
+            void this.taskStore.markSessionIdle(this.sessionID)
+          }
           this.post({ type: "sessionIdle" })
           return
         }
@@ -1235,6 +1309,9 @@ export class ChatView implements vscode.WebviewViewProvider {
           return
         }
         this.finishContinuationPending()
+        if (this.sessionID && this.taskStore) {
+          void this.taskStore.markSessionIdle(this.sessionID)
+        }
         this.post({ type: "sessionIdle" })
       },
     })
@@ -1393,6 +1470,20 @@ export class ChatView implements vscode.WebviewViewProvider {
     html = html.replace("<head>", `<head><meta http-equiv="Content-Security-Policy" content="${csp}">`)
     return html
   }
+}
+
+export function taskTitleFromUpdate(update: ToolUpdate): string {
+  const input = update.input
+  if (input && typeof input === "object") {
+    const description = (input as Record<string, unknown>).description
+    if (typeof description === "string" && description.trim()) return description.trim()
+  }
+  if (update.title && update.title.trim()) return update.title.trim()
+  return "Background agent"
+}
+
+export function summarizePrompt(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, 64) || "Main agent"
 }
 
 function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | undefined): string[] {

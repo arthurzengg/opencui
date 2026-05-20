@@ -79,6 +79,8 @@ vi.mock("vscode", () => {
     OverviewRulerLane: { Left: 1, Center: 2, Right: 4, Full: 7 },
     TextEditorRevealType: { Default: 0, InCenterIfOutsideViewport: 2 },
     ViewColumn: { One: 1, Two: 2, Three: 3 },
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    QuickPickItemKind: { Separator: -1, Default: 0 },
     workspace: {
       workspaceFolders: [{ uri: Uri.file("/workspace") }],
       getConfiguration: vi.fn(() => ({ get: vi.fn() })),
@@ -124,6 +126,29 @@ vi.mock("vscode", () => {
       showInformationMessage: vi.fn(),
       showErrorMessage: vi.fn(),
       showTextDocument: vi.fn(),
+      showQuickPick: vi.fn(),
+      createStatusBarItem: vi.fn((_align?: unknown, _priority?: number) => {
+        const item: Record<string, unknown> = {
+          text: "",
+          tooltip: undefined,
+          command: undefined,
+          color: undefined,
+          backgroundColor: undefined,
+          name: undefined,
+          accessibilityInformation: undefined,
+          alignment: _align,
+          priority: _priority,
+          shown: false,
+          show: vi.fn(() => {
+            item.shown = true
+          }),
+          hide: vi.fn(() => {
+            item.shown = false
+          }),
+          dispose: vi.fn(),
+        }
+        return item
+      }),
     },
     commands: {
       executeCommand: vi.fn(),
