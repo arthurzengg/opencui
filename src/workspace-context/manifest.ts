@@ -8,6 +8,7 @@ import type {
 import type { OpencodeConfigMode } from "../server"
 import type { EditorContext } from "../context"
 import { isInsideRoot, type WorkspaceRoot } from "../workspace-root"
+import { expectedToolFamilies } from "../opencode/tool-discovery"
 
 export type ManifestInputs = {
   workspace?: WorkspaceRoot
@@ -78,6 +79,7 @@ export function buildManifest(inputs: ManifestInputs): PromptContextManifest {
     opencode: {
       directory: inputs.workspace?.fsPath,
       configMode: inputs.configMode,
+      toolFamilies: expectedToolFamilies(inputs.configMode),
     },
     totals,
     items,

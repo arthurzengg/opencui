@@ -148,6 +148,12 @@ export type PromptContextManifest = {
   opencode?: {
     directory?: string
     configMode: "isolated" | "user"
+    /**
+     * Best-effort list of tool families opencode is *expected* to expose for
+     * this turn (populated in Phase 5). Concrete tool calls are classified
+     * after the fact via the wire-format pass.
+     */
+    toolFamilies?: string[]
   }
   totals: {
     includedItems: number
