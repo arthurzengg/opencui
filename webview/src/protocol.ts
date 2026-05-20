@@ -157,7 +157,14 @@ export type AgentsTaskInfo = {
   id: string
   kind: "main" | "subagent"
   title: string
-  status: "running" | "waiting" | "error"
+  /**
+   * `completed` is included so the popover can show subagents from the
+   * current turn that finished BEFORE the parent's prose finished. The
+   * counts (`running` / `waiting` / `error` in the parent
+   * `AgentsStatusInfo`) still only reflect live work — `completed`
+   * subagents do not bump those numbers.
+   */
+  status: "running" | "waiting" | "error" | "completed"
   error?: string
   startedAt: number
 }

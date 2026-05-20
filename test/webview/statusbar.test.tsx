@@ -274,19 +274,30 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
     ],
   }
 
-  it("is hidden when no agentsStatus is set", () => {
+  it("renders 'Agents' even when no agentsStatus has been sent yet", () => {
     render(<StatusBar {...baseProps} />)
-    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
+    expect(screen.getByText("Agents")).toBeInTheDocument()
+    expect(screen.getByText("Agents").className).toContain("is-idle")
   })
 
-  it("is hidden when total === 0", () => {
+  it("renders 'Agents' with is-idle when total === 0", () => {
     render(
       <StatusBar
         {...baseProps}
         agentsStatus={{ running: 0, waiting: 0, error: 0, total: 0, tasks: [] }}
       />,
     )
-    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
+    const pill = screen.getByText("Agents")
+    expect(pill).toBeInTheDocument()
+    expect(pill.className).toContain("is-idle")
+    expect(pill.className).not.toContain("is-running")
+  })
+
+  it("opens an empty-state popover when there are no tasks", async () => {
+    const user = userEvent.setup()
+    render(<StatusBar {...baseProps} />)
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
   })
 
   it("renders 'Agents' when a task is running in this chat", () => {
@@ -372,19 +383,38 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
     expect(screen.queryByText("Subagents")).not.toBeInTheDocument()
   })
 
-  it("closes the popover when the chat goes idle (total → 0)", async () => {
+  it("shows completed subagent rows while the parent is still alive", async () => {
     const user = userEvent.setup()
-    const { rerender } = render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("Explain this file")).toBeInTheDocument()
-    rerender(
+    render(
       <StatusBar
         {...baseProps}
-        agentsStatus={{ running: 0, waiting: 0, error: 0, total: 0, tasks: [] }}
+        agentsStatus={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "main:c:s",
+              kind: "main",
+              title: "Explain this file",
+              status: "running",
+              startedAt: Date.now() - 12_000,
+            },
+            {
+              id: "subagent:s:c1",
+              kind: "subagent",
+              title: "Explore codebase patterns",
+              status: "completed",
+              startedAt: Date.now() - 10_000,
+            },
+          ],
+        }}
       />,
     )
-    expect(screen.queryByText("Explain this file")).not.toBeInTheDocument()
-    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText("Explore codebase patterns")).toBeInTheDocument()
+    expect(screen.getByText("Subagents")).toBeInTheDocument()
   })
 
   it("closes the popover when Escape is pressed", async () => {
