@@ -44,7 +44,7 @@ import { RecentEditsTracker } from "../workspace-context/recent-edits"
 import { readContextSettings } from "../workspace-context/budget"
 import type { IndexManager } from "../indexing/index-manager"
 import { AgentTaskStore, mainTaskID, subagentTaskID, type AgentTask } from "../agents/task-store"
-import type { AgentsStatusInfo } from "../protocol"
+import type { AgentsStatusInfo, AgentsTaskInfo } from "../protocol"
 import { toWire } from "./wire-format"
 import {
   applyCode,
@@ -178,7 +178,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private postAgentsStatus(tasks: AgentTask[]) {
-    const status = summarizeAgentTasks(tasks)
+    const status = summarizeAgentTasks(tasks, this.activeConversationID)
     this.post({ type: "agentsStatus", status })
   }
 
@@ -240,6 +240,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.reviewHunks = {}
     await this.persistConversations()
     this.sendConversationState()
+    if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
   }
 
   async pickConversation() {
@@ -327,6 +328,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.restoreActiveState()
     await this.persistConversations()
     this.sendConversationState()
+    if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
   }
 
   private async renameConversation(id: string, title: string) {
@@ -705,9 +707,6 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       case "stopIndex":
         void this.indexManager.stop()
-        return
-      case "openAgents":
-        await vscode.commands.executeCommand("opencui.agents.open")
         return
     }
   }
@@ -1496,16 +1495,35 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 }
 
-export function summarizeAgentTasks(tasks: AgentTask[]): AgentsStatusInfo {
+export function summarizeAgentTasks(
+  tasks: AgentTask[],
+  conversationID?: string,
+): AgentsStatusInfo {
+  const items: AgentsTaskInfo[] = []
   let running = 0
   let waiting = 0
   let error = 0
   for (const task of tasks) {
+    if (conversationID && task.conversationID !== conversationID) continue
     if (task.status === "running") running += 1
     else if (task.status === "waiting") waiting += 1
     else if (task.status === "error") error += 1
+    else continue
+    items.push({
+      id: task.id,
+      kind: task.kind,
+      title: task.title,
+      status: task.status,
+      error: task.error,
+      startedAt: task.startedAt,
+    })
   }
-  return { running, waiting, error, total: running + waiting + error }
+  // Stable order: main tasks first, then subagents, then by startedAt asc.
+  items.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === "main" ? -1 : 1
+    return a.startedAt - b.startedAt
+  })
+  return { running, waiting, error, total: running + waiting + error, tasks: items }
 }
 
 export function taskTitleFromUpdate(update: ToolUpdate): string {

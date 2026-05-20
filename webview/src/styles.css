@@ -169,12 +169,19 @@ button {
   white-space: nowrap;
 }
 
-/* ===== AgentsPill =====
+/* ===== AgentsMenu =====
    Hidden-by-default text-only pill that surfaces live main-agent + subagent
    activity. Sits between the connection dot and the model/agent selector.
    While at least one task is running, the text breathes via a 1.6s opacity +
    green color animation. Waiting / error states use a steady amber / red
-   foreground without animation. */
+   foreground without animation. Clicking opens an inline popover scoped to
+   the current chat (`.agents-popover`). */
+.agents-menu {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
 .agents-pill {
   flex: 0 0 auto;
   background: transparent;
@@ -189,7 +196,8 @@ button {
   line-height: 1;
   white-space: nowrap;
 }
-.agents-pill:hover {
+.agents-pill:hover,
+.agents-pill.is-open {
   text-decoration: underline;
 }
 .agents-pill.is-running {
@@ -209,6 +217,60 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .agents-pill.is-running { animation: none; }
 }
+
+.agents-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -4px;
+  min-width: 260px;
+  max-width: 360px;
+  background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
+  padding: 8px 0;
+  z-index: 50;
+  font-size: 12px;
+}
+.agents-popover-title {
+  padding: 0 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+.agents-popover-section {
+  padding: 6px 12px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+}
+.agents-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.agents-row-title {
+  font-weight: 500;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.agents-row-meta {
+  opacity: 0.65;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.agents-row-running .agents-row-title { color: #7ee787; }
+.agents-row-error .agents-row-meta { color: var(--vscode-errorForeground, #f85149); }
+.agents-row-waiting .agents-row-meta { color: var(--vscode-notificationsWarningIcon-foreground, #d29922); }
 
 .selector-menu {
   flex: 0 1 auto;

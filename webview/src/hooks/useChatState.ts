@@ -437,8 +437,5 @@ export function useChatState() {
     stopIndex() {
       vscode.post({ type: "stopIndex" })
     },
-    openAgents() {
-      vscode.post({ type: "openAgents" })
-    },
   }
 }
