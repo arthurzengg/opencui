@@ -5,16 +5,20 @@ import { ChatView } from "./chat/view"
 import { InlineEdit } from "./inline/edit"
 import { Preferences } from "./preferences"
 import { Picker } from "./picker"
+import { RecentEditsTracker } from "./workspace-context/recent-edits"
 import { getOutputChannel, log } from "./output"
 
 let servers: ServerManager | undefined
+let recentEdits: RecentEditsTracker | undefined
 
 export async function activate(context: vscode.ExtensionContext) {
   log("activating OpenCode Panel")
   servers = new ServerManager(context)
+  recentEdits = new RecentEditsTracker()
+  context.subscriptions.push({ dispose: () => recentEdits?.dispose() })
   const prefs = new Preferences(context.globalState)
   const status = new StatusBar(context, prefs)
-  const chat = new ChatView(context, servers, prefs)
+  const chat = new ChatView(context, servers, prefs, recentEdits)
   const inline = new InlineEdit(servers, prefs)
   const picker = new Picker(servers, prefs)
 

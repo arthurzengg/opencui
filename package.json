@@ -133,6 +133,11 @@
           ],
           "default": "isolated",
           "description": "Whether the opencode server started by OpenCode Panel loads the user's opencode config or runs with an empty isolated config."
+        },
+        "opencui.context.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Attach automatic workspace context (open tabs, diagnostics, git diff, recent edits, docs, symbols) to each prompt. Disable to send only the user's text + mentions."
         }
       }
     }

@@ -39,6 +39,8 @@ import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { reviewChanges } from "./review-changes"
 import { buildPrompt, readMentions } from "./prompt-builder"
 import { buildManifest } from "../workspace-context/manifest"
+import { collectAutoContext } from "../workspace-context/collector"
+import { RecentEditsTracker } from "../workspace-context/recent-edits"
 import { toWire } from "./wire-format"
 import {
   applyCode,
@@ -152,6 +154,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     private context: vscode.ExtensionContext,
     private servers: ServerManager,
     private prefs: Preferences,
+    private recentEdits: RecentEditsTracker,
   ) {
     migrateConversationsToWorkspace(context)
     this.conversations = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
@@ -939,7 +942,19 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
 
     const sel = this.prefs.get()
-    const mentionResult = await readMentions(mentions)
+    const contextEnabled = vscode.workspace.getConfiguration("opencui").get<boolean>("context.enabled") ?? true
+    const symbolFocus = collectSymbolFocus(ctx.relativePath, mentions)
+    const [mentionResult, auto] = await Promise.all([
+      readMentions(mentions),
+      backend.workspace
+        ? collectAutoContext({
+            workspace: backend.workspace,
+            recentEdits: this.recentEdits,
+            symbolFocus,
+            enabled: contextEnabled,
+          })
+        : Promise.resolve({ items: [], blocks: [] }),
+    ])
     const manifest = buildManifest({
       workspace: backend.workspace,
       workspaceInfo: this.workspaceInfo(),
@@ -949,6 +964,20 @@ export class ChatView implements vscode.WebviewViewProvider {
       attachments,
       mentionBytes: mentionResult.bytes,
     })
+    // Merge automatic collector items into the manifest. The auto-context
+    // builder already classified them by source / status / priority.
+    manifest.items.push(...auto.items)
+    for (const item of auto.items) {
+      if (item.status === "included") manifest.totals.includedItems += 1
+      if (item.status === "truncated") {
+        manifest.totals.includedItems += 1
+        manifest.totals.truncatedItems += 1
+      }
+      if (item.status === "skipped") manifest.totals.skippedItems += 1
+      if (item.bytes && (item.status === "included" || item.status === "truncated")) {
+        manifest.totals.includedBytes += item.bytes
+      }
+    }
     // Tag capped/failed mentions explicitly so the manifest shows them.
     for (const rel of mentionResult.capped) {
       manifest.items.push({
@@ -991,7 +1020,10 @@ export class ChatView implements vscode.WebviewViewProvider {
         })
       }
     }
-    parts.push({ type: "text", text: buildPrompt(text, ctx, mentionResult.block, backend.workspace) })
+    parts.push({
+      type: "text",
+      text: buildPrompt(text, ctx, mentionResult.block, backend.workspace, auto.blocks),
+    })
     type PromptBody = NonNullable<Parameters<typeof backend.client.session.prompt>[0]["body"]>
     const body: PromptBody = {
       parts: parts as PromptBody["parts"],
@@ -1342,6 +1374,21 @@ export class ChatView implements vscode.WebviewViewProvider {
     html = html.replace("<head>", `<head><meta http-equiv="Content-Security-Policy" content="${csp}">`)
     return html
   }
+}
+
+function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | undefined): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const push = (p: string | undefined) => {
+    if (!p) return
+    if (path.isAbsolute(p)) return
+    if (seen.has(p)) return
+    seen.add(p)
+    out.push(p)
+  }
+  push(activeRel)
+  for (const m of mentions ?? []) push(m)
+  return out
 }
 
 function appendText(
