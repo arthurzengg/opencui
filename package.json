@@ -158,6 +158,41 @@
           "type": "boolean",
           "default": true,
           "description": "Show the context-manifest pill under each user message in the chat panel."
+        },
+        "opencui.indexing.semantic.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the optional semantic codebase index. Phase 6 ships an in-memory scaffold; a real embedding provider must be configured separately."
+        },
+        "opencui.indexing.semantic.provider": {
+          "type": "string",
+          "enum": ["none", "openai", "local", "opencode-plugin"],
+          "default": "none",
+          "description": "Embedding provider for the semantic index. `none` keeps the index in text-search mode. Other providers ship via follow-up PRs."
+        },
+        "opencui.indexing.maxFileBytes": {
+          "type": "number",
+          "default": 500000,
+          "description": "Skip files larger than this when building the semantic index."
+        },
+        "opencui.indexing.maxFiles": {
+          "type": "number",
+          "default": 50000,
+          "description": "Hard cap on the number of files the index scanner will enumerate."
+        },
+        "opencui.indexing.includeGlobs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["**/*"],
+          "description": "Globs the semantic index should consider. Combined with the workspace finder."
+        },
+        "opencui.indexing.excludeGlobs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [
+            "**/{node_modules,.git,dist,build,out,coverage,.next,.turbo,.cache}/**"
+          ],
+          "description": "Globs the semantic index must never read. Always applied even when includeGlobs would otherwise match."
         }
       }
     }

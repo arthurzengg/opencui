@@ -1221,6 +1221,44 @@ button {
 .context-badge.mode-user     { color: var(--vscode-charts-green); }
 .context-badge.tool-family   { color: var(--vscode-descriptionForeground); margin-left: 2px; }
 
+/* Semantic-index status pill — sits in the status bar / header area. */
+.index-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-editorWidget-border, transparent);
+}
+.index-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--vscode-descriptionForeground);
+}
+.index-status.state-ready    .index-status-dot { background: var(--vscode-charts-green); }
+.index-status.state-scanning .index-status-dot { background: var(--vscode-charts-yellow); }
+.index-status.state-error    .index-status-dot { background: var(--vscode-charts-red); }
+.index-status-label { opacity: 0.8; }
+.index-status-meta  { opacity: 0.6; }
+.index-status-action {
+  background: transparent;
+  border: 1px solid var(--vscode-editorWidget-border, transparent);
+  color: inherit;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.index-status-action:hover { background: var(--vscode-list-hoverBackground); }
+.index-status-wrap {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 8px 0;
+}
+
 
 .thinking-dots {
   display: inline-block;

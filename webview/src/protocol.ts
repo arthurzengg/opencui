@@ -135,6 +135,19 @@ export type WorkspaceInfo = {
 export type FileSearchHit = { path: string; name: string }
 
 /**
+ * Status snapshot of the optional semantic index — Phase 6 of the
+ * workspace-context plan. `disabled` is the default; flipping
+ * `opencui.indexing.semantic.enabled` true plus configuring a real
+ * embedding provider moves through `scanning` → `ready`.
+ */
+export type IndexStatusInfo = {
+  state: "disabled" | "idle" | "scanning" | "ready" | "error"
+  chunks?: number
+  message?: string
+  updatedAt: number
+}
+
+/**
  * Per-prompt manifest of what context the host attached to a user turn.
  * Built by the host in `src/workspace-context/manifest.ts`, rendered by the
  * `ContextManifest` component in the user-message bubble. Persisted on
@@ -266,6 +279,7 @@ export type Outbound =
   | { type: "question"; id: string; questions: QuestionInfo[] }
   | { type: "questionResolved"; id: string }
   | { type: "messageRemoved"; id: string }
+  | { type: "indexStatus"; status: IndexStatusInfo }
   | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }
   | { type: "attachmentResult"; requestID: number; attachments: Attachment[]; error?: string }
   | { type: "clear" }
@@ -295,3 +309,5 @@ export type Inbound =
   | { type: "permissionReply"; id: string; response: "once" | "always" | "reject" }
   | { type: "questionReply"; id: string; answers: string[][] }
   | { type: "questionReject"; id: string }
+  | { type: "startIndex" }
+  | { type: "stopIndex" }
