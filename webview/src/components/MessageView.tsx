@@ -7,7 +7,6 @@ import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
 import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace, toolHeadline } from "./ToolCard"
-import { ContextManifest } from "./ContextManifest"
 import { ICON_SIZE } from "../design-tokens"
 
 /**
@@ -286,7 +285,6 @@ function UserMessageView({
           {originalText && (
             <div className="user-text">{renderMentionedText(originalText, knownLabels)}</div>
           )}
-          {message.context && <ContextManifest context={message.context} />}
           {canEdit && (
             <span className="user-edit-hint" aria-hidden="true">
               <svg viewBox="0 0 16 16" width={ICON_SIZE.md} height={ICON_SIZE.md} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
