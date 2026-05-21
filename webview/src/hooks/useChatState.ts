@@ -12,6 +12,7 @@ import type {
   Outbound,
   QuestionInfo,
   ReviewChange,
+  ReviewChangeActor,
   ReviewHunkState,
   Selection,
   ToolUpdate,
@@ -99,7 +100,12 @@ function appendToLastBlock(
   return copy
 }
 
-function upsertTool(messages: Message[], id: string, update: ToolUpdate): Message[] {
+function upsertTool(
+  messages: Message[],
+  id: string,
+  update: ToolUpdate,
+  actor?: ReviewChangeActor,
+): Message[] {
   const idx = messages.findIndex((m) => m.id === id)
   if (idx < 0) return messages
   const msg = messages[idx]
@@ -109,9 +115,14 @@ function upsertTool(messages: Message[], id: string, update: ToolUpdate): Messag
   let blocks: Block[]
   if (existing >= 0) {
     blocks = msg.blocks.slice()
-    blocks[existing] = { type: "tool", update }
+    const prev = blocks[existing]
+    blocks[existing] = {
+      type: "tool",
+      update,
+      actor: actor ?? (prev?.type === "tool" ? prev.actor : undefined),
+    }
   } else {
-    blocks = [...msg.blocks, { type: "tool", update }]
+    blocks = [...msg.blocks, { type: "tool", update, actor }]
   }
   const copy = messages.slice()
   copy[idx] = { ...msg, blocks }
@@ -206,13 +217,15 @@ export function reducer(state: ChatState, action: Action): ChatState {
       }
     case "tool":
       if (state.aborting) return state
-      return { ...state, messages: upsertTool(state.messages, action.id, action.update) }
+      return { ...state, messages: upsertTool(state.messages, action.id, action.update, action.actor) }
     case "patch":
       if (state.aborting) return state
       return {
         ...state,
         messages: state.messages.map((m) =>
-          m.id === action.id ? { ...m, blocks: [...m.blocks, { type: "patch", files: action.files, diff: action.diff }] } : m,
+          m.id === action.id
+            ? { ...m, blocks: [...m.blocks, { type: "patch", files: action.files, diff: action.diff, actor: action.actor }] }
+            : m,
         ),
       }
     case "reviewHunkState": {

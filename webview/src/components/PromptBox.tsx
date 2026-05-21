@@ -34,7 +34,6 @@ type Props = {
    * one.
    */
   aborting?: boolean
-  contextLabel?: string
   onSend: (text: string, mentions?: string[], attachments?: Attachment[]) => void
   onAbort: () => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
@@ -70,7 +69,7 @@ function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachm
   return map
 }
 
-export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbort, searchFiles, attachFile, initial, variant = "send" }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, attachFile, initial, variant = "send" }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
@@ -314,7 +313,6 @@ export function PromptBox({ busy, aborting = false, contextLabel, onSend, onAbor
 
   return (
     <div className={"promptbox" + (variant === "edit" ? " promptbox--edit" : "")}>
-      {contextLabel && <div className="context-chip">{contextLabel}</div>}
       {attachError && <div className="attachment-error">{attachError}</div>}
       {imageAttachments.length > 0 && (
         <ul className="promptbox-thumbs" aria-label="Image attachments">

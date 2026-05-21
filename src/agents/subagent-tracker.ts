@@ -1,6 +1,6 @@
 import { log } from "../output"
 import type { Backend } from "../server"
-import type { ChildSessionEvent, ToolUpdate } from "../chat/stream"
+import type { ChildSessionEvent, ChildSessionInfo, ToolUpdate } from "../chat/stream"
 import {
   type AgentTask,
   type AgentTaskModel,
@@ -131,8 +131,18 @@ export class SubagentTracker {
     }
     const conversationID = this.getConversationID()
     const meta = readMetadata(update.metadata)
+    // Opencode's built-in `task` tool puts the agent slug into
+    // `input.subagent_type` rather than `metadata.agent`, so fall back to
+    // the input when omo-style metadata is missing.
+    if (!meta.subagent && update.input && typeof update.input === "object") {
+      const input = update.input as Record<string, unknown>
+      const fromInput =
+        readStr(input.subagent_type) ?? readStr(input.subagent) ?? readStr(input.agent)
+      if (fromInput) meta.subagent = fromInput
+    }
 
     let dispatch = this.dispatches.get(update.callID)
+    const isFirstSighting = !dispatch
     if (!dispatch) {
       // First sighting of this callID — pre-register with the callID-based
       // identity. The promote step below moves it to the child-session
@@ -146,6 +156,22 @@ export class SubagentTracker {
 
     if (meta.childSessionID && !dispatch.childSessionID) {
       dispatch = await this.promoteToChildSessionIdentity(dispatch, meta.childSessionID, parentSessionID)
+    }
+
+    // If this is the FIRST tool event for a callID AND we have no
+    // metadata.sessionId yet (opencode's built-in `task` tool path), check
+    // whether `registerChildSession` already created an unclaimed placeholder
+    // for a child whose `parentID` matches us. If exactly one orphan exists,
+    // it MUST belong to this dispatch — opencode dispatches subagents
+    // serially within a single tool call, so a unique unclaimed child plus a
+    // unique fresh dispatch is an unambiguous link. Merging them here
+    // prevents the duplicate row the user reported (one keyed by callID,
+    // one keyed by child sessionID).
+    if (isFirstSighting && !dispatch.childSessionID) {
+      const orphanChildID = this.findOrphanChildSessionID(parentSessionID)
+      if (orphanChildID) {
+        dispatch = await this.promoteToChildSessionIdentity(dispatch, orphanChildID, parentSessionID)
+      }
     }
 
     const now = Date.now()
@@ -309,6 +335,80 @@ export class SubagentTracker {
         }
         return
     }
+  }
+
+  /**
+   * Called when the SSE layer discovered a new child session for our parent
+   * via `session.created` / `session.updated`. Creates a placeholder
+   * AgentTask if we don't already have one for this child — this is the
+   * fallback for cases where the parent's task tool doesn't surface
+   * `metadata.sessionId` (opencode's built-in `task` tool, for one). When
+   * the parent's tool metadata DOES arrive later, the existing record gets
+   * merged with the richer info.
+   */
+  async registerChildSession(info: ChildSessionInfo): Promise<void> {
+    const parentSessionID = this.getParentSessionID()
+    if (!parentSessionID) return
+    if (info.parentID !== parentSessionID) return
+    const conversationID = this.getConversationID()
+    const taskID = subagentTaskIDByChildSession(info.id)
+    const existing = this.store.get(taskID)
+    const now = Date.now()
+    if (existing) {
+      // Already known — refresh updatedAt only.
+      await this.store.update(taskID, { updatedAt: now })
+      return
+    }
+    // If the parent's `task` tool dispatch already created a callID-keyed row
+    // and is sitting waiting on a child sessionID, promote it now rather than
+    // creating a second row. The "exactly one unclaimed dispatch" guard
+    // mirrors `handleToolUpdate`'s claim logic — serial dispatch means a
+    // unique unclaimed dispatch must be this child.
+    const orphanDispatch = this.findOrphanDispatch()
+    if (orphanDispatch) {
+      await this.promoteToChildSessionIdentity(orphanDispatch, info.id, parentSessionID)
+      return
+    }
+    await this.store.upsert({
+      id: taskID,
+      kind: "subagent",
+      conversationID,
+      sessionID: parentSessionID,
+      childSessionID: info.id,
+      title: info.title?.trim() ? info.title.trim() : "Subagent",
+      status: "running",
+      startedAt: now,
+      updatedAt: now,
+    })
+  }
+
+  /**
+   * Find a callID-based dispatch that hasn't been linked to a child session
+   * yet. Returns one only when EXACTLY one orphan exists — ambiguous cases
+   * (parallel subagent fan-out) skip the claim and let the metadata-based
+   * path settle them later when sessionId publishing eventually happens.
+   */
+  private findOrphanDispatch(): DispatchState | undefined {
+    const orphans = [...this.dispatches.values()].filter((d) => !d.childSessionID)
+    return orphans.length === 1 ? orphans[0] : undefined
+  }
+
+  /**
+   * Find a `registerChildSession`-created placeholder task (kind=subagent,
+   * has childSessionID, no callID, still active) belonging to `parentSessionID`.
+   * Used by `handleToolUpdate` to merge with a discovery placeholder rather
+   * than creating a duplicate callID-keyed row.
+   */
+  private findOrphanChildSessionID(parentSessionID: string): string | undefined {
+    const candidates = this.store.list().filter(
+      (t) =>
+        t.kind === "subagent" &&
+        t.sessionID === parentSessionID &&
+        !!t.childSessionID &&
+        !t.callID &&
+        (t.status === "running" || t.status === "waiting"),
+    )
+    return candidates.length === 1 ? candidates[0]!.childSessionID : undefined
   }
 
   /**
