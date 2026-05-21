@@ -11,14 +11,56 @@ export type AgentTaskStatus =
 
 export type AgentTaskKind = "main" | "subagent"
 
+/**
+ * Subset of opencode/omo metadata we mirror onto a task record so the
+ * Agents popover can show *what kind* of subagent is running and on
+ * which model. All fields are best-effort — opencode's built-in `task`
+ * tool may not populate every field, and third-party plugins might
+ * write nothing at all. Consumers MUST treat each field as optional.
+ */
+export type AgentTaskModel = {
+  providerID: string
+  modelID: string
+}
+
 export type AgentTask = {
   id: string
   kind: AgentTaskKind
   conversationID: string
+  /**
+   * For a `main` task: the parent opencode sessionID.
+   * For a `subagent` task: the parent sessionID (kept so we can scope by
+   *   conversation). The subagent's *own* sessionID lives in
+   *   `childSessionID` and is populated as soon as omo's tool metadata
+   *   surfaces it (one or two SSE frames after the tool dispatch).
+   */
   sessionID: string
   messageID?: string
   callID?: string
   parentTaskID?: string
+  /**
+   * The opencode sessionID of the subagent's own session. Populated from
+   * `update.metadata.sessionId` (omo writes both `sessionId` and `taskId`
+   * to the same value). Used as the canonical identity once known — the
+   * task is re-keyed from `subagent:<parent>:<callID>` to
+   * `subagent:child:<childSessionID>` to survive task_id-reuse follow-ups.
+   */
+  childSessionID?: string
+  /**
+   * omo's internal BackgroundManager task id. Distinct from the
+   * opencode sessionID. We keep it so the QuickPick / popover can
+   * show it for debugging and so future "cancel background task"
+   * actions have a handle.
+   */
+  backgroundTaskID?: string
+  /** Subagent slug like `explore`, `librarian`, `oracle`, `hephaestus`. */
+  subagent?: string
+  /** Category slug like `deep`, `quick`, `ultrabrain`. */
+  category?: string
+  /** Resolved model used for this subagent's session. */
+  model?: AgentTaskModel
+  /** True when omo dispatched this task with `run_in_background=true`. */
+  runInBackground?: boolean
   title: string
   status: AgentTaskStatus
   startedAt: number
@@ -29,12 +71,53 @@ export type AgentTask = {
 const ACTIVE_STATUSES: ReadonlyArray<AgentTaskStatus> = ["running", "waiting"]
 const ATTENTION_STATUSES: ReadonlyArray<AgentTaskStatus> = ["running", "waiting", "error"]
 
-export function mainTaskID(conversationID: string, sessionID: string): string {
-  return `main:${conversationID}:${sessionID}`
+/**
+ * One main task per user turn. `turnID` is minted by ChatView at prompt
+ * submit time so a second message in the same conversation gets its own
+ * row instead of trying to resurrect the previous (terminal) one. The
+ * terminal-guard in `upsert` blocks revival by design, so we sidestep it
+ * by issuing a fresh identity.
+ */
+export function mainTaskID(conversationID: string, sessionID: string, turnID: string): string {
+  return `main:${conversationID}:${sessionID}:${turnID}`
 }
 
+/**
+ * Pre-metadata identity for a subagent: we know which parent + callID
+ * dispatched it but not yet the child session. The tracker promotes the
+ * record to `subagentTaskIDByChildSession` once metadata arrives.
+ */
 export function subagentTaskID(sessionID: string, callID: string): string {
   return `subagent:${sessionID}:${callID}`
+}
+
+/**
+ * Canonical identity once the child opencode sessionID is known.
+ * Keyed off the child session so task_id-reuse follow-ups (Hephaestus
+ * reuses task_id by design to save 70%+ tokens) collapse into a single
+ * record instead of accumulating a new row per resume.
+ */
+export function subagentTaskIDByChildSession(childSessionID: string): string {
+  return `subagent:child:${childSessionID}`
+}
+
+/**
+ * Decide whether a terminal error message represents a real failure or
+ * an abort signal. opencode/omo emit the literal string "Aborted" when
+ * a session is cancelled — either user-initiated (Stop button) or
+ * internal (parent agent giving up on a subagent and pivoting). The
+ * chat-bubble path already maps `/^aborted$/i` to a "Stopped" badge
+ * rather than a red error block (see CLAUDE.md); this helper extends
+ * the same convention to the popover so abort signals settle as
+ * `cancelled` (filtered out of the active-only popover) instead of
+ * painting the row red.
+ */
+export function classifyTerminal(message: string | undefined): {
+  status: "cancelled" | "error"
+  error?: string
+} {
+  if (message && /^aborted$/i.test(message.trim())) return { status: "cancelled" }
+  return { status: "error", error: message }
 }
 
 export type Memento = Pick<vscode.Memento, "get" | "update">
@@ -82,13 +165,45 @@ export class AgentTaskStore {
     return this.tasks.find((task) => task.id === id)
   }
 
+  /** Look up a subagent by its child opencode sessionID, if known. */
+  getByChildSession(childSessionID: string): AgentTask | undefined {
+    return this.tasks.find(
+      (task) => task.kind === "subagent" && task.childSessionID === childSessionID,
+    )
+  }
+
+  /**
+   * Active (running/waiting) subagent tasks belonging to the given
+   * parent session. Used by ChatView as the structural continuation gate:
+   * while any of these are alive, a `session.idle` event on the parent
+   * must NOT clear the busy state — the parent is just waiting on its
+   * subagents to finish.
+   */
+  activeSubagentsForSession(parentSessionID: string): AgentTask[] {
+    return this.tasks.filter(
+      (task) =>
+        task.kind === "subagent" &&
+        task.sessionID === parentSessionID &&
+        ACTIVE_STATUSES.includes(task.status),
+    )
+  }
+
+  hasActiveSubagentsForSession(parentSessionID: string): boolean {
+    return this.activeSubagentsForSession(parentSessionID).length > 0
+  }
+
   async upsert(task: AgentTask): Promise<void> {
     const idx = this.tasks.findIndex((t) => t.id === task.id)
     if (idx >= 0) {
       const existing = this.tasks[idx]!
-      // Once a task is in a terminal state, ignore later "running"-style
-      // upserts so duplicated SSE events can't resurrect a finished task.
-      if (isTerminal(existing.status) && !isTerminal(task.status)) return
+      // Once a task is in a terminal state, freeze its status: ignore
+      // late upserts that would either resurrect it (terminal → active)
+      // OR flip it between terminal states. The second case shows up
+      // when a user-initiated abort settles a subagent as `cancelled`
+      // and a stray child `session.error` arrives afterwards — without
+      // this guard the row flips to `error`, overriding the user's
+      // explicit Stop. Same-status upserts still merge other fields.
+      if (isTerminal(existing.status) && task.status !== existing.status) return
       const merged: AgentTask = {
         ...existing,
         ...task,
@@ -107,7 +222,11 @@ export class AgentTaskStore {
     const idx = this.tasks.findIndex((t) => t.id === id)
     if (idx < 0) return
     const existing = this.tasks[idx]!
-    if (isTerminal(existing.status) && patch.status && !isTerminal(patch.status)) return
+    // Same strict rule as `upsert`: once terminal, status is frozen.
+    // A patch without `status` is always allowed (e.g. backfilling
+    // model / metadata on a settled row); a patch that would change
+    // status is rejected. See `upsert` for the abort-race motivation.
+    if (isTerminal(existing.status) && patch.status && patch.status !== existing.status) return
     const next: AgentTask = { ...existing, ...patch, id, updatedAt: patch.updatedAt ?? Date.now() }
     if (sameTask(existing, next)) return
     this.tasks = this.tasks.map((t) => (t.id === id ? next : t))
@@ -131,16 +250,53 @@ export class AgentTaskStore {
   }
 
   /**
-   * Mark every still-running/waiting task for a session as completed. Used
-   * when the session truly settles and no continuation is expected.
+   * Drop every task — live or historical — belonging to a conversation.
+   * Called from ChatView when the user deletes the conversation, so the
+   * popover history is bounded by conversation lifetime rather than
+   * accumulating forever in `workspaceState`.
+   */
+  async clearForConversation(conversationID: string): Promise<void> {
+    const next = this.tasks.filter((t) => t.conversationID !== conversationID)
+    if (next.length === this.tasks.length) return
+    this.tasks = next
+    await this.persistAndEmit()
+  }
+
+  /**
+   * Mark every still-running/waiting *main* task for a session as completed.
+   * Subagent tasks are NOT touched: their lifecycle is owned by the child
+   * session's own SSE events (via SubagentTracker) — completing them here
+   * would race against a background subagent that's still working after
+   * the parent's LLM is done. Stale subagent rows are cleaned up by
+   * `SubagentTracker.reconcile` on the next attach, by user-initiated
+   * abort (which propagates to children), or by conversation switch.
    */
   async markSessionIdle(sessionID: string, now: number = Date.now()): Promise<void> {
     let changed = false
     this.tasks = this.tasks.map((task) => {
       if (task.sessionID !== sessionID) return task
+      if (task.kind !== "main") return task
       if (!ACTIVE_STATUSES.includes(task.status)) return task
       changed = true
       return { ...task, status: "completed", updatedAt: now }
+    })
+    if (!changed) return
+    await this.persistAndEmit()
+  }
+
+  /**
+   * Force every still-active task for a session to settle — used for
+   * user-initiated abort, which opencode propagates to child sessions
+   * too. Unlike `markSessionIdle`, this DOES include subagents because
+   * the user explicitly cancelled the entire turn.
+   */
+  async cancelSessionTasks(sessionID: string, now: number = Date.now()): Promise<void> {
+    let changed = false
+    this.tasks = this.tasks.map((task) => {
+      if (task.sessionID !== sessionID) return task
+      if (!ACTIVE_STATUSES.includes(task.status)) return task
+      changed = true
+      return { ...task, status: "cancelled", updatedAt: now }
     })
     if (!changed) return
     await this.persistAndEmit()
@@ -168,12 +324,24 @@ function sameTask(a: AgentTask, b: AgentTask): boolean {
     a.messageID === b.messageID &&
     a.callID === b.callID &&
     a.parentTaskID === b.parentTaskID &&
+    a.childSessionID === b.childSessionID &&
+    a.backgroundTaskID === b.backgroundTaskID &&
+    a.subagent === b.subagent &&
+    a.category === b.category &&
+    a.runInBackground === b.runInBackground &&
+    sameModel(a.model, b.model) &&
     a.kind === b.kind &&
     a.conversationID === b.conversationID &&
     a.sessionID === b.sessionID &&
     a.startedAt === b.startedAt &&
     a.updatedAt === b.updatedAt
   )
+}
+
+function sameModel(a: AgentTaskModel | undefined, b: AgentTaskModel | undefined): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.providerID === b.providerID && a.modelID === b.modelID
 }
 
 function sanitize(raw: unknown): AgentTask[] {
@@ -203,6 +371,14 @@ function sanitize(raw: unknown): AgentTask[] {
       messageID: typeof item.messageID === "string" ? item.messageID : undefined,
       callID: typeof item.callID === "string" ? item.callID : undefined,
       parentTaskID: typeof item.parentTaskID === "string" ? item.parentTaskID : undefined,
+      childSessionID: typeof item.childSessionID === "string" ? item.childSessionID : undefined,
+      backgroundTaskID: typeof item.backgroundTaskID === "string" ? item.backgroundTaskID : undefined,
+      subagent: typeof item.subagent === "string" ? item.subagent : undefined,
+      category: typeof item.category === "string" ? item.category : undefined,
+      model: isPlainObject(item.model) && typeof item.model.providerID === "string" && typeof item.model.modelID === "string"
+        ? { providerID: item.model.providerID, modelID: item.model.modelID }
+        : undefined,
+      runInBackground: typeof item.runInBackground === "boolean" ? item.runInBackground : undefined,
       error: typeof item.error === "string" ? item.error : undefined,
     })
   }

@@ -170,12 +170,13 @@ button {
 }
 
 /* ===== AgentsMenu =====
-   Hidden-by-default text-only pill that surfaces live main-agent + subagent
-   activity. Sits between the connection dot and the model/agent selector.
-   While at least one task is running, the text breathes via a 1.6s opacity +
-   green color animation. Waiting / error states use a steady amber / red
-   foreground without animation. Clicking opens an inline popover scoped to
-   the current chat (`.agents-popover`). */
+   Always-visible text-only pill that surfaces live main-agent + subagent
+   activity. Sits between the model/agent selector and the new-chat (+)
+   button on the right side of the chat header. While at least one task is
+   running, the text breathes via a 1.6s opacity + green color animation.
+   Waiting / error states use a steady amber / red foreground without
+   animation. Clicking opens an inline popover scoped to the current chat
+   (`.agents-popover`). */
 .agents-menu {
   position: relative;
   flex: 0 0 auto;
@@ -234,7 +235,12 @@ button {
 .agents-popover {
   position: absolute;
   top: calc(100% + 6px);
-  left: -4px;
+  /* Anchor the popover's right edge to the pill so it grows leftward.
+     With the pill sitting next to the new-chat (+) button on the right
+     side of the header, a left-anchored popover (min-width 260px) would
+     overflow the sidebar's right edge — especially in narrow side
+     panels. Growing leftward keeps the popover inside the panel. */
+  right: -4px;
   min-width: 260px;
   max-width: 360px;
   background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background));
@@ -245,6 +251,21 @@ button {
   padding: 8px 0;
   z-index: 50;
   font-size: 12px;
+  /* Cap how tall the popover can grow before scrolling — without this a
+     long-running Hephaestus session can produce 20+ historical
+     subagents and the popover would otherwise stretch off the
+     bottom of the chat view. The header sticks in place; only the
+     list scrolls (see `.agents-popover-scroll` below). */
+  display: flex;
+  flex-direction: column;
+  max-height: min(420px, calc(100vh - 80px));
+  overflow: hidden;
+}
+.agents-popover-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  /* Subtle scrollbar to match VS Code; falls back to system default. */
+  scrollbar-width: thin;
 }
 .agents-popover-title {
   padding: 0 12px 6px;
@@ -280,6 +301,17 @@ button {
   font-size: 11px;
   text-overflow: ellipsis;
   overflow: hidden;
+}
+/* Per-subagent "agent slug · model name" sub-label. Renders only when
+   omo's tool metadata gave us something to show; main-agent rows leave
+   it undefined because the StatusBar already shows the user's primary
+   agent + model next to the selector. */
+.agents-row-detail {
+  opacity: 0.5;
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
 }
 .agents-row-running .agents-row-title { color: #7ee787; }
 .agents-row-error .agents-row-meta { color: var(--vscode-errorForeground, #f85149); }

@@ -158,15 +158,36 @@ export type AgentsTaskInfo = {
   kind: "main" | "subagent"
   title: string
   /**
-   * `completed` is included so the popover can show subagents from the
-   * current turn that finished BEFORE the parent's prose finished. The
-   * counts (`running` / `waiting` / `error` in the parent
-   * `AgentsStatusInfo`) still only reflect live work — `completed`
-   * subagents do not bump those numbers.
+   * Only currently-active states reach the wire. The host filters out
+   * `completed` / `cancelled` in `summarizeAgentTasks` so the popover
+   * reflects "what's happening right now," not a per-chat history.
+   * `error` is kept because it needs attention until cleared.
    */
-  status: "running" | "waiting" | "error" | "completed"
+  status: "running" | "waiting" | "error"
   error?: string
   startedAt: number
+  /**
+   * Last state-change timestamp. For terminal rows this is the
+   * effective endedAt — the AgentsRow uses `updatedAt - startedAt` to
+   * render a frozen total runtime instead of "X seconds since the row
+   * mounted". For live rows this just keeps refreshing; the live
+   * elapsed display ticks off `Date.now()` instead.
+   */
+  updatedAt: number
+  /**
+   * Subagent slug (`explore` / `librarian` / `oracle` / `hephaestus` /
+   * `prometheus` / …). Set only for subagent rows where omo's tool
+   * metadata surfaced it; main-agent rows leave this undefined because
+   * the StatusBar already displays the user's primary agent next to
+   * the model selector.
+   */
+  subagent?: string
+  /** Category slug like `deep`, `quick`, `ultrabrain` when the
+   * subagent was dispatched via category-based routing. */
+  category?: string
+  /** Resolved model — same shape opencode reports on the assistant
+   * message; the StatusBar will prettify it through `formatModel`. */
+  model?: { providerID: string; modelID: string }
 }
 
 /**

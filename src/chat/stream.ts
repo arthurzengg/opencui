@@ -85,11 +85,54 @@ export type StreamHandlers = {
   onSessionError?: (message: string) => void
   onSessionIdle?: () => void
   onSessionBusy?: () => void
+  /**
+   * Optional second routing branch for child (subagent) sessions. The
+   * SSE stream is process-wide (`client.global.event()` returns every
+   * session's events), so we can listen for child-session lifecycle
+   * without opening a second connection — subscribers register child
+   * sessionIDs via `Subscription.addChildSession()` and the events
+   * arrive here. `messageInfo` only flows for assistant-role
+   * `message.updated` events; the rest are pure lifecycle signals.
+   */
+  onChildSessionEvent?: (event: ChildSessionEvent) => void
 }
+
+/**
+ * Events surfaced to `onChildSessionEvent` for sessions registered via
+ * `Subscription.addChildSession()`. Modeled after the minimum the
+ * subagent tracker needs to mirror a child session's lifecycle onto an
+ * AgentTask:
+ *   - `busy` — first sign the child session has started executing
+ *   - `idle` — child session reports it has nothing in flight
+ *   - `error` — child session reported an opencode-side session error
+ *   - `assistantEnd` — final assistant message with optional usage
+ *     (so the tracker can pick up model + token usage on completion)
+ */
+export type ChildSessionEvent =
+  | { type: "busy"; sessionID: string }
+  | { type: "idle"; sessionID: string }
+  | { type: "error"; sessionID: string; message: string }
+  | {
+      type: "assistantEnd"
+      sessionID: string
+      messageID: string
+      finish?: string
+      usage?: MessageUsage
+      error?: string
+    }
 
 export type Subscription = {
   ready: Promise<void>
   abort: () => void
+  /**
+   * Register a child sessionID we want lifecycle events for. Re-adding
+   * the same id is a no-op. Use `removeChildSession()` once the
+   * tracker is done with it; staying subscribed past completion is
+   * harmless (the child session simply stops emitting), but the
+   * tracker uses removal to bound its internal map.
+   */
+  addChildSession: (sessionID: string) => void
+  removeChildSession: (sessionID: string) => void
 }
 
 export type SubscriptionOptions = {
@@ -132,6 +175,15 @@ export function subscribeSession(
   const assistantFinished = new Set<string>()
   const toolStatus = new Map<string, string>()
   const seenPatches = new Set<string>()
+  /**
+   * Sessions we additionally route lifecycle events for (subagent
+   * children). Distinct from the parent `sessionID` because parent
+   * routing has rich per-message handlers; child routing only needs
+   * the small `ChildSessionEvent` surface.
+   */
+  const childSessions = new Set<string>()
+  /** assistantEnd dedup for child sessions (parent has its own set). */
+  const childAssistantFinished = new Set<string>()
 
   // messageID → set of tool part IDs that are still pending/running.
   // Used to defer per-message `assistantEnd` until all tool calls terminate:
@@ -173,6 +225,11 @@ export function subscribeSession(
 
   function route(type: string, props: any) {
     log(`[sse] ${type}`)
+    // First, fan child-session events off to the subagent tracker (if
+    // any registered). We do this BEFORE the parent-session switch so
+    // events for sessions in both sets (unlikely, but possible) are
+    // observed by both branches.
+    routeChildSessionEvent(type, props)
     switch (type) {
       case "message.updated":
         onMessageUpdated(props?.info)
@@ -207,7 +264,7 @@ export function subscribeSession(
       case "tui.toast.show":
         return onToast(props)
       case "session.error":
-        return onSessionError(props?.error)
+        return onSessionError(props?.error, props?.sessionID)
       case "session.idle":
         if (props?.sessionID === sessionID) markIdle()
         return
@@ -221,6 +278,79 @@ export function subscribeSession(
         }
         return
     }
+  }
+
+  function routeChildSessionEvent(type: string, props: any) {
+    const childCb = handlers.onChildSessionEvent
+    if (!childCb || childSessions.size === 0) return
+    const childSid = extractSessionID(type, props)
+    if (!childSid || !childSessions.has(childSid)) return
+    switch (type) {
+      case "session.idle":
+        childCb({ type: "idle", sessionID: childSid })
+        return
+      case "session.status":
+        if (props?.status?.type === "idle") {
+          childCb({ type: "idle", sessionID: childSid })
+        } else if (props?.status?.type) {
+          childCb({ type: "busy", sessionID: childSid })
+        }
+        return
+      case "session.error":
+        childCb({
+          type: "error",
+          sessionID: childSid,
+          message: props?.error?.data?.message ?? props?.error?.name ?? "session error",
+        })
+        return
+      case "message.updated":
+        // A child assistant message that just finished — surface usage
+        // and any terminal error to the tracker. Also doubles as a
+        // "subagent is alive" signal for busy detection.
+        if (props?.info?.role === "assistant") {
+          childCb({ type: "busy", sessionID: childSid })
+          const mid = props.info.id as string | undefined
+          if (!mid) return
+          const dedupKey = `${childSid}|${mid}`
+          if (props.info.error && !childAssistantFinished.has(dedupKey)) {
+            childAssistantFinished.add(dedupKey)
+            const err = props.info.error as { name?: string; data?: { message?: string } }
+            childCb({
+              type: "assistantEnd",
+              sessionID: childSid,
+              messageID: mid,
+              error: err.data?.message ?? err.name ?? "unknown error",
+              finish: props.info.finish,
+            })
+            return
+          }
+          if (props.info.finish && isTerminalFinish(props.info.finish) && !childAssistantFinished.has(dedupKey)) {
+            childAssistantFinished.add(dedupKey)
+            childCb({
+              type: "assistantEnd",
+              sessionID: childSid,
+              messageID: mid,
+              finish: props.info.finish,
+              usage: extractUsage(props.info),
+            })
+          }
+        }
+        return
+      case "message.part.updated":
+      case "message.part.delta":
+        // Any activity on the child means it is busy. Cheap "still
+        // alive" signal that complements `session.idle` for tracker
+        // hysteresis.
+        childCb({ type: "busy", sessionID: childSid })
+        return
+    }
+  }
+
+  function extractSessionID(type: string, props: any): string | undefined {
+    if (!props || typeof props !== "object") return undefined
+    if (type === "message.updated") return props?.info?.sessionID
+    if (type === "message.part.updated") return props?.part?.sessionID
+    return props?.sessionID
   }
 
   function markActivity(eventSessionID: string | undefined) {
@@ -463,7 +593,10 @@ export function subscribeSession(
     })
   }
 
-  function onSessionError(err: any) {
+  function onSessionError(err: any, eventSessionID?: string) {
+    // session.error is global — only surface ones for our parent session
+    // (child-session errors are already routed to onChildSessionEvent).
+    if (eventSessionID && eventSessionID !== sessionID) return
     const msg = err?.data?.message ?? err?.name ?? "session error"
     handlers.onSessionError?.(msg)
   }
@@ -474,6 +607,12 @@ export function subscribeSession(
       stopped = true
       clearWatchdog()
       controller.abort()
+    },
+    addChildSession: (id: string) => {
+      childSessions.add(id)
+    },
+    removeChildSession: (id: string) => {
+      childSessions.delete(id)
     },
   }
 }

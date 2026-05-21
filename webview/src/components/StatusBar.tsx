@@ -70,8 +70,6 @@ export function StatusBar({
         title={statusTitle}
       />
       <div className="spacer" />
-      <AgentsMenu status={agentsStatus} />
-      <div className="spacer" />
       <SelectorMenu
         agent={agent}
         model={model}
@@ -80,6 +78,7 @@ export function StatusBar({
         onSelectModel={onSelectModel}
         onSelectVariant={onSelectVariant}
       />
+      <AgentsMenu status={agentsStatus} />
       <button
         type="button"
         className="new-chat-trigger"
@@ -295,10 +294,11 @@ function ChatHistoryMenu({
 }
 
 /**
- * Always-visible `Agents` menu centered in the chat header. The host scopes
- * the snapshot to the active conversation, so `tasks` only contains work for
- * THIS chat. Clicking the pill toggles an inline popover (matching the
- * SelectorMenu pattern) that lists tasks grouped by Main / Subagents.
+ * Always-visible `Agents` menu in the chat header, sitting between the
+ * Model/Agent selector and the new-chat button. The host scopes the snapshot
+ * to the active conversation, so `tasks` only contains work for THIS chat.
+ * Clicking the pill toggles an inline popover (matching the SelectorMenu
+ * pattern) that lists tasks grouped by Main / Subagents.
  *
  * The pill text never changes (always literally `Agents`); state is signalled
  * by color — muted when idle, breathing green while running, attention red
@@ -358,21 +358,25 @@ function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
         <div className="agents-popover" role="menu">
           <div className="agents-popover-title">Agents in this chat</div>
           {empty && <div className="agents-popover-empty">No agents in this chat</div>}
-          {main.length > 0 && (
-            <>
-              <div className="agents-popover-section">Main</div>
-              {main.map((task) => (
-                <AgentsRow key={task.id} task={task} />
-              ))}
-            </>
-          )}
-          {sub.length > 0 && (
-            <>
-              <div className="agents-popover-section">Subagents</div>
-              {sub.map((task) => (
-                <AgentsRow key={task.id} task={task} />
-              ))}
-            </>
+          {!empty && (
+            <div className="agents-popover-scroll">
+              {main.length > 0 && (
+                <>
+                  <div className="agents-popover-section">Main</div>
+                  {main.map((task) => (
+                    <AgentsRow key={task.id} task={task} />
+                  ))}
+                </>
+              )}
+              {sub.length > 0 && (
+                <>
+                  <div className="agents-popover-section">Subagents</div>
+                  {sub.map((task) => (
+                    <AgentsRow key={task.id} task={task} />
+                  ))}
+                </>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -381,20 +385,41 @@ function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
 }
 
 function AgentsRow({ task }: { task: AgentsTaskInfo }) {
+  const isLive = task.status === "running" || task.status === "waiting"
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    if (task.status !== "running" && task.status !== "waiting") return
+    if (!isLive) return
     const handle = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(handle)
-  }, [task.status])
-  const elapsed = formatElapsed(now - task.startedAt)
+  }, [isLive])
+  // Live rows tick `now` for a moving stopwatch. Terminal rows freeze
+  // the elapsed at the store's `updatedAt` so a completed subagent
+  // shows its true total runtime, not "minutes since the popover
+  // happened to render".
+  const elapsedMs = isLive ? now - task.startedAt : task.updatedAt - task.startedAt
+  const elapsed = formatElapsed(elapsedMs)
   const statusText = task.status === "error" && task.error
     ? `error · ${task.error}`
     : task.status
+  // Build the per-subagent "agent · model" sublabel from the metadata
+  // omo writes on dispatch (`update.metadata` → AgentTask). Either piece
+  // can be missing — opencode's built-in task tool doesn't publish a
+  // model — so we render whatever subset is present.
+  const subagentLabel = task.subagent ? formatAgent(task.subagent) : undefined
+  const modelLabel = task.model ? formatModel(`${task.model.providerID}/${task.model.modelID}`) : undefined
+  const categoryLabel = task.category && task.category !== task.subagent ? task.category : undefined
+  const detailParts = [
+    categoryLabel ? `category: ${categoryLabel}` : undefined,
+    subagentLabel,
+    modelLabel,
+  ].filter((part): part is string => Boolean(part))
+  const detail = detailParts.length > 0 ? detailParts.join(" · ") : undefined
+  const tooltip = [task.title, statusText, elapsed, detail].filter(Boolean).join(" · ")
   return (
-    <div className={`agents-row agents-row-${task.status}`} title={`${task.title} · ${statusText} · ${elapsed}`}>
+    <div className={`agents-row agents-row-${task.status}`} title={tooltip}>
       <span className="agents-row-title">{task.title}</span>
       <span className="agents-row-meta">{statusText} · {elapsed}</span>
+      {detail && <span className="agents-row-detail">{detail}</span>}
     </div>
   )
 }
