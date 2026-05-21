@@ -529,6 +529,85 @@ describe("SubagentTracker.reconcile", () => {
   })
 })
 
+describe("SubagentTracker.cancelForSession", () => {
+  it("settles every active subagent for the parent, unregisters child sessions, and returns their IDs", async () => {
+    const { tracker, store, subscription } = setupTracker({ sessionID: "ses_parent" })
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c1",
+        status: "running",
+        metadata: { sessionId: "ses_child_a" },
+      }),
+    )
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c2",
+        status: "running",
+        metadata: { sessionId: "ses_child_b", run_in_background: true },
+      }),
+    )
+    const aborted = await tracker.cancelForSession("ses_parent")
+    expect(aborted.sort()).toEqual(["ses_child_a", "ses_child_b"])
+    expect(store.get(subagentTaskIDByChildSession("ses_child_a"))!.status).toBe("cancelled")
+    expect(store.get(subagentTaskIDByChildSession("ses_child_b"))!.status).toBe("cancelled")
+    expect(subscription.removed.sort()).toEqual(["ses_child_a", "ses_child_b"])
+  })
+
+  it("clears dispatches so a follow-up event with the same callID does not see a stale entry", async () => {
+    const { tracker, store } = setupTracker({ sessionID: "ses_parent" })
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c1",
+        status: "running",
+        metadata: { sessionId: "ses_child_a" },
+      }),
+    )
+    await tracker.cancelForSession("ses_parent")
+    // A late tool-completed event with the same callID should NOT find
+    // a live dispatch — it goes through the "no live dispatch" path and
+    // the terminal guard on the cancelled row blocks resurrection.
+    await tracker.handleToolUpdate(
+      makeUpdate({ callID: "c1", status: "completed", metadata: { sessionId: "ses_child_a" } }),
+    )
+    expect(store.get(subagentTaskIDByChildSession("ses_child_a"))!.status).toBe("cancelled")
+  })
+
+  it("returns an empty list and is a no-op when there are no active subagents", async () => {
+    const { tracker, subscription } = setupTracker({ sessionID: "ses_parent" })
+    const aborted = await tracker.cancelForSession("ses_parent")
+    expect(aborted).toEqual([])
+    expect(subscription.removed).toEqual([])
+  })
+
+  it("leaves subagents under OTHER parent sessions alone (single-conversation scope)", async () => {
+    const { tracker, store, subscription } = setupTracker({ sessionID: "ses_parent" })
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c1",
+        status: "running",
+        metadata: { sessionId: "ses_child_a" },
+      }),
+    )
+    // Seed a row owned by a DIFFERENT parent session directly via the store
+    // (we don't have a clean tracker entry point for cross-session seeds).
+    await store.upsert({
+      id: subagentTaskIDByChildSession("ses_other_child"),
+      kind: "subagent",
+      conversationID: "conv1",
+      sessionID: "ses_other_parent",
+      childSessionID: "ses_other_child",
+      title: "elsewhere",
+      status: "running",
+      startedAt: 1,
+      updatedAt: 1,
+    })
+    await tracker.cancelForSession("ses_parent")
+    expect(store.get(subagentTaskIDByChildSession("ses_child_a"))!.status).toBe("cancelled")
+    expect(store.get(subagentTaskIDByChildSession("ses_other_child"))!.status).toBe("running")
+    expect(subscription.removed).toEqual(["ses_child_a"])
+  })
+})
+
 describe("SubagentTracker tool name gate", () => {
   it("does not touch the store for unrelated tools", async () => {
     const { tracker, store } = setupTracker()

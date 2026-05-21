@@ -196,9 +196,14 @@ export class AgentTaskStore {
     const idx = this.tasks.findIndex((t) => t.id === task.id)
     if (idx >= 0) {
       const existing = this.tasks[idx]!
-      // Once a task is in a terminal state, ignore later "running"-style
-      // upserts so duplicated SSE events can't resurrect a finished task.
-      if (isTerminal(existing.status) && !isTerminal(task.status)) return
+      // Once a task is in a terminal state, freeze its status: ignore
+      // late upserts that would either resurrect it (terminal → active)
+      // OR flip it between terminal states. The second case shows up
+      // when a user-initiated abort settles a subagent as `cancelled`
+      // and a stray child `session.error` arrives afterwards — without
+      // this guard the row flips to `error`, overriding the user's
+      // explicit Stop. Same-status upserts still merge other fields.
+      if (isTerminal(existing.status) && task.status !== existing.status) return
       const merged: AgentTask = {
         ...existing,
         ...task,
@@ -217,7 +222,11 @@ export class AgentTaskStore {
     const idx = this.tasks.findIndex((t) => t.id === id)
     if (idx < 0) return
     const existing = this.tasks[idx]!
-    if (isTerminal(existing.status) && patch.status && !isTerminal(patch.status)) return
+    // Same strict rule as `upsert`: once terminal, status is frozen.
+    // A patch without `status` is always allowed (e.g. backfilling
+    // model / metadata on a settled row); a patch that would change
+    // status is rejected. See `upsert` for the abort-race motivation.
+    if (isTerminal(existing.status) && patch.status && patch.status !== existing.status) return
     const next: AgentTask = { ...existing, ...patch, id, updatedAt: patch.updatedAt ?? Date.now() }
     if (sameTask(existing, next)) return
     this.tasks = this.tasks.map((t) => (t.id === id ? next : t))

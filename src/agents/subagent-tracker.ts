@@ -372,6 +372,40 @@ export class SubagentTracker {
     this.dispatches.clear()
   }
 
+  /**
+   * Tear down every subagent the tracker holds for `parentSessionID`:
+   *
+   *   - Unregister each child sessionID from the SSE subscription so
+   *     late events (a child whose `session.error` arrived after we
+   *     locally settled the row) stop being routed.
+   *   - Forget the corresponding callIDs in `dispatches` so a fresh
+   *     dispatch with a reused callID can register cleanly.
+   *   - Delegate the actual status mutation to
+   *     `AgentTaskStore.cancelSessionTasks`, which handles both the
+   *     subagent rows we just cleaned up AND any main row for the
+   *     session (`recordMainTaskFinish` in `abortCurrent` usually
+   *     beats us here, but doing it again is idempotent).
+   *
+   * Returns the list of child sessionIDs that were active at the
+   * moment of teardown so the caller can issue HTTP aborts in
+   * parallel — important because opencode's `session.abort` only
+   * acts on the targeted session, and propagation to children isn't
+   * guaranteed across plugin / version combinations.
+   */
+  async cancelForSession(parentSessionID: string): Promise<string[]> {
+    const active = this.store.activeSubagentsForSession(parentSessionID)
+    const childSessionIDs: string[] = []
+    for (const task of active) {
+      if (task.childSessionID) {
+        this.subscription.removeChildSession(task.childSessionID)
+        childSessionIDs.push(task.childSessionID)
+      }
+      this.forgetCallIDsFor(task.id)
+    }
+    await this.store.cancelSessionTasks(parentSessionID)
+    return childSessionIDs
+  }
+
   private async promoteToChildSessionIdentity(
     dispatch: DispatchState,
     childSessionID: string,

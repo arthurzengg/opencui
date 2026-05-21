@@ -141,6 +141,57 @@ describe("AgentTaskStore", () => {
     expect(store.get("main:conv:sess")!.status).toBe("completed")
   })
 
+  it("once cancelled, update cannot flip to error (preserves user-initiated Stop)", async () => {
+    // Regression: a stray child `session.error` arriving after the user
+    // aborted would have flipped the row from `cancelled` to `error`,
+    // overriding the user's explicit Stop.
+    const store = new AgentTaskStore(memento)
+    await store.upsert(fixedTask({ status: "cancelled", updatedAt: 2000 }))
+    let fires = 0
+    store.onDidChange(() => (fires += 1))
+    await store.update("main:conv:sess", { status: "error", error: "rate limit", updatedAt: 3000 })
+    expect(fires).toBe(0)
+    expect(store.get("main:conv:sess")!.status).toBe("cancelled")
+    expect(store.get("main:conv:sess")!.error).toBeUndefined()
+  })
+
+  it("rejects every other terminal→other-terminal status flip", async () => {
+    const store = new AgentTaskStore(memento)
+    await store.upsert(fixedTask({ id: "a", status: "completed", updatedAt: 1000 }))
+    await store.upsert(fixedTask({ id: "b", status: "error", updatedAt: 1000 }))
+    await store.update("a", { status: "cancelled", updatedAt: 2000 })
+    await store.update("a", { status: "error", error: "x", updatedAt: 2000 })
+    await store.update("b", { status: "cancelled", updatedAt: 2000 })
+    await store.update("b", { status: "completed", updatedAt: 2000 })
+    expect(store.get("a")!.status).toBe("completed")
+    expect(store.get("b")!.status).toBe("error")
+  })
+
+  it("allows metadata refresh on terminal rows when the patch omits status", async () => {
+    // The strict guard only freezes `status` — other fields (model
+    // backfill, error message refresh on same status) still apply so
+    // late `assistantEnd` events can enrich settled rows.
+    const store = new AgentTaskStore(memento)
+    await store.upsert(
+      fixedTask({
+        id: "sub",
+        kind: "subagent",
+        status: "completed",
+        startedAt: 1000,
+        updatedAt: 2000,
+      }),
+    )
+    await store.update("sub", {
+      model: { providerID: "github-copilot", modelID: "claude-opus-4.5" },
+      updatedAt: 3000,
+    })
+    expect(store.get("sub")!.status).toBe("completed")
+    expect(store.get("sub")!.model).toEqual({
+      providerID: "github-copilot",
+      modelID: "claude-opus-4.5",
+    })
+  })
+
   it("update is a no-op for unknown ids", async () => {
     const store = new AgentTaskStore(memento)
     let fires = 0

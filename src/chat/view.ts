@@ -989,13 +989,49 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async abortCurrent() {
     if (!this.sessionID) return
+    const sessionID = this.sessionID
     this.aborting = true
     this.pendingUserBackendID = undefined
     this.post({ type: "aborted" })
     void this.recordMainTaskFinish("cancelled")
+
+    // Tear down the tracker's view of the session BEFORE issuing HTTP
+    // aborts. Two reasons:
+    //   1. The store mutation runs in-process and is fast; doing it
+    //      first means the popover settles immediately instead of
+    //      waiting on the network round-trip.
+    //   2. With the store's strict terminal guard, marking tasks
+    //      `cancelled` now makes the user's intent sticky — late
+    //      child error events (rate-limit / token-expired races
+    //      arriving after the abort propagation) can no longer flip
+    //      a cancelled row to `error`.
+    // `cancelForSession` returns the child sessionIDs that were live
+    // at the snapshot moment so we can HTTP-abort each one explicitly.
+    let childSessionIDs: string[] = []
+    if (this.subagentTracker) {
+      childSessionIDs = await this.subagentTracker.cancelForSession(sessionID)
+    } else if (this.taskStore) {
+      await this.taskStore.cancelSessionTasks(sessionID)
+    }
+
     try {
       const backend = await this.servers.ensure()
-      await backend.client.session.abort({ path: { id: this.sessionID } })
+      // Parent + every live child in parallel. opencode's
+      // `session.abort` only targets the named session; propagation
+      // to subagent children isn't guaranteed across plugin / version
+      // combinations, so we issue each child abort explicitly. Each
+      // call is independent — a failure on one shouldn't block the
+      // others, hence `allSettled` + per-call `.catch`.
+      await Promise.allSettled([
+        backend.client.session.abort({ path: { id: sessionID } }),
+        ...childSessionIDs.map((childID) =>
+          backend.client.session
+            .abort({ path: { id: childID } })
+            .catch((e) => {
+              log(`session.abort failed for child ${childID}`, e)
+            }),
+        ),
+      ])
     } catch (e) {
       log("session.abort failed", e)
     }
@@ -1316,12 +1352,17 @@ export class ChatView implements vscode.WebviewViewProvider {
           // User-initiated abort bypasses the continuation defer — Stop
           // means stop now. Clear all continuation tracking so any
           // in-flight task parts (whose terminal events the SSE may not
-          // send post-abort) don't poison the next turn. opencode's
-          // session.abort propagates to child sessions too, so we
-          // settle the entire subagent tree as cancelled.
+          // send post-abort) don't poison the next turn. `abortCurrent`
+          // already ran `cancelForSession` proactively; this is the
+          // catch-all that covers any dispatch that snuck in between
+          // the snapshot there and the session.idle arriving here.
           this.resetContinuationState()
-          if (this.sessionID && this.taskStore) {
-            void this.taskStore.cancelSessionTasks(this.sessionID)
+          if (this.sessionID) {
+            if (this.subagentTracker) {
+              void this.subagentTracker.cancelForSession(this.sessionID)
+            } else if (this.taskStore) {
+              void this.taskStore.cancelSessionTasks(this.sessionID)
+            }
           }
           this.currentMainTaskID = undefined
           this.post({ type: "sessionIdle" })
