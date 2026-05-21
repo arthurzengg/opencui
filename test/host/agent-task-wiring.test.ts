@@ -82,13 +82,22 @@ describe("summarizeAgentTasks", () => {
     expect(result.tasks.map((t) => t.id).sort()).toEqual(["a", "b", "c", "d"])
   })
 
-  it("ignores completed and cancelled tasks", () => {
+  it("drops completed tasks — the popover shows only what's currently active", () => {
     const result = summarizeAgentTasks([
-      task({ id: "a", status: "completed" }),
-      task({ id: "b", status: "cancelled" }),
+      task({ id: "a", status: "completed", startedAt: 1000, updatedAt: 5000 }),
     ])
     expect(result.tasks).toEqual([])
+    expect(result.running).toBe(0)
     expect(result.total).toBe(0)
+  })
+
+  it("drops cancelled tasks (user-initiated aborts) and completed tasks", () => {
+    const result = summarizeAgentTasks([
+      task({ id: "a", status: "cancelled" }),
+      task({ id: "b", status: "completed" }),
+      task({ id: "c", status: "running" }),
+    ])
+    expect(result.tasks.map((t) => t.id)).toEqual(["c"])
   })
 
   it("filters by conversationID when provided", () => {
@@ -106,30 +115,29 @@ describe("summarizeAgentTasks", () => {
     expect(result.tasks.map((t) => t.id)).toEqual(["x", "z"])
   })
 
-  it("keeps completed subagents in the list while the parent main task is still alive", () => {
+  it("drops completed subagents even while the parent main task is still alive", () => {
     const result = summarizeAgentTasks([
       task({ id: "main:c:s", kind: "main", status: "running" }),
       task({ id: "subagent:s:c1", kind: "subagent", status: "completed", startedAt: 100 }),
       task({ id: "subagent:s:c2", kind: "subagent", status: "running", startedAt: 200 }),
     ])
-    // Counts only reflect live work — the completed subagent doesn't bump
-    // running, but it remains visible in the task list.
     expect(result.running).toBe(2)
     expect(result.total).toBe(2)
-    expect(result.tasks.map((t) => t.id)).toEqual(["main:c:s", "subagent:s:c1", "subagent:s:c2"])
-    expect(result.tasks.find((t) => t.id === "subagent:s:c1")!.status).toBe("completed")
+    expect(result.tasks.map((t) => t.id)).toEqual(["main:c:s", "subagent:s:c2"])
   })
 
-  it("drops completed subagents once the parent main task settles", () => {
+  it("empties the popover after every task settles — no per-chat history", () => {
     const result = summarizeAgentTasks([
-      task({ id: "main:c:s", kind: "main", status: "completed" }),
-      task({ id: "subagent:s:c1", kind: "subagent", status: "completed" }),
+      task({ id: "main:c:s", kind: "main", status: "completed", startedAt: 0, updatedAt: 9000 }),
+      task({ id: "subagent:s:c1", kind: "subagent", status: "completed", startedAt: 100, updatedAt: 5000 }),
+      task({ id: "subagent:s:c2", kind: "subagent", status: "completed", startedAt: 200, updatedAt: 7000 }),
     ])
-    expect(result.total).toBe(0)
     expect(result.tasks).toEqual([])
+    expect(result.running).toBe(0)
+    expect(result.total).toBe(0)
   })
 
-  it("does NOT keep cancelled subagents visible even when parent is alive", () => {
+  it("drops cancelled subagents — even when the parent is alive (user-initiated abort = noise)", () => {
     const result = summarizeAgentTasks([
       task({ id: "main:c:s", kind: "main", status: "running" }),
       task({ id: "subagent:s:c1", kind: "subagent", status: "cancelled" }),
@@ -154,6 +162,7 @@ describe("summarizeAgentTasks", () => {
         title: "Refactor",
         status: "running",
         startedAt: 1000,
+        updatedAt: 1500,
         error: undefined,
       }),
     ])
@@ -164,7 +173,62 @@ describe("summarizeAgentTasks", () => {
       status: "running",
       error: undefined,
       startedAt: 1000,
+      updatedAt: 1500,
+      subagent: undefined,
+      category: undefined,
+      model: undefined,
     })
+  })
+
+  it("forwards updatedAt so error rows can render a frozen total runtime", () => {
+    const result = summarizeAgentTasks([
+      task({ id: "a", status: "error", error: "boom", startedAt: 1000, updatedAt: 4500 }),
+    ])
+    expect(result.tasks[0]!.updatedAt).toBe(4500)
+  })
+
+  it("passes through subagent/category/model on subagent rows", () => {
+    const result = summarizeAgentTasks([
+      task({
+        id: "main:c:s",
+        kind: "main",
+        sessionID: "s",
+        status: "running",
+      }),
+      task({
+        id: "subagent:child:ses_x",
+        kind: "subagent",
+        sessionID: "s",
+        callID: "c1",
+        childSessionID: "ses_x",
+        subagent: "explore",
+        category: "deep",
+        model: { providerID: "github-copilot", modelID: "claude-opus-4.5" },
+        runInBackground: true,
+        status: "running",
+      }),
+    ])
+    const subRow = result.tasks.find((t) => t.kind === "subagent")!
+    expect(subRow.subagent).toBe("explore")
+    expect(subRow.category).toBe("deep")
+    expect(subRow.model).toEqual({ providerID: "github-copilot", modelID: "claude-opus-4.5" })
+  })
+
+  it("does NOT carry subagent metadata on main rows", () => {
+    const result = summarizeAgentTasks([
+      task({
+        id: "main:c:s",
+        kind: "main",
+        sessionID: "s",
+        status: "running",
+        subagent: "hephaestus",
+        model: { providerID: "github-copilot", modelID: "gpt-5.5" },
+      }),
+    ])
+    const mainRow = result.tasks[0]!
+    expect(mainRow.subagent).toBeUndefined()
+    expect(mainRow.category).toBeUndefined()
+    expect(mainRow.model).toBeUndefined()
   })
 })
 
@@ -175,6 +239,14 @@ describe("isSubagentTool", () => {
 
   it("matches omo's `call_omo_agent` used by Hephaestus / Sisyphus subagents", () => {
     expect(isSubagentTool("call_omo_agent")).toBe(true)
+  })
+
+  it("matches omo's `background_task` (Hephaestus fire-and-forget pattern)", () => {
+    expect(isSubagentTool("background_task")).toBe(true)
+  })
+
+  it("matches `delegate_task` defensively (in case omo re-registers under its lowercase name)", () => {
+    expect(isSubagentTool("delegate_task")).toBe(true)
   })
 
   it("matches defensive name variants (Task, task_tool)", () => {

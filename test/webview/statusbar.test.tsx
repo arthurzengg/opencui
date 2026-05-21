@@ -270,6 +270,7 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
         title: "Explain this file",
         status: "running" as const,
         startedAt: Date.now() - 12_000,
+        updatedAt: Date.now(),
       },
     ],
   }
@@ -329,6 +330,7 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
               status: "error",
               error: "boom",
               startedAt: 0,
+              updatedAt: 1000,
             },
           ],
         }}
@@ -355,6 +357,7 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
               title: "Refactor module",
               status: "running",
               startedAt: Date.now() - 5_000,
+              updatedAt: Date.now(),
             },
             {
               id: "subagent:s:c1",
@@ -362,6 +365,7 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
               title: "Fix lint errors",
               status: "running",
               startedAt: Date.now() - 2_000,
+              updatedAt: Date.now(),
             },
           ],
         }}
@@ -383,7 +387,7 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
     expect(screen.queryByText("Subagents")).not.toBeInTheDocument()
   })
 
-  it("shows completed subagent rows while the parent is still alive", async () => {
+  it("shows errored subagent rows alongside a running parent", async () => {
     const user = userEvent.setup()
     render(
       <StatusBar
@@ -391,8 +395,8 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
         agentsStatus={{
           running: 1,
           waiting: 0,
-          error: 0,
-          total: 1,
+          error: 1,
+          total: 2,
           tasks: [
             {
               id: "main:c:s",
@@ -400,13 +404,16 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
               title: "Explain this file",
               status: "running",
               startedAt: Date.now() - 12_000,
+              updatedAt: Date.now(),
             },
             {
               id: "subagent:s:c1",
               kind: "subagent",
               title: "Explore codebase patterns",
-              status: "completed",
+              status: "error",
+              error: "search timed out",
               startedAt: Date.now() - 10_000,
+              updatedAt: Date.now() - 5_000,
             },
           ],
         }}
@@ -443,5 +450,148 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
     expect(pill.getAttribute("title")).toMatch(/2 agents running/)
     expect(pill.getAttribute("title")).toMatch(/1 waiting for input/)
     expect(pill.getAttribute("title")).toMatch(/Click to view/)
+  })
+
+  it("renders the subagent slug + prettified model on a subagent row", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar
+        {...baseProps}
+        agentsStatus={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_x",
+              kind: "subagent",
+              title: "Explore auth flow",
+              status: "running",
+              startedAt: Date.now() - 4_000,
+              updatedAt: Date.now(),
+              subagent: "explore",
+              model: { providerID: "github-copilot", modelID: "claude-opus-4.5" },
+            },
+          ],
+        }}
+      />,
+    )
+    await user.click(screen.getByText("Agents"))
+    // formatAgent("explore") → "Explore"; formatModel(...) → "Opus 4.5".
+    // The detail string joins them with " · ".
+    expect(screen.getByText(/Explore · Opus 4\.5/)).toBeInTheDocument()
+  })
+
+  it("prefixes a category label when the dispatch went through a category route", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar
+        {...baseProps}
+        agentsStatus={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_y",
+              kind: "subagent",
+              title: "Deep refactor",
+              status: "running",
+              startedAt: Date.now() - 1_000,
+              updatedAt: Date.now(),
+              subagent: "hephaestus",
+              category: "deep",
+              model: { providerID: "github-copilot", modelID: "gpt-5.5" },
+            },
+          ],
+        }}
+      />,
+    )
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText(/category: deep/)).toBeInTheDocument()
+    expect(screen.getByText(/Hephaestus/)).toBeInTheDocument()
+  })
+
+  it("does not render the agent/model detail line when neither is set", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar
+        {...baseProps}
+        agentsStatus={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_z",
+              kind: "subagent",
+              title: "Mystery worker",
+              status: "running",
+              startedAt: Date.now() - 1_000,
+              updatedAt: Date.now(),
+            },
+          ],
+        }}
+      />,
+    )
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText("Mystery worker")).toBeInTheDocument()
+    expect(screen.queryByText(/category:/)).not.toBeInTheDocument()
+  })
+
+  it("renders the empty state once every task has settled (popover is not chat history)", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar
+        {...baseProps}
+        // Host filters terminal states out of the wire, so a settled
+        // conversation arrives as an empty tasks array — the popover
+        // shows only what's currently active, never history.
+        agentsStatus={{
+          running: 0,
+          waiting: 0,
+          error: 0,
+          total: 0,
+          tasks: [],
+        }}
+      />,
+    )
+    const pill = screen.getByText("Agents")
+    expect(pill.className).toContain("is-idle")
+    await user.click(pill)
+    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+  })
+
+  it("freezes the elapsed time on error rows using updatedAt - startedAt", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar
+        {...baseProps}
+        agentsStatus={{
+          running: 0,
+          waiting: 0,
+          error: 1,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_err",
+              kind: "subagent",
+              title: "Failed subagent",
+              status: "error",
+              error: "boom",
+              startedAt: 1_000,
+              updatedAt: 13_000, // 12s elapsed regardless of when the popover renders
+            },
+          ],
+        }}
+      />,
+    )
+    await user.click(screen.getByText("Agents"))
+    // Meta line reads "error · boom · 12s" — the row freezes the
+    // duration so opening the popover later still says "12s".
+    expect(screen.getByText(/error · boom · 12s/)).toBeInTheDocument()
   })
 })

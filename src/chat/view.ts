@@ -43,7 +43,8 @@ import { collectAutoContext } from "../workspace-context/collector"
 import { RecentEditsTracker } from "../workspace-context/recent-edits"
 import { readContextSettings } from "../workspace-context/budget"
 import type { IndexManager } from "../indexing/index-manager"
-import { AgentTaskStore, mainTaskID, subagentTaskID, type AgentTask } from "../agents/task-store"
+import { AgentTaskStore, classifyTerminal, mainTaskID, type AgentTask } from "../agents/task-store"
+import { SubagentTracker } from "../agents/subagent-tracker"
 import type { AgentsStatusInfo, AgentsTaskInfo } from "../protocol"
 import { toWire } from "./wire-format"
 import {
@@ -95,28 +96,14 @@ export class ChatView implements vscode.WebviewViewProvider {
   private static readonly TOAST_DEDUP_MS = 3000
   /**
    * Timestamp of the most recent *toast-style* signal that a continuation is
-   * imminent (see `isContinuationToast`). When `session.idle` arrives within
-   * `CONTINUATION_SIGNAL_TTL_MS` of this timestamp, the busy clear is
-   * deferred. This complements the structural check on `activeTaskCallIDs`.
+   * imminent (see `isContinuationToast`). Used as a defensive fallback gate
+   * — if a plugin emits a continuation toast but never produces a
+   * recognizable subagent dispatch tool, we still defer `sessionIdle` for
+   * a bounded window. The PRIMARY gate is structural (live subagent tasks
+   * in the store, tracked by `SubagentTracker`).
    */
   private lastContinuationSignalAt = 0
   private pendingIdleTimer?: ReturnType<typeof setTimeout>
-  /**
-   * Call IDs of subagent-launching tool parts currently in `running` state —
-   * i.e. live subagents on this parent session. Maintained from `onTool`
-   * updates that match `SUBAGENT_TOOLS` (`task` + `call_omo_agent` + name
-   * variants).
-   *
-   * Used as the primary "do not mark parent done" gate: opencode emits
-   * `session.idle` on the parent while a backgrounded subagent child is
-   * still executing (the parent's LLM has genuinely finished its tool
-   * call), and omo's TodoContinuationEnforcer *suppresses* its own
-   * continuation toast when BackgroundManager knows there are running
-   * background tasks. So toast-based detection alone misses the
-   * Hephaestus / Sisyphus deep-agent paths — structural tracking is
-   * required.
-   */
-  private activeTaskCallIDs = new Set<string>()
   /**
    * True between `continuationPending: true` and either the deferred
    * `sessionIdle` firing, or a new `sessionBusy` / `assistantStart` /
@@ -125,19 +112,19 @@ export class ChatView implements vscode.WebviewViewProvider {
   private idleDeferActive = false
   private static readonly CONTINUATION_SIGNAL_TTL_MS = 30_000
   /**
-   * Max wait for a *toast-only* continuation (no active task parts) to
-   * materialize before declaring idle. Bumped from 30 s to 120 s because
-   * deep-agent runs can stretch the gap between parent idle and the omo
-   * plugin injecting the continuation toast. The structural variant
-   * (active task parts) has no fixed cap — it waits for the task parts
+   * Max wait for a *toast-only* continuation (no active subagent tasks
+   * in the store) to materialize before declaring idle. Long enough to
+   * absorb the lag between a parent's idle and an omo plugin injecting
+   * its continuation toast. The structural variant (live subagent
+   * tasks) has no fixed cap — it waits for the child sessions
    * themselves to terminate.
    */
   private static readonly CONTINUATION_DEFER_MS = 120_000
   /**
-   * After the last running `task` tool part terminates while we were
-   * deferring, wait this long for a continuation toast / new turn to
-   * arrive before clearing busy. Most omo / opencode wakeups fire within
-   * a couple of seconds.
+   * After the last running subagent task settles while we were deferring,
+   * wait this long for a continuation toast / new turn to arrive before
+   * clearing busy. Most omo / opencode wakeups fire within a couple of
+   * seconds.
    */
   private static readonly CONTINUATION_GRACE_MS = 10_000
   /** opencode messageID → webview-side id used in UI */
@@ -156,6 +143,22 @@ export class ChatView implements vscode.WebviewViewProvider {
    */
   private aborting = false
   private taskStoreUnsub?: vscode.Disposable
+  /**
+   * Full task-store ID of the main task for the turn currently in flight.
+   * Minted at `recordMainTaskStart` and used by `recordMainTaskFinish` so a
+   * follow-up turn in the same session doesn't try to mutate the previous
+   * turn's terminal main row. Cleared by `markSessionIdle`/`cancelSessionTasks`
+   * paths in `onSessionIdle`.
+   */
+  private currentMainTaskID?: string
+  /**
+   * Single per-conversation subagent state machine. Reset on
+   * `createConversation` / `selectConversation` / `dispose`. Constructed
+   * lazily inside `attachSubscription` because the SSE subscription's
+   * `addChildSession` / `removeChildSession` are the wiring it depends
+   * on — both don't exist until we have a session to subscribe to.
+   */
+  private subagentTracker?: SubagentTracker
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -237,6 +240,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription?.abort()
     this.subscription = undefined
     this.sessionID = undefined
+    this.currentMainTaskID = undefined
     this.messageMap.clear()
     this.activePermissions.clear(); this.activeQuestions.clear()
     const conversation = this.addConversation("New conversation")
@@ -272,6 +276,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.resetContinuationState()
     this.subscription?.abort()
     this.subscription = undefined
+    this.currentMainTaskID = undefined
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
   }
@@ -327,6 +332,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.resetContinuationState()
     this.subscription?.abort()
     this.subscription = undefined
+    this.currentMainTaskID = undefined
     this.messageMap.clear()
     this.activePermissions.clear(); this.activeQuestions.clear()
     this.activeConversationID = id
@@ -353,6 +359,12 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async deleteConversation(id: string) {
     this.conversations = this.conversations.filter((conversation) => conversation.id !== id)
     if (!this.conversations.length) this.addConversation("New conversation")
+    // Drop the deleted conversation's task history so the popover
+    // doesn't carry forward rows the user can no longer trace back to
+    // anything. Best-effort; failures here aren't fatal.
+    if (this.taskStore) {
+      void this.taskStore.clearForConversation(id)
+    }
     if (this.activeConversationID === id) {
       this.resetContinuationState()
       this.subscription?.abort()
@@ -773,12 +785,12 @@ export class ChatView implements vscode.WebviewViewProvider {
   private markContinuationSignal(source: string) {
     this.lastContinuationSignalAt = Date.now()
     log(`[continuation] signal observed (${source})`)
-    // If we're already in a *toast-only* defer (no active task parts) and
+    // If we're already in a *toast-only* defer (no active subagents) and
     // its cap timer is running, restart the cap so a fresh signal extends
     // the wait. With omo, a Background-task-complete toast can arrive
     // late into a Todo-Continuation wait — we want to honour the newer
     // signal rather than time out on the older one.
-    if (this.idleDeferActive && this.activeTaskCallIDs.size === 0 && this.pendingIdleTimer) {
+    if (this.idleDeferActive && this.activeSubagentCount() === 0 && this.pendingIdleTimer) {
       this.scheduleIdleEmit(ChatView.CONTINUATION_DEFER_MS, "signal-re-arm")
     }
   }
@@ -788,84 +800,42 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private hasContinuationGate(): boolean {
-    return this.activeTaskCallIDs.size > 0 || this.hasRecentContinuationSignal()
+    return this.activeSubagentCount() > 0 || this.hasRecentContinuationSignal()
   }
 
   /**
-   * Update the running-subagent set from a subagent-launching tool's state
-   * transition. Adds on `running`, removes on terminal (`completed` / `error`).
-   * When the last running subagent settles while a deferred idle is pending,
-   * arm a short grace timer so the UI doesn't sit on "Continuing…" forever
-   * if no follow-up turn materializes.
+   * Bridge from the SSE `onTool` callback to the SubagentTracker. The
+   * tracker is the single source of truth for subagent records — view.ts
+   * only owns the main-task lifecycle. We also keep `lastContinuationSignal`
+   * armed off subagent activity as a second-source defense: if anything
+   * else clears `idleDeferActive`'s timer, the structural store check
+   * below in `onSessionIdle` will re-defer.
    *
-   * Tracked tools — see oh-my-opencode dist/index.js `TASK_TOOLS` and
-   * `TARGET_TOOLS2`:
-   *   - `task` — opencode's built-in subagent dispatcher.
-   *   - `Task` / `task_tool` — name variants that omo also treats as the
-   *     same family (defensive).
-   *   - `call_omo_agent` — omo's parallel subagent dispatcher used by
-   *     Hephaestus / Sisyphus / Prometheus deep agents. Without this we
-   *     never see Hephaestus's background work and the popover lists only
-   *     the main turn.
+   * Tracked tools live in `SubagentTracker.isSubagentDispatchTool()` —
+   * see the omo source notes there.
    */
-  private updateTaskTracking(update: ToolUpdate, messageID?: string): void {
+  private async forwardToolForSubagentTracking(
+    update: ToolUpdate,
+    messageID: string | undefined,
+  ): Promise<void> {
+    if (!this.subagentTracker) return
+    if (!SubagentTracker.isSubagentDispatchTool(update.tool)) return
     log(
       `[agents-status] tool event tool=${update.tool} status=${update.status} callID=${update.callID}`,
     )
-    if (!SUBAGENT_TOOLS.has(update.tool)) return
-    const id = update.callID
-    if (update.status === "running") {
-      if (!this.activeTaskCallIDs.has(id)) {
-        this.activeTaskCallIDs.add(id)
-        log(`[continuation] subagent running ${update.tool}:${id} (active=${this.activeTaskCallIDs.size})`)
-      }
-      void this.recordSubagentTask(update, messageID, "running")
-      return
-    }
-    if (update.status === "completed" || update.status === "error") {
-      if (this.activeTaskCallIDs.delete(id)) {
-        log(`[continuation] subagent ${update.status} ${update.tool}:${id} (active=${this.activeTaskCallIDs.size})`)
-        if (this.idleDeferActive && this.activeTaskCallIDs.size === 0) {
-          this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "tasks-settled")
-        }
-      }
-      void this.recordSubagentTask(update, messageID, update.status)
+    await this.subagentTracker.handleToolUpdate(update, messageID)
+    // When a subagent settles while a continuation defer is open,
+    // collapse the defer down to the short post-settle grace window
+    // so the UI doesn't sit at "Continuing…" forever waiting on a
+    // follow-up that never comes.
+    if (this.idleDeferActive && this.activeSubagentCount() === 0) {
+      this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "subagents-settled")
     }
   }
 
-  private async recordSubagentTask(
-    update: ToolUpdate,
-    messageID: string | undefined,
-    status: "running" | "completed" | "error",
-  ): Promise<void> {
-    if (!this.taskStore) return
-    if (!this.sessionID) return
-    const id = subagentTaskID(this.sessionID, update.callID)
-    const now = Date.now()
-    const title = taskTitleFromUpdate(update)
-    log(`[agents-status] recordSubagentTask ${id} status=${status} title="${title}"`)
-    if (status === "running") {
-      const existing = this.taskStore.get(id)
-      await this.taskStore.upsert({
-        id,
-        kind: "subagent",
-        conversationID: this.activeConversationID,
-        sessionID: this.sessionID,
-        messageID,
-        callID: update.callID,
-        title,
-        status: "running",
-        startedAt: existing?.startedAt ?? now,
-        updatedAt: now,
-      })
-      return
-    }
-    await this.taskStore.update(id, {
-      status,
-      title,
-      error: status === "error" ? update.error : undefined,
-      updatedAt: now,
-    })
+  private activeSubagentCount(): number {
+    if (!this.taskStore || !this.sessionID) return 0
+    return this.taskStore.activeSubagentsForSession(this.sessionID).length
   }
 
   private async recordMainTaskStart(text: string): Promise<void> {
@@ -879,25 +849,28 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     const conversationID = this.activeConversationID
     const sessionID = this.sessionID
-    const id = mainTaskID(conversationID, sessionID)
-    const existing = this.taskStore.get(id)
+    const turnID = crypto.randomUUID()
+    const id = mainTaskID(conversationID, sessionID, turnID)
     const now = Date.now()
+    this.currentMainTaskID = id
     log(`[agents-status] recordMainTaskStart ${id}`)
     await this.taskStore.upsert({
       id,
       kind: "main",
       conversationID,
       sessionID,
-      title: this.activeConversation().title || summarizePrompt(text),
+      title: summarizePrompt(text),
       status: "running",
-      startedAt: existing?.startedAt ?? now,
+      startedAt: now,
       updatedAt: now,
     })
   }
 
   private async recordMainTaskFinish(status: "completed" | "error" | "cancelled", error?: string): Promise<void> {
-    if (!this.taskStore || !this.sessionID) return
-    const id = mainTaskID(this.activeConversationID, this.sessionID)
+    if (!this.taskStore) return
+    const id = this.currentMainTaskID
+    if (!id) return
+    this.currentMainTaskID = undefined
     await this.taskStore.update(id, {
       status,
       error,
@@ -927,8 +900,9 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Open a continuation defer. While `activeTaskCallIDs` is non-empty,
-   * no timer runs — we wait for task-terminal events to drive the close.
+   * Open a continuation defer. While there are any active subagent tasks
+   * for the parent session, no timer runs — we wait for child-session
+   * idle events (routed through the SubagentTracker) to drive the close.
    * Otherwise (toast-only signal), a cap timer prevents an indefinite
    * wait if no continuation actually arrives.
    */
@@ -939,24 +913,24 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.post({ type: "continuationPending", pending: true })
     }
     log(
-      `[continuation] deferring sessionIdle (${source}, tasks=${this.activeTaskCallIDs.size}, signal=${this.hasRecentContinuationSignal()})`,
+      `[continuation] deferring sessionIdle (${source}, subagents=${this.activeSubagentCount()}, signal=${this.hasRecentContinuationSignal()})`,
     )
-    if (this.activeTaskCallIDs.size > 0) return
+    if (this.activeSubagentCount() > 0) return
     this.scheduleIdleEmit(ChatView.CONTINUATION_DEFER_MS, "toast-cap")
   }
 
   /**
    * Schedule the emission of `sessionIdle` after `delay`. Used both for
-   * the post-task grace window and the toast-only cap. On fire, if any
-   * task part has spun up again, the timer no-ops — task tracking will
-   * re-schedule when those parts settle.
+   * the post-subagent grace window and the toast-only cap. On fire, if a
+   * subagent has spun up again (or never settled), the timer no-ops —
+   * tracker callbacks will re-schedule when subagents settle.
    */
   private scheduleIdleEmit(delay: number, source: string) {
     this.clearPendingIdle()
     this.pendingIdleTimer = setTimeout(() => {
       this.pendingIdleTimer = undefined
-      if (this.activeTaskCallIDs.size > 0) {
-        log(`[continuation] timer (${source}) fired but tasks still active; staying deferred`)
+      if (this.activeSubagentCount() > 0) {
+        log(`[continuation] timer (${source}) fired but subagents still active; staying deferred`)
         return
       }
       log(`[continuation] timer (${source}) resolved; emitting sessionIdle`)
@@ -970,8 +944,8 @@ export class ChatView implements vscode.WebviewViewProvider {
   private resetContinuationState() {
     this.clearPendingIdle()
     this.idleDeferActive = false
-    this.activeTaskCallIDs.clear()
     this.lastContinuationSignalAt = 0
+    this.subagentTracker?.reset()
   }
 
   private surfaceToast(toast: Toast) {
@@ -1231,7 +1205,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async attachSubscription(backend: Backend, sessionID: string) {
     this.subscription?.abort()
-    this.subscription = subscribeSession(backend, sessionID, {
+    const subscription = subscribeSession(backend, sessionID, {
       onUserMessage: (mid) => {
         const targetID = this.pendingUserBackendID
         if (!targetID) return
@@ -1255,8 +1229,14 @@ export class ChatView implements vscode.WebviewViewProvider {
         // "Aborted"-style error. That's redundant with the Stopped badge we
         // already set on `aborted` — suppress to avoid showing both.
         if (payload.error && !this.aborting) {
+          // Server-side abort (no local Stop) arrives here as
+          // `error: "Aborted"`. classifyTerminal routes that to
+          // `cancelled` so the popover doesn't flash red on what is
+          // really a quiet stop. The chat bubble's own /^aborted$/i
+          // mapping keeps the UI consistent.
+          const classified = classifyTerminal(payload.error)
           this.post({ type: "assistantError", id: webviewID, message: payload.error })
-          void this.recordMainTaskFinish("error", payload.error)
+          void this.recordMainTaskFinish(classified.status, classified.error)
         }
         this.post({ type: "assistantDone", id: webviewID, usage: payload.usage })
       },
@@ -1272,14 +1252,12 @@ export class ChatView implements vscode.WebviewViewProvider {
       },
       onTool: (mid, update) => {
         if (this.aborting) return
-        // Structural subagent tracking: every `task` tool part on the
-        // parent gets added/removed from `activeTaskCallIDs` as it
-        // transitions running → completed/error. This is the primary
-        // gate against marking the parent done while a subagent is alive
-        // (Hephaestus's `run_in_background` path emits no continuation
-        // toast — only the structural signal — because omo suppresses
-        // its toast when BackgroundManager handles the wakeup itself).
-        this.updateTaskTracking(update, mid)
+        // Forward to the subagent tracker FIRST so the store is
+        // up-to-date before any downstream consumer (continuation gate,
+        // popover snapshot) reads from it. `forwardToolForSubagentTracking`
+        // is responsible for filtering to subagent-dispatch tools and for
+        // re-keying the task once metadata surfaces the child sessionID.
+        void this.forwardToolForSubagentTracking(update, mid)
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         const wire = toWire(update, backend.directory)
         this.post({ type: "tool", id: webviewID, update: wire })
@@ -1338,11 +1316,14 @@ export class ChatView implements vscode.WebviewViewProvider {
           // User-initiated abort bypasses the continuation defer — Stop
           // means stop now. Clear all continuation tracking so any
           // in-flight task parts (whose terminal events the SSE may not
-          // send post-abort) don't poison the next turn.
+          // send post-abort) don't poison the next turn. opencode's
+          // session.abort propagates to child sessions too, so we
+          // settle the entire subagent tree as cancelled.
           this.resetContinuationState()
           if (this.sessionID && this.taskStore) {
-            void this.taskStore.markSessionIdle(this.sessionID)
+            void this.taskStore.cancelSessionTasks(this.sessionID)
           }
+          this.currentMainTaskID = undefined
           this.post({ type: "sessionIdle" })
           return
         }
@@ -1354,11 +1335,39 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (this.sessionID && this.taskStore) {
           void this.taskStore.markSessionIdle(this.sessionID)
         }
+        this.currentMainTaskID = undefined
         this.post({ type: "sessionIdle" })
       },
+      onChildSessionEvent: (event) => {
+        if (!this.subagentTracker) return
+        void this.subagentTracker.handleChildSessionEvent(event).then(() => {
+          // After any child terminal event, if we were deferring an
+          // idle waiting on subagents and the store is now empty,
+          // arm the short grace timer.
+          if (this.idleDeferActive && this.activeSubagentCount() === 0) {
+            this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "child-settled")
+          }
+        })
+      },
     })
+    this.subscription = subscription
+    if (this.taskStore) {
+      this.subagentTracker = new SubagentTracker({
+        store: this.taskStore,
+        getActiveConversationID: () => this.activeConversationID,
+        getParentSessionID: () => this.sessionID,
+        subscription: {
+          addChildSession: (id) => subscription.addChildSession(id),
+          removeChildSession: (id) => subscription.removeChildSession(id),
+        },
+      })
+      // Reconcile any rows that survived a VS Code reload. Best-effort —
+      // failures fall through and stale rows simply linger until the
+      // user clears them.
+      void this.subagentTracker.reconcile(backend, sessionID)
+    }
     try {
-      await this.subscription.ready
+      await subscription.ready
     } catch {
       // error already surfaced via handler
     }
@@ -1515,17 +1524,26 @@ export class ChatView implements vscode.WebviewViewProvider {
 }
 
 /**
- * Tool names that represent dispatching a subagent. Includes opencode's
- * built-in `task` (plus defensive name variants) and omo's `call_omo_agent`,
- * which Hephaestus / Sisyphus / Prometheus deep agents use for parallel
- * background subagents. Mirrors `TASK_TOOLS` + `TARGET_TOOLS2` from
- * oh-my-opencode's source.
+ * Tool names that represent dispatching a subagent. Mirrors
+ * `TASK_TOOLS` + `TARGET_TOOLS2` from oh-my-opencode's source plus the
+ * omo background-task and delegate-task families:
+ *   - `task` / `Task` / `task_tool` — opencode's built-in task tool (and
+ *     omo's `delegateTask` which is registered under the name `task`).
+ *   - `delegate_task` — defensive: if a future omo version re-registers
+ *     this with its lowercase name we still catch it.
+ *   - `call_omo_agent` — omo's parallel subagent dispatcher used by the
+ *     deep-agent stack (Hephaestus / Sisyphus / Prometheus).
+ *   - `background_task` — omo's pure background dispatcher, used by
+ *     Hephaestus prompts for fire-and-forget worker tasks.
+ * Kept in sync with the internal set in `src/agents/subagent-tracker.ts`.
  */
 export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set([
   "task",
   "Task",
   "task_tool",
+  "delegate_task",
   "call_omo_agent",
+  "background_task",
 ])
 
 export function isSubagentTool(toolName: string): boolean {
@@ -1540,46 +1558,37 @@ export function summarizeAgentTasks(
     ? tasks.filter((task) => task.conversationID === conversationID)
     : tasks
 
-  // Sessions whose parent main task is still alive ("turn ongoing"). While
-  // any such session exists, we keep ALL of its subagents visible — even
-  // ones that have already completed — so the user can see what the
-  // currently-active turn dispatched, not just the agents racing at the
-  // millisecond of inspection. Without this, Hephaestus-style runs where a
-  // subagent finishes seconds before the parent finishes the prose leave
-  // the popover showing only the main entry.
-  const liveSessions = new Set(
-    scoped
-      .filter((t) => t.kind === "main" && (t.status === "running" || t.status === "waiting"))
-      .map((t) => t.sessionID),
-  )
-
+  // The popover shows ONLY currently-active work — the latest main task
+  // and any subagents that are still running / waiting / errored. We drop
+  // `completed` and `cancelled` rows so the popover reflects "what's
+  // happening right now," not a per-chat history. A second user prompt
+  // gets its own main row (see mainTaskID's per-turn keying); the prior
+  // turn's row is settled and filtered out.
   const items: AgentsTaskInfo[] = []
   let running = 0
   let waiting = 0
   let error = 0
   for (const task of scoped) {
-    const liveStatus =
-      task.status === "running" || task.status === "waiting" || task.status === "error"
-    const parentAlive = task.kind === "subagent" && liveSessions.has(task.sessionID)
-    if (task.kind === "main" && !liveStatus) continue
-    if (task.kind === "subagent" && !liveStatus && !parentAlive) continue
-    if (task.kind === "subagent" && task.status === "cancelled") continue
     if (task.status === "running") running += 1
     else if (task.status === "waiting") waiting += 1
     else if (task.status === "error") error += 1
-    const wireStatus: AgentsTaskInfo["status"] = liveStatus
-      ? (task.status as "running" | "waiting" | "error")
-      : "completed"
+    else continue
     items.push({
       id: task.id,
       kind: task.kind,
       title: task.title,
-      status: wireStatus,
+      status: task.status,
       error: task.error,
       startedAt: task.startedAt,
+      updatedAt: task.updatedAt,
+      subagent: task.kind === "subagent" ? task.subagent : undefined,
+      category: task.kind === "subagent" ? task.category : undefined,
+      model: task.kind === "subagent" ? task.model : undefined,
     })
   }
-  // Stable order: main tasks first, then subagents, then by startedAt asc.
+  // Stable order: main tasks first (the user's prompt anchor), then
+  // subagents by startedAt asc. Within each kind, chronological order
+  // is what makes "scrolling back through the turn" make sense.
   items.sort((a, b) => {
     if (a.kind !== b.kind) return a.kind === "main" ? -1 : 1
     return a.startedAt - b.startedAt

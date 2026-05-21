@@ -2,8 +2,10 @@ import { describe, it, expect, beforeEach } from "vitest"
 import {
   AGENT_TASKS_KEY,
   AgentTaskStore,
+  classifyTerminal,
   mainTaskID,
   subagentTaskID,
+  subagentTaskIDByChildSession,
   type AgentTask,
   type Memento,
 } from "../../src/agents/task-store"
@@ -147,6 +149,24 @@ describe("AgentTaskStore", () => {
     expect(fires).toBe(0)
   })
 
+  it("clearForConversation drops every task — live or historical — for that conversation only", async () => {
+    const store = new AgentTaskStore(memento)
+    await store.upsert(fixedTask({ id: "main:c1:s1", conversationID: "c1", sessionID: "s1", status: "running" }))
+    await store.upsert(
+      fixedTask({
+        id: "subagent:c1:done",
+        conversationID: "c1",
+        sessionID: "s1",
+        kind: "subagent",
+        callID: "x",
+        status: "completed",
+      }),
+    )
+    await store.upsert(fixedTask({ id: "main:c2:s2", conversationID: "c2", sessionID: "s2", status: "running" }))
+    await store.clearForConversation("c1")
+    expect(store.list().map((t) => t.id)).toEqual(["main:c2:s2"])
+  })
+
   it("clearCompleted drops completed/cancelled but keeps running/error", async () => {
     const store = new AgentTaskStore(memento)
     await store.upsert(fixedTask({ id: "a", status: "running" }))
@@ -157,14 +177,33 @@ describe("AgentTaskStore", () => {
     expect(store.list().map((t) => t.id).sort()).toEqual(["a", "d"])
   })
 
-  it("markSessionIdle completes still-running tasks for the session only", async () => {
+  it("markSessionIdle completes only the MAIN task — subagents are owned by SubagentTracker", async () => {
     const store = new AgentTaskStore(memento)
     await store.upsert(fixedTask({ id: "main:c:s1", sessionID: "s1", status: "running" }))
-    await store.upsert(fixedTask({ id: "subagent:s1:c1", kind: "subagent", sessionID: "s1", callID: "c1", status: "running" }))
+    await store.upsert(
+      fixedTask({ id: "subagent:s1:c1", kind: "subagent", sessionID: "s1", callID: "c1", status: "running" }),
+    )
     await store.upsert(fixedTask({ id: "main:c:s2", sessionID: "s2", status: "running" }))
     await store.markSessionIdle("s1", 5000)
     expect(store.get("main:c:s1")!.status).toBe("completed")
-    expect(store.get("subagent:s1:c1")!.status).toBe("completed")
+    // Subagents must NOT be auto-completed when the parent goes idle:
+    // omo's `run_in_background=true` subagents keep working long after
+    // the parent's last assistant message lands. The child session's
+    // own idle event (routed via SubagentTracker) settles them.
+    expect(store.get("subagent:s1:c1")!.status).toBe("running")
+    expect(store.get("main:c:s2")!.status).toBe("running")
+  })
+
+  it("cancelSessionTasks settles every active task for the session (used by user-initiated abort)", async () => {
+    const store = new AgentTaskStore(memento)
+    await store.upsert(fixedTask({ id: "main:c:s1", sessionID: "s1", status: "running" }))
+    await store.upsert(
+      fixedTask({ id: "subagent:s1:c1", kind: "subagent", sessionID: "s1", callID: "c1", status: "running" }),
+    )
+    await store.upsert(fixedTask({ id: "main:c:s2", sessionID: "s2", status: "running" }))
+    await store.cancelSessionTasks("s1", 5000)
+    expect(store.get("main:c:s1")!.status).toBe("cancelled")
+    expect(store.get("subagent:s1:c1")!.status).toBe("cancelled")
     expect(store.get("main:c:s2")!.status).toBe("running")
   })
 
@@ -181,8 +220,108 @@ describe("AgentTaskStore", () => {
   })
 
   it("exposes stable id helpers", () => {
-    expect(mainTaskID("c", "s")).toBe("main:c:s")
+    expect(mainTaskID("c", "s", "turn-1")).toBe("main:c:s:turn-1")
     expect(subagentTaskID("s", "call-1")).toBe("subagent:s:call-1")
+    expect(subagentTaskIDByChildSession("ses_child_1")).toBe("subagent:child:ses_child_1")
+  })
+
+  it("main tasks are keyed per turn: a follow-up message creates a new row, prior row stays completed", async () => {
+    // Simulates two sequential user prompts in the same conversation /
+    // session. Each turn gets its own main task ID (ChatView mints a
+    // fresh turnID at recordMainTaskStart) so the popover shows BOTH
+    // rows — the prior one as completed history, the new one as live.
+    const store = new AgentTaskStore(memento)
+    const turn1 = mainTaskID("c", "s", "turn-1")
+    const turn2 = mainTaskID("c", "s", "turn-2")
+    await store.upsert(
+      fixedTask({ id: turn1, conversationID: "c", sessionID: "s", status: "running", startedAt: 1000, updatedAt: 1000 }),
+    )
+    await store.markSessionIdle("s", 2000)
+    expect(store.get(turn1)!.status).toBe("completed")
+    await store.upsert(
+      fixedTask({ id: turn2, conversationID: "c", sessionID: "s", status: "running", startedAt: 3000, updatedAt: 3000 }),
+    )
+    expect(store.get(turn1)!.status).toBe("completed")
+    expect(store.get(turn2)!.status).toBe("running")
+    expect(store.list().map((t) => t.id)).toEqual([turn1, turn2])
+  })
+
+  it("getByChildSession looks up a subagent by its child opencode sessionID", async () => {
+    const store = new AgentTaskStore(memento)
+    await store.upsert(
+      fixedTask({
+        id: subagentTaskIDByChildSession("ses_child_42"),
+        kind: "subagent",
+        sessionID: "ses_parent",
+        callID: "c1",
+        childSessionID: "ses_child_42",
+      }),
+    )
+    const found = store.getByChildSession("ses_child_42")
+    expect(found?.id).toBe("subagent:child:ses_child_42")
+    expect(store.getByChildSession("ses_missing")).toBeUndefined()
+  })
+
+  it("activeSubagentsForSession scopes by parent session and active status", async () => {
+    const store = new AgentTaskStore(memento)
+    await store.upsert(fixedTask({ id: "main:c:s1", kind: "main", sessionID: "s1" }))
+    await store.upsert(
+      fixedTask({
+        id: "subagent:child:a",
+        kind: "subagent",
+        sessionID: "s1",
+        childSessionID: "a",
+        status: "running",
+      }),
+    )
+    await store.upsert(
+      fixedTask({
+        id: "subagent:child:b",
+        kind: "subagent",
+        sessionID: "s1",
+        childSessionID: "b",
+        status: "completed",
+      }),
+    )
+    await store.upsert(
+      fixedTask({
+        id: "subagent:child:c",
+        kind: "subagent",
+        sessionID: "s2",
+        childSessionID: "c",
+        status: "running",
+      }),
+    )
+    const active = store.activeSubagentsForSession("s1")
+    expect(active.map((t) => t.id)).toEqual(["subagent:child:a"])
+    expect(store.hasActiveSubagentsForSession("s1")).toBe(true)
+    expect(store.hasActiveSubagentsForSession("s_unknown")).toBe(false)
+  })
+
+  it("round-trips the new metadata fields (childSessionID, model, subagent, category, runInBackground)", async () => {
+    const seed: AgentTask = {
+      ...fixedTask({
+        id: "subagent:child:ses_x",
+        kind: "subagent",
+        callID: "c1",
+        sessionID: "ses_parent",
+      }),
+      childSessionID: "ses_x",
+      backgroundTaskID: "bg_42",
+      subagent: "explore",
+      category: "deep",
+      model: { providerID: "github-copilot", modelID: "claude-opus-4.5" },
+      runInBackground: true,
+    }
+    memento.setSeed(AGENT_TASKS_KEY, [seed])
+    const store = new AgentTaskStore(memento)
+    const got = store.get("subagent:child:ses_x")!
+    expect(got.childSessionID).toBe("ses_x")
+    expect(got.backgroundTaskID).toBe("bg_42")
+    expect(got.subagent).toBe("explore")
+    expect(got.category).toBe("deep")
+    expect(got.model).toEqual({ providerID: "github-copilot", modelID: "claude-opus-4.5" })
+    expect(got.runInBackground).toBe(true)
   })
 
   it("hasActive / hasRunning distinguish running vs error", async () => {
@@ -194,5 +333,32 @@ describe("AgentTaskStore", () => {
     expect(store.hasRunning()).toBe(false)
     await store.upsert(fixedTask({ id: "b", status: "running" }))
     expect(store.hasRunning()).toBe(true)
+  })
+})
+
+describe("classifyTerminal", () => {
+  it("maps the literal 'Aborted' message to cancelled with no error string", () => {
+    expect(classifyTerminal("Aborted")).toEqual({ status: "cancelled" })
+  })
+
+  it("matches case-insensitively and tolerates surrounding whitespace", () => {
+    expect(classifyTerminal("aborted")).toEqual({ status: "cancelled" })
+    expect(classifyTerminal("ABORTED")).toEqual({ status: "cancelled" })
+    expect(classifyTerminal("  Aborted  ")).toEqual({ status: "cancelled" })
+  })
+
+  it("keeps real failure messages as error and preserves the message", () => {
+    expect(classifyTerminal("rate limit exceeded")).toEqual({
+      status: "error",
+      error: "rate limit exceeded",
+    })
+    expect(classifyTerminal("Aborted: rate limit")).toEqual({
+      status: "error",
+      error: "Aborted: rate limit",
+    })
+  })
+
+  it("treats an undefined message as error with no body", () => {
+    expect(classifyTerminal(undefined)).toEqual({ status: "error", error: undefined })
   })
 })

@@ -259,3 +259,137 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
     expect(patches[0]?.files).toEqual(["A new.ts", "M existing.ts"])
   })
 })
+
+describe("E2E (mock opencode): child session routing", () => {
+  it("does NOT call onChildSessionEvent for unregistered child sessions", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const events: { type: string; sessionID: string }[] = []
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onAssistantStart: () => {},
+      onTextDelta: () => {},
+      onChildSessionEvent: (e) => events.push({ type: e.type, sessionID: e.sessionID }),
+    })
+    await subscription.ready
+    await server.awaitClient()
+    server.push({ type: "session.idle", sessionID: "ses_unknown_child" })
+    await new Promise((r) => setTimeout(r, 50))
+    subscription.abort()
+    expect(events).toEqual([])
+  })
+
+  it("routes session.idle on a REGISTERED child to onChildSessionEvent", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const events: { type: string; sessionID: string }[] = []
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onAssistantStart: () => {},
+      onTextDelta: () => {},
+      onChildSessionEvent: (e) => events.push({ type: e.type, sessionID: e.sessionID }),
+    })
+    await subscription.ready
+    await server.awaitClient()
+    subscription.addChildSession("ses_child_1")
+    server.push({ type: "session.idle", sessionID: "ses_child_1" })
+    await new Promise((r) => setTimeout(r, 50))
+    subscription.abort()
+    expect(events).toEqual([{ type: "idle", sessionID: "ses_child_1" }])
+  })
+
+  it("stops routing after removeChildSession", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const events: { type: string; sessionID: string }[] = []
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onAssistantStart: () => {},
+      onTextDelta: () => {},
+      onChildSessionEvent: (e) => events.push({ type: e.type, sessionID: e.sessionID }),
+    })
+    await subscription.ready
+    await server.awaitClient()
+    subscription.addChildSession("ses_child_1")
+    subscription.removeChildSession("ses_child_1")
+    server.push({ type: "session.idle", sessionID: "ses_child_1" })
+    await new Promise((r) => setTimeout(r, 50))
+    subscription.abort()
+    expect(events).toEqual([])
+  })
+
+  it("treats message.part.updated for a registered child as a busy signal", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const events: { type: string; sessionID: string }[] = []
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onAssistantStart: () => {},
+      onTextDelta: () => {},
+      onChildSessionEvent: (e) => events.push({ type: e.type, sessionID: e.sessionID }),
+    })
+    await subscription.ready
+    await server.awaitClient()
+    subscription.addChildSession("ses_child_busy")
+    server.push({
+      type: "message.part.updated",
+      part: {
+        id: "p1",
+        messageID: "m1",
+        sessionID: "ses_child_busy",
+        type: "text",
+        text: "thinking",
+      },
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    subscription.abort()
+    expect(events).toContainEqual({ type: "busy", sessionID: "ses_child_busy" })
+  })
+
+  it("forwards a terminal assistantEnd with usage from the child session", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const ends: { sessionID: string; usage?: { model?: string } }[] = []
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onAssistantStart: () => {},
+      onTextDelta: () => {},
+      onChildSessionEvent: (e) => {
+        if (e.type === "assistantEnd") ends.push({ sessionID: e.sessionID, usage: e.usage })
+      },
+    })
+    await subscription.ready
+    await server.awaitClient()
+    subscription.addChildSession("ses_child_end")
+    server.push({
+      type: "message.updated",
+      info: {
+        id: "msg_child_a",
+        role: "assistant",
+        sessionID: "ses_child_end",
+        finish: "stop",
+        providerID: "github-copilot",
+        modelID: "claude-opus-4.5",
+        tokens: { input: 10, output: 20, reasoning: 5 },
+      },
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    subscription.abort()
+    expect(ends).toHaveLength(1)
+    expect(ends[0]?.sessionID).toBe("ses_child_end")
+    expect(ends[0]?.usage?.model).toBe("github-copilot/claude-opus-4.5")
+  })
+
+  it("does NOT call the parent's onSessionIdle when a child session goes idle", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    let parentIdleCount = 0
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onAssistantStart: () => {},
+      onTextDelta: () => {},
+      onSessionIdle: () => {
+        parentIdleCount += 1
+      },
+      onChildSessionEvent: () => {},
+    })
+    await subscription.ready
+    await server.awaitClient()
+    subscription.addChildSession("ses_child")
+    server.push({ type: "session.idle", sessionID: "ses_child" })
+    await new Promise((r) => setTimeout(r, 50))
+    subscription.abort()
+    // Critical isolation: a child going idle must not be confused with
+    // the parent going idle, otherwise the busy spinner clears too early
+    // when Hephaestus is mid-fanout.
+    expect(parentIdleCount).toBe(0)
+  })
+})
