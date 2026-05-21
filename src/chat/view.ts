@@ -995,43 +995,39 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.post({ type: "aborted" })
     void this.recordMainTaskFinish("cancelled")
 
-    // Tear down the tracker's view of the session BEFORE issuing HTTP
-    // aborts. Two reasons:
+    // Tear down the tracker's local view of the subagent tree first.
+    // Two reasons:
     //   1. The store mutation runs in-process and is fast; doing it
     //      first means the popover settles immediately instead of
     //      waiting on the network round-trip.
     //   2. With the store's strict terminal guard, marking tasks
-    //      `cancelled` now makes the user's intent sticky — late
-    //      child error events (rate-limit / token-expired races
+    //      `cancelled` now makes the user's Stop sticky — a late
+    //      child error event (rate-limit / token-expired races
     //      arriving after the abort propagation) can no longer flip
     //      a cancelled row to `error`.
-    // `cancelForSession` returns the child sessionIDs that were live
-    // at the snapshot moment so we can HTTP-abort each one explicitly.
-    let childSessionIDs: string[] = []
     if (this.subagentTracker) {
-      childSessionIDs = await this.subagentTracker.cancelForSession(sessionID)
+      await this.subagentTracker.cancelForSession(sessionID)
     } else if (this.taskStore) {
       await this.taskStore.cancelSessionTasks(sessionID)
     }
 
     try {
       const backend = await this.servers.ensure()
-      // Parent + every live child in parallel. opencode's
-      // `session.abort` only targets the named session; propagation
-      // to subagent children isn't guaranteed across plugin / version
-      // combinations, so we issue each child abort explicitly. Each
-      // call is independent — a failure on one shouldn't block the
-      // others, hence `allSettled` + per-call `.catch`.
-      await Promise.allSettled([
-        backend.client.session.abort({ path: { id: sessionID } }),
-        ...childSessionIDs.map((childID) =>
-          backend.client.session
-            .abort({ path: { id: childID } })
-            .catch((e) => {
-              log(`session.abort failed for child ${childID}`, e)
-            }),
-        ),
-      ])
+      // Abort ONLY the parent. opencode's `session.abort` propagates
+      // down to the parent's "wait on tool" (the in-flight tool call
+      // dispatched to the child session), so cancelling the parent
+      // also cancels the children atomically.
+      //
+      // Earlier we issued explicit aborts for parent + each child in
+      // parallel as a "belt and suspenders" measure. That introduced
+      // a race: the child's abort processed first, the child's tool
+      // result returned to the parent with a cancel error, the parent
+      // started a NEW LLM call to process that result, and the
+      // parent's own abort then arrived *after* the new call started
+      // — leaving the parent visibly continuing. The user had to
+      // press Stop a second time to abort the new LLM call. Trusting
+      // opencode's propagation avoids the race entirely.
+      await backend.client.session.abort({ path: { id: sessionID } })
     } catch (e) {
       log("session.abort failed", e)
     }

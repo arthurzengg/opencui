@@ -387,10 +387,12 @@ export class SubagentTracker {
    *     beats us here, but doing it again is idempotent).
    *
    * Returns the list of child sessionIDs that were active at the
-   * moment of teardown so the caller can issue HTTP aborts in
-   * parallel — important because opencode's `session.abort` only
-   * acts on the targeted session, and propagation to children isn't
-   * guaranteed across plugin / version combinations.
+   * moment of teardown. Informational only — callers should rely on
+   * opencode's `session.abort` propagating down the parent's "wait
+   * on tool" to settle the children atomically. Issuing explicit
+   * child aborts in parallel introduced a race that left the parent
+   * visibly continuing after Stop; see the comment in
+   * `ChatView.abortCurrent` for the full story.
    */
   async cancelForSession(parentSessionID: string): Promise<string[]> {
     const active = this.store.activeSubagentsForSession(parentSessionID)
