@@ -26,6 +26,7 @@ import type {
   ToolUpdate as WireToolUpdate,
   Selection,
   ReviewChange,
+  ReviewChangeActor,
   ReviewHunkState,
 } from "../protocol"
 import {
@@ -491,13 +492,15 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.saveActive()
         return
       case "tool":
-        this.messages = upsertTool(this.messages, msg.id, msg.update)
+        this.messages = upsertTool(this.messages, msg.id, msg.update, msg.actor)
         this.saveActive()
         this.queueReviewDecorationsSync()
         return
       case "patch":
         this.messages = this.messages.map((m) =>
-          m.id === msg.id ? { ...m, blocks: [...m.blocks, { type: "patch", files: msg.files, diff: msg.diff }] } : m,
+          m.id === msg.id
+            ? { ...m, blocks: [...m.blocks, { type: "patch", files: msg.files, diff: msg.diff, actor: msg.actor }] }
+            : m,
         )
         this.saveActive()
         this.queueReviewDecorationsSync()
@@ -673,13 +676,55 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "openReviewChange":
         void this.openReviewChange(msg.change)
         return
-      case "reviewHunk":
+      case "reviewHunk": {
+        // Legacy single-hunk path (review-render.ts standalone HTML). Look up
+        // the matching change + hunk by key so we can run safe undo, then
+        // post a single-hunk state update.
+        const root = this.backendDirectory()
+        const found = this.findReviewHunkByKey(msg.key)
+        if (!found) {
+          // Fall back to the pre-attribution behaviour with the legacy
+          // (path, action, oldText, newText) arguments synthesised into a
+          // throwaway change. Used for hunks we can't locate anymore.
+          const change: ReviewChange = {
+            source: msg.key,
+            path: msg.path,
+            kind: "updated",
+            additions: 0,
+            deletions: 0,
+            patch: "",
+          }
+          const hunk = {
+            id: "0",
+            header: "",
+            lines: [],
+            anchorText: msg.newText,
+            oldText: msg.oldText,
+            newText: msg.newText,
+            oldStart: 0,
+            oldCount: 0,
+            newStart: 0,
+            newCount: msg.newText === "" ? 0 : msg.newText.split("\n").length,
+            leadingContext: [],
+            trailingContext: [],
+            reversible: true,
+          }
+          const outcome = await reviewHunk(change, hunk, msg.action, { root })
+          this.post({
+            type: "reviewHunkState",
+            key: msg.key,
+            state: outcome.status === "applied" || outcome.status === "no-op" ? msg.action : undefined,
+          })
+          return
+        }
+        const outcome = await reviewHunk(found.change, found.hunk, msg.action, { root })
         this.post({
           type: "reviewHunkState",
           key: msg.key,
-          state: await reviewHunk(msg.path, msg.action, msg.oldText, msg.newText) ? msg.action : undefined,
+          state: outcome.status === "applied" || outcome.status === "no-op" ? msg.action : undefined,
         })
         return
+      }
       case "reviewAllInChange":
         await this.handleReviewAllInChange(msg.source, msg.path, msg.action)
         return
@@ -1376,6 +1421,14 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.post({ type: "sessionIdle" })
       },
       onChildSessionEvent: (event) => {
+        if (this.aborting) return
+        // Route tool / patch events through the review-card pipeline FIRST so
+        // the subagent's file changes show up in the panel even if the tracker
+        // then decides to settle the row. The tracker's handleChildSessionEvent
+        // ignores tool/patch variants so this isn't double-handling.
+        if (event.type === "tool" || event.type === "patch") {
+          this.appendSubagentBlock(event, backend.directory)
+        }
         if (!this.subagentTracker) return
         void this.subagentTracker.handleChildSessionEvent(event).then(() => {
           // After any child terminal event, if we were deferring an
@@ -1385,6 +1438,15 @@ export class ChatView implements vscode.WebviewViewProvider {
             this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "child-settled")
           }
         })
+      },
+      onChildSessionDiscovered: (info) => {
+        if (this.aborting) return
+        // Register for SSE routing IMMEDIATELY so we don't miss the child's
+        // first tool/patch events while we wait for the parent's task tool
+        // metadata to surface the child sessionID. Cheap idempotent add.
+        subscription.addChildSession(info.id)
+        if (!this.subagentTracker) return
+        void this.subagentTracker.registerChildSession(info)
       },
     })
     this.subscription = subscription
@@ -1419,13 +1481,80 @@ export class ChatView implements vscode.WebviewViewProvider {
     return webviewID
   }
 
+  /**
+   * Route a subagent's tool/patch event into the chat record + Review Panel.
+   *
+   * The parent webview message is located by walking back from the child
+   * session's task (stored under `subagent:child:<childSessionID>` in the
+   * task store, which carries the dispatching parent assistant message ID).
+   * If that lookup fails, fall back to the most-recent assistant message in
+   * the conversation — the user still gets the change in the review card,
+   * just attached one bubble higher than ideal.
+   */
+  private appendSubagentBlock(
+    event:
+      | { type: "tool"; sessionID: string; messageID: string; update: ToolUpdate }
+      | { type: "patch"; sessionID: string; messageID: string; files: string[]; diff?: string },
+    cwd: string,
+  ): void {
+    const actor = this.resolveSubagentActor(event.sessionID)
+    const parentWebviewID = this.locateParentWebviewID(event.sessionID)
+    if (!parentWebviewID) {
+      log(`[review] dropping ${event.type} from child ${event.sessionID} — no parent message in view`)
+      return
+    }
+    if (event.type === "tool") {
+      const wire = toWire(event.update, cwd)
+      this.post({ type: "tool", id: parentWebviewID, update: wire, actor })
+      this.queueReviewDecorationsSync()
+      return
+    }
+    this.post({
+      type: "patch",
+      id: parentWebviewID,
+      files: event.files.map((f) => relativeToCwd(cwd, f)),
+      diff: event.diff,
+      actor,
+    })
+    this.queueReviewDecorationsSync()
+  }
+
+  private resolveSubagentActor(childSessionID: string) {
+    const task = this.taskStore?.getByChildSession(childSessionID)
+    return {
+      kind: "subagent" as const,
+      sessionID: childSessionID,
+      subagent: task?.subagent,
+    }
+  }
+
+  /**
+   * Look up which parent assistant message a child session belongs to. The
+   * AgentTaskStore tracks the dispatching `messageID` per subagent task;
+   * combined with `this.messageMap` (backend → webview ID) we land on the
+   * right bubble. Fallback: the most-recent assistant message in the view.
+   */
+  private locateParentWebviewID(childSessionID: string): string | undefined {
+    const task = this.taskStore?.getByChildSession(childSessionID)
+    if (task?.messageID) {
+      const mapped = this.messageMap.get(task.messageID)
+      if (mapped) return mapped
+    }
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const message = this.messages[i]!
+      if (message.role === "assistant") return message.id
+    }
+    return undefined
+  }
+
   private async openReviewChange(change: ReviewChange) {
     if (!isTextReviewPath(change.path)) {
       vscode.window.showWarningMessage(`OpenCode Panel: ${change.path} cannot be reviewed as text.`)
       return
     }
     try {
-      const doc = await openFileDocument(change.path)
+      const root = this.backendDirectory()
+      const doc = await openFileDocument(change.path, root)
       // If the requested file is already the active editor, don't re-show it —
       // showTextDocument would steal focus + flash the editor pane for no
       // reason. (Common when the user just clicked a different row and the
@@ -1446,6 +1575,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async purgeMissingFileHunks(changes: ReviewChange[]): Promise<void> {
     const seen = new Set<string>()
+    const root = this.backendDirectory()
     for (const change of changes) {
       if (seen.has(change.path)) continue
       seen.add(change.path)
@@ -1453,7 +1583,11 @@ export class ChatView implements vscode.WebviewViewProvider {
       // visible to the VS Code file-system API, or the workspace may not cover
       // the path. Purging here would permanently hide the review card.
       if (change.kind === "created") continue
-      if (await reviewPathExists(change.path)) continue
+      // A `deleted` change is SUPPOSED to leave the file gone — don't purge it
+      // either; that's the desired post-change state and the user might still
+      // want to Undo (restoring it) or Keep (confirming the delete).
+      if (change.kind === "deleted") continue
+      if (await reviewPathExists(change.path, root)) continue
       let purged = 0
       for (const sibling of changes) {
         if (!samePath(sibling.path, change.path)) continue
@@ -1475,57 +1609,73 @@ export class ChatView implements vscode.WebviewViewProvider {
     // (tool block + patch block of the same hunk produce different sources
     // and therefore different reviewKeys). If we only mark the source-matched
     // record's hunks reviewed, the other record's hunks still spawn codelenses
-    // and decorations on the next sync. For reject this is masked because the
-    // file actually changes and the duplicate hunks become unlocatable; for
-    // accept the file is unchanged, so duplicates would linger forever.
+    // and decorations on the next sync.
     const targets = all.filter((c) => samePath(c.path, requestedPath))
     if (!targets.length) {
       log("reviewAllInChange: no matching change", { source, path: requestedPath, available: all.map((c) => ({ source: c.source, path: c.path })) })
       return
     }
-    // If the file no longer exists on disk, neither accept nor reject can
-    // operate on it — silently mark every pending hunk reviewed so the row
-    // drops out of the Review Card and tell the user once.
-    if (!(await reviewPathExists(requestedPath))) {
-      let purged = 0
-      for (const change of targets) {
-        for (const hunk of splitReviewDiff(change.patch).hunks) {
-          const key = reviewKey(change, hunk.id)
-          if (this.reviewHunks[key]) continue
-          this.post({ type: "reviewHunkState", key, state: "rejected" })
-          purged += 1
-        }
-      }
-      vscode.window.showInformationMessage(
-        `OpenCode Panel: ${requestedPath} is no longer present; removed ${purged} pending hunk${purged === 1 ? "" : "s"} from review.`,
-      )
-      await this.syncReviewDecorations()
-      return
-    }
-    let any = false
+    const root = this.backendDirectory()
+    // Files might be intentionally missing (a `deleted` change leaves the file
+    // gone, which is the desired post-change state). Only the `updated` /
+    // `moved` cases require the file present; the helpers handle that.
+    let conflicts = 0
+    let applied = 0
     for (const change of targets) {
       const hunks = splitReviewDiff(change.patch).hunks
+      let firstHunk = true
       for (const hunk of hunks) {
         const key = reviewKey(change, hunk.id)
         if (this.reviewHunks[key]) continue
-        if (action === "rejected" && !hunk.reversible) continue
-        const ok = await reviewHunk(change.path, action, hunk.oldText, hunk.newText, true)
-        if (ok) {
-          this.post({ type: "reviewHunkState", key, state: action })
-          any = true
+        if (action === "rejected" && !hunk.reversible) {
+          conflicts += 1
           continue
         }
-        // For reject, the first change in `targets` may have already reverted
-        // the file — subsequent reviewHunk calls then fail to relocate newText.
-        // Still mark the duplicate hunk as reviewed so its codelens clears.
-        if (action === "rejected") {
+        // For non-update kinds (created / deleted / moved) the action is a
+        // whole-file operation; running it once per hunk would double-act.
+        // Skip all but the first hunk in those cases.
+        if (!firstHunk && change.kind !== "updated") {
+          // Mirror whatever the first hunk produced — it already applied or
+          // conflicted as a whole-file op.
           this.post({ type: "reviewHunkState", key, state: action })
-          any = true
+          continue
         }
+        const outcome = await reviewHunk(change, hunk, action, { silent: true, root })
+        firstHunk = false
+        if (outcome.status === "applied" || outcome.status === "no-op") {
+          this.post({ type: "reviewHunkState", key, state: action })
+          applied += 1
+          continue
+        }
+        // Per requirement: do NOT silently mark a hunk rejected when the undo
+        // couldn't be applied safely — leave the row pending so the user can
+        // see the conflict and decide what to do.
+        conflicts += 1
+        log(`reviewAllInChange: ${outcome.status} on ${change.path}: ${"reason" in outcome ? outcome.reason : ""}`)
       }
     }
-    if (any) await this.syncReviewDecorations()
-    else log("reviewAllInChange: no hunks applied", { source, path: requestedPath, action })
+    if (conflicts > 0) {
+      const verb = action === "accepted" ? "accept" : "undo"
+      vscode.window.showWarningMessage(
+        `OpenCode Panel: couldn't ${verb} ${conflicts} hunk${conflicts === 1 ? "" : "s"} in ${requestedPath} — the file has changed since the diff was produced.`,
+      )
+    }
+    if (applied > 0) await this.syncReviewDecorations()
+    else log("reviewAllInChange: no hunks applied", { source, path: requestedPath, action, conflicts })
+  }
+
+  private backendDirectory(): string | undefined {
+    return this.servers.currentWorkspace()?.fsPath
+  }
+
+  private findReviewHunkByKey(key: string) {
+    const all = reviewChanges(this.messages)
+    for (const change of all) {
+      for (const hunk of splitReviewDiff(change.patch).hunks) {
+        if (reviewKey(change, hunk.id) === key) return { change, hunk }
+      }
+    }
+    return undefined
   }
 
   private queueReviewDecorationsSync() {
@@ -1681,16 +1831,26 @@ function appendText(
   })
 }
 
-function upsertTool(messages: ChatMessage[], id: string, update: WireToolUpdate): ChatMessage[] {
+function upsertTool(
+  messages: ChatMessage[],
+  id: string,
+  update: WireToolUpdate,
+  actor?: ReviewChangeActor,
+): ChatMessage[] {
   return messages.map((message) => {
     if (message.id !== id) return message
     const existing = message.blocks.findIndex((b) => b.type === "tool" && b.update.callID === update.callID)
     if (existing >= 0) {
       const blocks = message.blocks.slice()
-      blocks[existing] = { type: "tool", update }
+      const prev = blocks[existing]
+      blocks[existing] = {
+        type: "tool",
+        update,
+        actor: actor ?? (prev.type === "tool" ? prev.actor : undefined),
+      }
       return { ...message, blocks }
     }
-    return { ...message, blocks: [...message.blocks, { type: "tool", update }] }
+    return { ...message, blocks: [...message.blocks, { type: "tool", update, actor }] }
   })
 }
 

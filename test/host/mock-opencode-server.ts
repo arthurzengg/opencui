@@ -14,6 +14,8 @@ export type ScriptedEvent =
   | { type: "message.part.updated"; part: Record<string, unknown> }
   | { type: "session.error"; error: { name?: string; data?: { message?: string } } }
   | { type: "session.status"; sessionID: string; status: { type: string } }
+  | { type: "session.created"; info: Record<string, unknown> }
+  | { type: "session.updated"; info: Record<string, unknown> }
 
 export type MockOpencodeServer = {
   url: string

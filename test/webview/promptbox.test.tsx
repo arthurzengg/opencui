@@ -95,18 +95,6 @@ describe("PromptBox", () => {
     expect(onAbort).not.toHaveBeenCalled()
   })
 
-  it("renders contextLabel when provided", () => {
-    render(
-      <PromptBox
-        busy={false}
-        contextLabel="src/foo.ts:5-10"
-        onSend={vi.fn()}
-        onAbort={vi.fn()}
-      />,
-    )
-    expect(screen.getByText("src/foo.ts:5-10")).toBeInTheDocument()
-  })
-
   it("does NOT submit when Enter is pressed during IME composition (Chinese / Japanese / Korean input)", () => {
     const onSend = vi.fn()
     render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} />)

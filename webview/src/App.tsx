@@ -243,7 +243,6 @@ export default function App() {
       <PromptBox
         busy={busy}
         aborting={state.aborting}
-        contextLabel={state.context?.label}
         onSend={send}
         onAbort={abort}
         searchFiles={searchFiles}

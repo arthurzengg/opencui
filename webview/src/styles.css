@@ -2033,8 +2033,13 @@ button {
   background: var(--vscode-list-hoverBackground);
 }
 .review-file.is-selected {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
-  color: var(--vscode-foreground);
+  /* Use the neutral "inactive selection" token rather than the saturated blue
+     `activeSelectionBackground` — the review card isn't a focused list, so a
+     subdued highlight reads correctly and stays consistent with VS Code's own
+     "not-currently-focused" list rows. Fallback chain keeps it readable on
+     themes that don't define every token. */
+  background: var(--vscode-list-inactiveSelectionBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-list-inactiveSelectionForeground, var(--vscode-foreground));
 }
 .review-file.is-selected::before {
   content: "";
@@ -2044,7 +2049,11 @@ button {
   bottom: 4px;
   width: 2px;
   border-radius: 1px;
-  background: var(--vscode-focusBorder, var(--vscode-textLink-foreground));
+  /* Neutral accent stripe — text foreground on dark themes reads as white;
+     on light themes it reads as charcoal. Either way it's the same visual
+     weight as the row text instead of the loud focus-border blue. */
+  background: var(--vscode-foreground);
+  opacity: 0.5;
 }
 .review-file:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
@@ -2136,14 +2145,6 @@ button {
   height: 16px;
   transform: rotate(90deg);
   opacity: 0.8;
-}
-.context-chip {
-  font-size: 11px;
-  opacity: 0.6;
-  margin-bottom: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .promptbox-input {
   position: relative;

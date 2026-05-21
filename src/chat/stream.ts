@@ -95,18 +95,43 @@ export type StreamHandlers = {
    * `message.updated` events; the rest are pure lifecycle signals.
    */
   onChildSessionEvent?: (event: ChildSessionEvent) => void
+  /**
+   * Fired when a `session.created` (or `session.updated`) event arrives
+   * for a session whose `parentID` matches our parent — i.e. a subagent
+   * spawned by our session. Subscribers can `addChildSession(info.id)` so
+   * subsequent tool/patch events get routed to `onChildSessionEvent`.
+   *
+   * Why this exists: opencode's built-in `task` tool dispatches a child
+   * session but doesn't always surface `metadata.sessionId` on the parent's
+   * tool call early enough to register the child via the metadata-based
+   * promotion path in `SubagentTracker`. Listening for `session.created`
+   * with a matching parent is a stricter signal — it fires the moment the
+   * subagent's session record is written, so we never miss its events.
+   */
+  onChildSessionDiscovered?: (info: ChildSessionInfo) => void
+}
+
+export type ChildSessionInfo = {
+  id: string
+  parentID: string
+  title?: string
 }
 
 /**
  * Events surfaced to `onChildSessionEvent` for sessions registered via
  * `Subscription.addChildSession()`. Modeled after the minimum the
- * subagent tracker needs to mirror a child session's lifecycle onto an
- * AgentTask:
+ * subagent tracker + review aggregator need to mirror a child session's
+ * lifecycle and file changes onto the parent's chat record:
  *   - `busy` — first sign the child session has started executing
  *   - `idle` — child session reports it has nothing in flight
  *   - `error` — child session reported an opencode-side session error
  *   - `assistantEnd` — final assistant message with optional usage
  *     (so the tracker can pick up model + token usage on completion)
+ *   - `tool` — terminal tool transition on the child. Carries the full
+ *     ToolUpdate so subagent file edits feed into the Review Panel via
+ *     the same path as parent tool blocks.
+ *   - `patch` — child emitted an `apply_patch`/patch part. Same usage as
+ *     `tool` but for whole-tree diffs.
  */
 export type ChildSessionEvent =
   | { type: "busy"; sessionID: string }
@@ -119,6 +144,19 @@ export type ChildSessionEvent =
       finish?: string
       usage?: MessageUsage
       error?: string
+    }
+  | {
+      type: "tool"
+      sessionID: string
+      messageID: string
+      update: ToolUpdate
+    }
+  | {
+      type: "patch"
+      sessionID: string
+      messageID: string
+      files: string[]
+      diff?: string
     }
 
 export type Subscription = {
@@ -230,6 +268,21 @@ export function subscribeSession(
     // events for sessions in both sets (unlikely, but possible) are
     // observed by both branches.
     routeChildSessionEvent(type, props)
+    // Session-created / -updated with a matching parentID is our cue that
+    // opencode just spawned a subagent. Notify the host so it can register
+    // the child for routing — even if the parent's `task` tool metadata
+    // never publishes the child sessionID, we still capture the child's
+    // tool/patch events.
+    if ((type === "session.created" || type === "session.updated") && handlers.onChildSessionDiscovered) {
+      const info = props?.info
+      if (info && typeof info === "object" && typeof info.id === "string" && info.parentID === sessionID) {
+        handlers.onChildSessionDiscovered({
+          id: info.id,
+          parentID: info.parentID,
+          title: typeof info.title === "string" ? info.title : undefined,
+        })
+      }
+    }
     switch (type) {
       case "message.updated":
         onMessageUpdated(props?.info)
@@ -336,11 +389,48 @@ export function subscribeSession(
           }
         }
         return
-      case "message.part.updated":
-      case "message.part.delta":
+      case "message.part.updated": {
         // Any activity on the child means it is busy. Cheap "still
         // alive" signal that complements `session.idle` for tracker
         // hysteresis.
+        childCb({ type: "busy", sessionID: childSid })
+        const part = props?.part
+        if (!part || typeof part !== "object") return
+        const messageID = typeof part.messageID === "string" ? part.messageID : undefined
+        if (!messageID) return
+        if (part.type === "tool" && part.callID && part.tool && part.state) {
+          const status = part.state.status as ToolUpdate["status"]
+          if (status === "completed" || status === "error") {
+            childCb({
+              type: "tool",
+              sessionID: childSid,
+              messageID,
+              update: {
+                callID: part.callID,
+                tool: part.tool,
+                status,
+                title: part.state.title,
+                input: part.state.input,
+                metadata: part.state.metadata,
+                output: part.state.output,
+                error: part.state.error,
+              },
+            })
+          }
+          return
+        }
+        if (part.type === "patch" && Array.isArray(part.files)) {
+          childCb({
+            type: "patch",
+            sessionID: childSid,
+            messageID,
+            files: part.files,
+            diff: typeof part.diff === "string" ? part.diff : undefined,
+          })
+        }
+        return
+      }
+      case "message.part.delta":
         childCb({ type: "busy", sessionID: childSid })
         return
     }

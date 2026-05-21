@@ -5,6 +5,21 @@
 
 export type ToolStatus = "pending" | "running" | "completed" | "error"
 export type ReviewHunkState = "accepted" | "rejected"
+
+/**
+ * Who produced a file change. `main` is the parent assistant session;
+ * `subagent` is any child session dispatched via `task` / `call_omo_agent`
+ * / etc. `sessionID` is the child opencode session for subagent rows;
+ * `subagent` is the agent slug (e.g. `explore`, `hephaestus`) when omo's
+ * tool metadata surfaced it. Multiple actors can contribute to the same
+ * path — see `ReviewChange.actors`.
+ */
+export type ReviewChangeActor = {
+  kind: "main" | "subagent"
+  sessionID?: string
+  subagent?: string
+}
+
 export type ReviewChange = {
   source: string
   path: string
@@ -12,6 +27,17 @@ export type ReviewChange = {
   additions: number
   deletions: number
   patch: string
+  /**
+   * Set when `kind === "moved"`. The pre-move path of the file. Used by
+   * Undo to restore the file at its original location.
+   */
+  oldPath?: string
+  /**
+   * Attribution for the change. Always at least one entry; aggregated
+   * changes accumulate one entry per contributing actor. Older clients
+   * may not set this — consumers should treat empty as "main".
+   */
+  actors?: ReviewChangeActor[]
 }
 
 export type ToolUpdate = {
@@ -39,8 +65,14 @@ export type QuestionInfo = {
 export type ChatBlock =
   | { type: "text"; text: string }
   | { type: "reasoning"; text: string }
-  | { type: "tool"; update: ToolUpdate }
-  | { type: "patch"; files: string[]; diff?: string }
+  /**
+   * `actor` identifies whether the tool ran on the main session or a child
+   * subagent session. Absent / `kind === "main"` means main. Subagent tool
+   * blocks are appended to the dispatching parent message so review-card
+   * aggregation walks them naturally.
+   */
+  | { type: "tool"; update: ToolUpdate; actor?: ReviewChangeActor }
+  | { type: "patch"; files: string[]; diff?: string; actor?: ReviewChangeActor }
   | { type: "attachment"; mime: string; filename: string; dataUrl: string; bytes: number }
 
 export type ChatMessage = {
@@ -316,8 +348,8 @@ export type Outbound =
   | { type: "assistantStart"; id: string }
   | { type: "textDelta"; id: string; delta: string }
   | { type: "reasoningDelta"; id: string; delta: string }
-  | { type: "tool"; id: string; update: ToolUpdate }
-  | { type: "patch"; id: string; files: string[]; diff?: string }
+  | { type: "tool"; id: string; update: ToolUpdate; actor?: ReviewChangeActor }
+  | { type: "patch"; id: string; files: string[]; diff?: string; actor?: ReviewChangeActor }
   | { type: "reviewHunkState"; key: string; state?: ReviewHunkState }
   | { type: "assistantError"; id: string; message: string }
   | { type: "assistantDone"; id: string; usage?: UsageDelta }

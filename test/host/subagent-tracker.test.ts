@@ -608,6 +608,185 @@ describe("SubagentTracker.cancelForSession", () => {
   })
 })
 
+describe("SubagentTracker.registerChildSession", () => {
+  it("creates a placeholder subagent task for an auto-discovered child session", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.registerChildSession({
+      id: "ses_child_x",
+      parentID: "ses_parent",
+      title: "Investigating logs",
+    })
+    const task = store.get(subagentTaskIDByChildSession("ses_child_x"))
+    expect(task).toBeDefined()
+    expect(task!.kind).toBe("subagent")
+    expect(task!.childSessionID).toBe("ses_child_x")
+    expect(task!.status).toBe("running")
+    expect(task!.title).toBe("Investigating logs")
+  })
+
+  it("uses a generic title when the discovered session has none", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.registerChildSession({ id: "ses_child_y", parentID: "ses_parent" })
+    const task = store.get(subagentTaskIDByChildSession("ses_child_y"))
+    expect(task!.title).toBe("Subagent")
+  })
+
+  it("ignores discoveries with a parent that isn't ours", async () => {
+    const { tracker, store } = setupTracker({ sessionID: "ses_parent" })
+    await tracker.registerChildSession({ id: "ses_orphan", parentID: "ses_someone_else" })
+    expect(store.get(subagentTaskIDByChildSession("ses_orphan"))).toBeUndefined()
+  })
+
+  it("does not overwrite an existing richer record", async () => {
+    const { tracker, store } = setupTracker()
+    // Pre-populate with a tool-update-style record (richer metadata).
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c1",
+        tool: "task",
+        status: "running",
+        metadata: {
+          sessionId: "ses_child_z",
+          agent: "hephaestus",
+        },
+      }),
+      "msg_parent",
+    )
+    const before = store.get(subagentTaskIDByChildSession("ses_child_z"))
+    expect(before!.subagent).toBe("hephaestus")
+    // Now simulate the late-arriving session.created discovery.
+    await tracker.registerChildSession({ id: "ses_child_z", parentID: "ses_parent", title: "fallback title" })
+    const after = store.get(subagentTaskIDByChildSession("ses_child_z"))
+    expect(after!.subagent).toBe("hephaestus") // preserved
+    expect(after!.title).toBe(before!.title) // not overwritten
+  })
+})
+
+describe("SubagentTracker: discovery + tool-dispatch merge", () => {
+  // The user-reported bug: opencode's built-in `task` tool doesn't publish
+  // `metadata.sessionId`, so the parent tool path creates a callID-keyed row
+  // AND `session.created` auto-discovery creates a child-keyed row → two
+  // rows for ONE subagent in the Agents popover. Tests below pin both
+  // orderings down to ONE row.
+
+  it("registerChildSession FIRST, then handleToolUpdate: produces one task (child-keyed)", async () => {
+    const { tracker, store, subscription } = setupTracker()
+    // Discovery arrives first (no parent dispatch processed yet).
+    await tracker.registerChildSession({
+      id: "ses_child_merge",
+      parentID: "ses_parent",
+      title: "Add helper (@Sisyphus-Junior subagent)",
+    })
+    // Sanity: placeholder exists.
+    expect(store.list()).toHaveLength(1)
+    // Parent dispatch arrives WITHOUT metadata.sessionId (built-in task tool).
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "call_1",
+        tool: "task",
+        status: "running",
+        input: { description: "Add helper", subagent_type: "Sisyphus-Junior" },
+      }),
+      "msg_parent",
+    )
+    const tasks = store.list().filter((t) => t.kind === "subagent")
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]!.childSessionID).toBe("ses_child_merge")
+    expect(tasks[0]!.callID).toBe("call_1")
+    // Title precedence: parent's `input.description` wins over the verbose
+    // session-info title — that's what the popover should show.
+    expect(tasks[0]!.title).toBe("Add helper")
+    // And the SSE subscription got told to track the child.
+    expect(subscription.added).toContain("ses_child_merge")
+  })
+
+  it("handleToolUpdate FIRST, then registerChildSession: produces one task (child-keyed)", async () => {
+    const { tracker, store, subscription } = setupTracker()
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "call_1",
+        tool: "task",
+        status: "running",
+        input: { description: "Add helper", subagent_type: "Sisyphus-Junior" },
+      }),
+      "msg_parent",
+    )
+    expect(store.list()).toHaveLength(1)
+    expect(store.list()[0]!.callID).toBe("call_1")
+    expect(store.list()[0]!.childSessionID).toBeUndefined()
+    // Discovery arrives after the parent tool dispatch.
+    await tracker.registerChildSession({
+      id: "ses_child_merge",
+      parentID: "ses_parent",
+      title: "Add helper (@Sisyphus-Junior subagent)",
+    })
+    const tasks = store.list().filter((t) => t.kind === "subagent")
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]!.childSessionID).toBe("ses_child_merge")
+    expect(tasks[0]!.callID).toBe("call_1")
+    expect(tasks[0]!.title).toBe("Add helper")
+    expect(subscription.added).toContain("ses_child_merge")
+  })
+
+  it("ambiguous parallel dispatch (>1 unclaimed) skips merge and keeps both rows", async () => {
+    // Defensive: when the parent fans out multiple subagents in a single
+    // turn, we can't unambiguously match a session.created event to one
+    // specific callID. Tests that we DON'T mis-merge in that case.
+    const { tracker, store } = setupTracker()
+    await tracker.handleToolUpdate(
+      makeUpdate({ callID: "call_a", tool: "task", status: "running", input: { description: "Task A" } }),
+      "msg_parent",
+    )
+    await tracker.handleToolUpdate(
+      makeUpdate({ callID: "call_b", tool: "task", status: "running", input: { description: "Task B" } }),
+      "msg_parent",
+    )
+    // Two unclaimed dispatches now exist — discovery should NOT claim either,
+    // because we can't tell which one this session.created belongs to.
+    await tracker.registerChildSession({ id: "ses_child_x", parentID: "ses_parent", title: "x" })
+    // We expect 3 rows: two callID-keyed dispatches + one child placeholder.
+    expect(store.list().filter((t) => t.kind === "subagent")).toHaveLength(3)
+  })
+
+  it("metadata.sessionId still merges cleanly when it does arrive (omo path)", async () => {
+    // Sanity check: pre-existing omo flow should NOT regress.
+    const { tracker, store } = setupTracker()
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "call_1",
+        tool: "call_omo_agent",
+        status: "running",
+        input: { description: "Explore auth" },
+        metadata: { sessionId: "ses_omo_child", agent: "explore" },
+      }),
+      "msg_parent",
+    )
+    const tasks = store.list().filter((t) => t.kind === "subagent")
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]!.childSessionID).toBe("ses_omo_child")
+    expect(tasks[0]!.subagent).toBe("explore")
+  })
+})
+
+describe("SubagentTracker: input.subagent_type fallback", () => {
+  it("reads the agent slug from input.subagent_type when metadata.agent is missing", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c1",
+        tool: "task",
+        status: "running",
+        input: { description: "Do a thing", subagent_type: "explore" },
+        // no metadata.agent
+        metadata: { sessionId: "ses_child_q" },
+      }),
+      "msg1",
+    )
+    const task = store.get(subagentTaskIDByChildSession("ses_child_q"))
+    expect(task?.subagent).toBe("explore")
+  })
+})
+
 describe("SubagentTracker tool name gate", () => {
   it("does not touch the store for unrelated tools", async () => {
     const { tracker, store } = setupTracker()
