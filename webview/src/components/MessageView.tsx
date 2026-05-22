@@ -358,7 +358,7 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
     return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
-  const finalTextIndex = lastTextIndex(message.blocks, message.pending)
+  const finalTextIndex = lastTextIndex(message.blocks, Boolean(message.pending))
   if (finalTextIndex < 0) {
     if (!hasProcessBlocks(message.blocks)) return renderBlocks(message.blocks, false, onReviewFile)
     return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
