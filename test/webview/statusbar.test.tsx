@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { fireEvent, render, screen, cleanup } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { useState } from "react"
-import { StatusBar, type HeaderPopoverID } from "../../webview/src/components/StatusBar"
-import { MessageView } from "../../webview/src/components/MessageView"
-import type { Message } from "../../webview/src/hooks/useChatState"
+import { StatusBar } from "../../webview/src/components/StatusBar"
+import { AgentActivity } from "../../webview/src/components/AgentActivity"
 
 beforeEach(() => {
   cleanup()
@@ -260,7 +258,7 @@ describe("StatusBar: history popover", () => {
   })
 })
 
-describe("AgentsMenu (StatusBar inline popover)", () => {
+describe("AgentActivity", () => {
   const baseStatus = {
     running: 1,
     waiting: 0,
@@ -278,108 +276,42 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
     ],
   }
 
-  it("renders 'Agents' even when no agentsStatus has been sent yet", () => {
-    render(<StatusBar {...baseProps} />)
-    expect(screen.getByText("Agents")).toBeInTheDocument()
-    expect(screen.getByText("Agents").className).toContain("is-idle")
-  })
-
-  it("renders 'Agents' with is-idle when total === 0", () => {
-    render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{ running: 0, waiting: 0, error: 0, total: 0, tasks: [] }}
-      />,
-    )
-    const pill = screen.getByText("Agents")
-    expect(pill).toBeInTheDocument()
-    expect(pill.className).toContain("is-idle")
-    expect(pill.className).not.toContain("is-running")
-  })
-
-  it("opens an empty-state popover when there are no tasks", async () => {
-    const user = userEvent.setup()
-    render(<StatusBar {...baseProps} />)
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+  it("stays hidden until there is active agent work", () => {
+    render(<AgentActivity />)
+    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
+    cleanup()
+    render(<AgentActivity status={{ running: 0, waiting: 0, error: 0, total: 0, tasks: [] }} />)
+    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
   })
 
   it("waits until click to dismiss so outside targets can handle their own click first", async () => {
     const user = userEvent.setup()
-    render(<StatusBar {...baseProps} />)
+    render(<AgentActivity status={baseStatus} />)
     await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+    expect(screen.getByText("Explain this file")).toBeInTheDocument()
     fireEvent.pointerDown(document.body)
-    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+    expect(screen.getByText("Explain this file")).toBeInTheDocument()
     fireEvent.click(document.body)
-    expect(screen.queryByText("No agents in this chat")).not.toBeInTheDocument()
-  })
-
-  it("switches directly between header popovers", async () => {
-    const user = userEvent.setup()
-    const conversations = [{ id: "c1", title: "First chat", updatedAt: Date.now() }]
-    render(<StatusBar {...baseProps} conversations={conversations} />)
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: /chat history/i }))
-    expect(screen.queryByText("No agents in this chat")).not.toBeInTheDocument()
-    expect(screen.getByText("Chat history")).toBeInTheDocument()
-  })
-
-  it("closes the popover and enters edit mode when the pushed user bubble is clicked", async () => {
-    const user = userEvent.setup()
-    const message = {
-      id: "u1",
-      role: "user",
-      backendID: "backend-u1",
-      blocks: [{ type: "text", text: "Explain this file by using subagent" }],
-    } as Message
-    function Harness() {
-      const [activePopover, setActivePopover] = useState<HeaderPopoverID | null>(null)
-      return (
-        <>
-          <StatusBar
-            {...baseProps}
-            activePopover={activePopover}
-            onActivePopoverChange={setActivePopover}
-          />
-          <MessageView
-            message={message}
-            processOpen={false}
-            processOnly={false}
-            onEditMessage={vi.fn()}
-            onBeginEdit={() => setActivePopover(null)}
-          />
-        </>
-      )
-    }
-    render(<Harness />)
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
-
-    await user.click(screen.getByText("Explain this file by using subagent"))
-
-    expect(screen.queryByText("No agents in this chat")).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Save & regenerate" })).toBeInTheDocument()
+    expect(screen.queryByText("Explain this file")).not.toBeInTheDocument()
   })
 
   it("renders 'Agents' when a task is running in this chat", () => {
-    render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
+    render(<AgentActivity status={baseStatus} />)
     expect(screen.getByText("Agents")).toBeInTheDocument()
+    expect(screen.getByText("1 running")).toBeInTheDocument()
   })
 
   it("applies is-running class so the breathing animation can trigger", () => {
-    render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
-    const pill = screen.getByText("Agents")
+    render(<AgentActivity status={baseStatus} />)
+    const pill = screen.getByRole("button", { name: /open agents/i })
     expect(pill.className).toContain("agents-pill")
     expect(pill.className).toContain("is-running")
   })
 
   it("uses static is-error class when only error tasks remain", () => {
     render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{
+      <AgentActivity
+        status={{
           running: 0,
           waiting: 0,
           error: 1,
@@ -398,7 +330,7 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
         }}
       />,
     )
-    const pill = screen.getByText("Agents")
+    const pill = screen.getByRole("button", { name: /open agents/i })
     expect(pill.className).toContain("is-error")
     expect(pill.className).not.toContain("is-running")
   })
@@ -406,9 +338,8 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
   it("opens an inline popover on click and lists tasks", async () => {
     const user = userEvent.setup()
     render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{
+      <AgentActivity
+        status={{
           ...baseStatus,
           running: 2,
           total: 2,
@@ -443,7 +374,7 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
 
   it("groups separators are omitted when only one kind is present", async () => {
     const user = userEvent.setup()
-    render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
+    render(<AgentActivity status={baseStatus} />)
     await user.click(screen.getByText("Agents"))
     expect(screen.getByText("Main")).toBeInTheDocument()
     expect(screen.queryByText("Subagents")).not.toBeInTheDocument()
@@ -452,9 +383,8 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
   it("shows errored subagent rows alongside a running parent", async () => {
     const user = userEvent.setup()
     render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{
+      <AgentActivity
+        status={{
           running: 1,
           waiting: 0,
           error: 1,
@@ -488,7 +418,7 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
 
   it("closes the popover when Escape is pressed", async () => {
     const user = userEvent.setup()
-    render(<StatusBar {...baseProps} agentsStatus={baseStatus} />)
+    render(<AgentActivity status={baseStatus} />)
     await user.click(screen.getByText("Agents"))
     expect(screen.getByText("Explain this file")).toBeInTheDocument()
     await user.keyboard("{Escape}")
@@ -497,9 +427,8 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
 
   it("shows a tooltip summarizing the counts", () => {
     render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{
+      <AgentActivity
+        status={{
           running: 2,
           waiting: 1,
           error: 0,
@@ -508,7 +437,7 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
         }}
       />,
     )
-    const pill = screen.getByText("Agents")
+    const pill = screen.getByRole("button", { name: /open agents/i })
     expect(pill.getAttribute("title")).toMatch(/2 agents running/)
     expect(pill.getAttribute("title")).toMatch(/1 waiting for input/)
     expect(pill.getAttribute("title")).toMatch(/Click to view/)
@@ -517,9 +446,8 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
   it("renders the subagent slug + prettified model on a subagent row", async () => {
     const user = userEvent.setup()
     render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{
+      <AgentActivity
+        status={{
           running: 1,
           waiting: 0,
           error: 0,
@@ -548,9 +476,8 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
   it("prefixes a category label when the dispatch went through a category route", async () => {
     const user = userEvent.setup()
     render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{
+      <AgentActivity
+        status={{
           running: 1,
           waiting: 0,
           error: 0,
@@ -579,9 +506,8 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
   it("does not render the agent/model detail line when neither is set", async () => {
     const user = userEvent.setup()
     render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{
+      <AgentActivity
+        status={{
           running: 1,
           waiting: 0,
           error: 0,
@@ -604,15 +530,10 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
     expect(screen.queryByText(/category:/)).not.toBeInTheDocument()
   })
 
-  it("renders the empty state once every task has settled (popover is not chat history)", async () => {
-    const user = userEvent.setup()
+  it("hides again once every task has settled", () => {
     render(
-      <StatusBar
-        {...baseProps}
-        // Host filters terminal states out of the wire, so a settled
-        // conversation arrives as an empty tasks array — the popover
-        // shows only what's currently active, never history.
-        agentsStatus={{
+      <AgentActivity
+        status={{
           running: 0,
           waiting: 0,
           error: 0,
@@ -621,18 +542,14 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
         }}
       />,
     )
-    const pill = screen.getByText("Agents")
-    expect(pill.className).toContain("is-idle")
-    await user.click(pill)
-    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
   })
 
   it("freezes the elapsed time on error rows using updatedAt - startedAt", async () => {
     const user = userEvent.setup()
     render(
-      <StatusBar
-        {...baseProps}
-        agentsStatus={{
+      <AgentActivity
+        status={{
           running: 0,
           waiting: 0,
           error: 1,
