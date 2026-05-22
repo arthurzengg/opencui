@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
 import type { AgentsStatusInfo, AgentsTaskInfo, ConversationSummary, Selection } from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
+import { useHeaderPopoverHeight } from "../hooks/useHeaderPopoverHeight"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
+
+export type HeaderPopoverID = "selector" | "agents" | "history"
+type HeaderPopoverSetter = Dispatch<SetStateAction<HeaderPopoverID | null>>
 
 type Props = {
   connected: boolean
@@ -11,6 +15,8 @@ type Props = {
   conversations: ConversationSummary[]
   activeConversationID?: string
   agentsStatus?: AgentsStatusInfo
+  activePopover?: HeaderPopoverID | null
+  onActivePopoverChange?: HeaderPopoverSetter
   onSelectAgent: () => void
   onSelectModel: () => void
   onSelectVariant: () => void
@@ -28,6 +34,8 @@ export function StatusBar({
   conversations,
   activeConversationID,
   agentsStatus,
+  activePopover,
+  onActivePopoverChange,
   onSelectAgent,
   onSelectModel,
   onSelectVariant,
@@ -40,6 +48,12 @@ export function StatusBar({
   const model = selection.model ?? "default"
   const variant = selection.modelVariant
   const active = conversations.find((c) => c.id === activeConversationID)
+  const [localActivePopover, setLocalActivePopover] = useState<HeaderPopoverID | null>(null)
+  const currentPopover = activePopover === undefined ? localActivePopover : activePopover
+  const setCurrentPopover = onActivePopoverChange ?? setLocalActivePopover
+  const setPopoverOpen = (id: HeaderPopoverID, open: boolean) => {
+    setCurrentPopover((current) => open ? id : current === id ? null : current)
+  }
 
   const showStatus = !connected || Boolean(error) || Boolean(continuationPending)
   const statusLabel: string | undefined = error
@@ -75,11 +89,17 @@ export function StatusBar({
         agent={agent}
         model={model}
         variant={variant}
+        open={currentPopover === "selector"}
+        onOpenChange={(open) => setPopoverOpen("selector", open)}
         onSelectAgent={onSelectAgent}
         onSelectModel={onSelectModel}
         onSelectVariant={onSelectVariant}
       />
-      <AgentsMenu status={agentsStatus} />
+      <AgentsMenu
+        status={agentsStatus}
+        open={currentPopover === "agents"}
+        onOpenChange={(open) => setPopoverOpen("agents", open)}
+      />
       <button
         type="button"
         className="new-chat-trigger"
@@ -93,6 +113,8 @@ export function StatusBar({
         conversations={conversations}
         activeID={activeConversationID}
         activeTitle={active?.title}
+        open={currentPopover === "history"}
+        onOpenChange={(open) => setPopoverOpen("history", open)}
         onCreate={onCreateConversation}
         onOpen={onOpenConversation}
         onRename={onRenameConversation}
@@ -106,6 +128,8 @@ function ChatHistoryMenu({
   conversations,
   activeID,
   activeTitle,
+  open,
+  onOpenChange,
   onCreate,
   onOpen,
   onRename,
@@ -114,12 +138,16 @@ function ChatHistoryMenu({
   conversations: ConversationSummary[]
   activeID?: string
   activeTitle?: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onCreate: () => void
   onOpen: (id: string) => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
 }) {
-  const { open, toggle, close, ref } = useDismissableMenu()
+  const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
+  const popoverRef = useRef<HTMLDivElement>(null)
+  useHeaderPopoverHeight(open, popoverRef)
   const [renamingID, setRenamingID] = useState<string>()
   const [renamingTitle, setRenamingTitle] = useState("")
   const [confirmDeleteID, setConfirmDeleteID] = useState<string>()
@@ -182,7 +210,7 @@ function ChatHistoryMenu({
         <span className="history-clock" />
       </button>
       {open && (
-        <div className="history-popover">
+        <div className="history-popover" ref={popoverRef}>
           <div className="history-popover-header">
             <div className="history-popover-title">Chat history</div>
             <button
@@ -287,8 +315,18 @@ function ChatHistoryMenu({
  * by color — muted when idle, breathing green while running, attention red
  * for error, amber for waiting.
  */
-function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
-  const { open, toggle, ref } = useDismissableMenu()
+function AgentsMenu({
+  status,
+  open,
+  onOpenChange,
+}: {
+  status?: AgentsStatusInfo
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { toggle, ref } = useDismissableMenu({ open, onOpenChange })
+  const popoverRef = useRef<HTMLDivElement>(null)
+  useHeaderPopoverHeight(open, popoverRef)
 
   const running = (status?.running ?? 0) > 0
   const errorOnly = !running && (status?.error ?? 0) > 0
@@ -320,7 +358,7 @@ function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
         Agents
       </button>
       {open && (
-        <div className="agents-popover" role="menu">
+        <div className="agents-popover" role="menu" ref={popoverRef}>
           <div className="agents-popover-title">Agents in this chat</div>
           {empty && <div className="agents-popover-empty">No agents in this chat</div>}
           {!empty && (
@@ -443,6 +481,8 @@ function SelectorMenu({
   agent,
   model,
   variant,
+  open,
+  onOpenChange,
   onSelectAgent,
   onSelectModel,
   onSelectVariant,
@@ -450,11 +490,15 @@ function SelectorMenu({
   agent: string
   model: string
   variant?: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onSelectAgent: () => void
   onSelectModel: () => void
   onSelectVariant: () => void
 }) {
-  const { open, toggle, close, ref } = useDismissableMenu()
+  const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
+  const popoverRef = useRef<HTMLDivElement>(null)
+  useHeaderPopoverHeight(open, popoverRef)
 
   const prettyModel = formatModel(model)
   const prettyAgent = formatAgent(agent)
@@ -484,7 +528,7 @@ function SelectorMenu({
         <span className="selector-secondary">{prettyAgent}</span>
       </button>
       {open && (
-        <div className="selector-popover" role="menu">
+        <div className="selector-popover" role="menu" ref={popoverRef}>
           <button
             type="button"
             className="selector-row"

@@ -30,6 +30,8 @@ export function MessageView({
   busy,
   onReviewFile,
   onEditMessage,
+  onBeginEdit,
+  onEndEdit,
   onRetry,
   searchFiles,
   attachFile,
@@ -40,6 +42,8 @@ export function MessageView({
   busy?: boolean
   onReviewFile?: (path: string) => void
   onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[]) => void
+  onBeginEdit?: (id: string) => void
+  onEndEdit?: (id: string) => void
   onRetry?: (assistantID: string) => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
@@ -50,6 +54,8 @@ export function MessageView({
         message={message}
         busy={busy}
         onEditMessage={onEditMessage}
+        onBeginEdit={onBeginEdit}
+        onEndEdit={onEndEdit}
         searchFiles={searchFiles}
         attachFile={attachFile}
       />
@@ -120,12 +126,16 @@ function UserMessageView({
   message,
   busy,
   onEditMessage,
+  onBeginEdit,
+  onEndEdit,
   searchFiles,
   attachFile,
 }: {
   message: Message
   busy?: boolean
   onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[]) => void
+  onBeginEdit?: (id: string) => void
+  onEndEdit?: (id: string) => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
 }) {
@@ -146,6 +156,7 @@ function UserMessageView({
     if (editPhase !== "editing") return
     setEditPhase("view")
     setEditPlaceholderHeight(null)
+    onEndEdit?.(message.id)
   }
 
   // Click-outside cancels the edit. We listen on the document so any click
@@ -159,7 +170,7 @@ function UserMessageView({
     }
     document.addEventListener("pointerdown", onPointerDown)
     return () => document.removeEventListener("pointerdown", onPointerDown)
-  }, [editPhase])
+  }, [editPhase, message.id, onEndEdit])
 
   // Re-derive attachment labels (same algorithm PromptBox originally used) and
   // wrap each attachment block into the Attachment shape, including a synthetic
@@ -212,6 +223,7 @@ function UserMessageView({
     if (!editable) return
     if (editPhase === "editing") return
     if (typeof window !== "undefined" && window.getSelection?.()?.toString()) return
+    onBeginEdit?.(message.id)
     setEditPlaceholderHeight(bubbleRef.current?.getBoundingClientRect().height ?? null)
     setEditPhase("editing")
   }

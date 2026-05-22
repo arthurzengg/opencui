@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, cleanup } from "@testing-library/react"
+import { fireEvent, render, screen, cleanup } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { StatusBar } from "../../webview/src/components/StatusBar"
+import { useState } from "react"
+import { StatusBar, type HeaderPopoverID } from "../../webview/src/components/StatusBar"
+import { MessageView } from "../../webview/src/components/MessageView"
+import type { Message } from "../../webview/src/hooks/useChatState"
 
 beforeEach(() => {
   cleanup()
@@ -299,6 +302,65 @@ describe("AgentsMenu (StatusBar inline popover)", () => {
     render(<StatusBar {...baseProps} />)
     await user.click(screen.getByText("Agents"))
     expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+  })
+
+  it("waits until click to dismiss so outside targets can handle their own click first", async () => {
+    const user = userEvent.setup()
+    render(<StatusBar {...baseProps} />)
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+    fireEvent.pointerDown(document.body)
+    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+    fireEvent.click(document.body)
+    expect(screen.queryByText("No agents in this chat")).not.toBeInTheDocument()
+  })
+
+  it("switches directly between header popovers", async () => {
+    const user = userEvent.setup()
+    const conversations = [{ id: "c1", title: "First chat", updatedAt: Date.now() }]
+    render(<StatusBar {...baseProps} conversations={conversations} />)
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    expect(screen.queryByText("No agents in this chat")).not.toBeInTheDocument()
+    expect(screen.getByText("Chat history")).toBeInTheDocument()
+  })
+
+  it("closes the popover and enters edit mode when the pushed user bubble is clicked", async () => {
+    const user = userEvent.setup()
+    const message = {
+      id: "u1",
+      role: "user",
+      backendID: "backend-u1",
+      blocks: [{ type: "text", text: "Explain this file by using subagent" }],
+    } as Message
+    function Harness() {
+      const [activePopover, setActivePopover] = useState<HeaderPopoverID | null>(null)
+      return (
+        <>
+          <StatusBar
+            {...baseProps}
+            activePopover={activePopover}
+            onActivePopoverChange={setActivePopover}
+          />
+          <MessageView
+            message={message}
+            processOpen={false}
+            processOnly={false}
+            onEditMessage={vi.fn()}
+            onBeginEdit={() => setActivePopover(null)}
+          />
+        </>
+      )
+    }
+    render(<Harness />)
+    await user.click(screen.getByText("Agents"))
+    expect(screen.getByText("No agents in this chat")).toBeInTheDocument()
+
+    await user.click(screen.getByText("Explain this file by using subagent"))
+
+    expect(screen.queryByText("No agents in this chat")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Save & regenerate" })).toBeInTheDocument()
   })
 
   it("renders 'Agents' when a task is running in this chat", () => {

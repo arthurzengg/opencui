@@ -9,3 +9,15 @@ import { vi } from "vitest"
   getState: vi.fn(),
   setState: vi.fn(),
 })
+
+// jsdom doesn't ship a ResizeObserver implementation. `useHeaderPopoverHeight`
+// (and any future hook that observes layout) constructs one on mount; tests
+// only need the constructor and disconnect/observe to exist as no-ops, since
+// they don't exercise the resize-driven side effect.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+;(globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver =
+  ResizeObserverStub
