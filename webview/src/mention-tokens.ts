@@ -45,11 +45,21 @@ export function extractMentions(text: string, known: Set<string>): string[] {
   const out: string[] = []
   for (const path of known) {
     const token = "@" + path
-    const idx = text.indexOf(token)
-    if (idx < 0) continue
-    const after = text[idx + token.length] ?? ""
-    if (after && !/\s/.test(after)) continue
-    out.push(path)
+    // Loop past prefix collisions: when `path` is a prefix of another known
+    // path (`src/foo.ts` vs `src/foo.tsx`), the first occurrence inside the
+    // longer chip fails the trailing-boundary check — but a later occurrence
+    // may still be valid.
+    let from = 0
+    while (true) {
+      const idx = text.indexOf(token, from)
+      if (idx < 0) break
+      const after = text[idx + token.length] ?? ""
+      if (!after || /\s/.test(after)) {
+        out.push(path)
+        break
+      }
+      from = idx + token.length
+    }
   }
   return out
 }
