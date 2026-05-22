@@ -104,6 +104,9 @@ export default function App() {
 
   const busy = state.busy || state.messages.some((m) => m.pending)
   const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
+  const agentActivityMessageID = (state.agentsStatus?.total ?? 0) > 0
+    ? activeProcessID ?? state.messages.findLast((m) => m.role === "assistant")?.id
+    : undefined
 
   useEffect(() => {
     if (editingMessageID) setActiveHeaderPopover(null)
@@ -135,7 +138,6 @@ export default function App() {
         selection={state.selection}
         conversations={state.conversations}
         activeConversationID={state.conversationID}
-        agentsStatus={state.agentsStatus}
         activePopover={activeHeaderPopover}
         onActivePopoverChange={setActiveHeaderPopover}
         onSelectAgent={selectAgent}
@@ -225,6 +227,7 @@ export default function App() {
                 onReviewFile={openReviewFile}
                 onEditMessage={editMessage}
                 onRetry={handleRetry}
+                agentActivity={m.id === agentActivityMessageID ? state.agentsStatus : undefined}
               />
             ))}
           </div>

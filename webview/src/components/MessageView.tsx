@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
-import type { Attachment, FileSearchHit } from "../protocol"
+import type { AgentsStatusInfo, Attachment, FileSearchHit } from "../protocol"
 import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
@@ -8,6 +8,7 @@ import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace, toolHeadline } from "./ToolCard"
 import { ICON_SIZE } from "../design-tokens"
+import { AgentActivity } from "./AgentActivity"
 
 /**
  * Discriminated edit lifecycle for user-message bubbles.
@@ -33,6 +34,7 @@ export function MessageView({
   onBeginEdit,
   onEndEdit,
   onRetry,
+  agentActivity,
   searchFiles,
   attachFile,
 }: {
@@ -45,6 +47,7 @@ export function MessageView({
   onBeginEdit?: (id: string) => void
   onEndEdit?: (id: string) => void
   onRetry?: (assistantID: string) => void
+  agentActivity?: AgentsStatusInfo
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
 }) {
@@ -65,6 +68,7 @@ export function MessageView({
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
       {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
+      <AgentActivity status={agentActivity} />
       {message.pending && message.blocks.length === 0 && (
         <div className="thinking-dots" role="status" aria-label="Thinking">thinking</div>
       )}

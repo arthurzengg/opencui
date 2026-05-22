@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
-import type { AgentsStatusInfo, AgentsTaskInfo, ConversationSummary, Selection } from "../protocol"
+import type { ConversationSummary, Selection } from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
 import { useHeaderPopoverHeight } from "../hooks/useHeaderPopoverHeight"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
 
-export type HeaderPopoverID = "selector" | "agents" | "history"
+export type HeaderPopoverID = "selector" | "history"
 type HeaderPopoverSetter = Dispatch<SetStateAction<HeaderPopoverID | null>>
 
 type Props = {
@@ -14,7 +14,6 @@ type Props = {
   selection: Selection
   conversations: ConversationSummary[]
   activeConversationID?: string
-  agentsStatus?: AgentsStatusInfo
   activePopover?: HeaderPopoverID | null
   onActivePopoverChange?: HeaderPopoverSetter
   onSelectAgent: () => void
@@ -33,7 +32,6 @@ export function StatusBar({
   selection,
   conversations,
   activeConversationID,
-  agentsStatus,
   activePopover,
   onActivePopoverChange,
   onSelectAgent,
@@ -94,11 +92,6 @@ export function StatusBar({
         onSelectAgent={onSelectAgent}
         onSelectModel={onSelectModel}
         onSelectVariant={onSelectVariant}
-      />
-      <AgentsMenu
-        status={agentsStatus}
-        open={currentPopover === "agents"}
-        onOpenChange={(open) => setPopoverOpen("agents", open)}
       />
       <button
         type="button"
@@ -302,152 +295,6 @@ function ChatHistoryMenu({
       )}
     </div>
   )
-}
-
-/**
- * Always-visible `Agents` menu in the chat header, sitting between the
- * Model/Agent selector and the new-chat button. The host scopes the snapshot
- * to the active conversation, so `tasks` only contains work for THIS chat.
- * Clicking the pill toggles an inline popover (matching the SelectorMenu
- * pattern) that lists tasks grouped by Main / Subagents.
- *
- * The pill text never changes (always literally `Agents`); state is signalled
- * by color — muted when idle, breathing green while running, attention red
- * for error, amber for waiting.
- */
-function AgentsMenu({
-  status,
-  open,
-  onOpenChange,
-}: {
-  status?: AgentsStatusInfo
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
-  const { toggle, ref } = useDismissableMenu({ open, onOpenChange })
-  const popoverRef = useRef<HTMLDivElement>(null)
-  useHeaderPopoverHeight(open, popoverRef)
-
-  const running = (status?.running ?? 0) > 0
-  const errorOnly = !running && (status?.error ?? 0) > 0
-  const waitingOnly = !running && !errorOnly && (status?.waiting ?? 0) > 0
-  const idle = !running && !errorOnly && !waitingOnly
-  const className =
-    "agents-pill" +
-    (open ? " is-open" : "") +
-    (running ? " is-running" : "") +
-    (errorOnly ? " is-error" : "") +
-    (waitingOnly ? " is-waiting" : "") +
-    (idle ? " is-idle" : "")
-  const tasks = status?.tasks ?? []
-  const main = tasks.filter((t) => t.kind === "main")
-  const sub = tasks.filter((t) => t.kind === "subagent")
-  const empty = tasks.length === 0
-
-  return (
-    <div className="agents-menu" ref={ref}>
-      <button
-        type="button"
-        className={className}
-        onClick={toggle}
-        title={buildAgentsTitle(status)}
-        aria-label="Open agents for this chat"
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        Agents
-      </button>
-      {open && (
-        <div className="agents-popover" role="menu" ref={popoverRef}>
-          <div className="agents-popover-title">Agents in this chat</div>
-          {empty && <div className="agents-popover-empty">No agents in this chat</div>}
-          {!empty && (
-            <div className="agents-popover-scroll">
-              {main.length > 0 && (
-                <>
-                  <div className="agents-popover-section">Main</div>
-                  {main.map((task) => (
-                    <AgentsRow key={task.id} task={task} />
-                  ))}
-                </>
-              )}
-              {sub.length > 0 && (
-                <>
-                  <div className="agents-popover-section">Subagents</div>
-                  {sub.map((task) => (
-                    <AgentsRow key={task.id} task={task} />
-                  ))}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function AgentsRow({ task }: { task: AgentsTaskInfo }) {
-  const isLive = task.status === "running" || task.status === "waiting"
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!isLive) return
-    const handle = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(handle)
-  }, [isLive])
-  // Live rows tick `now` for a moving stopwatch. Terminal rows freeze
-  // the elapsed at the store's `updatedAt` so a completed subagent
-  // shows its true total runtime, not "minutes since the popover
-  // happened to render".
-  const elapsedMs = isLive ? now - task.startedAt : task.updatedAt - task.startedAt
-  const elapsed = formatElapsed(elapsedMs)
-  const statusText = task.status === "error" && task.error
-    ? `error · ${task.error}`
-    : task.status
-  // Build the per-subagent "agent · model" sublabel from the metadata
-  // omo writes on dispatch (`update.metadata` → AgentTask). Either piece
-  // can be missing — opencode's built-in task tool doesn't publish a
-  // model — so we render whatever subset is present.
-  const subagentLabel = task.subagent ? formatAgent(task.subagent) : undefined
-  const modelLabel = task.model ? formatModel(`${task.model.providerID}/${task.model.modelID}`) : undefined
-  const categoryLabel = task.category && task.category !== task.subagent ? task.category : undefined
-  const detailParts = [
-    categoryLabel ? `category: ${categoryLabel}` : undefined,
-    subagentLabel,
-    modelLabel,
-  ].filter((part): part is string => Boolean(part))
-  const detail = detailParts.length > 0 ? detailParts.join(" · ") : undefined
-  const tooltip = [task.title, statusText, elapsed, detail].filter(Boolean).join(" · ")
-  return (
-    <div className={`agents-row agents-row-${task.status}`} title={tooltip}>
-      <span className="agents-row-title">{task.title}</span>
-      <span className="agents-row-meta">{statusText} · {elapsed}</span>
-      {detail && <span className="agents-row-detail">{detail}</span>}
-    </div>
-  )
-}
-
-export function buildAgentsTitle(status?: AgentsStatusInfo): string {
-  if (!status || status.total === 0) {
-    return "No agents in this chat\nClick to view"
-  }
-  const lines: string[] = []
-  if (status.running > 0)
-    lines.push(`${status.running} agent${status.running === 1 ? "" : "s"} running`)
-  if (status.waiting > 0) lines.push(`${status.waiting} waiting for input`)
-  if (status.error > 0) lines.push(`${status.error} with errors`)
-  lines.push("Click to view")
-  return lines.join("\n")
-}
-
-export function formatElapsed(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000))
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  const remMin = minutes - hours * 60
-  return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`
 }
 
 export function formatUpdated(updatedAt: number) {

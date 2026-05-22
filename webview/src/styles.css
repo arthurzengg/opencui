@@ -178,25 +178,15 @@ button {
   white-space: nowrap;
 }
 
-/* ===== AgentsMenu =====
-   Always-visible text-only pill that surfaces live main-agent + subagent
-   activity. Sits between the model/agent selector and the new-chat (+)
-   button on the right side of the chat header. While at least one task is
-   running, the text breathes via a 1.6s opacity + green color animation.
-   Waiting / error states use a steady amber / red foreground without
-   animation. Clicking opens an inline popover scoped to the current chat
-   (`.agents-popover`). */
-.agents-menu {
-  /* Intentionally NOT position: relative — `.agents-popover` anchors to
-     the parent `.statusbar` (which IS position: relative) so its right
-     edge lands at the panel's right edge, not the pill's right edge.
-     The pill sits in the middle of the bar with new-chat + history
-     buttons to its right; anchoring to the pill would push the popover
-     leftward off the panel on narrow side views. Matches the same
-     fall-through pattern used by .selector-menu and .history-menu. */
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
+/* ===== AgentActivity =====
+   Message-flow activity surface for live main-agent + subagent work. It
+   renders inside the active assistant message, next to the Process panel,
+   so it reads as "work for this response" instead of another header setting. */
+.agent-activity {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  margin: -4px 0 10px;
 }
 .agents-pill {
   flex: 0 0 auto;
@@ -221,6 +211,29 @@ button {
   white-space: nowrap;
   transition: background-color 0.12s ease;
 }
+.agent-activity-pill {
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-foreground);
+  font-size: 11px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+}
+.agent-activity-name {
+  font-weight: 700;
+}
+.agent-activity-summary {
+  font-weight: 500;
+  opacity: 0.7;
+}
+.agent-activity-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-status-default);
+}
 .agents-pill:hover,
 .agents-pill.is-open {
   background: var(--hover-bg-pill);
@@ -233,11 +246,20 @@ button {
   color: #7ee787;
   animation: agents-breathe 1.6s ease-in-out infinite;
 }
+.agents-pill.is-running .agent-activity-dot {
+  background: #7ee787;
+}
 .agents-pill.is-error {
   color: var(--vscode-errorForeground, #f85149);
 }
+.agents-pill.is-error .agent-activity-dot {
+  background: var(--vscode-errorForeground, #f85149);
+}
 .agents-pill.is-waiting {
   color: var(--vscode-notificationsWarningIcon-foreground, #d29922);
+}
+.agents-pill.is-waiting .agent-activity-dot {
+  background: var(--vscode-notificationsWarningIcon-foreground, #d29922);
 }
 @keyframes agents-breathe {
   0%, 100% { opacity: 1; color: #7ee787; }
@@ -249,16 +271,9 @@ button {
 
 .agents-popover {
   position: absolute;
-  /* Shared layout vocabulary with `.selector-popover` and
-     `.history-popover`: same `top` gap below the statusbar, same
-     `right` anchor to the panel edge, same width-clamp formula,
-     same design tokens (`--z-popover`, `--radius`, the sidebar
-     background fallback) and the same drop shadow — so toggling
-     between the three header popovers feels uniform instead of
-     each one drifting toward its own polish. The 300px cap leaves
-     chat content visible behind the popover even on narrow side
-     panels; row content still fits comfortably with ellipsis on
-     overflow. */
+  /* Same surface vocabulary as the header popovers, but anchored to the
+     inline activity pill so it opens beside the Process panel rather than
+     from the status bar. */
   top: calc(100% + 2px);
   right: 10px;
   width: min(300px, calc(100vw - 20px));
@@ -279,6 +294,13 @@ button {
   flex-direction: column;
   max-height: min(420px, calc(100vh - 80px));
   overflow: hidden;
+}
+.agent-activity-popover {
+  top: calc(100% + 4px);
+  left: 0;
+  right: auto;
+  width: min(320px, calc(100vw - 36px));
+  max-height: min(360px, calc(100vh - 140px));
 }
 .agents-popover-scroll {
   overflow-y: auto;
