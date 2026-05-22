@@ -6,7 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-05-20
+## [0.9.1] - 2026-05-21
+
+### Changed
+- Agents popover normalized to share its layout vocabulary with the other two header popovers (Model/Agent selector, Chat history). Same `top` gap below the statusbar (`calc(100% + 2px)`, was `+ 6px`), same design tokens (`var(--z-popover)` instead of raw `50`, `var(--radius)` instead of `4px`, `--vscode-sideBar-background` fallback instead of `--vscode-editorWidget-background`), and the same `0 8px 24px / .32` drop shadow. Toggling between the three popovers now feels like one family.
+- Agents popover default width capped at 300px (was 360px) so chat content stays visible behind it on narrow side panels. Row content still fits comfortably with ellipsis on overflow. The `min(…, calc(100vw - 20px))` clamp still kicks in on narrower panels.
+- All three header popovers (`SelectorMenu`, `AgentsMenu`, `ChatHistoryMenu`) share dismiss boilerplate via a new `useDismissableMenu` hook (`webview/src/hooks/useDismissableMenu.ts`). One source for the open state, the outer ref, the outside-click + Escape listeners. Action handlers use the semantic `close()` helper instead of `setOpen(false)`.
+
+
 
 ### Added
 - Subagent file edits flow into the Review card. The host now extends `ChildSessionEvent` (`src/chat/stream.ts`) with `tool` and `patch` variants and listens for `session.created` events whose `parentID` matches the current session — so opencode's built-in `task` tool (which doesn't reliably publish `metadata.sessionId` on the parent's tool call) is covered alongside the omo / `call_omo_agent` flow that already worked. `ChatView.appendSubagentBlock` resolves which parent assistant bubble owns the child session via `AgentTaskStore.getByChildSession(...).messageID` (with a fallback to the most-recent assistant message), then appends the child's tool/patch block to that bubble with a `ReviewChangeActor` of `{ kind: "subagent", sessionID, subagent }`. The Review card now lists subagent-only files just like main-agent ones; aggregation is deterministic across both sides. Subagent attribution lives on the row's `title` tooltip ("Modified by: <slug>") rather than as a visible inline label. Closes #150.
