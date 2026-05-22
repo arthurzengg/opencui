@@ -205,6 +205,15 @@ describe("extractMentions", () => {
   it("returns [] when known set empty", () => {
     expect(extractMentions("anything @here", new Set())).toEqual([])
   })
+
+  it("finds a path whose first occurrence is inside a longer prefix-collision chip", () => {
+    // `src/foo.ts` is a prefix of `src/foo.tsx`. indexOf finds the `.ts` first
+    // inside the longer chip; the trailing `x` fails the whitespace check. The
+    // implementation must keep scanning past that hit to find the real one.
+    const known = new Set(["src/foo.tsx", "src/foo.ts"])
+    const out = extractMentions("@src/foo.tsx and @src/foo.ts", known)
+    expect(out.sort()).toEqual(["src/foo.ts", "src/foo.tsx"])
+  })
 })
 
 describe("PromptBox @file autocomplete", () => {
