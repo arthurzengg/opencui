@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-05-21
+
+### Fixed
+- Header popovers (Model/Agent, Agents, Chat history) no longer paint over the sticky user-message bubble. Each popover now publishes its measured height to `--header-popover-height` while open (new hook `webview/src/hooks/useHeaderPopoverHeight.ts`, observed via `ResizeObserver`), and the sticky user bubble (`.msg.role-user`) reads that variable in its `top` so the two stack instead of overlapping. The variable clears on close so the bubble snaps back to `top: 0` without flicker.
+
+### Changed
+- Header popovers dismiss on `click` instead of `pointerdown`. Dismissing on pointerdown removed the bubble's CSS-var offset before the browser delivered the bubble's `click`, so a click on the pushed-down bubble landed on whatever was previously underneath it. Routing through `click` lets the bubble see its own activation first, which makes the "click the pushed bubble to close the popover and enter edit mode" gesture work.
+- `useDismissableMenu` now supports controlled open state via optional `open` / `onOpenChange` props. `StatusBar` hoists the active-popover identity (`"selector" | "agents" | "history" | null`) up to `App.tsx`, which (a) keeps the three popovers mutually exclusive without each one having to know about the others and (b) lets `MessageView` close whichever popover is open when the user clicks the pushed user bubble to enter edit mode (via new `onBeginEdit` / `onEndEdit` callbacks plumbed App → MessageView).
+
+### Added
+- 5 new tests in `test/webview/statusbar.test.tsx` covering the dismissal-timing change (pointerdown leaves the popover open; click closes it), direct popover-to-popover switching, and the click-pushed-bubble → close-popover → enter-edit gesture end-to-end. Total 774 passing (was 769).
+- `ResizeObserver` stub in `test/webview/setup.ts` — jsdom doesn't ship one, and the new hook constructs one on mount.
+
+Closes #166.
+
 ## [0.9.1] - 2026-05-21
 
 ### Changed

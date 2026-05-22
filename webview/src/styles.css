@@ -921,8 +921,14 @@ button {
   /* Sticks to the top of the messages container as the chat scrolls. While the
      AI streams its answer, the user's question stays visible above. When the
      user scrolls into a different turn, the next user message takes over the
-     pinned slot — Claude.ai / ChatGPT-style "section header" pattern. */
-  top: 0;
+     pinned slot — Claude.ai / ChatGPT-style "section header" pattern.
+
+     The `top` value is normally 0 but lifts to the open header popover's
+     height while one of the statusbar popovers (Model/Agent, Agents,
+     History) is open — published by `useHeaderPopoverHeight` in
+     `StatusBar.tsx` as `--header-popover-height`. Without this, the
+     popover (z-index 20) would paint over the sticky bubble (z-index 2). */
+  top: var(--header-popover-height, 0px);
   z-index: var(--z-bubble-sticky);
   padding: var(--bubble-padding);
   /* Solid opaque background so scrolling content underneath never bleeds

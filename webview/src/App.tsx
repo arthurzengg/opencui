@@ -4,7 +4,7 @@ import type { Message } from "./hooks/useChatState"
 import type { Attachment } from "./protocol"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
-import { StatusBar } from "./components/StatusBar"
+import { StatusBar, type HeaderPopoverID } from "./components/StatusBar"
 import { PermissionDialog } from "./components/PermissionDialog"
 import { QuestionDialog } from "./components/QuestionDialog"
 import { ReviewPanel } from "./components/ReviewPanel"
@@ -40,6 +40,8 @@ export default function App() {
   // re-engage stick mode on every text delta).
   const programmaticScroll = useRef(false)
   const lastScrollTop = useRef(0)
+  const [activeHeaderPopover, setActiveHeaderPopover] = useState<HeaderPopoverID | null>(null)
+  const [editingMessageID, setEditingMessageID] = useState<string | null>(null)
   // Distance-from-bottom threshold for *re-engaging* stick mode once the
   // user has manually disengaged it. Smaller than the old 80 px because we
   // now use scroll direction, not just position.
@@ -104,6 +106,10 @@ export default function App() {
   const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
 
   useEffect(() => {
+    if (editingMessageID) setActiveHeaderPopover(null)
+  }, [editingMessageID])
+
+  useEffect(() => {
     if (!stickToBottom.current) return
     scrollToBottom()
   }, [state.messages])
@@ -130,6 +136,8 @@ export default function App() {
         conversations={state.conversations}
         activeConversationID={state.conversationID}
         agentsStatus={state.agentsStatus}
+        activePopover={activeHeaderPopover}
+        onActivePopoverChange={setActiveHeaderPopover}
         onSelectAgent={selectAgent}
         onSelectModel={selectModel}
         onSelectVariant={selectVariant}
@@ -196,6 +204,13 @@ export default function App() {
                 busy={busy}
                 onReviewFile={openReviewFile}
                 onEditMessage={editMessage}
+                onBeginEdit={(id) => {
+                  setActiveHeaderPopover(null)
+                  setEditingMessageID(id)
+                }}
+                onEndEdit={(id) => {
+                  setEditingMessageID((current) => current === id ? null : current)
+                }}
                 searchFiles={searchFiles}
                 attachFile={attachFile}
               />
