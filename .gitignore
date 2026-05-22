@@ -22,6 +22,10 @@ npm-debug.log*
 # Contributor-private assistant instructions (Claude Code).
 CLAUDE.md
 
+# Local tool state (run-continuation caches, not source).
+.omo/
+.sisyphus/
+
 # Secrets — never accidentally commit a .env
 .env
 .env.*
