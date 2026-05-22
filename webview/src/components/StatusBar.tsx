@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import type { AgentsStatusInfo, AgentsTaskInfo, ConversationSummary, Selection } from "../protocol"
+import { useDismissableMenu } from "../hooks/useDismissableMenu"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
 
 type Props = {
@@ -118,29 +119,11 @@ function ChatHistoryMenu({
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
 }) {
-  const [open, setOpen] = useState(false)
+  const { open, toggle, close, ref } = useDismissableMenu()
   const [renamingID, setRenamingID] = useState<string>()
   const [renamingTitle, setRenamingTitle] = useState("")
   const [confirmDeleteID, setConfirmDeleteID] = useState<string>()
   const [query, setQuery] = useState("")
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (event: PointerEvent) => {
-      if (ref.current?.contains(event.target as Node)) return
-      setOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false)
-    }
-    window.addEventListener("pointerdown", onPointerDown)
-    window.addEventListener("keydown", onKeyDown)
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown)
-      window.removeEventListener("keydown", onKeyDown)
-    }
-  }, [open])
 
   useEffect(() => {
     if (!open) {
@@ -192,7 +175,7 @@ function ChatHistoryMenu({
     <div className="history-menu" ref={ref}>
       <button
         className={`history-trigger ${open ? "is-open" : ""}`}
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         aria-label="Chat history"
         title={activeTitle ? `Chat history: ${activeTitle}` : "Chat history"}
       >
@@ -206,7 +189,7 @@ function ChatHistoryMenu({
               type="button"
               className="history-new"
               onClick={() => {
-                setOpen(false)
+                close()
                 onCreate()
               }}
             >
@@ -263,7 +246,7 @@ function ChatHistoryMenu({
                       <button
                         className="history-open"
                         onClick={() => {
-                          setOpen(false)
+                          close()
                           onOpen(conversation.id)
                         }}
                         title={conversation.title}
@@ -305,25 +288,7 @@ function ChatHistoryMenu({
  * for error, amber for waiting.
  */
 function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (event: PointerEvent) => {
-      if (ref.current?.contains(event.target as Node)) return
-      setOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false)
-    }
-    window.addEventListener("pointerdown", onPointerDown)
-    window.addEventListener("keydown", onKeyDown)
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown)
-      window.removeEventListener("keydown", onKeyDown)
-    }
-  }, [open])
+  const { open, toggle, ref } = useDismissableMenu()
 
   const running = (status?.running ?? 0) > 0
   const errorOnly = !running && (status?.error ?? 0) > 0
@@ -346,7 +311,7 @@ function AgentsMenu({ status }: { status?: AgentsStatusInfo }) {
       <button
         type="button"
         className={className}
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggle}
         title={buildAgentsTitle(status)}
         aria-label="Open agents for this chat"
         aria-haspopup="menu"
@@ -489,25 +454,7 @@ function SelectorMenu({
   onSelectModel: () => void
   onSelectVariant: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (event: PointerEvent) => {
-      if (ref.current?.contains(event.target as Node)) return
-      setOpen(false)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false)
-    }
-    window.addEventListener("pointerdown", onPointerDown)
-    window.addEventListener("keydown", onKeyDown)
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown)
-      window.removeEventListener("keydown", onKeyDown)
-    }
-  }, [open])
+  const { open, toggle, close, ref } = useDismissableMenu()
 
   const prettyModel = formatModel(model)
   const prettyAgent = formatAgent(agent)
@@ -518,7 +465,7 @@ function SelectorMenu({
     <div className="selector-menu" ref={ref}>
       <button
         className={`selector-trigger ${open ? "is-open" : ""}`}
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         title={triggerTitle}
         aria-label="Change agent, model, and effort"
         aria-expanded={open}
@@ -544,7 +491,7 @@ function SelectorMenu({
             role="menuitem"
             onClick={() => {
               onSelectModel()
-              setOpen(false)
+              close()
             }}
           >
             <span className="selector-row-label">Model</span>
@@ -557,7 +504,7 @@ function SelectorMenu({
             role="menuitem"
             onClick={() => {
               onSelectVariant()
-              setOpen(false)
+              close()
             }}
             title="Change effort / thinking budget for the current model"
           >
@@ -571,7 +518,7 @@ function SelectorMenu({
             role="menuitem"
             onClick={() => {
               onSelectAgent()
-              setOpen(false)
+              close()
             }}
           >
             <span className="selector-row-label">Agent</span>

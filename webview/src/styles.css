@@ -178,7 +178,13 @@ button {
    animation. Clicking opens an inline popover scoped to the current chat
    (`.agents-popover`). */
 .agents-menu {
-  position: relative;
+  /* Intentionally NOT position: relative — `.agents-popover` anchors to
+     the parent `.statusbar` (which IS position: relative) so its right
+     edge lands at the panel's right edge, not the pill's right edge.
+     The pill sits in the middle of the bar with new-chat + history
+     buttons to its right; anchoring to the pill would push the popover
+     leftward off the panel on narrow side views. Matches the same
+     fall-through pattern used by .selector-menu and .history-menu. */
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -234,22 +240,26 @@ button {
 
 .agents-popover {
   position: absolute;
-  top: calc(100% + 6px);
-  /* Anchor the popover's right edge to the pill so it grows leftward.
-     With the pill sitting next to the new-chat (+) button on the right
-     side of the header, a left-anchored popover (min-width 260px) would
-     overflow the sidebar's right edge — especially in narrow side
-     panels. Growing leftward keeps the popover inside the panel. */
-  right: -4px;
-  min-width: 260px;
-  max-width: 360px;
-  background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background));
+  /* Shared layout vocabulary with `.selector-popover` and
+     `.history-popover`: same `top` gap below the statusbar, same
+     `right` anchor to the panel edge, same width-clamp formula,
+     same design tokens (`--z-popover`, `--radius`, the sidebar
+     background fallback) and the same drop shadow — so toggling
+     between the three header popovers feels uniform instead of
+     each one drifting toward its own polish. The 300px cap leaves
+     chat content visible behind the popover even on narrow side
+     panels; row content still fits comfortably with ellipsis on
+     overflow. */
+  top: calc(100% + 2px);
+  right: 10px;
+  width: min(300px, calc(100vw - 20px));
+  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
   color: var(--vscode-foreground);
   border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
-  border-radius: 4px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
   padding: 8px 0;
-  z-index: 50;
+  z-index: var(--z-popover);
   font-size: 12px;
   /* Cap how tall the popover can grow before scrolling — without this a
      long-running Hephaestus session can produce 20+ historical
