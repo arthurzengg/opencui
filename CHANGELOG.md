@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-05-22
+
+### Changed
+- Status-bar hover backgrounds consolidated behind three semantic tokens in `:root` (`webview/src/styles.css`): `--hover-bg-pill` (for the selector trigger, Agents pill, and the two icon buttons), `--hover-bg-icon` (toolbar-style hover used by `.history-action` inside the chat-history popover and by the Review panel's bulk/file action buttons), and `--hover-bg-row` (list-row hover used by `.selector-row`, `.history-item`, and other menu rows). Tweaking how a category feels — "soften icon hovers", "make pill hovers more saturated" — is now a one-line change instead of touching 5+ selectors. `.history-new` keeps its green-tinted hover intentionally.
+- All four bar-level controls (`.selector-trigger`, `.agents-pill`, `.new-chat-trigger`, `.history-trigger`) now share `--hover-bg-pill` so the bar reads as one family on hover. Previously the two icon buttons used `--vscode-toolbar-hoverBackground` while the two pills used `--vscode-button-secondaryHoverBackground`, which in some themes rendered as visibly different colors. Each component still keeps its natural shape — circles for icon-only buttons, rounded rects for text content.
+
+### Fixed
+- `+` (`.new-chat-trigger`) hover background is now a perfect circle even on narrow panels. The button is a direct child of `.statusbar` (unlike `.history-trigger`, which is protected by its `.history-menu` wrapper's `flex: 0 0 auto`), so on narrow widths it compressed below 22px wide while keeping height 22px — turning the `border-radius: 50%` into an ellipse. Added `flex: 0 0 auto` directly on the shared `.history-trigger, .new-chat-trigger` rule so the 22×22 square holds regardless of available space.
+
+Closes #168.
+
 ## [0.9.2] - 2026-05-21
 
 ### Fixed
