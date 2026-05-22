@@ -169,7 +169,11 @@ export class ChatView implements vscode.WebviewViewProvider {
     private indexManager: IndexManager,
     private taskStore?: AgentTaskStore,
   ) {
-    migrateConversationsToWorkspace(context)
+    // Memento.update writes to the in-memory cache synchronously and only the
+    // disk flush is async, so the very-next `workspaceState.get` below still
+    // sees the migrated data. We `.catch` here so a disk-flush rejection is
+    // logged (and the migration-done flag stays unset, retrying next launch).
+    void migrateConversationsToWorkspace(context).catch((e) => log("migrateConversations failed", e))
     this.conversations = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
     this.activeConversationID = context.workspaceState.get<string>(ACTIVE_CONVERSATION_KEY) ?? ""
     if (!this.conversations.length) this.addConversation("New conversation")

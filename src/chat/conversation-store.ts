@@ -19,16 +19,21 @@ export type SavedConversation = ConversationSummary & {
  *
  * Existing global storage keys are cleared after the first successful migration
  * so a different workspace doesn't see the same conversations duplicated.
+ *
+ * Writes are awaited sequentially: if any of the data writes reject (e.g. the
+ * workspace storage layer is unavailable), the "migration done" flag is NOT
+ * set, so the next activation retries the migration instead of silently
+ * declaring it complete with no data persisted.
  */
-export function migrateConversationsToWorkspace(context: vscode.ExtensionContext) {
+export async function migrateConversationsToWorkspace(context: vscode.ExtensionContext) {
   if (context.workspaceState.get<boolean>(MIGRATED_TO_WORKSPACE_KEY, false)) return
   const legacy = context.globalState.get<SavedConversation[]>(CONVERSATIONS_KEY)
   if (legacy && legacy.length) {
-    void context.workspaceState.update(CONVERSATIONS_KEY, legacy)
+    await context.workspaceState.update(CONVERSATIONS_KEY, legacy)
     const legacyActive = context.globalState.get<string>(ACTIVE_CONVERSATION_KEY)
-    if (legacyActive) void context.workspaceState.update(ACTIVE_CONVERSATION_KEY, legacyActive)
-    void context.globalState.update(CONVERSATIONS_KEY, undefined)
-    void context.globalState.update(ACTIVE_CONVERSATION_KEY, undefined)
+    if (legacyActive) await context.workspaceState.update(ACTIVE_CONVERSATION_KEY, legacyActive)
+    await context.globalState.update(CONVERSATIONS_KEY, undefined)
+    await context.globalState.update(ACTIVE_CONVERSATION_KEY, undefined)
   }
-  void context.workspaceState.update(MIGRATED_TO_WORKSPACE_KEY, true)
+  await context.workspaceState.update(MIGRATED_TO_WORKSPACE_KEY, true)
 }
