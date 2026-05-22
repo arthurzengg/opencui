@@ -43,6 +43,15 @@
   --color-border-focus: var(--vscode-foreground); /* intentional: text colour, not focusBorder blue */
   --color-accent:       var(--vscode-focusBorder);
 
+  /* === Hover backgrounds ===
+     Three distinct surfaces share a hover treatment across the webview.
+     Tweaking how a category feels (e.g. "soften icon hovers") is a one-line
+     change here. The `.history-new` button intentionally opts out — its
+     green tint is part of its meaning, not a generic hover. */
+  --hover-bg-pill: var(--vscode-button-secondaryHoverBackground);
+  --hover-bg-icon: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  --hover-bg-row:  var(--vscode-list-hoverBackground);
+
   /* === Fixed UI colors (theme-independent) ===
      Status dots and the recurring scrollbar-thumb grey used in multiple
      scrollers. */
@@ -214,7 +223,7 @@ button {
 }
 .agents-pill:hover,
 .agents-pill.is-open {
-  background: var(--vscode-button-secondaryHoverBackground);
+  background: var(--hover-bg-pill);
 }
 .agents-pill.is-idle {
   color: var(--vscode-foreground);
@@ -361,7 +370,7 @@ button {
 }
 .selector-trigger:hover,
 .selector-trigger.is-open {
-  background: var(--vscode-button-secondaryHoverBackground);
+  background: var(--hover-bg-pill);
 }
 .selector-prefix {
   /* "MODEL" / "AGENT" labels are hidden globally so the trigger stays
@@ -431,7 +440,7 @@ button {
   text-align: left;
 }
 .selector-row:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: var(--hover-bg-row);
 }
 .selector-row-label {
   color: var(--vscode-descriptionForeground);
@@ -468,6 +477,11 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* `flex: 0 0 auto` keeps the 22x22 square even when the bar runs out of
+     room — without it, the new-chat button shrinks below 22px wide (no
+     `.history-menu`-style wrapper to protect it) and the 50% radius draws
+     an ellipse instead of a circle. */
+  flex: 0 0 auto;
   width: 22px;
   height: 22px;
   padding: 0;
@@ -481,7 +495,7 @@ button {
 .history-trigger:hover,
 .history-trigger.is-open,
 .new-chat-trigger:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--hover-bg-pill);
 }
 .new-chat-icon {
   position: relative;
@@ -650,7 +664,7 @@ button {
   border-radius: 4px;
 }
 .history-item:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: var(--hover-bg-row);
 }
 .history-item.is-active {
   background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
@@ -714,7 +728,7 @@ button {
   outline: 1px solid var(--vscode-focusBorder);
 }
 .history-action:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--hover-bg-icon);
   color: var(--vscode-foreground);
 }
 .history-action.danger {
