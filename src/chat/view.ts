@@ -240,6 +240,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.resetContinuationState()
     this.subscription?.abort()
     this.subscription = undefined
+    this.aborting = false
     this.sessionID = undefined
     this.currentMainTaskID = undefined
     this.messageMap.clear()
@@ -277,6 +278,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.resetContinuationState()
     this.subscription?.abort()
     this.subscription = undefined
+    this.aborting = false
     this.currentMainTaskID = undefined
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
@@ -333,6 +335,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.resetContinuationState()
     this.subscription?.abort()
     this.subscription = undefined
+    this.aborting = false
     this.currentMainTaskID = undefined
     this.messageMap.clear()
     this.activePermissions.clear(); this.activeQuestions.clear()
