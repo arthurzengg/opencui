@@ -373,6 +373,8 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.resetContinuationState()
       this.subscription?.abort()
       this.subscription = undefined
+      this.aborting = false
+      this.currentMainTaskID = undefined
       this.messageMap.clear()
       this.activePermissions.clear(); this.activeQuestions.clear()
       this.activeConversationID = this.conversationSummaries()[0]!.id
