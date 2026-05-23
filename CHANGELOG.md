@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-05-22
+
+### Changed
+- Live agent activity moved out of the chat status bar and into the assistant message that's actually running the work. New `webview/src/components/AgentActivity.tsx` renders a compact `Agents · N running` pill inline with the active response, with an anchored popover listing Main + Subagents (running breathes green, error red, waiting amber). `StatusBar` drops the `AgentsMenu` block, the `agents` popover ID, and the `agentsStatus` prop — `App.tsx` now resolves the right host message (`agentActivityMessageID` prefers the still-pending assistant turn, falls back to the most recent assistant message) and passes the snapshot to that single `MessageView`. At rest the surface is fully invisible (`total === 0` renders nothing), so the status bar stays for chat-wide settings and per-turn activity stays next to the response.
+
+### Fixed
+- Tooling-state directories `.omo/` and `.sisyphus/` no longer appear as untracked in `git status`. Added both to `.gitignore` so an accidental `git add -A` can't sweep them into a commit. No tracked files removed.
+
+Closes #170, #172.
+
 ## [0.9.3] - 2026-05-22
 
 ### Changed
