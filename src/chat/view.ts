@@ -20,7 +20,6 @@ import type {
   Attachment,
   ChatBlock,
   ChatMessage,
-  ConversationSummary,
   Inbound,
   Outbound,
   ToolUpdate as WireToolUpdate,
@@ -29,12 +28,11 @@ import type {
   ReviewChangeActor,
   ReviewHunkState,
 } from "../protocol"
-import {
-  ACTIVE_CONVERSATION_KEY,
-  CONVERSATIONS_KEY,
-  type SavedConversation,
-  migrateConversationsToWorkspace,
-} from "./conversation-store"
+import { migrateConversationsToWorkspace } from "./conversation-store"
+import { ConversationManager } from "./conversation-manager"
+import { ContinuationState } from "./continuation-state"
+import { SubagentDispatch } from "./subagent-dispatch"
+export { summarizePrompt } from "./subagent-dispatch"
 import { relativeToCwd, samePath } from "./paths"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { reviewChanges } from "./review-changes"
@@ -49,7 +47,6 @@ import {
   ATTENTION_STATUSES,
   classifyTerminal,
   isAttentionStatus,
-  mainTaskID,
   type AgentTask,
   type AttentionStatus,
 } from "../agents/task-store"
@@ -103,42 +100,14 @@ export class ChatView implements vscode.WebviewViewProvider {
   private lastToast?: { key: string; at: number }
   private static readonly TOAST_DEDUP_MS = 3000
   /**
-   * Timestamp of the most recent *toast-style* signal that a continuation is
-   * imminent (see `isContinuationToast`). Used as a defensive fallback gate
-   * — if a plugin emits a continuation toast but never produces a
-   * recognizable subagent dispatch tool, we still defer `sessionIdle` for
-   * a bounded window. The PRIMARY gate is structural (live subagent tasks
-   * in the store, tracked by `SubagentTracker`).
+   * "This turn isn't done yet" defer for opencode/omo continuations.
+   * Owns its own timer + signal gating; see {@link ContinuationState}
+   * for the two-source defer logic.
    */
-  private lastContinuationSignalAt = 0
-  private pendingIdleTimer?: ReturnType<typeof setTimeout>
-  /**
-   * True between `continuationPending: true` and either the deferred
-   * `sessionIdle` firing, or a new `sessionBusy` / `assistantStart` /
-   * abort cancelling the defer.
-   */
-  private idleDeferActive = false
-  private static readonly CONTINUATION_SIGNAL_TTL_MS = 30_000
-  /**
-   * Max wait for a *toast-only* continuation (no active subagent tasks
-   * in the store) to materialize before declaring idle. Long enough to
-   * absorb the lag between a parent's idle and an omo plugin injecting
-   * its continuation toast. The structural variant (live subagent
-   * tasks) has no fixed cap — it waits for the child sessions
-   * themselves to terminate.
-   */
-  private static readonly CONTINUATION_DEFER_MS = 120_000
-  /**
-   * After the last running subagent task settles while we were deferring,
-   * wait this long for a continuation toast / new turn to arrive before
-   * clearing busy. Most omo / opencode wakeups fire within a couple of
-   * seconds.
-   */
-  private static readonly CONTINUATION_GRACE_MS = 10_000
+  private continuationState: ContinuationState
   /** opencode messageID → webview-side id used in UI */
   private messageMap = new Map<string, string>()
-  private conversations: SavedConversation[]
-  private activeConversationID: string
+  private manager: ConversationManager
   private messages: ChatMessage[] = []
   /** Webview ID of the user message currently awaiting a backend ID from the stream. */
   private pendingUserBackendID?: string
@@ -152,13 +121,11 @@ export class ChatView implements vscode.WebviewViewProvider {
   private aborting = false
   private taskStoreUnsub?: vscode.Disposable
   /**
-   * Full task-store ID of the main task for the turn currently in flight.
-   * Minted at `recordMainTaskStart` and used by `recordMainTaskFinish` so a
-   * follow-up turn in the same session doesn't try to mutate the previous
-   * turn's terminal main row. Cleared by `markSessionIdle`/`cancelSessionTasks`
-   * paths in `onSessionIdle`.
+   * Owns the per-turn main-task lifecycle in the AgentTaskStore and
+   * bridges SSE tool events into the SubagentTracker. See
+   * {@link SubagentDispatch}.
    */
-  private currentMainTaskID?: string
+  private subagentDispatch: SubagentDispatch
   /**
    * Single per-conversation subagent state machine. Reset on
    * `createConversation` / `selectConversation` / `dispose`. Constructed
@@ -181,23 +148,29 @@ export class ChatView implements vscode.WebviewViewProvider {
     // sees the migrated data. We `.catch` here so a disk-flush rejection is
     // logged (and the migration-done flag stays unset, retrying next launch).
     void migrateConversationsToWorkspace(context).catch((e) => log("migrateConversations failed", e))
-    this.conversations = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
-    this.activeConversationID = context.workspaceState.get<string>(ACTIVE_CONVERSATION_KEY) ?? ""
-    if (!this.conversations.length) this.addConversation("New conversation")
-    if (!this.conversations.some((c) => c.id === this.activeConversationID)) {
-      this.activeConversationID = this.conversations[0]!.id
-    }
-    this.restoreActiveState()
-    void this.persistConversations()
+    this.manager = new ConversationManager(context)
+    this.subagentDispatch = new SubagentDispatch({
+      taskStore: this.taskStore,
+      getSessionID: () => this.sessionID,
+      getActiveConversationID: () => this.manager.getActiveID(),
+      collapseToGraceIfSettled: () => this.continuationState.collapseToGraceIfSettled(),
+    })
+    this.continuationState = new ContinuationState({
+      post: (msg) => this.post(msg),
+      activeSubagentCount: () => this.subagentDispatch.activeSubagentCount(),
+    })
+    this.applyActiveSnapshot()
+    void this.manager.persist()
     if (this.taskStore) {
       this.taskStoreUnsub = this.taskStore.onDidChange((tasks) => this.postAgentsStatus(tasks))
     }
   }
 
   private postAgentsStatus(tasks: AgentTask[]) {
-    const status = summarizeAgentTasks(tasks, this.activeConversationID)
+    const activeID = this.manager.getActiveID()
+    const status = summarizeAgentTasks(tasks, activeID)
     log(
-      `[agents-status] post snapshot conv=${this.activeConversationID} total=${status.total} (running=${status.running} waiting=${status.waiting} error=${status.error}) ids=[${status.tasks.map((t) => `${t.kind}:${t.id}`).join(", ")}]`,
+      `[agents-status] post snapshot conv=${activeID} total=${status.total} (running=${status.running} waiting=${status.waiting} error=${status.error}) ids=[${status.tasks.map((t) => `${t.kind}:${t.id}`).join(", ")}]`,
     )
     this.post({ type: "agentsStatus", status })
   }
@@ -250,30 +223,24 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   async createConversation() {
-    this.resetContinuationState()
-    this.subscription?.abort()
-    this.subscription = undefined
-    this.aborting = false
-    this.sessionID = undefined
-    this.currentMainTaskID = undefined
-    this.messageMap.clear()
-    this.activePermissions.clear(); this.activeQuestions.clear()
-    const conversation = this.addConversation("New conversation")
-    this.activeConversationID = conversation.id
+    this.resetSessionState()
+    const conversation = this.manager.add("New conversation")
+    this.manager.setActiveID(conversation.id)
     this.messages = []
     this.reviewHunks = {}
-    await this.persistConversations()
+    await this.manager.persist()
     this.sendConversationState()
     if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
   }
 
   async pickConversation() {
+    const activeID = this.manager.getActiveID()
     const picked = await vscode.window.showQuickPick(
       [
         { label: "$(plus) New conversation", description: "Start a saved conversation", create: true },
-        ...this.conversationSummaries().map((c) => ({
+        ...this.manager.summaries().map((c) => ({
           label: c.title,
-          description: c.id === this.activeConversationID ? "current" : new Date(c.updatedAt).toLocaleString(),
+          description: c.id === activeID ? "current" : new Date(c.updatedAt).toLocaleString(),
           id: c.id,
         })),
       ],
@@ -288,11 +255,10 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private dispose() {
-    this.resetContinuationState()
+    this.resetSessionTracking()
     this.subscription?.abort()
     this.subscription = undefined
     this.aborting = false
-    this.currentMainTaskID = undefined
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
   }
@@ -305,144 +271,103 @@ export class ChatView implements vscode.WebviewViewProvider {
   private sendConversationState() {
     this.post({
       type: "conversations",
-      conversations: this.conversationSummaries(),
-      activeID: this.activeConversationID,
+      conversations: this.manager.summaries(),
+      activeID: this.manager.getActiveID(),
     })
     this.post({
       type: "restore",
-      conversationID: this.activeConversationID,
+      conversationID: this.manager.getActiveID(),
       messages: this.messages,
       reviewHunks: this.reviewHunks,
     })
   }
 
-  private addConversation(title: string): SavedConversation {
-    const now = Date.now()
-    const conversation: SavedConversation = {
-      id: `conv_${now}_${Math.random().toString(36).slice(2)}`,
-      title,
-      createdAt: now,
-      updatedAt: now,
-      messages: [],
-      reviewHunks: {},
-    }
-    this.conversations = [conversation, ...this.conversations]
-    return conversation
+  private postConversationsList() {
+    this.post({
+      type: "conversations",
+      conversations: this.manager.summaries(),
+      activeID: this.manager.getActiveID(),
+    })
   }
 
-  private conversationSummaries(): ConversationSummary[] {
-    return this.conversations
-      .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
+  /**
+   * Hydrate live ChatView fields from the manager's persisted snapshot
+   * of the active conversation.
+   */
+  private applyActiveSnapshot() {
+    const snapshot = this.manager.loadActiveSnapshot()
+    this.sessionID = snapshot.sessionID
+    this.messages = snapshot.messages
+    this.reviewHunks = snapshot.reviewHunks
   }
 
-  private restoreActiveState() {
-    const conversation = this.activeConversation()
-    this.sessionID = conversation.sessionID
-    this.messages = conversation.messages.map((m) => ({ ...m, pending: false }))
-    this.reviewHunks = conversation.reviewHunks ?? {}
-  }
-
-  private async selectConversation(id: string) {
-    if (id === this.activeConversationID) return
-    this.resetContinuationState()
+  /**
+   * Tear down the live session state — used by createConversation /
+   * selectConversation / deleteConversation when switching off the
+   * current conversation. The manager's data stays intact; this only
+   * resets the subscription + in-flight per-turn state.
+   */
+  private resetSessionState() {
+    this.resetSessionTracking()
     this.subscription?.abort()
     this.subscription = undefined
     this.aborting = false
-    this.currentMainTaskID = undefined
+    this.sessionID = undefined
     this.messageMap.clear()
-    this.activePermissions.clear(); this.activeQuestions.clear()
-    this.activeConversationID = id
-    this.restoreActiveState()
-    await this.persistConversations()
+    this.activePermissions.clear()
+    this.activeQuestions.clear()
+  }
+
+  private async selectConversation(id: string) {
+    if (id === this.manager.getActiveID()) return
+    this.resetSessionState()
+    this.manager.setActiveID(id)
+    this.applyActiveSnapshot()
+    await this.manager.persist()
     this.sendConversationState()
     if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
   }
 
   private async renameConversation(id: string, title: string) {
-    const nextTitle = title.replace(/\s+/g, " ").trim().slice(0, 80)
-    if (!nextTitle) return
-    this.conversations = this.conversations.map((conversation) =>
-      conversation.id === id ? { ...conversation, title: nextTitle, updatedAt: Date.now() } : conversation,
-    )
-    await this.persistConversations()
-    this.post({
-      type: "conversations",
-      conversations: this.conversationSummaries(),
-      activeID: this.activeConversationID,
-    })
+    this.manager.rename(id, title)
+    await this.manager.persist()
+    this.postConversationsList()
   }
 
   private async deleteConversation(id: string) {
-    this.conversations = this.conversations.filter((conversation) => conversation.id !== id)
-    if (!this.conversations.length) this.addConversation("New conversation")
+    const wasActive = this.manager.getActiveID() === id
+    this.manager.remove(id)
     // Drop the deleted conversation's task history so the popover
     // doesn't carry forward rows the user can no longer trace back to
     // anything. Best-effort; failures here aren't fatal.
     if (this.taskStore) {
       void this.taskStore.clearForConversation(id)
     }
-    if (this.activeConversationID === id) {
-      this.resetContinuationState()
-      this.subscription?.abort()
-      this.subscription = undefined
-      this.aborting = false
-      this.currentMainTaskID = undefined
-      this.messageMap.clear()
-      this.activePermissions.clear(); this.activeQuestions.clear()
-      this.activeConversationID = this.conversationSummaries()[0]!.id
-      this.restoreActiveState()
-      await this.persistConversations()
+    if (wasActive) {
+      this.resetSessionState()
+      this.manager.setActiveID(this.manager.summaries()[0]!.id)
+      this.applyActiveSnapshot()
+      await this.manager.persist()
       this.sendConversationState()
       return
     }
-    await this.persistConversations()
-    this.post({
-      type: "conversations",
-      conversations: this.conversationSummaries(),
-      activeID: this.activeConversationID,
-    })
-  }
-
-  private activeConversation(): SavedConversation {
-    const conversation = this.conversations.find((c) => c.id === this.activeConversationID)
-    if (conversation) return conversation
-    const created = this.addConversation("New conversation")
-    this.activeConversationID = created.id
-    return created
-  }
-
-  private updateActive(fn: (conversation: SavedConversation) => SavedConversation) {
-    const next = fn(this.activeConversation())
-    this.conversations = [next, ...this.conversations.filter((c) => c.id !== next.id)]
-    void this.persistConversations()
-  }
-
-  private async persistConversations() {
-    await this.context.workspaceState.update(CONVERSATIONS_KEY, this.conversations)
-    await this.context.workspaceState.update(ACTIVE_CONVERSATION_KEY, this.activeConversationID)
+    await this.manager.persist()
+    this.postConversationsList()
   }
 
   private saveActive() {
-    this.updateActive((conversation) => ({
-      ...conversation,
+    this.manager.saveActiveSnapshot({
       sessionID: this.sessionID,
       messages: this.messages,
       reviewHunks: this.reviewHunks,
-      updatedAt: Date.now(),
-    }))
+    })
+    void this.manager.persist()
   }
 
   private updateTitleFromPrompt(text: string) {
-    const conversation = this.activeConversation()
-    if (conversation.title !== "New conversation" || this.messages.length > 1) return
-    const title = text.replace(/\s+/g, " ").trim().slice(0, 64) || "New conversation"
-    this.updateActive((item) => ({ ...item, title }))
-    this.post({
-      type: "conversations",
-      conversations: this.conversationSummaries(),
-      activeID: this.activeConversationID,
-    })
+    if (this.manager.updateTitleFromPrompt(text, this.messages.length)) {
+      this.postConversationsList()
+    }
   }
 
   private applyLocal(msg: Outbound) {
@@ -793,175 +718,21 @@ export class ChatView implements vscode.WebviewViewProvider {
    * toasts within TOAST_DEDUP_MS are dropped (opencode can fire bursts).
    */
 
-  private markContinuationSignal(source: string) {
-    this.lastContinuationSignalAt = Date.now()
-    log(`[continuation] signal observed (${source})`)
-    // If we're already in a *toast-only* defer (no active subagents) and
-    // its cap timer is running, restart the cap so a fresh signal extends
-    // the wait. With omo, a Background-task-complete toast can arrive
-    // late into a Todo-Continuation wait — we want to honour the newer
-    // signal rather than time out on the older one.
-    if (this.idleDeferActive && this.activeSubagentCount() === 0 && this.pendingIdleTimer) {
-      this.scheduleIdleEmit(ChatView.CONTINUATION_DEFER_MS, "signal-re-arm")
-    }
-  }
-
-  private hasRecentContinuationSignal(): boolean {
-    return Date.now() - this.lastContinuationSignalAt < ChatView.CONTINUATION_SIGNAL_TTL_MS
-  }
-
-  private hasContinuationGate(): boolean {
-    return this.activeSubagentCount() > 0 || this.hasRecentContinuationSignal()
-  }
-
   /**
-   * Bridge from the SSE `onTool` callback to the SubagentTracker. The
-   * tracker is the single source of truth for subagent records — view.ts
-   * only owns the main-task lifecycle. We also keep `lastContinuationSignal`
-   * armed off subagent activity as a second-source defense: if anything
-   * else clears `idleDeferActive`'s timer, the structural store check
-   * below in `onSessionIdle` will re-defer.
-   *
-   * Tracked tools live in `SubagentTracker.isSubagentDispatchTool()` —
-   * see the omo source notes there.
+   * Tear down the continuation state machine + the subagent tracker.
+   * Used at conversation boundaries, dispose, and after a user-initiated
+   * abort settles. Both pieces are session-scoped — they don't survive
+   * a switch.
    */
-  private async forwardToolForSubagentTracking(
-    update: ToolUpdate,
-    messageID: string | undefined,
-  ): Promise<void> {
-    if (!this.subagentTracker) return
-    if (!SubagentTracker.isSubagentDispatchTool(update.tool)) return
-    log(
-      `[agents-status] tool event tool=${update.tool} status=${update.status} callID=${update.callID}`,
-    )
-    await this.subagentTracker.handleToolUpdate(update, messageID)
-    // When a subagent settles while a continuation defer is open,
-    // collapse the defer down to the short post-settle grace window
-    // so the UI doesn't sit at "Continuing…" forever waiting on a
-    // follow-up that never comes.
-    if (this.idleDeferActive && this.activeSubagentCount() === 0) {
-      this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "subagents-settled")
-    }
-  }
-
-  private activeSubagentCount(): number {
-    if (!this.taskStore || !this.sessionID) return 0
-    return this.taskStore.activeSubagentsForSession(this.sessionID).length
-  }
-
-  private async recordMainTaskStart(text: string): Promise<void> {
-    if (!this.taskStore) {
-      log("[agents-status] recordMainTaskStart skipped — no taskStore wired")
-      return
-    }
-    if (!this.sessionID) {
-      log("[agents-status] recordMainTaskStart skipped — no sessionID yet")
-      return
-    }
-    const conversationID = this.activeConversationID
-    const sessionID = this.sessionID
-    const turnID = crypto.randomUUID()
-    const id = mainTaskID(conversationID, sessionID, turnID)
-    const now = Date.now()
-    this.currentMainTaskID = id
-    log(`[agents-status] recordMainTaskStart ${id}`)
-    await this.taskStore.upsert({
-      id,
-      kind: "main",
-      conversationID,
-      sessionID,
-      title: summarizePrompt(text),
-      status: "running",
-      startedAt: now,
-      updatedAt: now,
-    })
-  }
-
-  private async recordMainTaskFinish(status: "completed" | "error" | "cancelled", error?: string): Promise<void> {
-    if (!this.taskStore) return
-    const id = this.currentMainTaskID
-    if (!id) return
-    this.currentMainTaskID = undefined
-    await this.taskStore.update(id, {
-      status,
-      error,
-      updatedAt: Date.now(),
-    })
-  }
-
-  private clearPendingIdle() {
-    if (this.pendingIdleTimer) {
-      clearTimeout(this.pendingIdleTimer)
-      this.pendingIdleTimer = undefined
-    }
-  }
-
-  /**
-   * Cancel any in-flight continuation defer and tell the webview the
-   * pending state is over. Used when a new turn starts (sessionBusy /
-   * assistantStart), when abort takes over, or when we decide to clear
-   * busy ourselves.
-   */
-  private finishContinuationPending() {
-    this.clearPendingIdle()
-    if (this.idleDeferActive) {
-      this.idleDeferActive = false
-      this.post({ type: "continuationPending", pending: false })
-    }
-  }
-
-  /**
-   * Open a continuation defer. While there are any active subagent tasks
-   * for the parent session, no timer runs — we wait for child-session
-   * idle events (routed through the SubagentTracker) to drive the close.
-   * Otherwise (toast-only signal), a cap timer prevents an indefinite
-   * wait if no continuation actually arrives.
-   */
-  private beginContinuationDefer(source: string) {
-    this.clearPendingIdle()
-    if (!this.idleDeferActive) {
-      this.idleDeferActive = true
-      this.post({ type: "continuationPending", pending: true })
-    }
-    log(
-      `[continuation] deferring sessionIdle (${source}, subagents=${this.activeSubagentCount()}, signal=${this.hasRecentContinuationSignal()})`,
-    )
-    if (this.activeSubagentCount() > 0) return
-    this.scheduleIdleEmit(ChatView.CONTINUATION_DEFER_MS, "toast-cap")
-  }
-
-  /**
-   * Schedule the emission of `sessionIdle` after `delay`. Used both for
-   * the post-subagent grace window and the toast-only cap. On fire, if a
-   * subagent has spun up again (or never settled), the timer no-ops —
-   * tracker callbacks will re-schedule when subagents settle.
-   */
-  private scheduleIdleEmit(delay: number, source: string) {
-    this.clearPendingIdle()
-    this.pendingIdleTimer = setTimeout(() => {
-      this.pendingIdleTimer = undefined
-      if (this.activeSubagentCount() > 0) {
-        log(`[continuation] timer (${source}) fired but subagents still active; staying deferred`)
-        return
-      }
-      log(`[continuation] timer (${source}) resolved; emitting sessionIdle`)
-      this.idleDeferActive = false
-      this.post({ type: "continuationPending", pending: false })
-      this.post({ type: "sessionIdle" })
-    }, delay)
-  }
-
-  /** Clear all continuation tracking — used on conversation switch / dispose / abort tail. */
-  private resetContinuationState() {
-    this.clearPendingIdle()
-    this.idleDeferActive = false
-    this.lastContinuationSignalAt = 0
+  private resetSessionTracking() {
+    this.continuationState.reset()
     this.subagentTracker?.reset()
+    this.subagentDispatch.clearMainTaskID()
   }
 
   private surfaceToast(toast: Toast) {
     if (isContinuationToast(toast)) {
-      this.markContinuationSignal(`toast:${toast.title ?? "(no title)"}`)
+      this.continuationState.markSignal(`toast:${toast.title ?? "(no title)"}`)
     }
     // Normalize the message before computing the dedup key so closely-related
     // toasts collapse into one:
@@ -1004,7 +775,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.aborting = true
     this.pendingUserBackendID = undefined
     this.post({ type: "aborted" })
-    void this.recordMainTaskFinish("cancelled")
+    void this.subagentDispatch.recordMainTaskFinish("cancelled")
 
     // Tear down the tracker's local view of the subagent tree first.
     // Two reasons:
@@ -1076,14 +847,15 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       }
       this.sessionID = created.data.id
-      this.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
+      this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
+      void this.manager.persist()
       log("created session", this.sessionID)
       await this.attachSubscription(backend, this.sessionID)
     } else if (!this.subscription) {
       await this.attachSubscription(backend, this.sessionID)
     }
 
-    await this.recordMainTaskStart(text)
+    await this.subagentDispatch.recordMainTaskStart(text)
 
     const sel = this.prefs.get()
     const settings = readContextSettings(vscode.workspace.getConfiguration("opencui"))
@@ -1260,7 +1032,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       onAssistantStart: (mid) => {
         // A new assistant turn means any deferred idle is moot — clear it
         // so the timer doesn't accidentally fire mid-stream and clear busy.
-        this.finishContinuationPending()
+        this.continuationState.finishPending()
         const webviewID = "a_" + mid
         this.messageMap.set(mid, webviewID)
         this.post({ type: "assistantStart", id: webviewID })
@@ -1279,7 +1051,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           // mapping keeps the UI consistent.
           const classified = classifyTerminal(payload.error)
           this.post({ type: "assistantError", id: webviewID, message: payload.error })
-          void this.recordMainTaskFinish(classified.status, classified.error)
+          void this.subagentDispatch.recordMainTaskFinish(classified.status, classified.error)
         }
         this.post({ type: "assistantDone", id: webviewID, usage: payload.usage })
       },
@@ -1300,7 +1072,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         // popover snapshot) reads from it. `forwardToolForSubagentTracking`
         // is responsible for filtering to subagent-dispatch tools and for
         // re-keying the task once metadata surfaces the child sessionID.
-        void this.forwardToolForSubagentTracking(update, mid)
+        void this.subagentDispatch.forwardTool(update, mid)
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         const wire = toWire(update, backend.directory)
         this.post({ type: "tool", id: webviewID, update: wire })
@@ -1349,7 +1121,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       onSessionBusy: () => {
         // A new busy state means continuation (if any) took over — cancel
         // any pending idle so we don't accidentally clear busy later.
-        this.finishContinuationPending()
+        this.continuationState.finishPending()
         this.post({ type: "sessionBusy" })
       },
       onSessionIdle: () => {
@@ -1363,7 +1135,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           // already ran `cancelForSession` proactively; this is the
           // catch-all that covers any dispatch that snuck in between
           // the snapshot there and the session.idle arriving here.
-          this.resetContinuationState()
+          this.resetSessionTracking()
           if (this.sessionID) {
             if (this.subagentTracker) {
               void this.subagentTracker.cancelForSession(this.sessionID)
@@ -1371,19 +1143,19 @@ export class ChatView implements vscode.WebviewViewProvider {
               void this.taskStore.cancelSessionTasks(this.sessionID)
             }
           }
-          this.currentMainTaskID = undefined
+          this.subagentDispatch.clearMainTaskID()
           this.post({ type: "sessionIdle" })
           return
         }
-        if (this.hasContinuationGate()) {
-          this.beginContinuationDefer("sessionIdle")
+        if (this.continuationState.hasGate()) {
+          this.continuationState.beginDefer("sessionIdle")
           return
         }
-        this.finishContinuationPending()
+        this.continuationState.finishPending()
         if (this.sessionID && this.taskStore) {
           void this.taskStore.markSessionIdle(this.sessionID)
         }
-        this.currentMainTaskID = undefined
+        this.subagentDispatch.clearMainTaskID()
         this.post({ type: "sessionIdle" })
       },
       onChildSessionEvent: (event) => {
@@ -1400,9 +1172,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           // After any child terminal event, if we were deferring an
           // idle waiting on subagents and the store is now empty,
           // arm the short grace timer.
-          if (this.idleDeferActive && this.activeSubagentCount() === 0) {
-            this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "child-settled")
-          }
+          this.continuationState.collapseToGraceIfSettled()
         })
       },
       onChildSessionDiscovered: (info) => {
@@ -1419,13 +1189,14 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (this.taskStore) {
       this.subagentTracker = new SubagentTracker({
         store: this.taskStore,
-        getActiveConversationID: () => this.activeConversationID,
+        getActiveConversationID: () => this.manager.getActiveID(),
         getParentSessionID: () => this.sessionID,
         subscription: {
           addChildSession: (id) => subscription.addChildSession(id),
           removeChildSession: (id) => subscription.removeChildSession(id),
         },
       })
+      this.subagentDispatch.setTracker(this.subagentTracker)
       // Reconcile any rows that survived a VS Code reload. Best-effort —
       // failures fall through and stale rows simply linger until the
       // user clears them.
@@ -1751,10 +1522,6 @@ export function taskTitleFromUpdate(update: ToolUpdate): string {
   }
   if (update.title && update.title.trim()) return update.title.trim()
   return "Background agent"
-}
-
-export function summarizePrompt(text: string): string {
-  return text.replace(/\s+/g, " ").trim().slice(0, 64) || "Main agent"
 }
 
 function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | undefined): string[] {
