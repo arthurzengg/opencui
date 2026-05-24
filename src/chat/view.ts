@@ -31,6 +31,8 @@ import type {
 import { migrateConversationsToWorkspace } from "./conversation-store"
 import { ConversationManager } from "./conversation-manager"
 import { ContinuationState } from "./continuation-state"
+import { SubagentDispatch } from "./subagent-dispatch"
+export { summarizePrompt } from "./subagent-dispatch"
 import { relativeToCwd, samePath } from "./paths"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { reviewChanges } from "./review-changes"
@@ -45,7 +47,6 @@ import {
   ATTENTION_STATUSES,
   classifyTerminal,
   isAttentionStatus,
-  mainTaskID,
   type AgentTask,
   type AttentionStatus,
 } from "../agents/task-store"
@@ -120,13 +121,11 @@ export class ChatView implements vscode.WebviewViewProvider {
   private aborting = false
   private taskStoreUnsub?: vscode.Disposable
   /**
-   * Full task-store ID of the main task for the turn currently in flight.
-   * Minted at `recordMainTaskStart` and used by `recordMainTaskFinish` so a
-   * follow-up turn in the same session doesn't try to mutate the previous
-   * turn's terminal main row. Cleared by `markSessionIdle`/`cancelSessionTasks`
-   * paths in `onSessionIdle`.
+   * Owns the per-turn main-task lifecycle in the AgentTaskStore and
+   * bridges SSE tool events into the SubagentTracker. See
+   * {@link SubagentDispatch}.
    */
-  private currentMainTaskID?: string
+  private subagentDispatch: SubagentDispatch
   /**
    * Single per-conversation subagent state machine. Reset on
    * `createConversation` / `selectConversation` / `dispose`. Constructed
@@ -150,9 +149,15 @@ export class ChatView implements vscode.WebviewViewProvider {
     // logged (and the migration-done flag stays unset, retrying next launch).
     void migrateConversationsToWorkspace(context).catch((e) => log("migrateConversations failed", e))
     this.manager = new ConversationManager(context)
+    this.subagentDispatch = new SubagentDispatch({
+      taskStore: this.taskStore,
+      getSessionID: () => this.sessionID,
+      getActiveConversationID: () => this.manager.getActiveID(),
+      collapseToGraceIfSettled: () => this.continuationState.collapseToGraceIfSettled(),
+    })
     this.continuationState = new ContinuationState({
       post: (msg) => this.post(msg),
-      activeSubagentCount: () => this.activeSubagentCount(),
+      activeSubagentCount: () => this.subagentDispatch.activeSubagentCount(),
     })
     this.applyActiveSnapshot()
     void this.manager.persist()
@@ -254,7 +259,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription?.abort()
     this.subscription = undefined
     this.aborting = false
-    this.currentMainTaskID = undefined
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
   }
@@ -309,7 +313,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription = undefined
     this.aborting = false
     this.sessionID = undefined
-    this.currentMainTaskID = undefined
     this.messageMap.clear()
     this.activePermissions.clear()
     this.activeQuestions.clear()
@@ -716,75 +719,6 @@ export class ChatView implements vscode.WebviewViewProvider {
    */
 
   /**
-   * Bridge from the SSE `onTool` callback to the SubagentTracker. The
-   * tracker is the single source of truth for subagent records — view.ts
-   * only owns the main-task lifecycle. When a subagent settles while a
-   * continuation defer is open, collapse the defer to the short
-   * post-settle grace window so the UI doesn't sit at "Continuing…"
-   * forever waiting on a follow-up that never comes.
-   *
-   * Tracked tools live in `SubagentTracker.isSubagentDispatchTool()` —
-   * see the omo source notes there.
-   */
-  private async forwardToolForSubagentTracking(
-    update: ToolUpdate,
-    messageID: string | undefined,
-  ): Promise<void> {
-    if (!this.subagentTracker) return
-    if (!SubagentTracker.isSubagentDispatchTool(update.tool)) return
-    log(
-      `[agents-status] tool event tool=${update.tool} status=${update.status} callID=${update.callID}`,
-    )
-    await this.subagentTracker.handleToolUpdate(update, messageID)
-    this.continuationState.collapseToGraceIfSettled()
-  }
-
-  private activeSubagentCount(): number {
-    if (!this.taskStore || !this.sessionID) return 0
-    return this.taskStore.activeSubagentsForSession(this.sessionID).length
-  }
-
-  private async recordMainTaskStart(text: string): Promise<void> {
-    if (!this.taskStore) {
-      log("[agents-status] recordMainTaskStart skipped — no taskStore wired")
-      return
-    }
-    if (!this.sessionID) {
-      log("[agents-status] recordMainTaskStart skipped — no sessionID yet")
-      return
-    }
-    const conversationID = this.manager.getActiveID()
-    const sessionID = this.sessionID
-    const turnID = crypto.randomUUID()
-    const id = mainTaskID(conversationID, sessionID, turnID)
-    const now = Date.now()
-    this.currentMainTaskID = id
-    log(`[agents-status] recordMainTaskStart ${id}`)
-    await this.taskStore.upsert({
-      id,
-      kind: "main",
-      conversationID,
-      sessionID,
-      title: summarizePrompt(text),
-      status: "running",
-      startedAt: now,
-      updatedAt: now,
-    })
-  }
-
-  private async recordMainTaskFinish(status: "completed" | "error" | "cancelled", error?: string): Promise<void> {
-    if (!this.taskStore) return
-    const id = this.currentMainTaskID
-    if (!id) return
-    this.currentMainTaskID = undefined
-    await this.taskStore.update(id, {
-      status,
-      error,
-      updatedAt: Date.now(),
-    })
-  }
-
-  /**
    * Tear down the continuation state machine + the subagent tracker.
    * Used at conversation boundaries, dispose, and after a user-initiated
    * abort settles. Both pieces are session-scoped — they don't survive
@@ -793,6 +727,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private resetSessionTracking() {
     this.continuationState.reset()
     this.subagentTracker?.reset()
+    this.subagentDispatch.clearMainTaskID()
   }
 
   private surfaceToast(toast: Toast) {
@@ -840,7 +775,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.aborting = true
     this.pendingUserBackendID = undefined
     this.post({ type: "aborted" })
-    void this.recordMainTaskFinish("cancelled")
+    void this.subagentDispatch.recordMainTaskFinish("cancelled")
 
     // Tear down the tracker's local view of the subagent tree first.
     // Two reasons:
@@ -920,7 +855,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       await this.attachSubscription(backend, this.sessionID)
     }
 
-    await this.recordMainTaskStart(text)
+    await this.subagentDispatch.recordMainTaskStart(text)
 
     const sel = this.prefs.get()
     const settings = readContextSettings(vscode.workspace.getConfiguration("opencui"))
@@ -1116,7 +1051,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           // mapping keeps the UI consistent.
           const classified = classifyTerminal(payload.error)
           this.post({ type: "assistantError", id: webviewID, message: payload.error })
-          void this.recordMainTaskFinish(classified.status, classified.error)
+          void this.subagentDispatch.recordMainTaskFinish(classified.status, classified.error)
         }
         this.post({ type: "assistantDone", id: webviewID, usage: payload.usage })
       },
@@ -1137,7 +1072,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         // popover snapshot) reads from it. `forwardToolForSubagentTracking`
         // is responsible for filtering to subagent-dispatch tools and for
         // re-keying the task once metadata surfaces the child sessionID.
-        void this.forwardToolForSubagentTracking(update, mid)
+        void this.subagentDispatch.forwardTool(update, mid)
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         const wire = toWire(update, backend.directory)
         this.post({ type: "tool", id: webviewID, update: wire })
@@ -1208,7 +1143,7 @@ export class ChatView implements vscode.WebviewViewProvider {
               void this.taskStore.cancelSessionTasks(this.sessionID)
             }
           }
-          this.currentMainTaskID = undefined
+          this.subagentDispatch.clearMainTaskID()
           this.post({ type: "sessionIdle" })
           return
         }
@@ -1220,7 +1155,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (this.sessionID && this.taskStore) {
           void this.taskStore.markSessionIdle(this.sessionID)
         }
-        this.currentMainTaskID = undefined
+        this.subagentDispatch.clearMainTaskID()
         this.post({ type: "sessionIdle" })
       },
       onChildSessionEvent: (event) => {
@@ -1261,6 +1196,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           removeChildSession: (id) => subscription.removeChildSession(id),
         },
       })
+      this.subagentDispatch.setTracker(this.subagentTracker)
       // Reconcile any rows that survived a VS Code reload. Best-effort —
       // failures fall through and stale rows simply linger until the
       // user clears them.
@@ -1586,10 +1522,6 @@ export function taskTitleFromUpdate(update: ToolUpdate): string {
   }
   if (update.title && update.title.trim()) return update.title.trim()
   return "Background agent"
-}
-
-export function summarizePrompt(text: string): string {
-  return text.replace(/\s+/g, " ").trim().slice(0, 64) || "Main agent"
 }
 
 function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | undefined): string[] {
