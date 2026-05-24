@@ -174,9 +174,24 @@ export function patchChanges(
       deletions: typeof file.deletions === "number" ? file.deletions : countDiff(file.patch, "-"),
       patch: file.patch,
       oldPath: kind === "moved" ? oldPath : undefined,
+      absolutePath: pickAbsolutePath(file),
       actors: actor ? [actor] : undefined,
     } satisfies ReviewChange]
   })
+}
+
+/**
+ * opencode's apply_patch `files[]` schema is opaque — we read whichever
+ * absolute-path field happens to be present. Used to give the host resolver
+ * an unambiguous candidate when `relativePath` is anchored above the VS Code
+ * workspace.
+ */
+function pickAbsolutePath(file: Record<string, unknown>): string | undefined {
+  for (const key of ["absolutePath", "filename", "path", "fullPath"] as const) {
+    const value = file[key]
+    if (typeof value === "string" && isAbsolutePath(value)) return value
+  }
+  return undefined
 }
 
 export function diffChanges(
@@ -286,6 +301,7 @@ export function aggregateChanges(changes: ReviewChange[]): ReviewChange[] {
       deletions: prev.deletions + change.deletions,
       kind: priorityKind(prev.kind, change.kind),
       oldPath: prev.oldPath ?? change.oldPath,
+      absolutePath: change.absolutePath ?? prev.absolutePath,
       actors: dedupActors([...(prev.actors ?? []), ...(change.actors ?? [])]),
     }
     const copy = acc.slice()

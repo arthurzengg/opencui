@@ -33,6 +33,15 @@ export type ReviewChange = {
    */
   oldPath?: string
   /**
+   * Absolute filesystem path reported by opencode when available
+   * (apply_patch's `files[].absolutePath` / `filename` / `path` if any of
+   * those is absolute). Display continues to use `path`; the host resolver
+   * uses this as a preferred candidate so relative paths anchored ABOVE
+   * the VS Code workspace resolve correctly without relying on the
+   * ancestor-walk heuristic.
+   */
+  absolutePath?: string
+  /**
    * Attribution for the change. Always at least one entry; aggregated
    * changes accumulate one entry per contributing actor. Older clients
    * may not set this — consumers should treat empty as "main".

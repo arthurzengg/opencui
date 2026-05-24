@@ -7,6 +7,7 @@
 import type { ChatMessage, ReviewChange, ToolUpdate as WireToolUpdate } from "../protocol"
 import {
   displayPath,
+  extractChanges,
   patchChanges,
   patchKind,
   patchPath,
@@ -28,6 +29,7 @@ export function toolChanges(update: WireToolUpdate, source: string): ReviewChang
 
 export {
   displayPath,
+  extractChanges,
   patchChanges,
   patchKind,
   patchPath,

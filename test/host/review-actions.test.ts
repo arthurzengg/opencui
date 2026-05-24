@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as vscode from "vscode"
-import { reviewHunk } from "../../src/chat/fs-ops"
+import { reviewHunk, findExistingWorkspaceFile, type ReviewHunkOutcome } from "../../src/chat/fs-ops"
 import { splitReviewDiff } from "../../src/chat/diff"
-import type { ReviewChange } from "../../webview/src/protocol"
+import { reviewKey } from "../../webview/src/review-extract"
+import { reviewAllForPath } from "../../src/chat/review-actions"
+import type { ReviewChange, ReviewHunkState } from "../../webview/src/protocol"
 
 // Treat the in-memory filesystem as the single source of truth for these
 // tests. The vscode mock in test/host/setup.ts stubs `workspace.fs.stat`/
@@ -264,3 +266,283 @@ describe("reviewHunk: moved files", () => {
     expect(outcome.status).toBe("unsupported")
   })
 })
+
+describe("reviewAllForPath: multi-tool turn", () => {
+  // `applyEdit` in the shared mock just returns `true`; for these tests we need
+  // it to actually mutate the on-disk file map so chained undos see the
+  // previous one's effect. We patch it per-block to mirror each
+  // WorkspaceEdit's `.replace(uri, range, text)` calls onto `files`.
+  beforeEach(() => {
+    ;(vscode.workspace.applyEdit as ReturnType<typeof vi.fn>).mockImplementation(
+      async (edit: unknown) => {
+        const ops = (edit as { edits?: Array<{ uri: vscode.Uri; range: vscode.Range; text: string }> }).edits
+        if (!ops) return true
+        for (const op of [...ops].reverse()) {
+          const entry = files.get(op.uri.fsPath)
+          if (!entry) continue
+          const start = offsetFromPosition(entry.content, op.range.start)
+          const end = offsetFromPosition(entry.content, op.range.end)
+          entry.content = entry.content.slice(0, start) + op.text + entry.content.slice(end)
+        }
+        return true
+      },
+    )
+  })
+
+  function buildUpdate(opts: {
+    source: string
+    path: string
+    oldText: string
+    newText: string
+    line: number
+  }): ReviewChange {
+    const patch = [
+      `@@ -${opts.line},1 +${opts.line},1 @@`,
+      `-${opts.oldText}`,
+      `+${opts.newText}`,
+    ].join("\n")
+    return {
+      source: opts.source,
+      path: opts.path,
+      kind: "updated",
+      additions: 1,
+      deletions: 1,
+      patch,
+    }
+  }
+
+  function aggregateLike(records: ReviewChange[]): ReviewChange {
+    // Mirror the production `aggregateChanges` rule: source/patch from the
+    // LAST contributing record, additions/deletions summed, kind taken via
+    // priorityKind. These tests use only `updated` records unless a test
+    // explicitly overrides `kind`, so plain `updated` is the default.
+    const last = records[records.length - 1]!
+    return {
+      ...last,
+      additions: records.reduce((sum, r) => sum + r.additions, 0),
+      deletions: records.reduce((sum, r) => sum + r.deletions, 0),
+    }
+  }
+
+  it("layered edits on the same line: reverse-order undo restores the original", async () => {
+    files.set("/workspace/foo.ts", { content: "alpha\nfinal\ngamma\n" })
+    const recordA = buildUpdate({ source: "callA", path: "foo.ts", oldText: "beta", newText: "rev1", line: 2 })
+    const recordB = buildUpdate({ source: "callB", path: "foo.ts", oldText: "rev1", newText: "final", line: 2 })
+    const aggregated = aggregateLike([recordA, recordB])
+    const result = await reviewAllForPath([recordA, recordB], aggregated, "rejected", { reviewedKeys: {} })
+    expect(result.applied).toBe(2)
+    expect(result.conflicts).toBe(0)
+    expect(files.get("/workspace/foo.ts")?.content).toBe("alpha\nbeta\ngamma\n")
+    expect(result.hunkUpdates.length).toBeGreaterThan(0)
+    for (const update of result.hunkUpdates) {
+      expect(update.state).toBe("rejected")
+    }
+  })
+
+  it("non-overlapping edits in same file: reverse-order undo restores both lines", async () => {
+    files.set("/workspace/foo.ts", { content: "one\ntwo-revA\nthree\nfour\nfive-revB\n" })
+    const recordA = buildUpdate({ source: "callA", path: "foo.ts", oldText: "two", newText: "two-revA", line: 2 })
+    const recordB = buildUpdate({ source: "callB", path: "foo.ts", oldText: "five", newText: "five-revB", line: 5 })
+    const aggregated = aggregateLike([recordA, recordB])
+    const result = await reviewAllForPath([recordA, recordB], aggregated, "rejected", { reviewedKeys: {} })
+    expect(result.applied).toBe(2)
+    expect(result.conflicts).toBe(0)
+    expect(files.get("/workspace/foo.ts")?.content).toBe("one\ntwo\nthree\nfour\nfive\n")
+  })
+
+  it("undo iterates per-tool records in REVERSE order; keep iterates forward", async () => {
+    const seen: Array<{ source: string; action: ReviewHunkState }> = []
+    const runner = vi.fn(async (change: ReviewChange, _hunk, action) => {
+      seen.push({ source: change.source, action })
+      return { status: "applied" } satisfies ReviewHunkOutcome
+    })
+    const recordA = buildUpdate({ source: "callA", path: "foo.ts", oldText: "X", newText: "Y", line: 1 })
+    const recordB = buildUpdate({ source: "callB", path: "foo.ts", oldText: "Y", newText: "Z", line: 1 })
+    const aggregated = aggregateLike([recordA, recordB])
+
+    await reviewAllForPath([recordA, recordB], aggregated, "rejected", { reviewedKeys: {}, runReviewHunk: runner })
+    expect(seen.map((s) => s.source)).toEqual(["callB", "callA"])
+
+    seen.length = 0
+    await reviewAllForPath([recordA, recordB], aggregated, "accepted", { reviewedKeys: {}, runReviewHunk: runner })
+    expect(seen.map((s) => s.source)).toEqual(["callA", "callB"])
+  })
+
+  it("is idempotent: a re-click with all aggregated hunks already marked is a no-op", async () => {
+    const runner = vi.fn(async () => ({ status: "applied" }) satisfies ReviewHunkOutcome)
+    const record = buildUpdate({ source: "callA", path: "foo.ts", oldText: "X", newText: "Y", line: 1 })
+    const aggregated = aggregateLike([record])
+    const reviewedKeys: Record<string, ReviewHunkState> = {}
+    for (const hunk of splitReviewDiff(aggregated.patch).hunks) {
+      reviewedKeys[reviewKey(aggregated, hunk.id)] = "rejected"
+    }
+    const result = await reviewAllForPath([record], aggregated, "rejected", { reviewedKeys, runReviewHunk: runner })
+    expect(result.applied).toBe(0)
+    expect(result.conflicts).toBe(0)
+    expect(result.hunkUpdates).toHaveLength(0)
+    expect(runner).not.toHaveBeenCalled()
+  })
+
+  it("mixed conflict: one record applies, one drift-conflicts; aggregated hunks still marked because applied > 0", async () => {
+    // line 1 has drifted out from under us, line 5 still matches recordB.
+    files.set("/workspace/foo.ts", { content: "drifted\ntwo\nthree\nfour\nfive-revB\n" })
+    const recordA = buildUpdate({ source: "callA", path: "foo.ts", oldText: "one", newText: "one-revA", line: 1 })
+    const recordB = buildUpdate({ source: "callB", path: "foo.ts", oldText: "five", newText: "five-revB", line: 5 })
+    const aggregated = aggregateLike([recordA, recordB])
+    const result = await reviewAllForPath([recordA, recordB], aggregated, "rejected", { reviewedKeys: {} })
+    expect(result.applied).toBe(1)
+    expect(result.conflicts).toBe(1)
+    expect(result.hunkUpdates.length).toBeGreaterThan(0)
+    expect(files.get("/workspace/foo.ts")?.content).toBe("drifted\ntwo\nthree\nfour\nfive\n")
+  })
+
+  it("mixed kind (create + update): reverse undo reverts the edit then deletes the file", async () => {
+    files.set("/workspace/new.ts", { content: "hello-edited\n" })
+    const createRecord: ReviewChange = {
+      source: "callA",
+      path: "new.ts",
+      kind: "created",
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -0,0 +1,1 @@\n+hello",
+    }
+    const editRecord = buildUpdate({ source: "callB", path: "new.ts", oldText: "hello", newText: "hello-edited", line: 1 })
+    const aggregated: ReviewChange = { ...editRecord, kind: "created" }
+    const result = await reviewAllForPath([createRecord, editRecord], aggregated, "rejected", { reviewedKeys: {} })
+    expect(result.applied).toBe(2)
+    expect(result.conflicts).toBe(0)
+    expect(deletes.map((u) => u.fsPath)).toContain("/workspace/new.ts")
+    expect(files.has("/workspace/new.ts")).toBe(false)
+  })
+
+  it("returns zeros when no records match (defensive)", async () => {
+    const aggregated = buildUpdate({ source: "callA", path: "foo.ts", oldText: "X", newText: "Y", line: 1 })
+    const result = await reviewAllForPath([], aggregated, "rejected", { reviewedKeys: {} })
+    expect(result.applied).toBe(0)
+    expect(result.conflicts).toBe(0)
+    expect(result.hunkUpdates).toHaveLength(0)
+  })
+})
+
+describe("findExistingWorkspaceFile: ancestor fallback", () => {
+  const HOME = "/Users/u"
+
+  it("finds a file at an ancestor of root when standard candidates miss", async () => {
+    files.set("/Users/u/Desktop/demo/index.html", { content: "<html></html>" })
+    const result = await findExistingWorkspaceFile("Desktop/demo/index.html", "/Users/u/Desktop/demo", { home: HOME })
+    expect(result.uri?.fsPath).toBe("/Users/u/Desktop/demo/index.html")
+    expect(result.tried).toContain("/Users/u/Desktop/demo/Desktop/demo/index.html")
+    expect(result.tried).toContain("/Users/u/Desktop/demo/index.html")
+  })
+
+  it("stops the ancestor walk at the home directory", async () => {
+    files.set("/Users/other/leaked.txt", { content: "secret" })
+    const result = await findExistingWorkspaceFile("other/leaked.txt", "/Users/u/Desktop/demo", { home: HOME })
+    expect(result.uri).toBeUndefined()
+    expect(result.tried.some((p) => p.startsWith("/Users/other"))).toBe(false)
+  })
+
+  it("skips the ancestor fallback when relPath contains '..' segments", async () => {
+    files.set("/etc/passwd", { content: "root:x:0:0" })
+    const result = await findExistingWorkspaceFile("../../etc/passwd", "/Users/u/Desktop/demo", { home: HOME })
+    expect(result.uri).toBeUndefined()
+    // The ancestor walk should not have appended an /etc/passwd candidate.
+    expect(result.tried.some((p) => p === "/etc/passwd")).toBe(false)
+  })
+
+  it("reports a conflict when neither the standard candidates nor the ancestor walk find the file", async () => {
+    const { change, hunk } = makeChange({
+      path: "Desktop/demo/index.html",
+      kind: "created",
+      patch: "@@ -0,0 +1,1 @@\n+hello",
+    })
+    const outcome = await reviewHunk(change, hunk, "accepted", { silent: true, root: "/Users/u/Desktop/demo" })
+    expect(outcome.status).toBe("conflict")
+  })
+})
+
+describe("findExistingWorkspaceFile: preferAbsolute (apply_patch absolute-path hint)", () => {
+  it("uses the absolute hint when it resolves, bypassing the relative candidates", async () => {
+    files.set("/Users/u/Desktop/demo/index.html", { content: "<html></html>" })
+    const result = await findExistingWorkspaceFile(
+      "Desktop/demo/index.html",
+      "/Users/u/Desktop/demo",
+      { home: "/Users/u", preferAbsolute: "/Users/u/Desktop/demo/index.html" },
+    )
+    expect(result.uri?.fsPath).toBe("/Users/u/Desktop/demo/index.html")
+    // The hint is tried first.
+    expect(result.tried[0]).toBe("/Users/u/Desktop/demo/index.html")
+  })
+
+  it("falls through to the workspace candidates when the absolute hint misses", async () => {
+    files.set("/workspace/foo.ts", { content: "hi" })
+    const result = await findExistingWorkspaceFile("foo.ts", undefined, {
+      preferAbsolute: "/does/not/exist/foo.ts",
+    })
+    expect(result.uri?.fsPath).toBe("/workspace/foo.ts")
+    expect(result.tried).toContain("/does/not/exist/foo.ts")
+    expect(result.tried).toContain("/workspace/foo.ts")
+  })
+
+  it("ignores a non-absolute preferAbsolute value", async () => {
+    files.set("/workspace/foo.ts", { content: "hi" })
+    const result = await findExistingWorkspaceFile("foo.ts", undefined, {
+      preferAbsolute: "relative/foo.ts",
+    })
+    expect(result.uri?.fsPath).toBe("/workspace/foo.ts")
+    expect(result.tried).not.toContain("relative/foo.ts")
+  })
+
+  it("Keep on a created file with absolutePath set succeeds when the absolute file exists", async () => {
+    files.set("/Users/u/somewhere/index.html", { content: "<html></html>" })
+    const change: ReviewChange = {
+      source: "src1",
+      path: "Desktop/demo/index.html",
+      kind: "created",
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -0,0 +1,1 @@\n+<html></html>",
+      absolutePath: "/Users/u/somewhere/index.html",
+    }
+    const hunk = splitReviewDiff(change.patch).hunks[0]!
+    const outcome = await reviewHunk(change, hunk, "accepted", { silent: true, root: "/workspace" })
+    expect(outcome.status).toBe("applied")
+  })
+})
+
+describe("acceptHunk: pure-deletion verification", () => {
+  it("Keep on a pure deletion applies when the removed lines are gone", async () => {
+    files.set("/workspace/foo.ts", { content: "alpha\ngamma\n" })
+    const { change, hunk } = makeChange({
+      path: "foo.ts",
+      patch: "@@ -2,1 +1,0 @@\n-beta",
+    })
+    const outcome = await reviewHunk(change, hunk, "accepted", { silent: true })
+    expect(outcome.status).toBe("applied")
+  })
+
+  it("Keep on a pure deletion conflicts when the removed lines are still present", async () => {
+    files.set("/workspace/foo.ts", { content: "alpha\nbeta\ngamma\n" })
+    const { change, hunk } = makeChange({
+      path: "foo.ts",
+      patch: "@@ -2,1 +1,0 @@\n-beta",
+    })
+    const outcome = await reviewHunk(change, hunk, "accepted", { silent: true })
+    expect(outcome.status).toBe("conflict")
+    if (outcome.status === "conflict") {
+      expect(outcome.reason).toMatch(/removed lines are still present/i)
+    }
+  })
+})
+
+function offsetFromPosition(text: string, pos: { line: number; character: number }): number {
+  let offset = 0
+  let line = 0
+  while (line < pos.line && offset <= text.length) {
+    const idx = text.indexOf("\n", offset)
+    if (idx < 0) return text.length
+    offset = idx + 1
+    line++
+  }
+  return Math.min(offset + pos.character, text.length)
+}

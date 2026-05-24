@@ -1,8 +1,10 @@
 import * as vscode from "vscode"
 import * as path from "path"
+import * as os from "os"
 import type { ReviewChange, ReviewHunkState } from "../protocol"
 import { stripWorkspaceFolderPrefix, normalizePath } from "./paths"
 import { findHunkInFile, findHunkText, type ReviewDiffHunk } from "./diff"
+import { log } from "../output"
 
 const SHELL_LANGS = new Set([
   "bash", "sh", "shell", "shellscript", "zsh", "fish", "powershell", "ps", "ps1", "bat", "cmd",
@@ -59,15 +61,85 @@ export async function workspaceFileUri(relPath: string, root?: string) {
 }
 
 export async function existingWorkspaceFileUri(relPath: string, root?: string): Promise<vscode.Uri | undefined> {
-  for (const { uri } of workspaceFileUriCandidates(relPath, root)) {
+  return (await findExistingWorkspaceFile(relPath, root)).uri
+}
+
+/**
+ * Find a file by trying the workspace candidates first, then by walking
+ * ancestor directories of `root` if the standard candidates miss. The
+ * ancestor walk handles a real case: opencode reports `relativePath`
+ * anchored to a directory ABOVE the VS Code workspace (e.g. a git worktree
+ * root or the user's home), so joining against the workspace alone produces
+ * malformed paths and stat fails even though the file exists. The walk
+ * stops at the user's home directory when `root` is under home, otherwise
+ * at the filesystem root.
+ *
+ * `..` segments in `relPath` skip the ancestor fallback — a model emitting
+ * `../../etc/passwd` should never escape via this code.
+ *
+ * Returns the matched URI plus the list of paths we attempted, for
+ * logging on misses.
+ */
+export async function findExistingWorkspaceFile(
+  relPath: string,
+  root?: string,
+  options: { home?: string; preferAbsolute?: string } = {},
+): Promise<{ uri?: vscode.Uri; tried: string[] }> {
+  const tried: string[] = []
+  // Opencode-reported absolute path (when available, e.g. apply_patch's
+  // `files[].absolutePath`) is the unambiguous resolution — try it first
+  // before falling through to the workspace candidates.
+  if (options.preferAbsolute && path.isAbsolute(options.preferAbsolute)) {
+    const uri = vscode.Uri.file(options.preferAbsolute)
+    tried.push(uri.fsPath)
     try {
       await vscode.workspace.fs.stat(uri)
-      return uri
+      return { uri, tried }
     } catch {
-      // Try the next plausible base.
+      // continue
     }
   }
-  return undefined
+  for (const { uri } of workspaceFileUriCandidates(relPath, root)) {
+    if (tried.includes(uri.fsPath)) continue
+    tried.push(uri.fsPath)
+    try {
+      await vscode.workspace.fs.stat(uri)
+      return { uri, tried }
+    } catch {
+      // continue
+    }
+  }
+  if (!path.isAbsolute(relPath) && !hasParentSegment(relPath) && root) {
+    const home = options.home ?? os.homedir()
+    for (const ancestor of ancestorRoots(root, home)) {
+      const uri = vscode.Uri.file(path.join(ancestor, normalizePath(relPath)))
+      if (tried.includes(uri.fsPath)) continue
+      tried.push(uri.fsPath)
+      try {
+        await vscode.workspace.fs.stat(uri)
+        return { uri, tried }
+      } catch {
+        // continue
+      }
+    }
+  }
+  return { tried }
+}
+
+function hasParentSegment(relPath: string): boolean {
+  return normalizePath(relPath).split("/").some((seg) => seg === "..")
+}
+
+function ancestorRoots(root: string, home: string): string[] {
+  const resolved = path.resolve(root)
+  const result: string[] = []
+  let current = path.dirname(resolved)
+  while (current && current !== path.dirname(current)) {
+    result.push(current)
+    if (current === home) break
+    current = path.dirname(current)
+  }
+  return result
 }
 
 export async function reviewPathExists(relPath: string, root?: string): Promise<boolean> {
@@ -170,28 +242,43 @@ async function acceptHunk(
   // Keep is a verification: confirm the file is in the expected post-change
   // state. We don't mutate anything — opencode already applied the change.
   if (change.kind === "created") {
-    const exists = await reviewPathExists(change.path, root)
-    if (!exists) {
-      return reportConflict(change.path, `${change.path} was created but is no longer present.`, silent)
+    const { uri, tried } = await findExistingWorkspaceFile(change.path, root, { preferAbsolute: change.absolutePath })
+    if (!uri) {
+      return reportConflict(change.path, `${change.path} was created but is no longer present.`, silent, tried)
     }
     return { status: "applied" }
   }
   if (change.kind === "deleted") {
-    const exists = await reviewPathExists(change.path, root)
-    if (exists) {
-      return reportConflict(change.path, `${change.path} was deleted but still exists.`, silent)
+    const { uri, tried } = await findExistingWorkspaceFile(change.path, root, { preferAbsolute: change.absolutePath })
+    if (uri) {
+      return reportConflict(change.path, `${change.path} was deleted but still exists.`, silent, tried)
     }
     return { status: "applied" }
   }
-  const existing = await existingWorkspaceFileUri(change.path, root)
+  const { uri: existing, tried } = await findExistingWorkspaceFile(change.path, root, { preferAbsolute: change.absolutePath })
   if (!existing) {
-    return reportMissing(change.path, `${change.path} is no longer present.`, silent)
+    return reportMissing(change.path, `${change.path} is no longer present.`, silent, tried)
   }
   // For an update / move, the expected newText should be locatable at the
   // hunk's anchor line. If it isn't, the file has drifted — surface that
   // rather than silently marking the hunk accepted.
   const doc = await vscode.workspace.openTextDocument(existing)
-  const located = findHunkInFile(doc.getText(), hunk)
+  const text = doc.getText()
+  // Pure-deletion hunks need a different check: `findHunkInFile` returns a
+  // zero-width match at the anchor for `newText === ""`, which would let
+  // Keep silently succeed even when the deletion was reverted. Verify by
+  // asserting the removed block is no longer anywhere in the file.
+  if (hunk.newText === "" && hunk.oldText !== "") {
+    if (text.includes(hunk.oldText)) {
+      return reportConflict(
+        change.path,
+        `Cannot confirm deletion in ${change.path}: the removed lines are still present.`,
+        silent,
+      )
+    }
+    return { status: "applied" }
+  }
+  const located = findHunkInFile(text, hunk)
   if (!located) {
     return reportConflict(
       change.path,
@@ -232,7 +319,7 @@ async function undoCreate(
   root: string | undefined,
   silent: boolean,
 ): Promise<ReviewHunkOutcome> {
-  const existing = await existingWorkspaceFileUri(change.path, root)
+  const { uri: existing } = await findExistingWorkspaceFile(change.path, root, { preferAbsolute: change.absolutePath })
   if (!existing) {
     // Nothing to undo — file already gone (e.g. user manually removed it).
     return { status: "no-op", reason: `${change.path} is already absent.` }
@@ -264,7 +351,7 @@ async function undoDelete(
   }
   // If the file is back already, leave it alone — surface conflict instead of
   // clobbering whatever's there now.
-  const existing = await existingWorkspaceFileUri(change.path, root)
+  const { uri: existing } = await findExistingWorkspaceFile(change.path, root, { preferAbsolute: change.absolutePath })
   if (existing) {
     return reportConflict(
       change.path,
@@ -299,7 +386,7 @@ async function undoMove(
       silent,
     )
   }
-  const fromUri = await existingWorkspaceFileUri(change.path, root)
+  const { uri: fromUri } = await findExistingWorkspaceFile(change.path, root, { preferAbsolute: change.absolutePath })
   if (!fromUri) {
     return reportMissing(change.path, `${change.path} is no longer present; cannot move back.`, silent)
   }
@@ -335,9 +422,9 @@ async function undoUpdate(
   root: string | undefined,
   silent: boolean,
 ): Promise<ReviewHunkOutcome> {
-  const existing = await existingWorkspaceFileUri(change.path, root)
+  const { uri: existing, tried } = await findExistingWorkspaceFile(change.path, root, { preferAbsolute: change.absolutePath })
   if (!existing) {
-    return reportMissing(change.path, `${change.path} is no longer present.`, silent)
+    return reportMissing(change.path, `${change.path} is no longer present.`, silent, tried)
   }
   const doc = await vscode.workspace.openTextDocument(existing)
   const current = doc.getText()
@@ -364,13 +451,19 @@ async function undoUpdate(
   return { status: "applied" }
 }
 
-function reportConflict(p: string, reason: string, silent: boolean): ReviewHunkOutcome {
+function reportConflict(p: string, reason: string, silent: boolean, tried?: string[]): ReviewHunkOutcome {
   if (!silent) vscode.window.showWarningMessage(`OpenCode Panel: ${reason}`)
+  if (tried && tried.length > 0) {
+    log(`reviewHunk conflict on ${p}: ${reason} (tried: ${tried.join(", ")})`)
+  }
   return { status: "conflict", reason }
 }
 
-function reportMissing(p: string, reason: string, silent: boolean): ReviewHunkOutcome {
+function reportMissing(p: string, reason: string, silent: boolean, tried?: string[]): ReviewHunkOutcome {
   if (!silent) vscode.window.showWarningMessage(`OpenCode Panel: ${reason}`)
+  if (tried && tried.length > 0) {
+    log(`reviewHunk missing on ${p}: ${reason} (tried: ${tried.join(", ")})`)
+  }
   return { status: "missing", reason }
 }
 
