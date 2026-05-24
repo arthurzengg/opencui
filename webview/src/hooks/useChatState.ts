@@ -396,9 +396,6 @@ export function useChatState() {
     newSession() {
       vscode.post({ type: "createConversation" })
     },
-    selectConversation() {
-      vscode.post({ type: "selectConversation" })
-    },
     openConversation(id: string) {
       vscode.post({ type: "openConversation", id })
     },
@@ -416,9 +413,6 @@ export function useChatState() {
     },
     openReviewChange(change: ReviewChange) {
       vscode.post({ type: "openReviewChange", change })
-    },
-    reviewHunk(key: string, path: string, action: ReviewHunkState, oldText: string, newText: string) {
-      vscode.post({ type: "reviewHunk", key, path, action, oldText, newText })
     },
     reviewAllInChange(source: string, path: string, action: ReviewHunkState) {
       vscode.post({ type: "reviewAllInChange", source, path, action })

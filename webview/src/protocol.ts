@@ -383,14 +383,12 @@ export type Inbound =
   | { type: "abort" }
   | { type: "newSession" }
   | { type: "createConversation" }
-  | { type: "selectConversation" }
   | { type: "openConversation"; id: string }
   | { type: "renameConversation"; id: string; title: string }
   | { type: "deleteConversation"; id: string }
   | { type: "apply"; code: string; language?: string }
   | { type: "openFile"; path: string }
   | { type: "openReviewChange"; change: ReviewChange }
-  | { type: "reviewHunk"; key: string; path: string; action: ReviewHunkState; oldText: string; newText: string }
   | { type: "reviewAllInChange"; source: string; path: string; action: ReviewHunkState }
   | { type: "selectAgent" }
   | { type: "selectModel" }
