@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-05-24
+
+### Fixed
+- SSE event routing no longer floods the output channel with `[sse] unhandled type:` lines for routine opencode events the host intentionally doesn't act on. 0.9.5's default branch in `src/chat/stream.ts` `route()` / `routeChildSessionEvent()` was meant to surface *new* SDK event types but was firing for every `sync` (after almost every event), `server.heartbeat` (every ~10s), `session.updated` (every internal state tick), `file.watcher.updated`, `project.updated`, `session.next.{agent,model}.switched`, `session.diff`, and the child-session equivalents (`session.created`, `session.updated`, `message.removed`). Each is now an explicit no-op `case` that silently returns, before the default branch. The default branch continues to log truly unknown event types so a new opencode SDK event still shows up immediately in the output channel.
+
+Closes #184.
+
 ## [0.9.5] - 2026-05-23
 
 ### Changed
