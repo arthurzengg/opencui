@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-05-23
+
+### Changed
+- `classifyTerminal` (`src/agents/task-store.ts`) is now table-driven via a `TERMINAL_CLASSIFIERS` array. The single existing `/^aborted$/i → cancelled` rule preserves behaviour exactly; adding a new terminal classification (timeout, rate-limit, quota-exceeded) is now a one-line append instead of editing the function body.
+- `summarizeAgentTasks` in `src/chat/view.ts` consults the newly-exported `ATTENTION_STATUSES` set via a `isAttentionStatus` type predicate instead of three hardcoded `task.status === "..."` equality checks. The `AgentsStatusInfo` wire shape is unchanged.
+- SSE `route()` and `routeChildSessionEvent()` in `src/chat/stream.ts` gained `default:` branches that emit `[sse] unhandled type: <name>` through the existing `log` helper. New opencode SSE events surface in the output channel instead of silently dropping.
+- `ChatView` shrinks from 1877 to 1583 lines (~16%) via three subsystem extractions:
+  - `src/chat/conversation-manager.ts` (new) — workspace-state CRUD + persistence (11 methods + the `conversations` array + `activeConversationID` ownership). ChatView keeps the orchestration methods (`createConversation`/`selectConversation`/`deleteConversation`) because they coordinate session teardown across multiple subsystems; they now delegate data operations to the manager and centralise the teardown work in a single `resetSessionState()` helper.
+  - `src/chat/continuation-state.ts` (new) — idle-defer state machine (9 methods + 3 timer/flag fields + the `SIGNAL_TTL`/`DEFER_MS`/`GRACE_MS` constants). Takes a `post` callback + an `activeSubagentCount` callback in its constructor; exposes `markSignal` / `hasGate` / `beginDefer` / `finishPending` / `scheduleIdleEmit` / `collapseToGraceIfSettled` / `reset`. Now testable in isolation without spinning up the whole `ChatView`.
+  - `src/chat/subagent-dispatch.ts` (new) — per-turn main-task lifecycle + the SSE tool-event bridge into the `SubagentTracker` (4 methods + `currentMainTaskID` ownership + `summarizePrompt` which moved here from `view.ts` as its only host-side caller; `view.ts` re-exports it for the existing test import).
+
+### Removed
+- The dead "legacy single-hunk review" chain: webview `reviewHunk` action, `{type: "reviewHunk", ...}` inbound protocol variant, host case branch + `findReviewHunkByKey`, and the entire `src/chat/review-render.ts` (`reviewChangeHtml` + helpers — the modern Review Card flow uses `reviewAllInChange` instead). `fallbackHtml` inlined into its only caller in `view.ts`.
+- The dead `selectConversation` webview→host round-trip. `pickConversation` stays live via the registered `opencui.conversation.select` command.
+- Four unused re-exports in `src/chat/review-changes.ts` (`aggregateChanges`, `createPatchChange`, `diffChanges`, `extractChanges`).
+- Seven dead CSS rule blocks in `webview/src/styles.css` (`.user-edit-input`/`-actions`, `.msg-hint`, the `.thinking` parent + `-toggle/-caret/-label/-preview/-body` family, the `.review-diff-line.add/.del` selectors, `.agents-row-completed`, the `.conversation-row/-select/-title/-caret` family).
+- Unused `vsix` npm script and the orphan `scripts/opencode-dev` shell wrapper.
+
+Closes #176, #178, #180.
+
 ## [0.9.4] - 2026-05-22
 
 ### Changed
