@@ -35,7 +35,8 @@ import { SubagentDispatch } from "./subagent-dispatch"
 export { summarizePrompt } from "./subagent-dispatch"
 import { relativeToCwd, samePath } from "./paths"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
-import { reviewChanges } from "./review-changes"
+import { extractChanges, reviewChanges } from "./review-changes"
+import { reviewAllForPath } from "./review-actions"
 import { buildPrompt, readMentions } from "./prompt-builder"
 import { buildManifest } from "../workspace-context/manifest"
 import { collectAutoContext } from "../workspace-context/collector"
@@ -57,7 +58,6 @@ import {
   applyCode,
   openFile,
   openFileDocument,
-  reviewHunk,
   reviewPathExists,
 } from "./fs-ops"
 
@@ -1340,65 +1340,39 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private async handleReviewAllInChange(source: string, requestedPath: string, action: ReviewHunkState) {
-    const all = reviewChanges(this.messages)
-    // Match every change for this path, not just the one matching `source`.
-    // A single physical edit can show up as multiple ReviewChange records
-    // (tool block + patch block of the same hunk produce different sources
-    // and therefore different reviewKeys). If we only mark the source-matched
-    // record's hunks reviewed, the other record's hunks still spawn codelenses
-    // and decorations on the next sync.
-    const targets = all.filter((c) => samePath(c.path, requestedPath))
-    if (!targets.length) {
-      log("reviewAllInChange: no matching change", { source, path: requestedPath, available: all.map((c) => ({ source: c.source, path: c.path })) })
+    // The webview's review row is keyed on the AGGREGATED change (one row per
+    // path), but the action must iterate the UN-aggregated per-tool records:
+    // `aggregateChanges` keeps only the LAST contributing record's `patch`,
+    // so acting on the aggregated patch alone would silently miss every
+    // earlier tool call's hunks. We pass both into the pure helper — records
+    // drive the fs ops, the aggregated row drives the UI state updates.
+    const aggregatedAll = reviewChanges(this.messages)
+    const aggregated = aggregatedAll.find((c) => samePath(c.path, requestedPath))
+    if (!aggregated) {
+      log("reviewAllInChange: no matching change", { source, path: requestedPath, available: aggregatedAll.map((c) => c.path) })
+      return
+    }
+    const records = extractChanges(this.messages).filter((c) => samePath(c.path, requestedPath))
+    if (!records.length) {
+      log("reviewAllInChange: aggregated row has no underlying records", { source, path: requestedPath })
       return
     }
     const root = this.backendDirectory()
-    // Files might be intentionally missing (a `deleted` change leaves the file
-    // gone, which is the desired post-change state). Only the `updated` /
-    // `moved` cases require the file present; the helpers handle that.
-    let conflicts = 0
-    let applied = 0
-    for (const change of targets) {
-      const hunks = splitReviewDiff(change.patch).hunks
-      let firstHunk = true
-      for (const hunk of hunks) {
-        const key = reviewKey(change, hunk.id)
-        if (this.reviewHunks[key]) continue
-        if (action === "rejected" && !hunk.reversible) {
-          conflicts += 1
-          continue
-        }
-        // For non-update kinds (created / deleted / moved) the action is a
-        // whole-file operation; running it once per hunk would double-act.
-        // Skip all but the first hunk in those cases.
-        if (!firstHunk && change.kind !== "updated") {
-          // Mirror whatever the first hunk produced — it already applied or
-          // conflicted as a whole-file op.
-          this.post({ type: "reviewHunkState", key, state: action })
-          continue
-        }
-        const outcome = await reviewHunk(change, hunk, action, { silent: true, root })
-        firstHunk = false
-        if (outcome.status === "applied" || outcome.status === "no-op") {
-          this.post({ type: "reviewHunkState", key, state: action })
-          applied += 1
-          continue
-        }
-        // Per requirement: do NOT silently mark a hunk rejected when the undo
-        // couldn't be applied safely — leave the row pending so the user can
-        // see the conflict and decide what to do.
-        conflicts += 1
-        log(`reviewAllInChange: ${outcome.status} on ${change.path}: ${"reason" in outcome ? outcome.reason : ""}`)
-      }
+    const result = await reviewAllForPath(records, aggregated, action, {
+      root,
+      reviewedKeys: this.reviewHunks,
+    })
+    for (const update of result.hunkUpdates) {
+      this.post({ type: "reviewHunkState", key: update.key, state: update.state })
     }
-    if (conflicts > 0) {
+    if (result.conflicts > 0) {
       const verb = action === "accepted" ? "accept" : "undo"
       vscode.window.showWarningMessage(
-        `OpenCode Panel: couldn't ${verb} ${conflicts} hunk${conflicts === 1 ? "" : "s"} in ${requestedPath} — the file has changed since the diff was produced.`,
+        `OpenCode Panel: couldn't ${verb} ${result.conflicts} hunk${result.conflicts === 1 ? "" : "s"} in ${requestedPath} — the file has changed since the diff was produced.`,
       )
     }
-    if (applied > 0) await this.syncReviewDecorations()
-    else log("reviewAllInChange: no hunks applied", { source, path: requestedPath, action, conflicts })
+    if (result.applied > 0) await this.syncReviewDecorations()
+    else log("reviewAllInChange: no hunks applied", { source, path: requestedPath, action, conflicts: result.conflicts })
   }
 
   private backendDirectory(): string | undefined {
