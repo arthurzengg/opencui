@@ -20,7 +20,6 @@ import type {
   Attachment,
   ChatBlock,
   ChatMessage,
-  ConversationSummary,
   Inbound,
   Outbound,
   ToolUpdate as WireToolUpdate,
@@ -29,12 +28,8 @@ import type {
   ReviewChangeActor,
   ReviewHunkState,
 } from "../protocol"
-import {
-  ACTIVE_CONVERSATION_KEY,
-  CONVERSATIONS_KEY,
-  type SavedConversation,
-  migrateConversationsToWorkspace,
-} from "./conversation-store"
+import { migrateConversationsToWorkspace } from "./conversation-store"
+import { ConversationManager } from "./conversation-manager"
 import { relativeToCwd, samePath } from "./paths"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { reviewChanges } from "./review-changes"
@@ -137,8 +132,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private static readonly CONTINUATION_GRACE_MS = 10_000
   /** opencode messageID → webview-side id used in UI */
   private messageMap = new Map<string, string>()
-  private conversations: SavedConversation[]
-  private activeConversationID: string
+  private manager: ConversationManager
   private messages: ChatMessage[] = []
   /** Webview ID of the user message currently awaiting a backend ID from the stream. */
   private pendingUserBackendID?: string
@@ -181,23 +175,19 @@ export class ChatView implements vscode.WebviewViewProvider {
     // sees the migrated data. We `.catch` here so a disk-flush rejection is
     // logged (and the migration-done flag stays unset, retrying next launch).
     void migrateConversationsToWorkspace(context).catch((e) => log("migrateConversations failed", e))
-    this.conversations = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
-    this.activeConversationID = context.workspaceState.get<string>(ACTIVE_CONVERSATION_KEY) ?? ""
-    if (!this.conversations.length) this.addConversation("New conversation")
-    if (!this.conversations.some((c) => c.id === this.activeConversationID)) {
-      this.activeConversationID = this.conversations[0]!.id
-    }
-    this.restoreActiveState()
-    void this.persistConversations()
+    this.manager = new ConversationManager(context)
+    this.applyActiveSnapshot()
+    void this.manager.persist()
     if (this.taskStore) {
       this.taskStoreUnsub = this.taskStore.onDidChange((tasks) => this.postAgentsStatus(tasks))
     }
   }
 
   private postAgentsStatus(tasks: AgentTask[]) {
-    const status = summarizeAgentTasks(tasks, this.activeConversationID)
+    const activeID = this.manager.getActiveID()
+    const status = summarizeAgentTasks(tasks, activeID)
     log(
-      `[agents-status] post snapshot conv=${this.activeConversationID} total=${status.total} (running=${status.running} waiting=${status.waiting} error=${status.error}) ids=[${status.tasks.map((t) => `${t.kind}:${t.id}`).join(", ")}]`,
+      `[agents-status] post snapshot conv=${activeID} total=${status.total} (running=${status.running} waiting=${status.waiting} error=${status.error}) ids=[${status.tasks.map((t) => `${t.kind}:${t.id}`).join(", ")}]`,
     )
     this.post({ type: "agentsStatus", status })
   }
@@ -250,30 +240,24 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   async createConversation() {
-    this.resetContinuationState()
-    this.subscription?.abort()
-    this.subscription = undefined
-    this.aborting = false
-    this.sessionID = undefined
-    this.currentMainTaskID = undefined
-    this.messageMap.clear()
-    this.activePermissions.clear(); this.activeQuestions.clear()
-    const conversation = this.addConversation("New conversation")
-    this.activeConversationID = conversation.id
+    this.resetSessionState()
+    const conversation = this.manager.add("New conversation")
+    this.manager.setActiveID(conversation.id)
     this.messages = []
     this.reviewHunks = {}
-    await this.persistConversations()
+    await this.manager.persist()
     this.sendConversationState()
     if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
   }
 
   async pickConversation() {
+    const activeID = this.manager.getActiveID()
     const picked = await vscode.window.showQuickPick(
       [
         { label: "$(plus) New conversation", description: "Start a saved conversation", create: true },
-        ...this.conversationSummaries().map((c) => ({
+        ...this.manager.summaries().map((c) => ({
           label: c.title,
-          description: c.id === this.activeConversationID ? "current" : new Date(c.updatedAt).toLocaleString(),
+          description: c.id === activeID ? "current" : new Date(c.updatedAt).toLocaleString(),
           id: c.id,
         })),
       ],
@@ -305,144 +289,104 @@ export class ChatView implements vscode.WebviewViewProvider {
   private sendConversationState() {
     this.post({
       type: "conversations",
-      conversations: this.conversationSummaries(),
-      activeID: this.activeConversationID,
+      conversations: this.manager.summaries(),
+      activeID: this.manager.getActiveID(),
     })
     this.post({
       type: "restore",
-      conversationID: this.activeConversationID,
+      conversationID: this.manager.getActiveID(),
       messages: this.messages,
       reviewHunks: this.reviewHunks,
     })
   }
 
-  private addConversation(title: string): SavedConversation {
-    const now = Date.now()
-    const conversation: SavedConversation = {
-      id: `conv_${now}_${Math.random().toString(36).slice(2)}`,
-      title,
-      createdAt: now,
-      updatedAt: now,
-      messages: [],
-      reviewHunks: {},
-    }
-    this.conversations = [conversation, ...this.conversations]
-    return conversation
+  private postConversationsList() {
+    this.post({
+      type: "conversations",
+      conversations: this.manager.summaries(),
+      activeID: this.manager.getActiveID(),
+    })
   }
 
-  private conversationSummaries(): ConversationSummary[] {
-    return this.conversations
-      .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
+  /**
+   * Hydrate live ChatView fields from the manager's persisted snapshot
+   * of the active conversation.
+   */
+  private applyActiveSnapshot() {
+    const snapshot = this.manager.loadActiveSnapshot()
+    this.sessionID = snapshot.sessionID
+    this.messages = snapshot.messages
+    this.reviewHunks = snapshot.reviewHunks
   }
 
-  private restoreActiveState() {
-    const conversation = this.activeConversation()
-    this.sessionID = conversation.sessionID
-    this.messages = conversation.messages.map((m) => ({ ...m, pending: false }))
-    this.reviewHunks = conversation.reviewHunks ?? {}
-  }
-
-  private async selectConversation(id: string) {
-    if (id === this.activeConversationID) return
+  /**
+   * Tear down the live session state — used by createConversation /
+   * selectConversation / deleteConversation when switching off the
+   * current conversation. The manager's data stays intact; this only
+   * resets the subscription + in-flight per-turn state.
+   */
+  private resetSessionState() {
     this.resetContinuationState()
     this.subscription?.abort()
     this.subscription = undefined
     this.aborting = false
+    this.sessionID = undefined
     this.currentMainTaskID = undefined
     this.messageMap.clear()
-    this.activePermissions.clear(); this.activeQuestions.clear()
-    this.activeConversationID = id
-    this.restoreActiveState()
-    await this.persistConversations()
+    this.activePermissions.clear()
+    this.activeQuestions.clear()
+  }
+
+  private async selectConversation(id: string) {
+    if (id === this.manager.getActiveID()) return
+    this.resetSessionState()
+    this.manager.setActiveID(id)
+    this.applyActiveSnapshot()
+    await this.manager.persist()
     this.sendConversationState()
     if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
   }
 
   private async renameConversation(id: string, title: string) {
-    const nextTitle = title.replace(/\s+/g, " ").trim().slice(0, 80)
-    if (!nextTitle) return
-    this.conversations = this.conversations.map((conversation) =>
-      conversation.id === id ? { ...conversation, title: nextTitle, updatedAt: Date.now() } : conversation,
-    )
-    await this.persistConversations()
-    this.post({
-      type: "conversations",
-      conversations: this.conversationSummaries(),
-      activeID: this.activeConversationID,
-    })
+    this.manager.rename(id, title)
+    await this.manager.persist()
+    this.postConversationsList()
   }
 
   private async deleteConversation(id: string) {
-    this.conversations = this.conversations.filter((conversation) => conversation.id !== id)
-    if (!this.conversations.length) this.addConversation("New conversation")
+    const wasActive = this.manager.getActiveID() === id
+    this.manager.remove(id)
     // Drop the deleted conversation's task history so the popover
     // doesn't carry forward rows the user can no longer trace back to
     // anything. Best-effort; failures here aren't fatal.
     if (this.taskStore) {
       void this.taskStore.clearForConversation(id)
     }
-    if (this.activeConversationID === id) {
-      this.resetContinuationState()
-      this.subscription?.abort()
-      this.subscription = undefined
-      this.aborting = false
-      this.currentMainTaskID = undefined
-      this.messageMap.clear()
-      this.activePermissions.clear(); this.activeQuestions.clear()
-      this.activeConversationID = this.conversationSummaries()[0]!.id
-      this.restoreActiveState()
-      await this.persistConversations()
+    if (wasActive) {
+      this.resetSessionState()
+      this.manager.setActiveID(this.manager.summaries()[0]!.id)
+      this.applyActiveSnapshot()
+      await this.manager.persist()
       this.sendConversationState()
       return
     }
-    await this.persistConversations()
-    this.post({
-      type: "conversations",
-      conversations: this.conversationSummaries(),
-      activeID: this.activeConversationID,
-    })
-  }
-
-  private activeConversation(): SavedConversation {
-    const conversation = this.conversations.find((c) => c.id === this.activeConversationID)
-    if (conversation) return conversation
-    const created = this.addConversation("New conversation")
-    this.activeConversationID = created.id
-    return created
-  }
-
-  private updateActive(fn: (conversation: SavedConversation) => SavedConversation) {
-    const next = fn(this.activeConversation())
-    this.conversations = [next, ...this.conversations.filter((c) => c.id !== next.id)]
-    void this.persistConversations()
-  }
-
-  private async persistConversations() {
-    await this.context.workspaceState.update(CONVERSATIONS_KEY, this.conversations)
-    await this.context.workspaceState.update(ACTIVE_CONVERSATION_KEY, this.activeConversationID)
+    await this.manager.persist()
+    this.postConversationsList()
   }
 
   private saveActive() {
-    this.updateActive((conversation) => ({
-      ...conversation,
+    this.manager.saveActiveSnapshot({
       sessionID: this.sessionID,
       messages: this.messages,
       reviewHunks: this.reviewHunks,
-      updatedAt: Date.now(),
-    }))
+    })
+    void this.manager.persist()
   }
 
   private updateTitleFromPrompt(text: string) {
-    const conversation = this.activeConversation()
-    if (conversation.title !== "New conversation" || this.messages.length > 1) return
-    const title = text.replace(/\s+/g, " ").trim().slice(0, 64) || "New conversation"
-    this.updateActive((item) => ({ ...item, title }))
-    this.post({
-      type: "conversations",
-      conversations: this.conversationSummaries(),
-      activeID: this.activeConversationID,
-    })
+    if (this.manager.updateTitleFromPrompt(text, this.messages.length)) {
+      this.postConversationsList()
+    }
   }
 
   private applyLocal(msg: Outbound) {
@@ -858,7 +802,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       log("[agents-status] recordMainTaskStart skipped — no sessionID yet")
       return
     }
-    const conversationID = this.activeConversationID
+    const conversationID = this.manager.getActiveID()
     const sessionID = this.sessionID
     const turnID = crypto.randomUUID()
     const id = mainTaskID(conversationID, sessionID, turnID)
@@ -1076,7 +1020,8 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       }
       this.sessionID = created.data.id
-      this.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
+      this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
+      void this.manager.persist()
       log("created session", this.sessionID)
       await this.attachSubscription(backend, this.sessionID)
     } else if (!this.subscription) {
@@ -1419,7 +1364,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (this.taskStore) {
       this.subagentTracker = new SubagentTracker({
         store: this.taskStore,
-        getActiveConversationID: () => this.activeConversationID,
+        getActiveConversationID: () => this.manager.getActiveID(),
         getParentSessionID: () => this.sessionID,
         subscription: {
           addChildSession: (id) => subscription.addChildSession(id),
