@@ -330,10 +330,31 @@ export function subscribeSession(
           markActivity(sessionID)
         }
         return
+      case "session.created":
+      case "session.updated":
+        // The if-statement above this switch already handles the
+        // child-session-discovery subset of these. Beyond that we
+        // don't need to act on them — opencode emits a session.updated
+        // for almost every internal state tick.
+        return
+      case "server.connected":
+      case "server.heartbeat":
+      case "session.next.agent.switched":
+      case "session.next.model.switched":
+      case "session.diff":
+      case "project.updated":
+      case "file.watcher.updated":
+      case "sync":
+        // Known opencode events we intentionally don't route. Listed
+        // explicitly (instead of falling through to `default`) so the
+        // output channel doesn't flood with `unhandled type:` lines for
+        // every tick of routine opencode chatter.
+        return
       default:
         // Unknown opencode event type — log so a new SDK event surfaces
         // in the output channel instead of silently vanishing. Add a
-        // matching `case` above to actually route it.
+        // matching `case` above to actually route it (or to silence it,
+        // if it's expected noise like the cases just above).
         log(`[sse] unhandled type: ${type}`)
         return
     }
@@ -438,6 +459,13 @@ export function subscribeSession(
       }
       case "message.part.delta":
         childCb({ type: "busy", sessionID: childSid })
+        return
+      case "session.updated":
+      case "session.created":
+      case "message.removed":
+        // Routine child-session chatter we don't act on. Silent so the
+        // output channel stays readable — same contract as the parent
+        // route's known-no-op cases above.
         return
       default:
         // Unknown event for a tracked child session — log and drop. Same
