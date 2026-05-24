@@ -330,6 +330,12 @@ export function subscribeSession(
           markActivity(sessionID)
         }
         return
+      default:
+        // Unknown opencode event type — log so a new SDK event surfaces
+        // in the output channel instead of silently vanishing. Add a
+        // matching `case` above to actually route it.
+        log(`[sse] unhandled type: ${type}`)
+        return
     }
   }
 
@@ -432,6 +438,11 @@ export function subscribeSession(
       }
       case "message.part.delta":
         childCb({ type: "busy", sessionID: childSid })
+        return
+      default:
+        // Unknown event for a tracked child session — log and drop. Same
+        // contract as the parent route's default branch.
+        log(`[sse:child:${childSid}] unhandled type: ${type}`)
         return
     }
   }

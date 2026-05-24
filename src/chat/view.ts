@@ -44,7 +44,15 @@ import { collectAutoContext } from "../workspace-context/collector"
 import { RecentEditsTracker } from "../workspace-context/recent-edits"
 import { readContextSettings } from "../workspace-context/budget"
 import type { IndexManager } from "../indexing/index-manager"
-import { AgentTaskStore, classifyTerminal, mainTaskID, type AgentTask } from "../agents/task-store"
+import {
+  AgentTaskStore,
+  ATTENTION_STATUSES,
+  classifyTerminal,
+  isAttentionStatus,
+  mainTaskID,
+  type AgentTask,
+  type AttentionStatus,
+} from "../agents/task-store"
 import { SubagentTracker } from "../agents/subagent-tracker"
 import type { AgentsStatusInfo, AgentsTaskInfo } from "../protocol"
 import { toWire } from "./wire-format"
@@ -1693,21 +1701,19 @@ export function summarizeAgentTasks(
     ? tasks.filter((task) => task.conversationID === conversationID)
     : tasks
 
-  // The popover shows ONLY currently-active work — the latest main task
-  // and any subagents that are still running / waiting / errored. We drop
-  // `completed` and `cancelled` rows so the popover reflects "what's
-  // happening right now," not a per-chat history. A second user prompt
-  // gets its own main row (see mainTaskID's per-turn keying); the prior
-  // turn's row is settled and filtered out.
+  // The popover shows ONLY currently-active work — main tasks and any
+  // subagents whose status is in ATTENTION_STATUSES. `completed` and
+  // `cancelled` rows are dropped so the popover reflects "what's happening
+  // right now," not a per-chat history. A second user prompt gets its own
+  // main row (see mainTaskID's per-turn keying); the prior turn's row is
+  // settled and filtered out.
+  const counts: Record<AttentionStatus, number> = Object.fromEntries(
+    ATTENTION_STATUSES.map((status) => [status, 0]),
+  ) as Record<AttentionStatus, number>
   const items: AgentsTaskInfo[] = []
-  let running = 0
-  let waiting = 0
-  let error = 0
   for (const task of scoped) {
-    if (task.status === "running") running += 1
-    else if (task.status === "waiting") waiting += 1
-    else if (task.status === "error") error += 1
-    else continue
+    if (!isAttentionStatus(task.status)) continue
+    counts[task.status] += 1
     items.push({
       id: task.id,
       kind: task.kind,
@@ -1728,7 +1734,13 @@ export function summarizeAgentTasks(
     if (a.kind !== b.kind) return a.kind === "main" ? -1 : 1
     return a.startedAt - b.startedAt
   })
-  return { running, waiting, error, total: running + waiting + error, tasks: items }
+  return {
+    running: counts.running,
+    waiting: counts.waiting,
+    error: counts.error,
+    total: counts.running + counts.waiting + counts.error,
+    tasks: items,
+  }
 }
 
 export function taskTitleFromUpdate(update: ToolUpdate): string {
