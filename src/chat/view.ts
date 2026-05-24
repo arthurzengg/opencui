@@ -55,7 +55,6 @@ import {
   reviewHunk,
   reviewPathExists,
 } from "./fs-ops"
-import { fallbackHtml } from "./review-render"
 
 /**
  * Recognize a toast that signals an imminent continuation. Exported so the
@@ -210,7 +209,9 @@ export class ChatView implements vscode.WebviewViewProvider {
       log("ChatView html set (length=" + view.webview.html.length + ")")
     } catch (e) {
       log("ChatView html build failed", e)
-      view.webview.html = fallbackHtml(`Failed to build webview: ${(e as Error).message}`)
+      const message = `Failed to build webview: ${(e as Error).message}`
+      view.webview.html = `<!doctype html><html><body style="padding:20px;font-family:sans-serif;">
+    <h2>OpenCode Panel</h2><p>${message}</p></body></html>`
     }
     view.webview.onDidReceiveMessage((msg: Inbound) => this.onMessage(msg))
     view.onDidDispose(() => this.dispose())
@@ -664,9 +665,6 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "createConversation":
         await this.createConversation()
         return
-      case "selectConversation":
-        await this.pickConversation()
-        return
       case "openConversation":
         await this.selectConversation(msg.id)
         return
@@ -685,55 +683,6 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "openReviewChange":
         void this.openReviewChange(msg.change)
         return
-      case "reviewHunk": {
-        // Legacy single-hunk path (review-render.ts standalone HTML). Look up
-        // the matching change + hunk by key so we can run safe undo, then
-        // post a single-hunk state update.
-        const root = this.backendDirectory()
-        const found = this.findReviewHunkByKey(msg.key)
-        if (!found) {
-          // Fall back to the pre-attribution behaviour with the legacy
-          // (path, action, oldText, newText) arguments synthesised into a
-          // throwaway change. Used for hunks we can't locate anymore.
-          const change: ReviewChange = {
-            source: msg.key,
-            path: msg.path,
-            kind: "updated",
-            additions: 0,
-            deletions: 0,
-            patch: "",
-          }
-          const hunk = {
-            id: "0",
-            header: "",
-            lines: [],
-            anchorText: msg.newText,
-            oldText: msg.oldText,
-            newText: msg.newText,
-            oldStart: 0,
-            oldCount: 0,
-            newStart: 0,
-            newCount: msg.newText === "" ? 0 : msg.newText.split("\n").length,
-            leadingContext: [],
-            trailingContext: [],
-            reversible: true,
-          }
-          const outcome = await reviewHunk(change, hunk, msg.action, { root })
-          this.post({
-            type: "reviewHunkState",
-            key: msg.key,
-            state: outcome.status === "applied" || outcome.status === "no-op" ? msg.action : undefined,
-          })
-          return
-        }
-        const outcome = await reviewHunk(found.change, found.hunk, msg.action, { root })
-        this.post({
-          type: "reviewHunkState",
-          key: msg.key,
-          state: outcome.status === "applied" || outcome.status === "no-op" ? msg.action : undefined,
-        })
-        return
-      }
       case "reviewAllInChange":
         await this.handleReviewAllInChange(msg.source, msg.path, msg.action)
         return
@@ -1675,16 +1624,6 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private backendDirectory(): string | undefined {
     return this.servers.currentWorkspace()?.fsPath
-  }
-
-  private findReviewHunkByKey(key: string) {
-    const all = reviewChanges(this.messages)
-    for (const change of all) {
-      for (const hunk of splitReviewDiff(change.patch).hunks) {
-        if (reviewKey(change, hunk.id) === key) return { change, hunk }
-      }
-    }
-    return undefined
   }
 
   private queueReviewDecorationsSync() {

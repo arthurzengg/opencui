@@ -208,7 +208,6 @@
     "test:coverage": "vitest run --coverage",
     "test:integration": "tsc -p test/integration/tsconfig.json && vscode-test",
     "vscode:prepublish": "bun run package",
-    "vsix": "vsce package --no-dependencies",
     "publish:marketplace": "vsce publish --no-dependencies"
   },
   "dependencies": {

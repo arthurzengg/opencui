@@ -357,9 +357,6 @@ button {
 .agents-row-running .agents-row-title { color: #7ee787; }
 .agents-row-error .agents-row-meta { color: var(--vscode-errorForeground, #f85149); }
 .agents-row-waiting .agents-row-meta { color: var(--vscode-notificationsWarningIcon-foreground, #d29922); }
-.agents-row-completed {
-  opacity: 0.6;
-}
 .agents-popover-empty {
   padding: 6px 12px;
   opacity: 0.6;
@@ -1218,30 +1215,6 @@ button {
   flex-direction: column;
   gap: 6px;
 }
-.user-edit-input {
-  width: 100%;
-  min-height: 56px;
-  max-height: 240px;
-  padding: 6px 8px;
-  border: 1px solid var(--vscode-input-border, var(--vscode-focusBorder));
-  border-radius: 4px;
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
-  font-family: inherit;
-  font-size: inherit;
-  line-height: 1.45;
-  resize: none;
-  outline: none;
-}
-.user-edit-input:focus {
-  border-color: var(--vscode-focusBorder);
-}
-.user-edit-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
 .msg-ref {
   font-size: 11px;
   opacity: 0.6;
@@ -1306,23 +1279,6 @@ button {
   font-size: 10px;
   opacity: 0.5;
   margin-top: 6px;
-}
-
-.msg-hint {
-  margin-top: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
-  opacity: 0.7;
-  background: var(--vscode-editorWidget-background);
-  border-left: 2px solid var(--vscode-charts-yellow);
-  border-radius: 4px;
-}
-.msg-hint code {
-  background: var(--vscode-textCodeBlock-background);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-family: var(--vscode-editor-font-family);
-  font-size: 0.9em;
 }
 
 /* Semantic-index status pill — sits in the status bar / header area. */
@@ -1562,31 +1518,6 @@ button {
   font-size: var(--vscode-editor-font-size);
 }
 .codeblock-body pre, .codeblock-body code { background: transparent !important; }
-
-/* ===== Thinking block ===== */
-.thinking {
-  margin: 6px 0;
-  border-left: 2px solid var(--vscode-descriptionForeground);
-  padding-left: 8px;
-}
-.thinking-toggle {
-  background: none;
-  border: none;
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-  padding: 0;
-  text-align: left;
-}
-.thinking-caret { margin-right: 4px; }
-.thinking-label { font-weight: 600; }
-.thinking-preview { opacity: 0.7; }
-.thinking-body {
-  margin-top: 4px;
-  font-size: 12px;
-  opacity: 0.75;
-  white-space: pre-wrap;
-  font-style: italic;
-}
 
 /* ===== Trace ===== */
 .trace {
@@ -2006,13 +1937,11 @@ button {
   .review-file-action { opacity: 1; }
 }
 .review-stat.add,
-.review-file-stat.add,
-.review-diff-line.add {
+.review-file-stat.add {
   color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
 }
 .review-stat.del,
-.review-file-stat.del,
-.review-diff-line.del {
+.review-file-stat.del {
   color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
 }
 .review-body-clip {
@@ -2163,40 +2092,6 @@ button {
      look. */
   padding: 4px 8px;
   background: var(--vscode-sideBar-background);
-}
-.conversation-row {
-  display: flex;
-  margin-bottom: 5px;
-}
-.conversation-select {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
-  font-weight: 600;
-  text-align: left;
-}
-.conversation-title {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.conversation-caret {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 12px;
-  width: 12px;
-  height: 16px;
-  transform: rotate(90deg);
-  opacity: 0.8;
 }
 .promptbox-input {
   position: relative;

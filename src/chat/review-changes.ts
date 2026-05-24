@@ -6,11 +6,7 @@
  */
 import type { ChatMessage, ReviewChange, ToolUpdate as WireToolUpdate } from "../protocol"
 import {
-  aggregateChanges,
-  createPatchChange,
-  diffChanges,
   displayPath,
-  extractChanges,
   patchChanges,
   patchKind,
   patchPath,
@@ -31,11 +27,7 @@ export function toolChanges(update: WireToolUpdate, source: string): ReviewChang
 }
 
 export {
-  aggregateChanges,
-  createPatchChange,
-  diffChanges,
   displayPath,
-  extractChanges,
   patchChanges,
   patchKind,
   patchPath,
