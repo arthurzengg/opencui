@@ -30,6 +30,7 @@ import type {
 } from "../protocol"
 import { migrateConversationsToWorkspace } from "./conversation-store"
 import { ConversationManager } from "./conversation-manager"
+import { ContinuationState } from "./continuation-state"
 import { relativeToCwd, samePath } from "./paths"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { reviewChanges } from "./review-changes"
@@ -98,38 +99,11 @@ export class ChatView implements vscode.WebviewViewProvider {
   private lastToast?: { key: string; at: number }
   private static readonly TOAST_DEDUP_MS = 3000
   /**
-   * Timestamp of the most recent *toast-style* signal that a continuation is
-   * imminent (see `isContinuationToast`). Used as a defensive fallback gate
-   * — if a plugin emits a continuation toast but never produces a
-   * recognizable subagent dispatch tool, we still defer `sessionIdle` for
-   * a bounded window. The PRIMARY gate is structural (live subagent tasks
-   * in the store, tracked by `SubagentTracker`).
+   * "This turn isn't done yet" defer for opencode/omo continuations.
+   * Owns its own timer + signal gating; see {@link ContinuationState}
+   * for the two-source defer logic.
    */
-  private lastContinuationSignalAt = 0
-  private pendingIdleTimer?: ReturnType<typeof setTimeout>
-  /**
-   * True between `continuationPending: true` and either the deferred
-   * `sessionIdle` firing, or a new `sessionBusy` / `assistantStart` /
-   * abort cancelling the defer.
-   */
-  private idleDeferActive = false
-  private static readonly CONTINUATION_SIGNAL_TTL_MS = 30_000
-  /**
-   * Max wait for a *toast-only* continuation (no active subagent tasks
-   * in the store) to materialize before declaring idle. Long enough to
-   * absorb the lag between a parent's idle and an omo plugin injecting
-   * its continuation toast. The structural variant (live subagent
-   * tasks) has no fixed cap — it waits for the child sessions
-   * themselves to terminate.
-   */
-  private static readonly CONTINUATION_DEFER_MS = 120_000
-  /**
-   * After the last running subagent task settles while we were deferring,
-   * wait this long for a continuation toast / new turn to arrive before
-   * clearing busy. Most omo / opencode wakeups fire within a couple of
-   * seconds.
-   */
-  private static readonly CONTINUATION_GRACE_MS = 10_000
+  private continuationState: ContinuationState
   /** opencode messageID → webview-side id used in UI */
   private messageMap = new Map<string, string>()
   private manager: ConversationManager
@@ -176,6 +150,10 @@ export class ChatView implements vscode.WebviewViewProvider {
     // logged (and the migration-done flag stays unset, retrying next launch).
     void migrateConversationsToWorkspace(context).catch((e) => log("migrateConversations failed", e))
     this.manager = new ConversationManager(context)
+    this.continuationState = new ContinuationState({
+      post: (msg) => this.post(msg),
+      activeSubagentCount: () => this.activeSubagentCount(),
+    })
     this.applyActiveSnapshot()
     void this.manager.persist()
     if (this.taskStore) {
@@ -272,7 +250,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private dispose() {
-    this.resetContinuationState()
+    this.resetSessionTracking()
     this.subscription?.abort()
     this.subscription = undefined
     this.aborting = false
@@ -326,7 +304,7 @@ export class ChatView implements vscode.WebviewViewProvider {
    * resets the subscription + in-flight per-turn state.
    */
   private resetSessionState() {
-    this.resetContinuationState()
+    this.resetSessionTracking()
     this.subscription?.abort()
     this.subscription = undefined
     this.aborting = false
@@ -737,34 +715,13 @@ export class ChatView implements vscode.WebviewViewProvider {
    * toasts within TOAST_DEDUP_MS are dropped (opencode can fire bursts).
    */
 
-  private markContinuationSignal(source: string) {
-    this.lastContinuationSignalAt = Date.now()
-    log(`[continuation] signal observed (${source})`)
-    // If we're already in a *toast-only* defer (no active subagents) and
-    // its cap timer is running, restart the cap so a fresh signal extends
-    // the wait. With omo, a Background-task-complete toast can arrive
-    // late into a Todo-Continuation wait — we want to honour the newer
-    // signal rather than time out on the older one.
-    if (this.idleDeferActive && this.activeSubagentCount() === 0 && this.pendingIdleTimer) {
-      this.scheduleIdleEmit(ChatView.CONTINUATION_DEFER_MS, "signal-re-arm")
-    }
-  }
-
-  private hasRecentContinuationSignal(): boolean {
-    return Date.now() - this.lastContinuationSignalAt < ChatView.CONTINUATION_SIGNAL_TTL_MS
-  }
-
-  private hasContinuationGate(): boolean {
-    return this.activeSubagentCount() > 0 || this.hasRecentContinuationSignal()
-  }
-
   /**
    * Bridge from the SSE `onTool` callback to the SubagentTracker. The
    * tracker is the single source of truth for subagent records — view.ts
-   * only owns the main-task lifecycle. We also keep `lastContinuationSignal`
-   * armed off subagent activity as a second-source defense: if anything
-   * else clears `idleDeferActive`'s timer, the structural store check
-   * below in `onSessionIdle` will re-defer.
+   * only owns the main-task lifecycle. When a subagent settles while a
+   * continuation defer is open, collapse the defer to the short
+   * post-settle grace window so the UI doesn't sit at "Continuing…"
+   * forever waiting on a follow-up that never comes.
    *
    * Tracked tools live in `SubagentTracker.isSubagentDispatchTool()` —
    * see the omo source notes there.
@@ -779,13 +736,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       `[agents-status] tool event tool=${update.tool} status=${update.status} callID=${update.callID}`,
     )
     await this.subagentTracker.handleToolUpdate(update, messageID)
-    // When a subagent settles while a continuation defer is open,
-    // collapse the defer down to the short post-settle grace window
-    // so the UI doesn't sit at "Continuing…" forever waiting on a
-    // follow-up that never comes.
-    if (this.idleDeferActive && this.activeSubagentCount() === 0) {
-      this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "subagents-settled")
-    }
+    this.continuationState.collapseToGraceIfSettled()
   }
 
   private activeSubagentCount(): number {
@@ -833,79 +784,20 @@ export class ChatView implements vscode.WebviewViewProvider {
     })
   }
 
-  private clearPendingIdle() {
-    if (this.pendingIdleTimer) {
-      clearTimeout(this.pendingIdleTimer)
-      this.pendingIdleTimer = undefined
-    }
-  }
-
   /**
-   * Cancel any in-flight continuation defer and tell the webview the
-   * pending state is over. Used when a new turn starts (sessionBusy /
-   * assistantStart), when abort takes over, or when we decide to clear
-   * busy ourselves.
+   * Tear down the continuation state machine + the subagent tracker.
+   * Used at conversation boundaries, dispose, and after a user-initiated
+   * abort settles. Both pieces are session-scoped — they don't survive
+   * a switch.
    */
-  private finishContinuationPending() {
-    this.clearPendingIdle()
-    if (this.idleDeferActive) {
-      this.idleDeferActive = false
-      this.post({ type: "continuationPending", pending: false })
-    }
-  }
-
-  /**
-   * Open a continuation defer. While there are any active subagent tasks
-   * for the parent session, no timer runs — we wait for child-session
-   * idle events (routed through the SubagentTracker) to drive the close.
-   * Otherwise (toast-only signal), a cap timer prevents an indefinite
-   * wait if no continuation actually arrives.
-   */
-  private beginContinuationDefer(source: string) {
-    this.clearPendingIdle()
-    if (!this.idleDeferActive) {
-      this.idleDeferActive = true
-      this.post({ type: "continuationPending", pending: true })
-    }
-    log(
-      `[continuation] deferring sessionIdle (${source}, subagents=${this.activeSubagentCount()}, signal=${this.hasRecentContinuationSignal()})`,
-    )
-    if (this.activeSubagentCount() > 0) return
-    this.scheduleIdleEmit(ChatView.CONTINUATION_DEFER_MS, "toast-cap")
-  }
-
-  /**
-   * Schedule the emission of `sessionIdle` after `delay`. Used both for
-   * the post-subagent grace window and the toast-only cap. On fire, if a
-   * subagent has spun up again (or never settled), the timer no-ops —
-   * tracker callbacks will re-schedule when subagents settle.
-   */
-  private scheduleIdleEmit(delay: number, source: string) {
-    this.clearPendingIdle()
-    this.pendingIdleTimer = setTimeout(() => {
-      this.pendingIdleTimer = undefined
-      if (this.activeSubagentCount() > 0) {
-        log(`[continuation] timer (${source}) fired but subagents still active; staying deferred`)
-        return
-      }
-      log(`[continuation] timer (${source}) resolved; emitting sessionIdle`)
-      this.idleDeferActive = false
-      this.post({ type: "continuationPending", pending: false })
-      this.post({ type: "sessionIdle" })
-    }, delay)
-  }
-
-  /** Clear all continuation tracking — used on conversation switch / dispose / abort tail. */
-  private resetContinuationState() {
-    this.clearPendingIdle()
-    this.idleDeferActive = false
-    this.lastContinuationSignalAt = 0
+  private resetSessionTracking() {
+    this.continuationState.reset()
     this.subagentTracker?.reset()
   }
 
   private surfaceToast(toast: Toast) {
     if (isContinuationToast(toast)) {
-      this.markContinuationSignal(`toast:${toast.title ?? "(no title)"}`)
+      this.continuationState.markSignal(`toast:${toast.title ?? "(no title)"}`)
     }
     // Normalize the message before computing the dedup key so closely-related
     // toasts collapse into one:
@@ -1205,7 +1097,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       onAssistantStart: (mid) => {
         // A new assistant turn means any deferred idle is moot — clear it
         // so the timer doesn't accidentally fire mid-stream and clear busy.
-        this.finishContinuationPending()
+        this.continuationState.finishPending()
         const webviewID = "a_" + mid
         this.messageMap.set(mid, webviewID)
         this.post({ type: "assistantStart", id: webviewID })
@@ -1294,7 +1186,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       onSessionBusy: () => {
         // A new busy state means continuation (if any) took over — cancel
         // any pending idle so we don't accidentally clear busy later.
-        this.finishContinuationPending()
+        this.continuationState.finishPending()
         this.post({ type: "sessionBusy" })
       },
       onSessionIdle: () => {
@@ -1308,7 +1200,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           // already ran `cancelForSession` proactively; this is the
           // catch-all that covers any dispatch that snuck in between
           // the snapshot there and the session.idle arriving here.
-          this.resetContinuationState()
+          this.resetSessionTracking()
           if (this.sessionID) {
             if (this.subagentTracker) {
               void this.subagentTracker.cancelForSession(this.sessionID)
@@ -1320,11 +1212,11 @@ export class ChatView implements vscode.WebviewViewProvider {
           this.post({ type: "sessionIdle" })
           return
         }
-        if (this.hasContinuationGate()) {
-          this.beginContinuationDefer("sessionIdle")
+        if (this.continuationState.hasGate()) {
+          this.continuationState.beginDefer("sessionIdle")
           return
         }
-        this.finishContinuationPending()
+        this.continuationState.finishPending()
         if (this.sessionID && this.taskStore) {
           void this.taskStore.markSessionIdle(this.sessionID)
         }
@@ -1345,9 +1237,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           // After any child terminal event, if we were deferring an
           // idle waiting on subagents and the store is now empty,
           // arm the short grace timer.
-          if (this.idleDeferActive && this.activeSubagentCount() === 0) {
-            this.scheduleIdleEmit(ChatView.CONTINUATION_GRACE_MS, "child-settled")
-          }
+          this.continuationState.collapseToGraceIfSettled()
         })
       },
       onChildSessionDiscovered: (info) => {
