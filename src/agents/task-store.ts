@@ -68,8 +68,27 @@ export type AgentTask = {
   error?: string
 }
 
-const ACTIVE_STATUSES: ReadonlyArray<AgentTaskStatus> = ["running", "waiting"]
-const ATTENTION_STATUSES: ReadonlyArray<AgentTaskStatus> = ["running", "waiting", "error"]
+/**
+ * `running` and `waiting` are the statuses that mean opencode is still
+ * doing work for this task. Consulted by `markSessionIdle` / abort paths
+ * to decide which tasks to settle on session close.
+ */
+export type ActiveStatus = "running" | "waiting"
+export const ACTIVE_STATUSES: ReadonlyArray<AgentTaskStatus> = ["running", "waiting"]
+
+/**
+ * Statuses the Agents popover shows. Active work plus `error` so a
+ * failed task stays visible until the user starts the next turn. Exported
+ * so call sites (e.g. `summarizeAgentTasks` in `src/chat/view.ts`) iterate
+ * the same set and `isAttentionStatus` narrows the union, instead of
+ * duplicating the membership check inline.
+ */
+export type AttentionStatus = ActiveStatus | "error"
+export const ATTENTION_STATUSES: ReadonlyArray<AgentTaskStatus> = ["running", "waiting", "error"]
+
+export function isAttentionStatus(status: AgentTaskStatus): status is AttentionStatus {
+  return ATTENTION_STATUSES.includes(status)
+}
 
 /**
  * One main task per user turn. `turnID` is minted by ChatView at prompt
@@ -111,12 +130,30 @@ export function subagentTaskIDByChildSession(childSessionID: string): string {
  * the same convention to the popover so abort signals settle as
  * `cancelled` (filtered out of the active-only popover) instead of
  * painting the row red.
+ *
+ * Adding a new classification (timeout, rate-limit, quota-exceeded, …)
+ * is a one-line append to `TERMINAL_CLASSIFIERS` — see
+ * `docs/extensibility.md` for the recipe.
  */
+type TerminalRule = {
+  pattern: RegExp
+  status: "cancelled" | "error"
+}
+
+const TERMINAL_CLASSIFIERS: ReadonlyArray<TerminalRule> = [
+  { pattern: /^aborted$/i, status: "cancelled" },
+]
+
 export function classifyTerminal(message: string | undefined): {
   status: "cancelled" | "error"
   error?: string
 } {
-  if (message && /^aborted$/i.test(message.trim())) return { status: "cancelled" }
+  const trimmed = message?.trim()
+  if (trimmed) {
+    for (const rule of TERMINAL_CLASSIFIERS) {
+      if (rule.pattern.test(trimmed)) return { status: rule.status }
+    }
+  }
   return { status: "error", error: message }
 }
 
