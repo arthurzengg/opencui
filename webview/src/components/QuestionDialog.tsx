@@ -144,6 +144,7 @@ function QuestionItem({
           className="question-custom"
           placeholder={question.options.length > 0 ? "Or type a custom answer…" : "Type your answer…"}
           rows={2}
+          spellCheck
           value={answer.custom}
           onChange={(e) => onCustomChange(e.target.value)}
           // IME-aware Enter handler: in chat composers Enter sends; here we
