@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-05-25
+
+### Added
+- Each review-card row now shows a single-letter status badge before the file name, mirroring VS Code's SCM gutter convention: `M` Modified (amber), `U` Untracked (green), `D` Deleted (red), `R` Renamed (blue). Only the letter carries the kind tint; the file name stays in the default foreground so long paths remain easy to scan. New `kindLetter()` / `kindLabel()` helpers in `webview/src/components/ReviewPanel.tsx`, a new `kind` grid column in `.review-file`, and per-kind color rules tied to the existing VS Code git-decoration tokens (with chart-blue for renames so they stay distinct from untracked-green).
+- CI now publishes to Open VSX alongside the VS Code Marketplace, so VSCodium / Cursor / etc. users get every release. New `Publish to Open VSX` step in `.github/workflows/release.yml` (uses `OVSX_PAT`); marketplace publish step is unchanged.
+
+### Fixed
+- Review card no longer mis-renders an existing-file edit as `U` (Untracked) when the model called the `edit` tool with `oldString: ""`. `toolChanges()` in `webview/src/review-extract.ts` previously concluded "creation" from the model's *input* alone, but agents legitimately call edit with empty `oldString` against existing files (e.g. to prepend). The kind assignment now also checks the resulting patch and demotes `isCreate` to `false` when the patch shows any `-` lines — a real deletion is proof the file pre-existed. Two regression tests added to `test/host/review-changes.test.ts` covering both the false-positive (oldString="" with deletions → updated) and the genuine create path (oldString="" with no deletions → created).
+
+Closes #198, #200, #202, #204, #206.
+
+## [0.9.7] - 2026-05-24
+
+### Fixed
+- **Undo on multi-tool turns is no longer half-reverted.** `aggregateChanges` collapses per-tool ReviewChange records into one row but keeps only the *last* contributing record's `patch`, so iterating the aggregated patch silently missed every earlier tool call's hunks. The host action layer (`src/chat/review-actions.ts`) now iterates the un-aggregated `extractChanges`, newest-first for Undo (layered same-line edits unwind correctly), and keys UI state on the aggregated row so the panel and snapshot map stay consistent.
+- **Keep on a created file resolves correctly when opencode anchors paths above the workspace.** `findExistingWorkspaceFile` now (a) honors an opencode-provided absolute-path hint (`apply_patch`'s `files[].absolutePath` or any of `filename` / `path` / `fullPath` when absolute), (b) falls back to walking ancestor directories of `root` up to the user's home if standard candidates miss, and (c) refuses to follow `..` segments. Symmetric for Keep and Undo so resolution stays consistent.
+- **Keep on a pure-deletion hunk now verifies the deletion happened.** `findHunkInFile` returns a zero-width match for `newText === ""`, which let Keep silently succeed regardless of file state. `acceptHunk` now checks the removed block is gone before reporting applied.
+- **Better diagnosis on path conflicts.** `reportConflict` / `reportMissing` log the tried candidate paths to the output channel so a recurrence is debuggable from the log alone.
+
+Closes #188.
+
 ## [0.9.6] - 2026-05-24
 
 ### Fixed
