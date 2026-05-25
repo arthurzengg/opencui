@@ -2042,54 +2042,29 @@ button {
 }
 /* Kind styling is intentionally confined to the M/U/D/R letter — the filename
    stays in the default foreground so long paths remain easy to scan.
-   Palette: M amber (modified is the most common state, so it gets the calm
-   warm tint), U green (new files), D red (deletions), R blue (renames stay
-   distinct from U so a row that turned green vs blue reads at a glance). */
-.review-file.kind-updated .review-file-kind,
-.review-legend-item.kind-updated .review-legend-letter {
+   Palette: M amber, U green, D red, R blue. */
+.review-file.kind-updated .review-file-kind {
   color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow, #d29922));
 }
-.review-file.kind-created .review-file-kind,
-.review-legend-item.kind-created .review-legend-letter {
+.review-file.kind-created .review-file-kind {
   color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
 }
-.review-file.kind-deleted .review-file-kind,
-.review-legend-item.kind-deleted .review-legend-letter {
+.review-file.kind-deleted .review-file-kind {
   color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
 }
-.review-file.kind-moved .review-file-kind,
-.review-legend-item.kind-moved .review-legend-letter {
+.review-file.kind-moved .review-file-kind {
   color: var(--vscode-charts-blue, #79c0ff);
-}
-.review-file-kind,
-.review-legend-letter {
-  font-family: var(--vscode-editor-font-family);
-  font-weight: 600;
-  color: var(--vscode-descriptionForeground);
-  user-select: none;
 }
 .review-file-kind {
   grid-area: kind;
   width: 12px;
   flex: 0 0 auto;
+  font-family: var(--vscode-editor-font-family);
   font-size: 11px;
+  font-weight: 600;
   text-align: center;
-}
-.review-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  padding: 0 4px 2px 8px;
-  font-size: 10px;
   color: var(--vscode-descriptionForeground);
-}
-.review-legend-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-}
-.review-legend-letter {
-  font-size: 11px;
+  user-select: none;
 }
 .review-file-name {
   grid-area: name;
