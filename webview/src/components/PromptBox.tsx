@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useRef, useState, type ReactNode } from "react"
 import type { Attachment, FileSearchHit } from "../protocol"
 import {
   extractMentions,
@@ -13,8 +13,6 @@ import { useMentionPicker } from "../hooks/useMentionPicker"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail } from "./ImageThumbnail"
 import { ICON_SIZE } from "../design-tokens"
-import { findMisspellingAt, type WordRange } from "../spellcheck/check"
-import { useSpellcheck } from "../spellcheck/use-spellcheck"
 
 // Re-export so existing consumers (tests, integrators) keep working through PromptBox.
 export {
@@ -105,7 +103,6 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
   const updateText = (next: string, caret: number) => {
     setText(next)
     setSelectedChipStart(undefined)
-    setSuggestionPopover(null)
     detectAtCaret(next, caret)
   }
 
@@ -314,63 +311,6 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     return findMentionRanges(text, new Set(knownAttachments.current.keys())).length > 0
   })()
 
-  // Mention ranges are computed once per render — both the backdrop renderer
-  // and the spell-check detector need them, and they're cheap to compute.
-  const labels = allKnownLabels()
-  const mentionRanges = findMentionRanges(text, labels)
-  const { misspellings, suggest } = useSpellcheck(text, mentionRanges)
-
-  // Right-click suggestion popover. Anchored to viewport coordinates from the
-  // contextmenu event, with the targeted misspelling range so we can replace
-  // the word in `text` when a suggestion is clicked.
-  const [suggestionPopover, setSuggestionPopover] = useState<
-    { x: number; y: number; range: WordRange; suggestions: string[] } | null
-  >(null)
-  useEffect(() => {
-    if (!suggestionPopover) return
-    const dismiss = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent) {
-        if (e.key === "Escape") setSuggestionPopover(null)
-        return
-      }
-      const target = e.target as Node | null
-      if (target && document.querySelector(".spellcheck-popover")?.contains(target)) return
-      setSuggestionPopover(null)
-    }
-    document.addEventListener("mousedown", dismiss)
-    document.addEventListener("keydown", dismiss)
-    return () => {
-      document.removeEventListener("mousedown", dismiss)
-      document.removeEventListener("keydown", dismiss)
-    }
-  }, [suggestionPopover])
-
-  const onContextMenu = (e: React.MouseEvent<HTMLTextAreaElement>) => {
-    // Chromium positions the caret on right-click before contextmenu fires —
-    // we read `selectionStart` to identify which word the click landed on.
-    // VS Code's webview suppresses its own context menu, and we suppress the
-    // browser's so only our suggestion popover is visible.
-    const ta = e.currentTarget
-    const caret = ta.selectionStart ?? -1
-    const hit = caret >= 0 ? findMisspellingAt(caret, misspellings) : null
-    if (!hit) return
-    e.preventDefault()
-    setSuggestionPopover({
-      x: e.clientX,
-      y: e.clientY,
-      range: hit,
-      suggestions: suggest(hit.word),
-    })
-  }
-
-  const applySuggestion = (range: WordRange, replacement: string) => {
-    const next = text.slice(0, range.start) + replacement + text.slice(range.end)
-    pendingCursor.current = range.start + replacement.length
-    setText(next)
-    setSuggestionPopover(null)
-    ref.current?.focus()
-  }
-
   return (
     <div className={"promptbox" + (variant === "edit" ? " promptbox--edit" : "")}>
       {attachError && <div className="attachment-error">{attachError}</div>}
@@ -392,7 +332,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
       />
       <div className="promptbox-input">
         <div ref={backdropRef} className="promptbox-backdrop" aria-hidden="true">
-          {renderHighlightedText(text, labels, selectedChipStart, mentionRanges, misspellings)}
+          {renderHighlightedText(text, allKnownLabels(), selectedChipStart)}
         </div>
         <textarea
           ref={ref}
@@ -403,7 +343,6 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           onSelect={onSelect}
-          onContextMenu={onContextMenu}
           onScroll={(e) => {
             if (backdropRef.current) backdropRef.current.scrollTop = e.currentTarget.scrollTop
           }}
@@ -412,36 +351,6 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
             setTimeout(closeMention, 120)
           }}
         />
-        {suggestionPopover && (
-          <ul
-            className="spellcheck-popover"
-            role="menu"
-            aria-label={`Spelling suggestions for ${suggestionPopover.range.word}`}
-            style={{
-              position: "fixed",
-              left: suggestionPopover.x,
-              top: suggestionPopover.y,
-            }}
-          >
-            {suggestionPopover.suggestions.length === 0 && (
-              <li className="spellcheck-empty">No suggestions</li>
-            )}
-            {suggestionPopover.suggestions.map((s) => (
-              <li key={s}>
-                <button
-                  type="button"
-                  className="spellcheck-suggestion"
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    applySuggestion(suggestionPopover.range, s)
-                  }}
-                >
-                  {s}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
         {mention && hits.length > 0 && (
           <ul className="mention-popover" role="listbox" aria-label="Files">
             {hits.map((hit, i) => (
@@ -570,45 +479,25 @@ export function renderHighlightedText(
   text: string,
   known: Set<string>,
   selectedChipStart?: number,
-  mentionRanges?: ReadonlyArray<{ start: number; end: number }>,
-  misspellings?: ReadonlyArray<WordRange>,
 ): ReactNode[] {
-  const mentions = mentionRanges ?? findMentionRanges(text, known)
-  const misses = misspellings ?? []
-  // Two disjoint sets of ranges (the detector excludes mentions). Merge into
-  // one sorted stream so the walker emits them in document order.
-  const combined: Array<
-    | { kind: "mention"; start: number; end: number }
-    | { kind: "miss"; start: number; end: number; word: string }
-  > = []
-  for (const r of mentions) combined.push({ kind: "mention", start: r.start, end: r.end })
-  for (const m of misses) combined.push({ kind: "miss", start: m.start, end: m.end, word: m.word })
-  combined.sort((a, b) => a.start - b.start)
-
-  if (combined.length === 0) {
+  const ranges = findMentionRanges(text, known)
+  if (ranges.length === 0) {
     return [text + "\n"]
   }
   const out: ReactNode[] = []
   let cursor = 0
-  for (const r of combined) {
+  for (let i = 0; i < ranges.length; i++) {
+    const r = ranges[i]!
     if (r.start > cursor) out.push(text.slice(cursor, r.start))
-    if (r.kind === "mention") {
-      const selected = selectedChipStart === r.start
-      out.push(
-        <span
-          key={`m${r.start}`}
-          className={"mention-chip" + (selected ? " mention-chip-selected" : "")}
-        >
-          {text.slice(r.start, r.end)}
-        </span>,
-      )
-    } else {
-      out.push(
-        <span key={`s${r.start}`} className="spellcheck-miss">
-          {text.slice(r.start, r.end)}
-        </span>,
-      )
-    }
+    const selected = selectedChipStart === r.start
+    out.push(
+      <span
+        key={r.start}
+        className={"mention-chip" + (selected ? " mention-chip-selected" : "")}
+      >
+        {text.slice(r.start, r.end)}
+      </span>,
+    )
     cursor = r.end
   }
   if (cursor < text.length) out.push(text.slice(cursor))
