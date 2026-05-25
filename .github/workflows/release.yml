@@ -43,7 +43,15 @@ jobs:
       - name: Production build
         run: bun run package
 
-      - name: Publish to Marketplace
+      - name: Package .vsix
+        run: bunx @vscode/vsce package --no-dependencies
+
+      - name: Publish to VS Code Marketplace
         run: bunx @vscode/vsce publish --no-dependencies --pat "$VSCE_PAT"
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX
+        run: bunx ovsx publish *.vsix -p "$OVSX_PAT"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
