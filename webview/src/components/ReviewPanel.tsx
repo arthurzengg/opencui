@@ -175,7 +175,7 @@ function ReviewLegend() {
       </span>
       <span className="review-legend-item kind-created">
         <span className="review-legend-letter">U</span>
-        <span className="review-legend-text">New</span>
+        <span className="review-legend-text">Untracked</span>
       </span>
       <span className="review-legend-item kind-deleted">
         <span className="review-legend-letter">D</span>
@@ -202,7 +202,7 @@ function kindLetter(kind: ReviewChange["kind"]): string {
 
 function kindLabel(kind: ReviewChange["kind"]): string {
   switch (kind) {
-    case "created": return "Added"
+    case "created": return "Untracked"
     case "updated": return "Modified"
     case "deleted": return "Deleted"
     case "moved": return "Renamed"
