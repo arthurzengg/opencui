@@ -2130,52 +2130,6 @@ button {
   background: var(--vscode-editor-selectionBackground, rgba(80, 140, 255, 0.45));
   box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(80, 140, 255, 0.9));
 }
-/* Misspelled words drawn in the backdrop. The backdrop text is `color: transparent`
-   so only the underline ink shows through; the visible glyphs come from the
-   textarea on top. Right-click on a misspelled word opens .spellcheck-popover. */
-.promptbox-backdrop .spellcheck-miss {
-  text-decoration: underline wavy var(--vscode-editorError-foreground, #f14c4c);
-  text-decoration-skip-ink: none;
-  text-underline-offset: 2px;
-}
-.spellcheck-popover {
-  z-index: var(--z-popover);
-  margin: 0;
-  padding: 4px 0;
-  list-style: none;
-  min-width: 140px;
-  max-width: 220px;
-  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
-  color: var(--vscode-menu-foreground, var(--vscode-foreground));
-  border: 1px solid var(--vscode-menu-border, var(--vscode-panel-border));
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
-}
-.spellcheck-popover li {
-  margin: 0;
-  padding: 0;
-}
-.spellcheck-popover .spellcheck-suggestion {
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  padding: 4px 12px;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-.spellcheck-popover .spellcheck-suggestion:hover,
-.spellcheck-popover .spellcheck-suggestion:focus {
-  background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground));
-  color: var(--vscode-menu-selectionForeground, inherit);
-  outline: none;
-}
-.spellcheck-popover .spellcheck-empty {
-  padding: 4px 12px;
-  opacity: 0.65;
-  font-style: italic;
-}
 .promptbox textarea {
   width: 100%;
   min-height: 48px;
