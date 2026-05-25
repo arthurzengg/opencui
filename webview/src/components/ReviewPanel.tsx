@@ -108,6 +108,7 @@ export function ReviewPanel({
       </div>
       <div className="review-body-clip" aria-hidden={!open}>
         <div className="review-body">
+          <ReviewLegend />
           <div className="review-files">
             {pendingChanges.map(({ change }) => {
               const isSelected = change.source === selected.source && change.path === selected.path
@@ -158,6 +159,32 @@ export function ReviewPanel({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Self-documenting key strip above the file list. Each letter uses the same
+// kind-color as the row badge so a reader can map color → meaning without
+// having to learn the convention separately.
+function ReviewLegend() {
+  return (
+    <div className="review-legend" role="note">
+      <span className="review-legend-item kind-updated">
+        <span className="review-legend-letter">M</span>
+        <span className="review-legend-text">Modified</span>
+      </span>
+      <span className="review-legend-item kind-created">
+        <span className="review-legend-letter">U</span>
+        <span className="review-legend-text">New</span>
+      </span>
+      <span className="review-legend-item kind-deleted">
+        <span className="review-legend-letter">D</span>
+        <span className="review-legend-text">Deleted</span>
+      </span>
+      <span className="review-legend-item kind-moved">
+        <span className="review-legend-letter">R</span>
+        <span className="review-legend-text">Renamed</span>
+      </span>
     </div>
   )
 }

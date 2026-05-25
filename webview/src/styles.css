@@ -2040,33 +2040,50 @@ button {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
 }
-.review-file.kind-created .review-file-name,
-.review-file.kind-created .review-file-kind {
+/* Kind styling is intentionally confined to the M/U/D/R letter — the filename
+   stays in the default foreground so long paths remain easy to scan and the
+   color encodes a single, unambiguous signal. */
+.review-file.kind-created .review-file-kind,
+.review-legend-item.kind-created .review-legend-letter {
   color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
 }
-.review-file.kind-deleted .review-file-name,
-.review-file.kind-deleted .review-file-kind {
+.review-file.kind-deleted .review-file-kind,
+.review-legend-item.kind-deleted .review-legend-letter {
   color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
 }
-/* Strikethrough is scoped to the filename only; the D badge should remain
-   legible and not draw a line through the letter itself. */
-.review-file.kind-deleted .review-file-name {
-  text-decoration: line-through;
-}
-.review-file.kind-moved .review-file-name,
-.review-file.kind-moved .review-file-kind {
+.review-file.kind-moved .review-file-kind,
+.review-legend-item.kind-moved .review-legend-letter {
   color: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-yellow, #d29922));
+}
+.review-file-kind,
+.review-legend-letter {
+  font-family: var(--vscode-editor-font-family);
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  user-select: none;
 }
 .review-file-kind {
   grid-area: kind;
   width: 12px;
   flex: 0 0 auto;
-  font-family: var(--vscode-editor-font-family);
   font-size: 11px;
-  font-weight: 600;
   text-align: center;
+}
+.review-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 0 4px 2px 8px;
+  font-size: 10px;
   color: var(--vscode-descriptionForeground);
-  user-select: none;
+}
+.review-legend-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.review-legend-letter {
+  font-size: 11px;
 }
 .review-file-name {
   grid-area: name;
