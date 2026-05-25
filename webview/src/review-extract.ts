@@ -141,10 +141,15 @@ export function toolChanges(
     (update.tool === "edit" && update.input?.oldString === "")
   if (!patch && isCreate) patch = synthesizeCreatePatch(update)
   if (!patch) return []
+  // `edit` with empty oldString can still target an existing file (e.g. to
+  // prepend new content); opencode will emit a real diff with `-` lines.
+  // A real deletion is proof the file pre-existed, so the row should render
+  // as Modified (M), not Untracked (U).
+  const patchHasDeletions = countDiff(patch, "-") > 0
   return [{
     source,
     path: displayPath(update, filediff),
-    kind: isCreate ? "created" : "updated",
+    kind: isCreate && !patchHasDeletions ? "created" : "updated",
     additions: typeof filediff?.additions === "number" ? filediff.additions : countDiff(patch, "+"),
     deletions: typeof filediff?.deletions === "number" ? filediff.deletions : countDiff(patch, "-"),
     patch,

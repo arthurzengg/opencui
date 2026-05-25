@@ -36,6 +36,41 @@ describe("toolChanges", () => {
     expect(result[0]?.deletions).toBe(1)
   })
 
+  it("classifies edit with empty oldString as updated when the patch has real deletions", () => {
+    // Regression: a model can call edit with oldString:"" against an EXISTING
+    // file (e.g. to prepend content), and opencode returns a real diff with
+    // both `+` and `-` lines. The `-` lines prove the file pre-existed, so
+    // the review card must render as Modified (M), not Untracked (U).
+    const result = toolChanges(
+      {
+        callID: "c1",
+        tool: "edit",
+        status: "completed",
+        input: { filePath: "README.md", oldString: "", newString: "# Title\n\nNew intro line.\n" },
+        metadata: { filediff: { patch: "@@ -1,3 +1,7 @@\n line\n-old\n+new\n+added\n", additions: 2, deletions: 1 } },
+      },
+      "src1",
+    )
+    expect(result).toHaveLength(1)
+    expect(result[0]?.kind).toBe("updated")
+    expect(result[0]?.additions).toBe(2)
+    expect(result[0]?.deletions).toBe(1)
+  })
+
+  it("still classifies edit with empty oldString as created when the synthesized patch has no deletions", () => {
+    const result = toolChanges(
+      {
+        callID: "c1",
+        tool: "edit",
+        status: "completed",
+        input: { filePath: "fresh.ts", oldString: "", newString: "line1\nline2\n" },
+      },
+      "src1",
+    )
+    expect(result).toHaveLength(1)
+    expect(result[0]?.kind).toBe("created")
+  })
+
   it("returns empty for unrelated tools without patch", () => {
     expect(
       toolChanges({ callID: "c1", tool: "read", status: "completed", input: { filePath: "a.ts" } }, "src1"),
