@@ -130,6 +130,7 @@ export function ReviewPanel({
                   tabIndex={0}
                   title={actorTooltip(change)}
                 >
+                  <span className="review-file-kind" aria-label={kindLabel(change.kind)}>{kindLetter(change.kind)}</span>
                   <span className="review-file-name">{displayNames.get(change.path) ?? basename(change.path)}</span>
                   <span className="review-file-stat add">+{change.additions}</span>
                   <span className="review-file-stat del">-{change.deletions}</span>
@@ -159,6 +160,26 @@ export function ReviewPanel({
       </div>
     </div>
   )
+}
+
+// Mirrors VS Code's SCM badge letters so users familiar with the gutter can
+// scan the review card without re-learning a separate convention.
+function kindLetter(kind: ReviewChange["kind"]): string {
+  switch (kind) {
+    case "created": return "U"
+    case "updated": return "M"
+    case "deleted": return "D"
+    case "moved": return "R"
+  }
+}
+
+function kindLabel(kind: ReviewChange["kind"]): string {
+  switch (kind) {
+    case "created": return "Added"
+    case "updated": return "Modified"
+    case "deleted": return "Deleted"
+    case "moved": return "Renamed"
+  }
 }
 
 // The Review Card intentionally shows only the filename + stats per row;
