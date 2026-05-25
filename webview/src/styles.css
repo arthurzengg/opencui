@@ -2041,8 +2041,14 @@ button {
   outline-offset: -1px;
 }
 /* Kind styling is intentionally confined to the M/U/D/R letter — the filename
-   stays in the default foreground so long paths remain easy to scan and the
-   color encodes a single, unambiguous signal. */
+   stays in the default foreground so long paths remain easy to scan.
+   Palette: M amber (modified is the most common state, so it gets the calm
+   warm tint), U green (new files), D red (deletions), R blue (renames stay
+   distinct from U so a row that turned green vs blue reads at a glance). */
+.review-file.kind-updated .review-file-kind,
+.review-legend-item.kind-updated .review-legend-letter {
+  color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow, #d29922));
+}
 .review-file.kind-created .review-file-kind,
 .review-legend-item.kind-created .review-legend-letter {
   color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
@@ -2053,7 +2059,7 @@ button {
 }
 .review-file.kind-moved .review-file-kind,
 .review-legend-item.kind-moved .review-legend-letter {
-  color: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-yellow, #d29922));
+  color: var(--vscode-charts-blue, #79c0ff);
 }
 .review-file-kind,
 .review-legend-letter {
