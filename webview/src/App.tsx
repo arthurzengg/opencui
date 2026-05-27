@@ -162,6 +162,8 @@ export default function App() {
           searchFiles={searchFiles}
           attachFile={attachFile}
           position="top"
+          conversations={state.conversations}
+          onOpenConversation={openConversation}
         />
       )}
       <div
@@ -264,6 +266,8 @@ export default function App() {
           onAbort={abort}
           searchFiles={searchFiles}
           attachFile={attachFile}
+          conversations={state.conversations}
+          onOpenConversation={openConversation}
         />
       )}
     </div>

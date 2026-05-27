@@ -5,6 +5,13 @@ import { PromptBox, detectMention, extractMentions, findMentionRanges, findChipA
 
 afterEach(cleanup)
 
+/** Type `@`, wait for the category menu, then press Enter to select "Files & Folders". */
+async function enterFilesCategory(user: ReturnType<typeof userEvent.setup>, target: Element) {
+  await user.type(target, "@")
+  await waitFor(() => expect(screen.getByText("Files & Folders")).toBeInTheDocument())
+  await user.keyboard("{Enter}")
+}
+
 describe("PromptBox", () => {
   it("renders a textarea with placeholder", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
@@ -217,7 +224,7 @@ describe("extractMentions", () => {
 })
 
 describe("PromptBox @file autocomplete", () => {
-  it("shows the picker dropdown after typing @ when searchFiles is provided", async () => {
+  it("shows the category menu after typing @, then file hits after selecting Files & Folders", async () => {
     const user = userEvent.setup()
     const searchFiles = vi.fn().mockResolvedValue([
       { path: "src/foo.ts", name: "foo.ts" },
@@ -226,10 +233,9 @@ describe("PromptBox @file autocomplete", () => {
     render(
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
-    await user.type(screen.getByRole("textbox"), "@")
+    await enterFilesCategory(user, screen.getByRole("textbox"))
     await waitFor(() => expect(searchFiles).toHaveBeenCalled())
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
-    expect(screen.getByText("foo.ts")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
     expect(screen.getByText("bar.ts")).toBeInTheDocument()
   })
 
@@ -260,8 +266,8 @@ describe("PromptBox @file autocomplete", () => {
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await user.type(textarea, "@")
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
     await user.keyboard("{Enter}")
     expect(textarea.value).toBe("@src/foo.ts ")
     expect(screen.queryByRole("listbox")).toBeNull()
@@ -276,11 +282,12 @@ describe("PromptBox @file autocomplete", () => {
     render(
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
-    await user.type(screen.getByRole("textbox"), "@")
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
+    const textarea = screen.getByRole("textbox")
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
     await user.keyboard("{ArrowDown}")
     await user.keyboard("{Enter}")
-    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("@src/bar.ts ")
+    expect((textarea as HTMLTextAreaElement).value).toBe("@src/bar.ts ")
   })
 
   it("Click on a hit inserts that path", async () => {
@@ -292,8 +299,8 @@ describe("PromptBox @file autocomplete", () => {
     render(
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
-    await user.type(screen.getByRole("textbox"), "@")
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
+    await enterFilesCategory(user, screen.getByRole("textbox"))
+    await waitFor(() => expect(screen.getByText("bar.ts")).toBeInTheDocument())
     await user.click(screen.getByText("bar.ts"))
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("@src/bar.ts ")
   })
@@ -324,8 +331,8 @@ describe("PromptBox @file autocomplete", () => {
       <PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await user.type(textarea, "@")
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
     await user.keyboard("{Enter}") // pick foo.ts
     await user.type(textarea, "explain this")
     await user.keyboard("{Enter}")
@@ -342,8 +349,8 @@ describe("PromptBox @file autocomplete", () => {
       <PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await user.type(textarea, "@")
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
     await user.keyboard("{Enter}") // inserts "@src/foo.ts "
     await user.clear(textarea)
     await user.type(textarea, "no files here")
@@ -411,8 +418,8 @@ describe("PromptBox mention chip rendering", () => {
     const { container } = render(
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
-    await user.type(screen.getByRole("textbox"), "@")
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
+    await enterFilesCategory(user, screen.getByRole("textbox"))
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
     await user.keyboard("{Enter}")
     const chip = container.querySelector(".mention-chip")
     expect(chip).not.toBeNull()
@@ -440,8 +447,8 @@ describe("PromptBox mention chip rendering", () => {
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await user.type(textarea, "@")
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
     await user.keyboard("{Enter}") // foo.ts
     await user.type(textarea, "@ba")
     await waitFor(() => expect(screen.getByText("bar.ts")).toBeInTheDocument())
@@ -460,8 +467,8 @@ describe("PromptBox mention chip rendering", () => {
       <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await user.type(textarea, "@")
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
     await user.keyboard("{Enter}")
     expect(container.querySelector(".mention-chip")).not.toBeNull()
     await user.clear(textarea)
@@ -541,8 +548,8 @@ describe("PromptBox two-step Backspace on chip", () => {
       <PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} searchFiles={searchFiles} />,
     )
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await user.type(textarea, "@")
-    await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument())
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
     await user.keyboard("{Enter}") // text becomes "@src/foo.ts " (cursor at 12)
     return { user, onSend, textarea, ...utils }
   }

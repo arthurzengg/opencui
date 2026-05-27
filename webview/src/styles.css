@@ -84,7 +84,7 @@
      also update TEXTAREA_MAX_HEIGHT in webview/src/components/PromptBox.tsx
      — the JS clamp on textarea.style.height must match this cap or the
      CSS scrollbar will fight with the inline style. */
-  --message-max-height:  160px;
+  --message-max-height:  120px;
 
   /* === Legacy aliases === */
   --gap: var(--space-3);
@@ -2110,12 +2110,14 @@ button {
   background: var(--vscode-sideBar-background);
 }
 .promptbox-input {
-  position: relative;
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: var(--radius);
 }
 .promptbox-input:focus-within { border-color: var(--color-border-focus); }
+.promptbox-textarea-wrap {
+  position: relative;
+}
 .promptbox-backdrop {
   position: absolute;
   inset: 0;
@@ -2509,6 +2511,24 @@ button {
 .mention-hit.active .mention-path {
   color: var(--vscode-list-activeSelectionForeground);
   opacity: 0.8;
+}
+.mention-category {
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+}
+.mention-category-label {
+  flex: 1;
+  font-weight: 500;
+}
+.mention-category-chevron {
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+.mention-empty {
+  opacity: 0.5;
+  cursor: default;
+  font-style: italic;
 }
 
 /* ===== Buttons ===== */
