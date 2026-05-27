@@ -153,6 +153,17 @@ export default function App() {
           <IndexStatus status={state.indexStatus} onStart={startIndex} onStop={stopIndex} />
         </div>
       )}
+      {state.messages.length === 0 && (
+        <PromptBox
+          busy={busy}
+          aborting={state.aborting}
+          onSend={send}
+          onAbort={abort}
+          searchFiles={searchFiles}
+          attachFile={attachFile}
+          position="top"
+        />
+      )}
       <div
         className="messages"
         ref={scrollRef}
@@ -182,19 +193,6 @@ export default function App() {
           }
         }}
       >
-        {state.messages.length === 0 && (
-          <div className="welcome">
-            <div className="welcome-title">OpenCode Panel</div>
-            <div className="welcome-sub">Ask about the current file, refactor code, or run a task.</div>
-            <div className="welcome-suggestions">
-              {WELCOME_PROMPTS.map((prompt) => (
-                <button key={prompt} className="welcome-suggestion" onClick={() => send(prompt)}>
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
         {groupTurns(state.messages).map((turn) => (
           <div className="turn" key={turn.key}>
             {turn.user && (
@@ -258,24 +256,19 @@ export default function App() {
         onOpenReviewChange={openReviewChangeDebounced}
         onReviewAllInChange={reviewAllInChange}
       />
-      <PromptBox
-        busy={busy}
-        aborting={state.aborting}
-        onSend={send}
-        onAbort={abort}
-        searchFiles={searchFiles}
-        attachFile={attachFile}
-      />
+      {state.messages.length > 0 && (
+        <PromptBox
+          busy={busy}
+          aborting={state.aborting}
+          onSend={send}
+          onAbort={abort}
+          searchFiles={searchFiles}
+          attachFile={attachFile}
+        />
+      )}
     </div>
   )
 }
-
-const WELCOME_PROMPTS = [
-  "Explain this file",
-  "Find bugs in the current file",
-  "Add tests for this file",
-  "Refactor this for readability",
-]
 
 type Turn = { user?: Message; assistants: Message[]; key: string }
 

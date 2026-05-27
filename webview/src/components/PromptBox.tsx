@@ -51,6 +51,7 @@ type Props = {
    * replies will be discarded. onAbort is repurposed as the Cancel handler.
    */
   variant?: "send" | "edit"
+  position?: "top" | "bottom"
 }
 
 function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachment> {
@@ -69,7 +70,7 @@ function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachm
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, attachFile, initial, variant = "send" }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, attachFile, initial, variant = "send", position = "bottom" }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
@@ -312,7 +313,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
   })()
 
   return (
-    <div className={"promptbox" + (variant === "edit" ? " promptbox--edit" : "")}>
+    <div className={"promptbox" + (variant === "edit" ? " promptbox--edit" : "") + (position === "top" ? " promptbox--top" : "")}>
       {attachError && <div className="attachment-error">{attachError}</div>}
       {imageAttachments.length > 0 && (
         <ul className="promptbox-thumbs" aria-label="Image attachments">
@@ -338,7 +339,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
           ref={ref}
           value={text}
           rows={variant === "edit" ? 1 : 2}
-          placeholder="Ask OpenCode Panel…  (Enter to send, Shift+Enter for newline, @ to attach a file)"
+          placeholder="@ for file, Enter to send"
           onChange={(e) => updateText(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
@@ -371,69 +372,69 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
             ))}
           </ul>
         )}
-      </div>
-      <div className="promptbox-row">
-        {attachFile && (
-          <button
-            type="button"
-            className="icon-btn attach-btn"
-            aria-label="Attach image, PDF, or code/text file"
-            title="Attach image, PDF, or code/text file"
-            disabled={attaching || busy}
-            onClick={handleAttachClick}
-          >
-            <svg width={ICON_SIZE.lg} height={ICON_SIZE.lg} viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="M10.5 2.5a3 3 0 0 1 3 3v6.5a3.5 3.5 0 0 1-7 0V5a2 2 0 1 1 4 0v6.5a1.5 1.5 0 0 1-3 0V5.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        )}
-        <div className="spacer" />
-        {variant === "edit" ? (
-          <button
-            className="btn primary icon"
-            onClick={submit}
-            disabled={busy || (!text.trim() && !hasActiveAttachment)}
-            aria-label="Save & regenerate"
-            title="Save & regenerate"
-          >
-            <SendIcon />
-          </button>
-        ) : aborting ? (
-          <button
-            className="btn danger icon"
-            disabled
-            aria-busy="true"
-            aria-label="Stopping…"
-            title="Stopping…"
-          >
-            <StopIcon />
-          </button>
-        ) : busy ? (
-          <button
-            className="btn danger icon"
-            onClick={onAbort}
-            aria-label="Stop"
-            title="Stop"
-          >
-            <StopIcon />
-          </button>
-        ) : (
-          <button
-            className="btn primary icon"
-            onClick={submit}
-            disabled={!text.trim() && !hasActiveAttachment}
-            aria-label="Send"
-            title="Send"
-          >
-            <SendIcon />
-          </button>
-        )}
+        <div className="promptbox-row">
+          <div className="spacer" />
+          {attachFile && (
+            <button
+              type="button"
+              className="icon-btn attach-btn"
+              aria-label="Attach image, PDF, or code/text file"
+              title="Attach image, PDF, or code/text file"
+              disabled={attaching || busy}
+              onClick={handleAttachClick}
+            >
+              <svg width={ICON_SIZE.lg} height={ICON_SIZE.lg} viewBox="5.5 1.5 8 14" aria-hidden="true" style={{ display: "block" }}>
+                <path
+                  d="M10.5 2.5a3 3 0 0 1 3 3v6.5a3.5 3.5 0 0 1-7 0V5a2 2 0 1 1 4 0v6.5a1.5 1.5 0 0 1-3 0V5.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
+          {variant === "edit" ? (
+            <button
+              className="btn primary icon"
+              onClick={submit}
+              disabled={busy || (!text.trim() && !hasActiveAttachment)}
+              aria-label="Save & regenerate"
+              title="Save & regenerate"
+            >
+              <SendIcon />
+            </button>
+          ) : aborting ? (
+            <button
+              className="btn danger icon"
+              disabled
+              aria-busy="true"
+              aria-label="Stopping…"
+              title="Stopping…"
+            >
+              <StopIcon />
+            </button>
+          ) : busy ? (
+            <button
+              className="btn danger icon"
+              onClick={onAbort}
+              aria-label="Stop"
+              title="Stop"
+            >
+              <StopIcon />
+            </button>
+          ) : (
+            <button
+              className="btn primary icon"
+              onClick={submit}
+              disabled={!text.trim() && !hasActiveAttachment}
+              aria-label="Send"
+              title="Send"
+            >
+              <SendIcon />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
