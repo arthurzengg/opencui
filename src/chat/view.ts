@@ -37,7 +37,7 @@ import { relativeToCwd, samePath } from "./paths"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { extractChanges, reviewChanges } from "./review-changes"
 import { reviewAllForPath } from "./review-actions"
-import { buildPrompt, readMentions } from "./prompt-builder"
+import { buildPrompt, readMentions, readConversationMentions } from "./prompt-builder"
 import { buildManifest } from "../workspace-context/manifest"
 import { collectAutoContext } from "../workspace-context/collector"
 import { RecentEditsTracker } from "../workspace-context/recent-edits"
@@ -405,6 +405,7 @@ export class ChatView implements vscode.WebviewViewProvider {
             ref: msg.ref,
             backendID: msg.backendID,
             mentions: msg.mentions,
+            conversationMentions: msg.conversationMentions,
           },
         ]
         this.saveActive()
@@ -556,10 +557,10 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       }
       case "send":
-        await this.handleSend(msg.text, msg.mentions, msg.attachments)
+        await this.handleSend(msg.text, msg.mentions, msg.attachments, msg.conversationMentions)
         return
       case "editMessage":
-        await this.handleEdit(msg.id, msg.text, msg.mentions, msg.attachments)
+        await this.handleEdit(msg.id, msg.text, msg.mentions, msg.attachments, msg.conversationMentions)
         return
       case "fileSearch":
         try {
@@ -817,7 +818,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     // assistant message ended (session.idle clears this.aborting).
   }
 
-  private async handleSend(text: string, mentions?: string[], attachments?: Attachment[]) {
+  private async handleSend(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
     const userMessageID = "u_" + Date.now()
@@ -829,6 +830,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       ref: { path: ctx.filePath, label },
       attachments,
       mentions,
+      conversationMentions,
     })
     this.updateTitleFromPrompt(text)
 
@@ -920,6 +922,48 @@ export class ChatView implements vscode.WebviewViewProvider {
       })
       manifest.totals.skippedItems += 1
     }
+    const convResult = readConversationMentions(
+      conversationMentions,
+      (id) => this.manager.getMessages(id),
+      (id) => this.manager.getTitle(id),
+    )
+    for (const [id, info] of Object.entries(convResult.bytes)) {
+      const title = this.manager.getTitle(id) ?? id
+      manifest.items.push({
+        id: `conv_mention_${id}`,
+        source: "conversation",
+        kind: "conversation",
+        label: title,
+        reason: "Past conversation attached via @-mention",
+        status: info.included < info.original ? "truncated" : "included",
+        bytes: info.included,
+      })
+      manifest.totals.includedItems += 1
+      manifest.totals.includedBytes += info.included
+      if (info.included < info.original) manifest.totals.truncatedItems += 1
+    }
+    for (const id of convResult.capped) {
+      manifest.items.push({
+        id: `conv_capped_${id}`,
+        source: "conversation",
+        kind: "conversation",
+        label: this.manager.getTitle(id) ?? id,
+        reason: "Skipped: conversation mention byte cap exceeded",
+        status: "skipped",
+      })
+      manifest.totals.skippedItems += 1
+    }
+    for (const id of convResult.failed) {
+      manifest.items.push({
+        id: `conv_failed_${id}`,
+        source: "conversation",
+        kind: "conversation",
+        label: id,
+        reason: "Skipped: conversation not found",
+        status: "skipped",
+      })
+      manifest.totals.skippedItems += 1
+    }
     manifest.totals.budgetBytes = settings.maxBytes
     if (settings.showManifest) {
       this.post({ type: "userMessageContext", id: userMessageID, context: manifest })
@@ -942,7 +986,13 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     parts.push({
       type: "text",
-      text: buildPrompt(text, ctx, mentionResult.block, backend.workspace, auto.blocks),
+      text: buildPrompt(
+        text,
+        ctx,
+        [mentionResult.block, convResult.block].filter(Boolean).join("\n\n") || undefined,
+        backend.workspace,
+        auto.blocks,
+      ),
     })
     type PromptBody = NonNullable<Parameters<typeof backend.client.session.prompt>[0]["body"]>
     const body: PromptBody = {
@@ -982,7 +1032,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     // No UI action here — the SSE subscription owns assistant lifecycle.
   }
 
-  private async handleEdit(webviewID: string, text: string, mentions?: string[], attachments?: Attachment[]) {
+  private async handleEdit(webviewID: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
     const target = this.messages.find((m) => m.id === webviewID && m.role === "user")
     if (!target) {
       log("editMessage: user message not found", webviewID)
@@ -1015,7 +1065,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.queueReviewDecorationsSync()
     }
 
-    await this.handleSend(trimmed, mentions, attachments)
+    await this.handleSend(trimmed, mentions, attachments, conversationMentions)
   }
 
   private async attachSubscription(backend: Backend, sessionID: string) {

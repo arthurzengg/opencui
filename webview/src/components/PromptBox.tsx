@@ -5,6 +5,7 @@ import {
   findChipAtCaret,
   findMentionRanges,
   makeAttachmentLabel,
+  makeConversationLabel,
 } from "../mention-tokens"
 import { clipboardHasImage, readPastedImages } from "../paste-attachments"
 import { usePromptText } from "../hooks/usePromptText"
@@ -21,6 +22,7 @@ export {
   findChipAtCaret,
   findMentionRanges,
   makeAttachmentLabel,
+  makeConversationLabel,
   formatBytes,
 } from "../mention-tokens"
 
@@ -34,7 +36,7 @@ type Props = {
    * one.
    */
   aborting?: boolean
-  onSend: (text: string, mentions?: string[], attachments?: Attachment[]) => void
+  onSend: (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
   onAbort: () => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
@@ -44,7 +46,7 @@ type Props = {
    * left off — same picker, same chips, same paperclip — instead of a
    * stripped-down textarea.
    */
-  initial?: { text?: string; mentions?: string[]; attachments?: Attachment[] }
+  initial?: { text?: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: string[] }
   /**
    * "send" (default) renders the standard Send/Stop bottom row. "edit"
    * renders Cancel + Save & regenerate, plus a warning that subsequent
@@ -72,6 +74,23 @@ function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachm
   return map
 }
 
+function buildInitialConversations(
+  initial: Props["initial"],
+  conversations: ConversationSummary[] | undefined,
+): Map<string, string> {
+  const map = new Map<string, string>()
+  if (!initial?.conversationMentions || !conversations) return map
+  const existing = new Set<string>(initial.mentions ?? [])
+  for (const id of initial.conversationMentions) {
+    const conv = conversations.find((c) => c.id === id)
+    if (!conv) continue
+    const label = makeConversationLabel(conv.title, existing)
+    existing.add(label)
+    map.set(label, id)
+  }
+  return map
+}
+
 export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, attachFile, initial, variant = "send", position = "bottom", conversations, onOpenConversation }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
@@ -89,9 +108,12 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
   // re-applied every render. After mount these mutate freely.
   const knownMentions = useRef<Set<string>>(undefined as never)
   const knownAttachments = useRef<Map<string, Attachment>>(undefined as never)
+  const knownConversations = useRef<Map<string, string>>(undefined as never)
   if (!knownMentions.current) {
     knownMentions.current = new Set<string>(initial?.mentions ?? [])
     knownAttachments.current = buildInitialAttachments(initial)
+    knownConversations.current = buildInitialConversations(initial, conversations)
+    for (const label of knownConversations.current.keys()) knownMentions.current.add(label)
   }
   const { mention, hits, activeIndex, setActiveIndex, detectAtCaret, closeMention, insertMention } =
     useMentionPicker({ text, setText, searchFiles, knownMentions, pendingCursor })
@@ -115,11 +137,32 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     ? (conversations ?? []).filter((c) => !mention.query || c.title.toLowerCase().includes(mention.query.toLowerCase()))
     : []
 
-  /** Combined set of @-token labels recognized as chips (mentions + attachments). */
+  /** Combined set of @-token labels recognized as chips (mentions + attachments + conversations). */
   const allKnownLabels = (): Set<string> => {
     const all = new Set<string>(knownMentions.current)
     for (const k of knownAttachments.current.keys()) all.add(k)
+    for (const k of knownConversations.current.keys()) all.add(k)
     return all
+  }
+
+  const insertConversationMention = (conv: ConversationSummary) => {
+    if (!mention) return
+    const existing = new Set([
+      ...knownMentions.current,
+      ...knownAttachments.current.keys(),
+      ...knownConversations.current.keys(),
+    ])
+    const label = makeConversationLabel(conv.title, existing)
+    knownConversations.current.set(label, conv.id)
+    knownMentions.current.add(label)
+    const before = text.slice(0, mention.start)
+    const after = text.slice(mention.start + 1 + mention.query.length)
+    const insert = "@" + label
+    const needsSpace = !after.startsWith(" ")
+    const next = before + insert + (needsSpace ? " " : "") + after
+    pendingCursor.current = before.length + insert.length + 1
+    setText(next)
+    closeMention()
   }
 
   const updateText = (next: string, caret: number) => {
@@ -143,15 +186,21 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     // files first, pasted images second.
     for (const a of imageAttachments) activeAttachments.push(a)
     if ((!trimmed && activeAttachments.length === 0) || busy) return
-    const mentions = extractMentions(text, knownMentions.current)
+    const allMentions = extractMentions(text, knownMentions.current)
+    const fileMentions = allMentions.filter((m) => !knownConversations.current.has(m))
+    const convIDs = allMentions
+      .map((m) => knownConversations.current.get(m))
+      .filter((id): id is string => !!id)
     onSend(
       trimmed,
-      mentions.length ? mentions : undefined,
+      fileMentions.length ? fileMentions : undefined,
       activeAttachments.length ? activeAttachments : undefined,
+      convIDs.length ? convIDs : undefined,
     )
     setText("")
     knownMentions.current.clear()
     knownAttachments.current.clear()
+    knownConversations.current.clear()
     clearImageAttachments()
     setSelectedChipStart(undefined)
     setAttachError(undefined)
@@ -292,10 +341,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault()
         const conv = filteredConversations[menuIndex]
-        if (conv && onOpenConversation) {
-          onOpenConversation(conv.id)
-          closeMention()
-        }
+        if (conv) insertConversationMention(conv)
         return
       }
       if (e.key === "Escape") {
@@ -480,7 +526,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
                 className={"mention-hit" + (i === menuIndex ? " active" : "")}
                 onMouseDown={(e) => {
                   e.preventDefault()
-                  if (onOpenConversation) { onOpenConversation(conv.id); closeMention() }
+                  insertConversationMention(conv)
                 }}
                 onMouseEnter={() => setMenuIndex(i)}
               >

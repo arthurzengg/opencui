@@ -107,6 +107,11 @@ export type ChatMessage = {
    */
   mentions?: string[]
   /**
+   * Past-conversation IDs the user attached via the @ picker. Persisted so
+   * the edit flow can restore them.
+   */
+  conversationMentions?: string[]
+  /**
    * Manifest of context the host attached when this turn was sent. Persisted
    * so historical messages can show what was included. Always set for new
    * messages, undefined for messages from before the manifest landed.
@@ -292,6 +297,7 @@ export type PromptContextManifestItemSource =
   | "opencode"
   | "omo"
   | "external"
+  | "conversation"
 
 export type PromptContextManifestItemKind =
   | "file"
@@ -302,6 +308,7 @@ export type PromptContextManifestItemKind =
   | "symbol"
   | "summary"
   | "indexResult"
+  | "conversation"
 
 export type PromptContextManifestItem = {
   id: string
@@ -345,7 +352,7 @@ export type Outbound =
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
   | { type: "workspace"; workspace?: WorkspaceInfo }
-  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[]; context?: PromptContextManifest }
+  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[]; conversationMentions?: string[]; context?: PromptContextManifest }
   | { type: "userMessageBackendID"; id: string; backendID: string }
   /**
    * Followup to `userMessage` after the host finishes reading mentions and
@@ -387,8 +394,8 @@ export type Outbound =
 /** Messages sent from the webview to the extension host. */
 export type Inbound =
   | { type: "mounted" }
-  | { type: "send"; text: string; mentions?: string[]; attachments?: Attachment[] }
-  | { type: "editMessage"; id: string; text: string; mentions?: string[]; attachments?: Attachment[] }
+  | { type: "send"; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: string[] }
+  | { type: "editMessage"; id: string; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: string[] }
   | { type: "abort" }
   | { type: "newSession" }
   | { type: "createConversation" }
