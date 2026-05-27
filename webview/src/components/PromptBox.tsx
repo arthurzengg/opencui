@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode } from "react"
-import type { Attachment, FileSearchHit } from "../protocol"
+import { useEffect, useRef, useState, type ReactNode } from "react"
+import type { Attachment, ConversationSummary, FileSearchHit } from "../protocol"
 import {
   extractMentions,
   findChipAtCaret,
@@ -52,6 +52,8 @@ type Props = {
    */
   variant?: "send" | "edit"
   position?: "top" | "bottom"
+  conversations?: ConversationSummary[]
+  onOpenConversation?: (id: string) => void
 }
 
 function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachment> {
@@ -70,7 +72,7 @@ function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachm
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, attachFile, initial, variant = "send", position = "bottom" }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, attachFile, initial, variant = "send", position = "bottom", conversations, onOpenConversation }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
@@ -93,6 +95,25 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
   }
   const { mention, hits, activeIndex, setActiveIndex, detectAtCaret, closeMention, insertMention } =
     useMentionPicker({ text, setText, searchFiles, knownMentions, pendingCursor })
+
+  type MentionCategory = "files" | "chats"
+  const [mentionCategory, setMentionCategory] = useState<MentionCategory | null>(null)
+  const [menuIndex, setMenuIndex] = useState(0)
+
+  useEffect(() => {
+    if (!mention) {
+      setMentionCategory(null)
+      setMenuIndex(0)
+    }
+  }, [mention])
+
+  const showCategoryMenu = !!mention && mentionCategory === null && !mention.query
+  const showFileHits = !!mention && hits.length > 0 && (mentionCategory === "files" || (mentionCategory === null && !!mention.query))
+  const showChatList = !!mention && mentionCategory === "chats"
+
+  const filteredConversations = showChatList
+    ? (conversations ?? []).filter((c) => !mention.query || c.title.toLowerCase().includes(mention.query.toLowerCase()))
+    : []
 
   /** Combined set of @-token labels recognized as chips (mentions + attachments). */
   const allKnownLabels = (): Set<string> => {
@@ -233,7 +254,57 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     // the IME. keyCode 229 is the legacy fallback for older Chromium builds
     // that don't surface isComposing reliably.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
-    if (mention && hits.length > 0) {
+    if (showCategoryMenu) {
+      const categories: MentionCategory[] = ["files", "chats"]
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setMenuIndex((i) => (i + 1) % categories.length)
+        return
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setMenuIndex((i) => (i - 1 + categories.length) % categories.length)
+        return
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault()
+        setMentionCategory(categories[menuIndex]!)
+        setMenuIndex(0)
+        return
+      }
+      if (e.key === "Escape") {
+        e.preventDefault()
+        closeMention()
+        return
+      }
+    }
+    if (showChatList && filteredConversations.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setMenuIndex((i) => (i + 1) % filteredConversations.length)
+        return
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setMenuIndex((i) => (i - 1 + filteredConversations.length) % filteredConversations.length)
+        return
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault()
+        const conv = filteredConversations[menuIndex]
+        if (conv && onOpenConversation) {
+          onOpenConversation(conv.id)
+          closeMention()
+        }
+        return
+      }
+      if (e.key === "Escape") {
+        e.preventDefault()
+        closeMention()
+        return
+      }
+    }
+    if (showFileHits && hits.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
         setActiveIndex((i) => (i + 1) % hits.length)
@@ -332,6 +403,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
         onClose={() => setPreviewImage(null)}
       />
       <div className="promptbox-input">
+        <div className="promptbox-textarea-wrap">
         <div ref={backdropRef} className="promptbox-backdrop" aria-hidden="true">
           {renderHighlightedText(text, allKnownLabels(), selectedChipStart)}
         </div>
@@ -352,7 +424,33 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
             setTimeout(closeMention, 120)
           }}
         />
-        {mention && hits.length > 0 && (
+        {showCategoryMenu && (
+          <ul className="mention-popover" role="listbox" aria-label="Categories">
+            <li
+              role="option"
+              aria-selected={menuIndex === 0}
+              className={"mention-hit mention-category" + (menuIndex === 0 ? " active" : "")}
+              onMouseDown={(e) => { e.preventDefault(); setMentionCategory("files"); setMenuIndex(0) }}
+              onMouseEnter={() => setMenuIndex(0)}
+            >
+              <FolderIcon />
+              <span className="mention-category-label">Files & Folders</span>
+              <ChevronIcon />
+            </li>
+            <li
+              role="option"
+              aria-selected={menuIndex === 1}
+              className={"mention-hit mention-category" + (menuIndex === 1 ? " active" : "")}
+              onMouseDown={(e) => { e.preventDefault(); setMentionCategory("chats"); setMenuIndex(0) }}
+              onMouseEnter={() => setMenuIndex(1)}
+            >
+              <ChatIcon />
+              <span className="mention-category-label">Past Chats</span>
+              <ChevronIcon />
+            </li>
+          </ul>
+        )}
+        {showFileHits && (
           <ul className="mention-popover" role="listbox" aria-label="Files">
             {hits.map((hit, i) => (
               <li
@@ -372,6 +470,28 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
             ))}
           </ul>
         )}
+        {showChatList && (
+          <ul className="mention-popover" role="listbox" aria-label="Past Chats">
+            {filteredConversations.length > 0 ? filteredConversations.map((conv, i) => (
+              <li
+                key={conv.id}
+                role="option"
+                aria-selected={i === menuIndex}
+                className={"mention-hit" + (i === menuIndex ? " active" : "")}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  if (onOpenConversation) { onOpenConversation(conv.id); closeMention() }
+                }}
+                onMouseEnter={() => setMenuIndex(i)}
+              >
+                <span className="mention-name">{conv.title || "Untitled"}</span>
+              </li>
+            )) : (
+              <li className="mention-hit mention-empty">No conversations</li>
+            )}
+          </ul>
+        )}
+        </div>
         <div className="promptbox-row">
           <div className="spacer" />
           {attachFile && (
@@ -465,6 +585,32 @@ function StopIcon() {
   return (
     <svg width={ICON_SIZE.xs} height={ICON_SIZE.xs} viewBox="0 0 10 10" aria-hidden="true" style={{ display: "block" }}>
       <rect x="0" y="0" width="10" height="10" rx="1.5" fill="currentColor" />
+    </svg>
+  )
+}
+
+function FolderIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2 4a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z"
+        stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ChatIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H6l-3 2.5V4a1 1 0 0 1 1-1z"
+        stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ChevronIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="mention-category-chevron">
+      <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
