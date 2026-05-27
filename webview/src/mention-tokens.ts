@@ -117,6 +117,14 @@ export function findMentionRanges(text: string, known: Set<string>): Array<{ sta
   return out
 }
 
+export function makeConversationLabel(title: string, existing: Set<string>): string {
+  const cleaned = "chat:" + title.replace(/\s+/g, "_").slice(0, 60)
+  if (!existing.has(cleaned)) return cleaned
+  let i = 2
+  while (existing.has(`${cleaned}_${i}`)) i++
+  return `${cleaned}_${i}`
+}
+
 /**
  * Build a chip-safe label for an attachment filename. Spaces would break the
  * `@token` boundary detection, so we replace whitespace with `_`. If the

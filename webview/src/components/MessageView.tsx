@@ -43,7 +43,7 @@ export function MessageView({
   processOnly: boolean
   busy?: boolean
   onReviewFile?: (path: string) => void
-  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[]) => void
+  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
   onBeginEdit?: (id: string) => void
   onEndEdit?: (id: string) => void
   onRetry?: (assistantID: string) => void
@@ -137,7 +137,7 @@ function UserMessageView({
 }: {
   message: Message
   busy?: boolean
-  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[]) => void
+  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
   onBeginEdit?: (id: string) => void
   onEndEdit?: (id: string) => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
@@ -206,12 +206,9 @@ function UserMessageView({
         ? "Saving your message — try again in a moment"
         : "Edit and regenerate"
 
-  const handleSubmit = (text: string, mentions?: string[], attachments?: Attachment[]) => {
+  const handleSubmit = (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => {
     const trimmed = text.trim()
     if (!trimmed && !attachments?.length) return
-    // Bail if nothing changed — clicking Save with the original content
-    // shouldn't trigger a regenerate. Compare text + mention set + attachment
-    // count; the text covers the vast majority of cases.
     const sameText = trimmed === originalText.trim()
     const sameMentionCount = (mentions?.length ?? 0) === (message.mentions?.length ?? 0)
     const sameAttachCount = (attachments?.length ?? 0) === attachmentBlocks.length
@@ -219,7 +216,7 @@ function UserMessageView({
       exitEditing()
       return
     }
-    onEditMessage?.(message.id, trimmed, mentions, attachments)
+    onEditMessage?.(message.id, trimmed, mentions, attachments, conversationMentions)
     exitEditing()
   }
 
@@ -272,6 +269,7 @@ function UserMessageView({
               text: originalText,
               mentions: message.mentions,
               attachments: initialAttachments,
+              conversationMentions: message.conversationMentions,
             }}
           />
         </div>

@@ -65,6 +65,16 @@ export class ConversationManager {
     return conversation
   }
 
+  getMessages(id: string): ChatMessage[] | undefined {
+    const conv = this.conversations.find((c) => c.id === id)
+    if (!conv) return undefined
+    return conv.messages.map((m) => ({ ...m, pending: false }))
+  }
+
+  getTitle(id: string): string | undefined {
+    return this.conversations.find((c) => c.id === id)?.title
+  }
+
   summaries(): ConversationSummary[] {
     return this.conversations
       .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }))

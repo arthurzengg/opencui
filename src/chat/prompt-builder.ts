@@ -1,12 +1,15 @@
 import * as vscode from "vscode"
 import * as path from "path"
 import type { getEditorContext } from "../context"
+import type { ChatMessage } from "../protocol"
 import type { WorkspaceRoot } from "../workspace-root"
 import type { PromptContextBlock } from "../workspace-context/types"
 import { log } from "../output"
 
 export const DEFAULT_MENTION_MAX_BYTES = 200_000
+export const DEFAULT_CONVERSATION_MAX_BYTES = 100_000
 const MENTION_MAX_FILES = 20
+const CONVERSATION_MAX_MESSAGES = 29
 
 export function buildPrompt(
   userText: string,
@@ -117,6 +120,91 @@ export async function readMentions(
     }
   }
   const block = blocks.length > 0 ? ["Files attached:", ...blocks].join("\n") : undefined
+  return { block, bytes, capped, failed }
+}
+
+export type ConversationMentionResult = {
+  block?: string
+  bytes: Record<string, { included: number; original: number }>
+  capped: string[]
+  failed: string[]
+}
+
+export function formatConversationContext(title: string, messages: ChatMessage[]): string {
+  const total = messages.length
+  let selected: ChatMessage[]
+  let truncationNote = ""
+  if (total <= CONVERSATION_MAX_MESSAGES + 1) {
+    selected = messages
+  } else {
+    const first = messages[0]!
+    const tail = messages.slice(-(CONVERSATION_MAX_MESSAGES))
+    const tailStart = total - CONVERSATION_MAX_MESSAGES
+    selected = tailStart > 0 ? [first, ...tail] : messages
+    truncationNote = ` (first message + last ${CONVERSATION_MAX_MESSAGES} of ${total} total)`
+  }
+  const lines: string[] = [`Past conversation "${title}"${truncationNote}:`]
+  for (const msg of selected) {
+    const role = msg.role === "user" ? "User" : "Assistant"
+    const parts: string[] = []
+    for (const block of msg.blocks) {
+      if (block.type === "text" && block.text.trim()) {
+        parts.push(block.text.trim())
+      } else if (block.type === "tool") {
+        const name = block.update.tool
+        const label = block.update.title ?? block.update.input?.path ?? ""
+        parts.push(`[${name}${label ? `: ${label}` : ""}]`)
+      } else if (block.type === "patch") {
+        const files = block.files.join(", ")
+        parts.push(`[patched ${files}]`)
+      }
+    }
+    if (parts.length > 0) {
+      lines.push(`${role}: ${parts.join("\n")}`)
+    }
+  }
+  return lines.join("\n")
+}
+
+export function readConversationMentions(
+  ids: string[] | undefined,
+  getMessages: (id: string) => ChatMessage[] | undefined,
+  getTitle: (id: string) => string | undefined,
+  maxBytes: number = DEFAULT_CONVERSATION_MAX_BYTES,
+): ConversationMentionResult {
+  if (!ids || ids.length === 0) {
+    return { bytes: {}, capped: [], failed: [] }
+  }
+  const seen = new Set<string>()
+  const blocks: string[] = []
+  const bytes: Record<string, { included: number; original: number }> = {}
+  const capped: string[] = []
+  const failed: string[] = []
+  let totalBytes = 0
+  for (const id of ids) {
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    const messages = getMessages(id)
+    const title = getTitle(id) ?? "Untitled conversation"
+    if (!messages) {
+      failed.push(id)
+      continue
+    }
+    const formatted = formatConversationContext(title, messages)
+    const formattedBytes = Buffer.byteLength(formatted, "utf8")
+    const remaining = maxBytes - totalBytes
+    if (remaining <= 0) {
+      capped.push(id)
+      continue
+    }
+    const truncated = formattedBytes > remaining
+    const content = truncated ? formatted.slice(0, remaining) : formatted
+    const includedBytes = Buffer.byteLength(content, "utf8")
+    blocks.push(content)
+    bytes[id] = { included: includedBytes, original: formattedBytes }
+    totalBytes += includedBytes
+  }
+  const block = blocks.length > 0 ? blocks.join("\n\n") : undefined
   return { block, bytes, capped, failed }
 }
 

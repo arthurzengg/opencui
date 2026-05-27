@@ -97,7 +97,7 @@ export default function App() {
           })
         }
       }
-      editMessage(m.id, text, m.mentions, attachments)
+      editMessage(m.id, text, m.mentions, attachments, m.conversationMentions)
       return
     }
   }

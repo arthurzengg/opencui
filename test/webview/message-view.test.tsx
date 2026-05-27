@@ -155,7 +155,7 @@ describe("MessageView (user role)", () => {
     await user.clear(textarea)
     await user.type(textarea, "updated text")
     await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
-    expect(onEditMessage).toHaveBeenCalledWith("u-edit", "updated text", undefined, undefined)
+    expect(onEditMessage).toHaveBeenCalledWith("u-edit", "updated text", undefined, undefined, undefined)
   })
 
   it("clicking Save with unchanged content does NOT fire onEditMessage", async () => {
@@ -228,7 +228,7 @@ describe("MessageView (user role)", () => {
     await user.clear(textarea)
     await user.type(textarea, "via shortcut")
     await user.keyboard("{Meta>}{Enter}{/Meta}")
-    expect(onEditMessage).toHaveBeenCalledWith("u-cmd", "via shortcut", undefined, undefined)
+    expect(onEditMessage).toHaveBeenCalledWith("u-cmd", "via shortcut", undefined, undefined, undefined)
   })
 
   it("renders the editor-context label when message has ref", () => {
@@ -356,7 +356,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     await user.clear(textarea)
     await user.type(textarea, "@src/foo.ts rewrite it")
     await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
-    expect(onEditMessage).toHaveBeenCalledWith("u-mention", "@src/foo.ts rewrite it", ["src/foo.ts"], undefined)
+    expect(onEditMessage).toHaveBeenCalledWith("u-mention", "@src/foo.ts rewrite it", ["src/foo.ts"], undefined, undefined)
   })
 
   it("drops mentions whose @token was deleted in the edited text", async () => {
@@ -376,7 +376,7 @@ describe("MessageView edit preserves mentions + attachments", () => {
     await user.clear(textarea)
     await user.type(textarea, "no mentions here")
     await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
-    expect(onEditMessage).toHaveBeenCalledWith("u-mention", "no mentions here", undefined, undefined)
+    expect(onEditMessage).toHaveBeenCalledWith("u-mention", "no mentions here", undefined, undefined, undefined)
   })
 
   it("re-derives attachments and forwards them when their label is still in the text", async () => {
@@ -535,6 +535,6 @@ describe("MessageView edit preserves mentions + attachments", () => {
     await user.clear(textarea)
     await user.type(textarea, "no attachments now")
     await user.click(screen.getByRole("button", { name: "Save & regenerate" }))
-    expect(onEditMessage).toHaveBeenCalledWith("u-att", "no attachments now", undefined, undefined)
+    expect(onEditMessage).toHaveBeenCalledWith("u-att", "no attachments now", undefined, undefined, undefined)
   })
 })

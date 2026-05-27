@@ -47,7 +47,7 @@ describe("PromptBox", () => {
     const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
     await user.type(textarea, "  hello world  ")
     await user.keyboard("{Enter}")
-    expect(onSend).toHaveBeenCalledWith("hello world", undefined, undefined)
+    expect(onSend).toHaveBeenCalledWith("hello world", undefined, undefined, undefined)
     expect(textarea.value).toBe("")
   })
 
@@ -69,7 +69,7 @@ describe("PromptBox", () => {
     render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} />)
     await user.type(screen.getByRole("textbox"), "hello")
     await user.click(screen.getByRole("button", { name: /^Send$/ }))
-    expect(onSend).toHaveBeenCalledWith("hello", undefined, undefined)
+    expect(onSend).toHaveBeenCalledWith("hello", undefined, undefined, undefined)
   })
 
   it("renders Stop button (not Send) when busy", () => {
@@ -125,7 +125,7 @@ describe("PromptBox", () => {
     await user.type(textarea, "你好")
     // After IME ends, a normal Enter event has isComposing === false.
     await user.keyboard("{Enter}")
-    expect(onSend).toHaveBeenCalledWith("你好", undefined, undefined)
+    expect(onSend).toHaveBeenCalledWith("你好", undefined, undefined, undefined)
   })
 
   it("does not submit empty/whitespace input on Enter", async () => {
@@ -336,7 +336,7 @@ describe("PromptBox @file autocomplete", () => {
     await user.keyboard("{Enter}") // pick foo.ts
     await user.type(textarea, "explain this")
     await user.keyboard("{Enter}")
-    expect(onSend).toHaveBeenCalledWith("@src/foo.ts explain this", ["src/foo.ts"], undefined)
+    expect(onSend).toHaveBeenCalledWith("@src/foo.ts explain this", ["src/foo.ts"], undefined, undefined)
   })
 
   it("does not pass mentions when the inserted @path was deleted before Send", async () => {
@@ -355,7 +355,7 @@ describe("PromptBox @file autocomplete", () => {
     await user.clear(textarea)
     await user.type(textarea, "no files here")
     await user.keyboard("{Enter}")
-    expect(onSend).toHaveBeenCalledWith("no files here", undefined, undefined)
+    expect(onSend).toHaveBeenCalledWith("no files here", undefined, undefined, undefined)
   })
 
   it("does not open the picker when searchFiles is not provided", async () => {
@@ -605,7 +605,7 @@ describe("PromptBox two-step Backspace on chip", () => {
     const { user, onSend, textarea } = await setupChip()
     await user.type(textarea, "explain")
     await user.keyboard("{Enter}")
-    expect(onSend).toHaveBeenCalledWith("@src/foo.ts explain", ["src/foo.ts"], undefined)
+    expect(onSend).toHaveBeenCalledWith("@src/foo.ts explain", ["src/foo.ts"], undefined, undefined)
   })
 })
 
@@ -835,7 +835,7 @@ describe("PromptBox attachments (inline @chip flow)", () => {
     await user.clear(textarea)
     await user.type(textarea, "no attachments here")
     await user.keyboard("{Enter}")
-    expect(onSend).toHaveBeenCalledWith("no attachments here", undefined, undefined)
+    expect(onSend).toHaveBeenCalledWith("no attachments here", undefined, undefined, undefined)
   })
 
   it("renders an error message when attachFile returns one", async () => {

@@ -180,6 +180,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
             ref: action.ref,
             backendID: action.backendID,
             mentions: action.mentions,
+            conversationMentions: action.conversationMentions,
           },
         ],
       }
@@ -363,11 +364,11 @@ export function useChatState() {
 
   return {
     state,
-    send(text: string, mentions?: string[], attachments?: Attachment[]) {
-      vscode.post({ type: "send", text, mentions, attachments })
+    send(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+      vscode.post({ type: "send", text, mentions, attachments, conversationMentions })
     },
-    editMessage(id: string, text: string, mentions?: string[], attachments?: Attachment[]) {
-      vscode.post({ type: "editMessage", id, text, mentions, attachments })
+    editMessage(id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+      vscode.post({ type: "editMessage", id, text, mentions, attachments, conversationMentions })
     },
     searchFiles(query: string): Promise<FileSearchHit[]> {
       const requestID = nextRequestID.current++
