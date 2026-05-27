@@ -8,7 +8,7 @@ afterEach(cleanup)
 describe("PromptBox", () => {
   it("renders a textarea with placeholder", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
-    expect(screen.getByPlaceholderText(/Ask OpenCode Panel/i)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/@ for file, Enter to send/i)).toBeInTheDocument()
   })
 
   it("uses a compact one-row textarea in edit mode", () => {
