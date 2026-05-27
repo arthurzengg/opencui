@@ -2459,8 +2459,9 @@ button {
 .mention-popover {
   position: absolute;
   bottom: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  left: 8px;
+  right: auto;
+  width: min(240px, calc(100% - 16px));
   max-height: 220px;
   overflow-y: auto;
   margin: 0;
@@ -2479,6 +2480,9 @@ button {
 .promptbox--top .mention-popover {
   bottom: auto;
   top: calc(100% + 4px);
+}
+.promptbox--top .mention-popover {
+  top: 26px;
 }
 .mention-hit {
   display: flex;
