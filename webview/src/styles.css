@@ -918,7 +918,7 @@ button {
 
 .welcome {
   text-align: center;
-  padding: 14vh 10px 0;
+  padding: 16px 10px 0;
 }
 .welcome-title { font-size: 18px; font-weight: 600; opacity: 0.7; }
 .welcome-sub { font-size: 12px; margin-top: 6px; opacity: 0.55; }
@@ -2106,7 +2106,7 @@ button {
      border-top, the bordered `.promptbox-input` below provides the
      visual boundary, matching the edit-mode bubble's single-border
      look. */
-  padding: 4px 8px;
+  padding: 10px 8px 4px;
   background: var(--vscode-sideBar-background);
 }
 .promptbox-input {
@@ -2212,10 +2212,7 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  /* Match the edit-mode tighter spacing (was 6 px) — the non-view phase
-     selector overrides this to 3 px; matching it here keeps the send
-     prompt and edit overlay visually consistent. */
-  margin-top: 3px;
+  padding: 0 4px 4px;
   min-width: 0;
 }
 .promptbox-row .spacer { flex: 1; }
@@ -2476,7 +2473,8 @@ button {
 /* In edit-in-place mode the message bubble is stuck at the top of the scroll
    container, so a picker drawn above the textarea gets clipped by the status
    bar. Flip it to render below the textarea instead. */
-.promptbox--edit .mention-popover {
+.promptbox--edit .mention-popover,
+.promptbox--top .mention-popover {
   bottom: auto;
   top: calc(100% + 4px);
 }
