@@ -518,8 +518,8 @@ button {
 }
 .new-chat-icon {
   position: relative;
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   opacity: 0.85;
 }
 .new-chat-icon::before,
@@ -545,11 +545,12 @@ button {
 }
 .history-clock {
   position: relative;
-  width: 13px;
-  height: 13px;
-  border: 1.6px solid currentColor;
+  width: 11px;
+  height: 11px;
+  border: 1.4px solid currentColor;
   border-radius: 50%;
   opacity: 0.78;
+  box-sizing: border-box;
 }
 .history-clock::before,
 .history-clock::after {
@@ -557,20 +558,18 @@ button {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 1.4px;
+  width: 1.2px;
   border-radius: 1px;
   background: currentColor;
   transform-origin: 50% 0;
 }
-/* Minute hand: longer, pointing to 12 (rotation 180deg in this scheme). */
 .history-clock::before {
-  height: 4.5px;
-  transform: translate(-50%, -1px) rotate(180deg);
+  height: 3.8px;
+  transform: translate(-50%, -0.8px) rotate(180deg);
 }
-/* Hour hand: shorter, pointing to 4 (rotation 300deg ≈ 30° past 3 o'clock). */
 .history-clock::after {
-  height: 3.5px;
-  transform: translate(-50%, -1px) rotate(300deg);
+  height: 3px;
+  transform: translate(-50%, -0.8px) rotate(300deg);
 }
 .history-popover {
   position: absolute;
