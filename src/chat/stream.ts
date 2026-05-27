@@ -109,6 +109,7 @@ export type StreamHandlers = {
    * subagent's session record is written, so we never miss its events.
    */
   onChildSessionDiscovered?: (info: ChildSessionInfo) => void
+  onSessionTitleUpdate?: (title: string) => void
 }
 
 export type ChildSessionInfo = {
@@ -331,12 +332,18 @@ export function subscribeSession(
         }
         return
       case "session.created":
-      case "session.updated":
-        // The if-statement above this switch already handles the
-        // child-session-discovery subset of these. Beyond that we
-        // don't need to act on them — opencode emits a session.updated
-        // for almost every internal state tick.
         return
+      case "session.updated": {
+        const info = props?.info
+        if (
+          info && typeof info === "object" &&
+          info.id === sessionID &&
+          typeof info.title === "string" && info.title
+        ) {
+          handlers.onSessionTitleUpdate?.(info.title)
+        }
+        return
+      }
       case "server.connected":
       case "server.heartbeat":
       case "session.next.agent.switched":

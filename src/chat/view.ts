@@ -1225,6 +1225,11 @@ export class ChatView implements vscode.WebviewViewProvider {
           this.continuationState.collapseToGraceIfSettled()
         })
       },
+      onSessionTitleUpdate: (title) => {
+        this.manager.rename(this.manager.getActiveID(), title)
+        void this.manager.persist()
+        this.postConversationsList()
+      },
       onChildSessionDiscovered: (info) => {
         if (this.aborting) return
         // Register for SSE routing IMMEDIATELY so we don't miss the child's
