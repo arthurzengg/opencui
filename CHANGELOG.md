@@ -6,6 +6,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-05-27
+
+### Changed
+- The bottom composer now floats over the scroll area as an absolute-positioned overlay instead of being a fixed flex child. A `ResizeObserver` tracks the composer's rendered height and injects it as a `--bottom-composer-height` CSS custom property so the scroll container's bottom padding stays in sync. The conversation scrolls edge-to-edge underneath the composer, and content is never clipped behind it.
+- Entering or exiting in-place edit mode preserves the scroll position. `App.tsx` captures `scrollTop` and the stick-to-bottom flag before toggling `editingMessageID`, then restores both in a `useLayoutEffect` before paint — prevents the transcript from creeping upward when Chromium re-anchors around the edit overlay.
+- `PromptBox` now emits explicit `promptbox--send` / `promptbox--bottom` / `promptbox--top` class names so CSS can target each variant independently. The bottom send composer carries its own border and background (previously only the inner `.promptbox-input` was bordered).
+
+Closes #228.
+
+## [0.9.9] - 2026-05-26
+
+### Added
+- Two-level `@` mention category menu. Typing `@` with an empty query shows a category picker (Files & Folders, Past Chats); selecting a category drills into the existing file search or the conversation list. Typing `@foo` bypasses categories and jumps straight to file results.
+- Past-chat context injection via `@` mention. Selecting a past chat from the `@` picker inserts a `@chat:title` chip instead of switching conversations. On send the host resolves conversation IDs to message history and injects it as prompt context (first message + last 29, 100 KB byte budget).
+- Conversations are renamed to opencode's LLM-generated session title once the title agent produces one. The prompt-based title remains as an instant fallback until the server title arrives.
+
+### Changed
+- The start-conversation chatbox is now at the top of the panel (the welcome screen with title, subtitle, and suggestion buttons is removed). Placeholder simplified to "@ for file, Enter to send"; attach + send icons moved inside the bordered input area.
+- `@` mention popover narrowed to `min(240px, calc(100% - 16px))` and positioned beside the `@` caret instead of stretching full width.
+- Status bar icons unified to 11px with centered 22px hover circles.
+- Removed `useHeaderPopoverHeight` hook — popovers now overlay sticky user bubbles instead of pushing them down.
+
+Closes #210, #214, #216, #218, #220, #222, #224, #226.
+
 ## [0.9.8] - 2026-05-25
 
 ### Added

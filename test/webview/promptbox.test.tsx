@@ -28,6 +28,15 @@ describe("PromptBox", () => {
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(2)
   })
 
+  it("applies bottom composer chrome only to the send composer", () => {
+    const { container, rerender } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
+    expect(container.querySelector(".promptbox")).toHaveClass("promptbox--bottom")
+
+    rerender(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} variant="edit" initial={{ text: "hi" }} />)
+    expect(container.querySelector(".promptbox")).toHaveClass("promptbox--edit")
+    expect(container.querySelector(".promptbox")).not.toHaveClass("promptbox--bottom")
+  })
+
   it("Send button is disabled when textarea is empty", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
     expect((screen.getByRole("button", { name: /^Send$/ }) as HTMLButtonElement).disabled).toBe(true)

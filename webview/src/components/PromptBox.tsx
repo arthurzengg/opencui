@@ -429,8 +429,14 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     return findMentionRanges(text, new Set(knownAttachments.current.keys())).length > 0
   })()
 
+  const classes = [
+    "promptbox",
+    variant === "edit" ? "promptbox--edit" : "promptbox--send",
+    position === "top" ? "promptbox--top" : variant === "send" ? "promptbox--bottom" : "",
+  ].filter(Boolean).join(" ")
+
   return (
-    <div className={"promptbox" + (variant === "edit" ? " promptbox--edit" : "") + (position === "top" ? " promptbox--top" : "")}>
+    <div className={classes}>
       {attachError && <div className="attachment-error">{attachError}</div>}
       {imageAttachments.length > 0 && (
         <ul className="promptbox-thumbs" aria-label="Image attachments">
