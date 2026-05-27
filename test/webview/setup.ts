@@ -10,10 +10,9 @@ import { vi } from "vitest"
   setState: vi.fn(),
 })
 
-// jsdom doesn't ship a ResizeObserver implementation. `useHeaderPopoverHeight`
-// (and any future hook that observes layout) constructs one on mount; tests
-// only need the constructor and disconnect/observe to exist as no-ops, since
-// they don't exercise the resize-driven side effect.
+// jsdom doesn't ship a ResizeObserver implementation. Webview components that
+// observe layout only need the constructor and disconnect/observe to exist as
+// no-ops in tests.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}

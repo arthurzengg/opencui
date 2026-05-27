@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
 import type { ConversationSummary, Selection } from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
-import { useHeaderPopoverHeight } from "../hooks/useHeaderPopoverHeight"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
 
 export type HeaderPopoverID = "selector" | "history"
@@ -139,8 +138,6 @@ function ChatHistoryMenu({
   onDelete: (id: string) => void
 }) {
   const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
-  const popoverRef = useRef<HTMLDivElement>(null)
-  useHeaderPopoverHeight(open, popoverRef)
   const [renamingID, setRenamingID] = useState<string>()
   const [renamingTitle, setRenamingTitle] = useState("")
   const [confirmDeleteID, setConfirmDeleteID] = useState<string>()
@@ -203,7 +200,7 @@ function ChatHistoryMenu({
         <span className="history-clock" />
       </button>
       {open && (
-        <div className="history-popover" ref={popoverRef}>
+        <div className="history-popover">
           <div className="history-popover-header">
             <div className="history-popover-title">Chat history</div>
             <button
@@ -344,8 +341,6 @@ function SelectorMenu({
   onSelectVariant: () => void
 }) {
   const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
-  const popoverRef = useRef<HTMLDivElement>(null)
-  useHeaderPopoverHeight(open, popoverRef)
 
   const prettyModel = formatModel(model)
   const prettyAgent = formatAgent(agent)
@@ -375,7 +370,7 @@ function SelectorMenu({
         <span className="selector-secondary">{prettyAgent}</span>
       </button>
       {open && (
-        <div className="selector-popover" role="menu" ref={popoverRef}>
+        <div className="selector-popover" role="menu">
           <button
             type="button"
             className="selector-row"
