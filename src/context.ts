@@ -11,6 +11,14 @@ export function getEditorContext(): EditorContext {
   const editor = vscode.window.activeTextEditor
   if (!editor) return {}
   const doc = editor.document
+  // Only real files carry a usable filesystem path. Non-file editors (Output
+  // panels, untitled buffers, diff/virtual docs) expose a URI whose "path" is
+  // actually a title like "extension-output-…OpenCode Panel". Surfacing that
+  // as the active editor made the symbols collector join it onto the workspace
+  // root and ask the language server to read a file that can't exist — noisy
+  // (but harmless) under WSL remote, where Uri.file() became a vscode-remote://
+  // URI (#230).
+  if (doc.uri.scheme !== "file") return {}
   const sel = editor.selection
   const ctx: EditorContext = {
     filePath: doc.uri.fsPath,
