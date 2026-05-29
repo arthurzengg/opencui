@@ -222,6 +222,7 @@ export default function App() {
           attachFile={attachFile}
           position="top"
           conversations={state.conversations}
+          activeConversationID={state.conversationID}
           onOpenConversation={openConversation}
         />
       )}
@@ -277,6 +278,8 @@ export default function App() {
                 searchFiles={searchFiles}
                 listDir={listDir}
                 attachFile={attachFile}
+                conversations={state.conversations}
+                activeConversationID={state.conversationID}
               />
             )}
             {turn.assistants.map((m, i) => (
@@ -331,6 +334,7 @@ export default function App() {
             listDir={listDir}
             attachFile={attachFile}
             conversations={state.conversations}
+            activeConversationID={state.conversationID}
             onOpenConversation={openConversation}
           />
         </div>

@@ -12,6 +12,12 @@ import { usePromptText } from "../hooks/usePromptText"
 import { useImageAttachments } from "../hooks/useImageAttachments"
 import { useMentionPicker } from "../hooks/useMentionPicker"
 import { useFileBrowser } from "../hooks/useFileBrowser"
+import {
+  conversationDisplayTitle,
+  conversationMatchesQuery,
+  formatConversationUpdated,
+  groupConversationsByTime,
+} from "../conversation-groups"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail } from "./ImageThumbnail"
 import { ICON_SIZE } from "../design-tokens"
@@ -57,6 +63,7 @@ type Props = {
   variant?: "send" | "edit"
   position?: "top" | "bottom"
   conversations?: ConversationSummary[]
+  activeConversationID?: string
   onOpenConversation?: (id: string) => void
 }
 
@@ -81,19 +88,30 @@ function buildInitialConversations(
   conversations: ConversationSummary[] | undefined,
 ): Map<string, string> {
   const map = new Map<string, string>()
-  if (!initial?.conversationMentions || !conversations) return map
+  if (!initial?.conversationMentions) return map
   const existing = new Set<string>(initial.mentions ?? [])
-  for (const id of initial.conversationMentions) {
-    const conv = conversations.find((c) => c.id === id)
-    if (!conv) continue
-    const label = makeConversationLabel(conv.title, existing)
+  const labelsInText = extractConversationLabels(initial.text)
+  for (const [index, id] of initial.conversationMentions.entries()) {
+    const conv = conversations?.find((c) => c.id === id)
+    const preservedLabel = labelsInText[index]
+    const label = preservedLabel && !existing.has(preservedLabel)
+      ? preservedLabel
+      : conv
+        ? makeConversationLabel(conversationDisplayTitle(conv), existing)
+        : preservedLabel
+    if (!label) continue
     existing.add(label)
     map.set(label, id)
   }
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, onOpenConversation }: Props) {
+function extractConversationLabels(text: string | undefined): string[] {
+  if (!text) return []
+  return Array.from(text.matchAll(/@chat:\S+/g), (match) => match[0].slice(1))
+}
+
+export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
@@ -150,9 +168,23 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     goUp,
   } = useFileBrowser({ listDir, active: showBrowse })
 
+  const pastConversations = (conversations ?? []).filter((c) => c.id !== activeConversationID)
   const filteredConversations = showChatList
-    ? (conversations ?? []).filter((c) => !mention.query || c.title.toLowerCase().includes(mention.query.toLowerCase()))
+    ? pastConversations.filter((c) => conversationMatchesQuery(c, mention.query))
     : []
+  const chatGroups = showChatList ? groupConversationsByTime(filteredConversations, Date.now()) : []
+  // Keyboard nav runs over the flattened (grouped) order so the active index
+  // lines up with the conversations rendered under the section headers.
+  const flatConversations = chatGroups.flatMap((g) => g.conversations)
+
+  useEffect(() => {
+    if (showChatList) setMenuIndex(0)
+  }, [showChatList, mention?.query])
+
+  useEffect(() => {
+    if (!showChatList) return
+    setMenuIndex((i) => flatConversations.length === 0 ? 0 : Math.min(i, flatConversations.length - 1))
+  }, [showChatList, flatConversations.length])
 
   /** Combined set of @-token labels recognized as chips (mentions + attachments + conversations). */
   const allKnownLabels = (): Set<string> => {
@@ -344,26 +376,32 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
         return
       }
     }
-    if (showChatList && filteredConversations.length > 0) {
+    if (showChatList) {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        closeMention()
+        return
+      }
+      if (flatConversations.length === 0) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault()
+          return
+        }
+      }
       if (e.key === "ArrowDown") {
         e.preventDefault()
-        setMenuIndex((i) => (i + 1) % filteredConversations.length)
+        setMenuIndex((i) => (i + 1) % flatConversations.length)
         return
       }
       if (e.key === "ArrowUp") {
         e.preventDefault()
-        setMenuIndex((i) => (i - 1 + filteredConversations.length) % filteredConversations.length)
+        setMenuIndex((i) => (i - 1 + flatConversations.length) % flatConversations.length)
         return
       }
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault()
-        const conv = filteredConversations[menuIndex]
+        const conv = flatConversations[menuIndex]
         if (conv) insertConversationMention(conv)
-        return
-      }
-      if (e.key === "Escape") {
-        e.preventDefault()
-        closeMention()
         return
       }
     }
@@ -552,6 +590,9 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
             >
               <ChatIcon />
               <span className="mention-category-label">Past Chats</span>
+              {pastConversations.length > 0 && (
+                <span className="mention-category-meta">{pastConversations.length}</span>
+              )}
               <ChevronIcon />
             </li>
           </ul>
@@ -616,22 +657,34 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
         )}
         {showChatList && (
           <ul className="mention-popover" role="listbox" aria-label="Past Chats">
-            {filteredConversations.length > 0 ? filteredConversations.map((conv, i) => (
-              <li
-                key={conv.id}
-                role="option"
-                aria-selected={i === menuIndex}
-                className={"mention-hit" + (i === menuIndex ? " active" : "")}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  insertConversationMention(conv)
-                }}
-                onMouseEnter={() => setMenuIndex(i)}
-              >
-                <span className="mention-name">{conv.title || "Untitled"}</span>
+            {flatConversations.length > 0 ? chatGroups.map((group) => [
+              <li key={`section:${group.label}`} className="mention-section" role="presentation">
+                {group.label}
+              </li>,
+              ...group.conversations.map((conv) => {
+                const i = flatConversations.indexOf(conv)
+                return (
+                  <li
+                    key={conv.id}
+                    role="option"
+                    aria-selected={i === menuIndex}
+                    className={"mention-hit mention-chat" + (i === menuIndex ? " active" : "")}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      insertConversationMention(conv)
+                    }}
+                    onMouseEnter={() => setMenuIndex(i)}
+                  >
+                    <ChatIcon />
+                    <span className="mention-name">{conversationDisplayTitle(conv)}</span>
+                    <span className="mention-path">{formatConversationUpdated(conv.updatedAt)}</span>
+                  </li>
+                )
+              }),
+            ]) : (
+              <li className="mention-hit mention-empty">
+                {pastConversations.length === 0 ? "No past chats" : `No chats match "${mention.query}"`}
               </li>
-            )) : (
-              <li className="mention-hit mention-empty">No conversations</li>
             )}
           </ul>
         )}

@@ -477,6 +477,113 @@ describe("PromptBox @ folder browser (drill-down)", () => {
   })
 })
 
+describe("PromptBox Past Chats grouping", () => {
+  const DAY = 86_400_000
+  /** Type `@`, then ArrowDown+Enter to choose the "Past Chats" category. */
+  async function openPastChats(user: ReturnType<typeof userEvent.setup>, target: Element) {
+    await user.type(target, "@")
+    await waitFor(() => expect(screen.getByText("Past Chats")).toBeInTheDocument())
+    await user.keyboard("{ArrowDown}{Enter}")
+  }
+
+  it("groups conversations by recency under section headers, omitting empty buckets", async () => {
+    const user = userEvent.setup()
+    const now = Date.now()
+    const conversations = [
+      { id: "a", title: "recent chat", updatedAt: now - 60_000 },
+      { id: "b", title: "mid chat", updatedAt: now - 15 * DAY },
+      { id: "c", title: "ancient chat", updatedAt: now - 60 * DAY },
+    ]
+    render(
+      <PromptBox
+        busy={false}
+        onSend={vi.fn()}
+        onAbort={vi.fn()}
+        searchFiles={vi.fn().mockResolvedValue([])}
+        conversations={conversations}
+        onOpenConversation={vi.fn()}
+      />,
+    )
+    await openPastChats(user, screen.getByRole("textbox"))
+    await waitFor(() => expect(screen.getByText("recent chat")).toBeInTheDocument())
+    expect(screen.getByText("Today")).toBeInTheDocument()
+    expect(screen.getByText("Previous 30 Days")).toBeInTheDocument()
+    expect(screen.getByText("Older")).toBeInTheDocument()
+    expect(screen.getByText("mid chat")).toBeInTheDocument()
+    expect(screen.getByText("ancient chat")).toBeInTheDocument()
+    // Buckets with no conversations are not rendered.
+    expect(screen.queryByText("Yesterday")).toBeNull()
+    expect(screen.queryByText("Previous 7 Days")).toBeNull()
+  })
+
+  it("keyboard nav crosses group boundaries and selects the right conversation", async () => {
+    const user = userEvent.setup()
+    const now = Date.now()
+    const conversations = [
+      { id: "a", title: "recent chat", updatedAt: now - 60_000 }, // Today, flat index 0
+      { id: "c", title: "ancient chat", updatedAt: now - 60 * DAY }, // Older, flat index 1
+    ]
+    render(
+      <PromptBox
+        busy={false}
+        onSend={vi.fn()}
+        onAbort={vi.fn()}
+        searchFiles={vi.fn().mockResolvedValue([])}
+        conversations={conversations}
+        onOpenConversation={vi.fn()}
+      />,
+    )
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await openPastChats(user, textarea)
+    await waitFor(() => expect(screen.getByText("recent chat")).toBeInTheDocument())
+    // index 0 = recent (Today); ArrowDown crosses into Older to index 1 = ancient.
+    await user.keyboard("{ArrowDown}{Enter}")
+    expect(textarea.value).toMatch(/@chat:ancient_chat/)
+  })
+
+  it("omits the active conversation and shows updated time in chat rows", async () => {
+    const user = userEvent.setup()
+    const now = Date.now()
+    const conversations = [
+      { id: "active", title: "Current chat", updatedAt: now },
+      { id: "past", title: "Previous chat", updatedAt: now - 2 * 60 * 60_000 },
+    ]
+    render(
+      <PromptBox
+        busy={false}
+        onSend={vi.fn()}
+        onAbort={vi.fn()}
+        searchFiles={vi.fn().mockResolvedValue([])}
+        conversations={conversations}
+        activeConversationID="active"
+      />,
+    )
+    await openPastChats(user, screen.getByRole("textbox"))
+    await waitFor(() => expect(screen.getByText("Previous chat")).toBeInTheDocument())
+    expect(screen.queryByText("Current chat")).toBeNull()
+    expect(screen.getByText("2h ago")).toBeInTheDocument()
+  })
+
+  it("keeps Enter from submitting while the empty Past Chats list is open", async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    render(
+      <PromptBox
+        busy={false}
+        onSend={onSend}
+        onAbort={vi.fn()}
+        searchFiles={vi.fn().mockResolvedValue([])}
+        conversations={[{ id: "active", title: "Current chat", updatedAt: Date.now() }]}
+        activeConversationID="active"
+      />,
+    )
+    await openPastChats(user, screen.getByRole("textbox"))
+    await waitFor(() => expect(screen.getByText("No past chats")).toBeInTheDocument())
+    await user.keyboard("{Enter}")
+    expect(onSend).not.toHaveBeenCalled()
+  })
+})
+
 describe("findMentionRanges", () => {
   it("returns empty for plain text", () => {
     expect(findMentionRanges("hello world", new Set())).toEqual([])
