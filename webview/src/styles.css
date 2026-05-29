@@ -2561,17 +2561,16 @@ button {
    the current folder's entries. Folders (trailing chevron) drill in; files are
    the selectable leaves. Reuses .mention-popover for positioning + chrome. */
 .mention-browser {
-  display: flex;
-  flex-direction: column;
+  /* Scroll the popover itself (overflow-y: auto comes from .mention-popover)
+     rather than a nested flex child. A single block scroller gets the same
+     overlay scrollbar as the flat file list, instead of a nested flex scroller
+     which reserves a classic gutter and insets the rows. */
   padding: 0;
-  overflow: hidden;
 }
 .mention-browser > ul {
   margin: 0;
   padding: 4px 0;
   list-style: none;
-  overflow-y: auto;
-  min-height: 0;
 }
 .mention-browser .mention-hit {
   align-items: center;
@@ -2589,7 +2588,12 @@ button {
   white-space: nowrap;
 }
 .mention-breadcrumb {
-  flex-shrink: 0;
+  /* Pinned at the top of the single scroller while entries scroll beneath it.
+     Opaque background so scrolling rows don't bleed through. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
   border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
 }
 .mention-breadcrumb-up {
