@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-05-28
+
+### Added
+- Drill-down folder browser in the `@` picker. Choosing **Files** now shows the project tree one level at a time with a breadcrumb: folders are navigation-only (Enter / Right-arrow / click drills in, Left-arrow / breadcrumb goes back up) and files are the only selectable leaf, which removes the "open vs. select a folder" ambiguity. Typing a query still runs the flat fuzzy search across the repo, and the browser falls back to it when the host can't list directories. A new `listDir` request/response derives each folder's immediate children from the same cached file index the search uses, so the ignore-globs and 30s cache are reused.
+- **Past Chats** in the `@` picker are grouped by recency — Today / Yesterday / Previous 7 Days / Previous 30 Days / Older (newest-first, empty groups omitted; day boundaries use local midnight so Today/Yesterday track the calendar). Each row shows a relative "updated" label (just now / 5m ago / yesterday / weekday / date), the category row shows a count of past chats, search matches both the title and the visible updated label, and the currently-active conversation is excluded from the list. Keyboard Up/Down/Enter moves through conversations across group boundaries.
+
+### Changed
+- User message bubbles no longer carry a drop shadow or gradient feather — they sit flat against the scrolling transcript. The in-place edit overlay matches, so entering edit mode no longer adds a shadow.
+- The three chat input boxes now share the bottom composer's width. The empty-state composer and the message bubbles (and therefore the in-place edit box) line up at the same 12px edge gap; the message list keeps its reserved scrollbar gutter so content does not reflow when the scrollbar appears.
+
+### Fixed
+- The symbols collector no longer asks the language server to read non-file editors. When the OpenCode Panel Output view or an untitled buffer was the active editor, its URI was treated as a workspace file, producing a noisy "cannot be read" error — especially under WSL remote, where `Uri.file()` resolved to a `vscode-remote://` URI. `getEditorContext` now ignores editors whose URI scheme is not `file`.
+
+Closes #230, #232, #234, #236, #238.
+
 ## [0.9.10] - 2026-05-27
 
 ### Changed
