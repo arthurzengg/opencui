@@ -2564,6 +2564,16 @@ button {
   cursor: default;
   font-style: italic;
 }
+/* Recency group header in the Past Chats list (Today / Yesterday / ...). */
+.mention-section {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vscode-descriptionForeground);
+  cursor: default;
+}
 
 /* @-picker drill-down browser: a breadcrumb pinned above a scrolling list of
    the current folder's entries. Folders (trailing chevron) drill in; files are
