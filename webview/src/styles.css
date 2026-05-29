@@ -969,44 +969,11 @@ button {
   border: var(--bubble-border-width) solid var(--color-border);
   border-radius: var(--radius);
   word-break: break-word;
-  /* Soft drop shadow gives the pinned bubble a subtle natural-fade transition
-     against the scrolling content below it, regardless of theme contrast. */
-  box-shadow: 0 12px 18px -10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
   /* Animate only paint changes. Size-affecting properties stay out of this
      transition so entering/exiting edit mode cannot briefly resize the row. */
   transition:
     background-color 0.18s ease,
     border-color 0.18s ease;
-}
-/* Extra gradient strip below the bubble for stronger visual feathering.
-   Uses a high-contrast shadow color with explicit alpha so it shows up
-   reliably across all themes (light/dark) where the bubble background may
-   be close to the surrounding panel color. */
-.msg.role-user::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -16px;
-  height: 16px;
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.18) 0%,
-    rgba(0, 0, 0, 0.06) 40%,
-    transparent 100%
-  );
-  pointer-events: none;
-}
-/* Light themes: invert the shadow to a soft dark-blue tint for visibility. */
-@media (prefers-color-scheme: light) {
-  .msg.role-user::after {
-    background: linear-gradient(
-      to bottom,
-      rgba(50, 65, 90, 0.12) 0%,
-      rgba(50, 65, 90, 0.04) 40%,
-      transparent 100%
-    );
-  }
 }
 /* All rules in this block target the non-view edit phase. Keeping them keyed
    to `[data-edit-phase]` makes it clear the overlay owns edit-mode chrome. */
@@ -1183,7 +1150,6 @@ button {
   border: var(--bubble-border-width) solid var(--color-border-focus);
   border-radius: var(--radius);
   background: var(--color-bg-input);
-  box-shadow: 0 12px 18px -10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
   animation: user-edit-border-in 0.18s ease both;
 }
 @keyframes user-edit-border-in {
