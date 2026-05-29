@@ -869,9 +869,14 @@ button {
   overflow-y: auto;
   /* Reserve gutter space on BOTH sides so message bubbles don't reflow narrower
      when scrolling appears, AND stay visually centered (the symmetric reserve
-     mirrors the right scrollbar gutter on the left). */
+     mirrors the right scrollbar gutter on the left).
+     Horizontal padding is 2px on purpose: 2px + the 10px reserved gutter (the
+     `::-webkit-scrollbar` width below) sums to the 12px edge gap used by
+     `.bottom-composer`, so message bubbles, the in-place edit box, and the
+     docked composer all line up at the same width. If you change the scrollbar
+     width, adjust this padding so the two still sum to 12px. */
   scrollbar-gutter: stable both-edges;
-  padding: 10px 12px calc(4px + var(--bottom-composer-height, 0px));
+  padding: 10px 2px calc(4px + var(--bottom-composer-height, 0px));
   /* Firefox: thin transparent scrollbar that brightens on hover. */
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -2074,7 +2079,9 @@ button {
 }
 .promptbox--top {
   margin: 0;
-  padding: var(--composer-edge-gap) 8px 4px;
+  /* Horizontal gap matches `.bottom-composer` (12px) so the empty-state chatbox
+     is the same width as the docked one. */
+  padding: var(--composer-edge-gap) 12px 4px;
 }
 .promptbox-input {
   background: var(--vscode-input-background);
