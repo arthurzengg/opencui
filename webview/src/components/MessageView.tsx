@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
-import type { AgentsStatusInfo, Attachment, DirEntry, FileSearchHit } from "../protocol"
+import type { AgentsStatusInfo, Attachment, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
 import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
@@ -38,6 +38,8 @@ export function MessageView({
   searchFiles,
   listDir,
   attachFile,
+  conversations,
+  activeConversationID,
 }: {
   message: Message
   processOpen: boolean
@@ -52,6 +54,8 @@ export function MessageView({
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   listDir?: (path: string) => Promise<DirEntry[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
+  conversations?: ConversationSummary[]
+  activeConversationID?: string
 }) {
   if (message.role === "user") {
     return (
@@ -64,6 +68,8 @@ export function MessageView({
         searchFiles={searchFiles}
         listDir={listDir}
         attachFile={attachFile}
+        conversations={conversations}
+        activeConversationID={activeConversationID}
       />
     )
   }
@@ -138,6 +144,8 @@ function UserMessageView({
   searchFiles,
   listDir,
   attachFile,
+  conversations,
+  activeConversationID,
 }: {
   message: Message
   busy?: boolean
@@ -147,6 +155,8 @@ function UserMessageView({
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   listDir?: (path: string) => Promise<DirEntry[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
+  conversations?: ConversationSummary[]
+  activeConversationID?: string
 }) {
   const originalText = message.blocks
     .filter((b): b is Extract<Block, { type: "text" }> => b.type === "text")
@@ -216,8 +226,9 @@ function UserMessageView({
     if (!trimmed && !attachments?.length) return
     const sameText = trimmed === originalText.trim()
     const sameMentionCount = (mentions?.length ?? 0) === (message.mentions?.length ?? 0)
+    const sameConversationCount = (conversationMentions?.length ?? 0) === (message.conversationMentions?.length ?? 0)
     const sameAttachCount = (attachments?.length ?? 0) === attachmentBlocks.length
-    if (sameText && sameMentionCount && sameAttachCount) {
+    if (sameText && sameMentionCount && sameConversationCount && sameAttachCount) {
       exitEditing()
       return
     }
@@ -270,6 +281,8 @@ function UserMessageView({
             searchFiles={searchFiles}
             listDir={listDir}
             attachFile={attachFile}
+            conversations={conversations}
+            activeConversationID={activeConversationID}
             variant="edit"
             initial={{
               text: originalText,

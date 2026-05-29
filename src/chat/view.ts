@@ -831,6 +831,11 @@ export class ChatView implements vscode.WebviewViewProvider {
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
     const userMessageID = "u_" + Date.now()
+    const activeConversationID = this.manager.getActiveID()
+    const pastConversationMentions = conversationMentions?.filter(
+      (id, index, ids) => id !== activeConversationID && ids.indexOf(id) === index,
+    )
+    const attachedConversationMentions = pastConversationMentions?.length ? pastConversationMentions : undefined
     this.pendingUserBackendID = userMessageID
     this.post({
       type: "userMessage",
@@ -839,7 +844,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       ref: { path: ctx.filePath, label },
       attachments,
       mentions,
-      conversationMentions,
+      conversationMentions: attachedConversationMentions,
     })
     this.updateTitleFromPrompt(text)
 
@@ -932,7 +937,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       manifest.totals.skippedItems += 1
     }
     const convResult = readConversationMentions(
-      conversationMentions,
+      attachedConversationMentions,
       (id) => this.manager.getMessages(id),
       (id) => this.manager.getTitle(id),
     )
@@ -1618,4 +1623,3 @@ function upsertTool(
     return { ...message, blocks: [...message.blocks, { type: "tool", update, actor }] }
   })
 }
-

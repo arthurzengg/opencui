@@ -79,6 +79,26 @@ describe("MessageView (user role)", () => {
     expect(screen.getByRole("button", { name: "Save & regenerate" })).toBeInTheDocument()
   })
 
+  it("restores past-chat mention chips when editing a sent message", async () => {
+    const user = userEvent.setup()
+    const message = userMessage("@chat:Old_chat revisit", { backendID: "b1" })
+    message.conversationMentions = ["old"]
+    const { container } = render(
+      <MessageView
+        message={message}
+        processOpen={false}
+        processOnly={false}
+        onEditMessage={vi.fn()}
+        conversations={[{ id: "old", title: "Renamed chat", updatedAt: Date.now() - 60_000 }]}
+        activeConversationID="current"
+      />,
+    )
+    const bubble = container.querySelector(".msg.role-user") as HTMLElement
+    await user.click(bubble)
+    await waitFor(() => expect(container.querySelector(".mention-chip")).not.toBeNull())
+    expect(container.querySelector(".mention-chip")?.textContent).toBe("@chat:Old_chat")
+  })
+
   it("freezes the message footprint while the edit overlay expands", async () => {
     const user = userEvent.setup()
     const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {

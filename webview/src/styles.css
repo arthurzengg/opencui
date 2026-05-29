@@ -2555,6 +2555,15 @@ button {
   flex: 1;
   font-weight: 500;
 }
+.mention-category-meta {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.mention-hit.active .mention-category-meta {
+  color: var(--vscode-list-activeSelectionForeground);
+  opacity: 0.8;
+}
 .mention-category-chevron {
   opacity: 0.5;
   flex-shrink: 0;
@@ -2564,15 +2573,37 @@ button {
   cursor: default;
   font-style: italic;
 }
-/* Recency group header in the Past Chats list (Today / Yesterday / ...). */
+/* Recency group header in the Past Chats list (Today / Yesterday / ...).
+   Symmetric vertical padding (matching the rows' 4px) so the label sits at the
+   vertical center of its row rather than riding high. */
 .mention-section {
-  padding: 6px 10px 2px;
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--vscode-descriptionForeground);
   cursor: default;
+}
+.mention-chat {
+  align-items: center;
+}
+.mention-chat svg {
+  flex-shrink: 0;
+}
+.mention-chat .mention-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mention-chat .mention-path {
+  flex: 0 0 auto;
+  max-width: 72px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* @-picker drill-down browser: a breadcrumb pinned above a scrolling list of

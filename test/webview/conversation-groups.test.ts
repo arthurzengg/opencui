@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest"
-import { groupConversationsByTime } from "../../webview/src/conversation-groups"
+import {
+  conversationDisplayTitle,
+  conversationMatchesQuery,
+  formatConversationUpdated,
+  groupConversationsByTime,
+} from "../../webview/src/conversation-groups"
 
 const now = new Date("2026-05-28T15:00:00").getTime()
 const startOfToday = (() => {
@@ -67,5 +72,24 @@ describe("groupConversationsByTime", () => {
     expect(groupConversationsByTime([conv("x", startOfToday - 7 * DAY - 1)], now)[0]!.label).toBe(
       "Previous 30 Days",
     )
+  })
+})
+
+describe("conversation display helpers", () => {
+  it("falls back to Untitled for blank titles", () => {
+    expect(conversationDisplayTitle({ id: "x", title: "  ", updatedAt: now })).toBe("Untitled")
+  })
+
+  it("formats updated timestamps for compact picker rows", () => {
+    expect(formatConversationUpdated(now - 10_000, now)).toBe("just now")
+    expect(formatConversationUpdated(now - 5 * 60_000, now)).toBe("5m ago")
+    expect(formatConversationUpdated(now - 2 * 60 * 60_000, now)).toBe("2h ago")
+  })
+
+  it("matches by title or visible updated label", () => {
+    const recent = { id: "x", title: "Refactor notes", updatedAt: Date.now() - 5 * 60_000 }
+    expect(conversationMatchesQuery(recent, "refactor")).toBe(true)
+    expect(conversationMatchesQuery(recent, "5m")).toBe(true)
+    expect(conversationMatchesQuery(recent, "unrelated")).toBe(false)
   })
 })
