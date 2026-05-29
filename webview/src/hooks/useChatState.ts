@@ -6,6 +6,7 @@ import type {
   ChatBlock,
   ChatMessage,
   ConversationSummary,
+  DirEntry,
   EditorContextRef,
   FileSearchHit,
   IndexStatusInfo,
@@ -333,6 +334,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
 export function useChatState() {
   const [state, dispatch] = useReducer(reducer, initial)
   const fileSearchPending = useRef(new Map<number, (hits: FileSearchHit[]) => void>())
+  const listDirPending = useRef(new Map<number, (entries: DirEntry[]) => void>())
   const attachPending = useRef(
     new Map<number, (result: { attachments: Attachment[]; error?: string }) => void>(),
   )
@@ -345,6 +347,14 @@ export function useChatState() {
         if (resolver) {
           fileSearchPending.current.delete(msg.requestID)
           resolver(msg.hits)
+        }
+        return
+      }
+      if (msg.type === "listDirResult") {
+        const resolver = listDirPending.current.get(msg.requestID)
+        if (resolver) {
+          listDirPending.current.delete(msg.requestID)
+          resolver(msg.entries)
         }
         return
       }
@@ -377,6 +387,16 @@ export function useChatState() {
         vscode.post({ type: "fileSearch", requestID, query })
         setTimeout(() => {
           if (fileSearchPending.current.delete(requestID)) resolve([])
+        }, 5000)
+      })
+    },
+    listDir(path: string): Promise<DirEntry[]> {
+      const requestID = nextRequestID.current++
+      return new Promise<DirEntry[]>((resolve) => {
+        listDirPending.current.set(requestID, resolve)
+        vscode.post({ type: "listDir", requestID, path })
+        setTimeout(() => {
+          if (listDirPending.current.delete(requestID)) resolve([])
         }, 5000)
       })
     },
