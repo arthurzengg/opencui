@@ -181,6 +181,13 @@ export type WorkspaceInfo = {
 export type FileSearchHit = { path: string; name: string }
 
 /**
+ * One immediate child of a folder, used by the @-picker's drill-down browser.
+ * `path` is workspace-relative; folders are navigation-only (never inserted as
+ * a mention), files are the selectable leaves.
+ */
+export type DirEntry = { name: string; path: string; kind: "file" | "folder" }
+
+/**
  * Status snapshot of the optional semantic index — Phase 6 of the
  * workspace-context plan. `disabled` is the default; flipping
  * `opencui.indexing.semantic.enabled` true plus configuring a real
@@ -388,6 +395,7 @@ export type Outbound =
   | { type: "indexStatus"; status: IndexStatusInfo }
   | { type: "agentsStatus"; status: AgentsStatusInfo }
   | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }
+  | { type: "listDirResult"; requestID: number; entries: DirEntry[] }
   | { type: "attachmentResult"; requestID: number; attachments: Attachment[]; error?: string }
   | { type: "clear" }
 
@@ -410,6 +418,7 @@ export type Inbound =
   | { type: "selectModel" }
   | { type: "selectVariant" }
   | { type: "fileSearch"; requestID: number; query: string }
+  | { type: "listDir"; requestID: number; path: string }
   | { type: "attachFile"; requestID: number }
   | { type: "permissionReply"; id: string; response: "once" | "always" | "reject" }
   | { type: "questionReply"; id: string; answers: string[][] }

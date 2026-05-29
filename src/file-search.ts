@@ -1,6 +1,6 @@
 import * as vscode from "vscode"
 import * as path from "path"
-import type { FileSearchHit } from "./protocol"
+import type { DirEntry, FileSearchHit } from "./protocol"
 
 const MAX_FILES = 5000
 const MAX_HITS = 30
@@ -30,6 +30,43 @@ export async function searchWorkspaceFiles(query: string): Promise<FileSearchHit
   const all = await loadFiles()
   const recent = getRecentlyOpenedPaths()
   return rankHits(all, query, recent).slice(0, MAX_HITS)
+}
+
+/**
+ * List the immediate children (subfolders + files) of a workspace-relative
+ * folder for the @-picker's drill-down browser. Derived from the same cached
+ * file index the search uses, so the ignore-globs and 30s cache are shared.
+ */
+export async function listWorkspaceDir(dir: string): Promise<DirEntry[]> {
+  return dirEntriesFrom(await loadFiles(), dir)
+}
+
+/**
+ * Pure derivation of a folder's immediate children from the flat file index.
+ * `dir` is "" for the workspace root; a trailing slash is tolerated. Folders
+ * come first (alphabetical), then files (alphabetical). Folders are inferred
+ * from file paths, so one that holds only ignored files never appears — there
+ * would be nothing to drill into anyway.
+ */
+export function dirEntriesFrom(files: FileSearchHit[], dir: string): DirEntry[] {
+  const prefix = dir ? dir.replace(/\/+$/, "") + "/" : ""
+  const folders = new Set<string>()
+  const fileEntries: DirEntry[] = []
+  for (const hit of files) {
+    if (prefix && !hit.path.startsWith(prefix)) continue
+    const rest = hit.path.slice(prefix.length)
+    const slash = rest.indexOf("/")
+    if (slash === -1) {
+      fileEntries.push({ name: rest, path: hit.path, kind: "file" })
+    } else {
+      folders.add(rest.slice(0, slash))
+    }
+  }
+  const folderEntries: DirEntry[] = [...folders]
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ({ name, path: prefix + name, kind: "folder" }))
+  fileEntries.sort((a, b) => a.name.localeCompare(b.name))
+  return [...folderEntries, ...fileEntries]
 }
 
 /**

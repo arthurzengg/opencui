@@ -29,6 +29,7 @@ export default function App() {
     editMessage,
     reviewAllInChange,
     searchFiles,
+    listDir,
     attachFile,
     startIndex,
     stopIndex,
@@ -217,6 +218,7 @@ export default function App() {
           onSend={send}
           onAbort={abort}
           searchFiles={searchFiles}
+          listDir={listDir}
           attachFile={attachFile}
           position="top"
           conversations={state.conversations}
@@ -273,6 +275,7 @@ export default function App() {
                   setEditingMessageID((current) => current === id ? null : current)
                 }}
                 searchFiles={searchFiles}
+                listDir={listDir}
                 attachFile={attachFile}
               />
             )}
@@ -325,6 +328,7 @@ export default function App() {
             onSend={send}
             onAbort={abort}
             searchFiles={searchFiles}
+            listDir={listDir}
             attachFile={attachFile}
             conversations={state.conversations}
             onOpenConversation={openConversation}

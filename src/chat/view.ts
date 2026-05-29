@@ -11,7 +11,7 @@ import {
   type ToolUpdate,
 } from "./stream"
 import { getEditorContext, formatContextHeader } from "../context"
-import { searchWorkspaceFiles } from "../file-search"
+import { searchWorkspaceFiles, listWorkspaceDir } from "../file-search"
 import { pickAttachments } from "../attachments"
 import { log } from "../output"
 import { getWorkspaceRoots, primaryWorkspaceRoot } from "../workspace-root"
@@ -569,6 +569,15 @@ export class ChatView implements vscode.WebviewViewProvider {
         } catch (e) {
           log("fileSearch failed", e)
           this.post({ type: "fileSearchResult", requestID: msg.requestID, hits: [] })
+        }
+        return
+      case "listDir":
+        try {
+          const entries = await listWorkspaceDir(msg.path)
+          this.post({ type: "listDirResult", requestID: msg.requestID, entries })
+        } catch (e) {
+          log("listDir failed", e)
+          this.post({ type: "listDirResult", requestID: msg.requestID, entries: [] })
         }
         return
       case "attachFile":

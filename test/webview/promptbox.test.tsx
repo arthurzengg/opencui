@@ -5,10 +5,10 @@ import { PromptBox, detectMention, extractMentions, findMentionRanges, findChipA
 
 afterEach(cleanup)
 
-/** Type `@`, wait for the category menu, then press Enter to select "Files & Folders". */
+/** Type `@`, wait for the category menu, then press Enter to select "Files". */
 async function enterFilesCategory(user: ReturnType<typeof userEvent.setup>, target: Element) {
   await user.type(target, "@")
-  await waitFor(() => expect(screen.getByText("Files & Folders")).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByText("Files")).toBeInTheDocument())
   await user.keyboard("{Enter}")
 }
 
@@ -233,7 +233,7 @@ describe("extractMentions", () => {
 })
 
 describe("PromptBox @file autocomplete", () => {
-  it("shows the category menu after typing @, then file hits after selecting Files & Folders", async () => {
+  it("shows the category menu after typing @, then file hits after selecting Files", async () => {
     const user = userEvent.setup()
     const searchFiles = vi.fn().mockResolvedValue([
       { path: "src/foo.ts", name: "foo.ts" },
@@ -372,6 +372,108 @@ describe("PromptBox @file autocomplete", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
     await user.type(screen.getByRole("textbox"), "@foo")
     expect(screen.queryByRole("listbox")).toBeNull()
+  })
+})
+
+describe("PromptBox @ folder browser (drill-down)", () => {
+  const makeBrowser = () => {
+    const searchFiles = vi.fn().mockResolvedValue([])
+    const listDir = vi.fn().mockImplementation(async (path: string) => {
+      if (path === "") return [
+        { name: "src", path: "src", kind: "folder" },
+        { name: "README.md", path: "README.md", kind: "file" },
+      ]
+      if (path === "src") return [
+        { name: "chat", path: "src/chat", kind: "folder" },
+        { name: "server.ts", path: "src/server.ts", kind: "file" },
+      ]
+      return []
+    })
+    return { searchFiles, listDir }
+  }
+
+  it("shows the project root (folders + files) with a breadcrumb after picking Files", async () => {
+    const user = userEvent.setup()
+    const { searchFiles, listDir } = makeBrowser()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} listDir={listDir} />)
+    await enterFilesCategory(user, screen.getByRole("textbox"))
+    await waitFor(() => expect(listDir).toHaveBeenCalledWith(""))
+    await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
+    expect(screen.getByText("README.md")).toBeInTheDocument()
+    expect(screen.getByText("Project root")).toBeInTheDocument()
+  })
+
+  it("drills into a folder on Enter, listing its children — and never inserts the folder", async () => {
+    const user = userEvent.setup()
+    const { searchFiles, listDir } = makeBrowser()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} listDir={listDir} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
+    await user.keyboard("{Enter}") // src is first (folder) → drills in
+    await waitFor(() => expect(listDir).toHaveBeenCalledWith("src"))
+    await waitFor(() => expect(screen.getByText("server.ts")).toBeInTheDocument())
+    expect(screen.getByText("chat")).toBeInTheDocument()
+    // Folder was navigated, never inserted as a mention.
+    expect(textarea.value).toBe("@")
+  })
+
+  it("ArrowRight also drills into the highlighted folder", async () => {
+    const user = userEvent.setup()
+    const { searchFiles, listDir } = makeBrowser()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} listDir={listDir} />)
+    await enterFilesCategory(user, screen.getByRole("textbox"))
+    await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
+    await user.keyboard("{ArrowRight}")
+    await waitFor(() => expect(listDir).toHaveBeenCalledWith("src"))
+    expect(screen.getByText("server.ts")).toBeInTheDocument()
+  })
+
+  it("inserts a file (the only selectable leaf) and closes the picker", async () => {
+    const user = userEvent.setup()
+    const { searchFiles, listDir } = makeBrowser()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} listDir={listDir} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument())
+    await user.click(screen.getByText("README.md"))
+    expect(textarea.value).toBe("@README.md ")
+    expect(screen.queryByText("Project root")).toBeNull()
+  })
+
+  it("goes back up a level via the breadcrumb button", async () => {
+    const user = userEvent.setup()
+    const { searchFiles, listDir } = makeBrowser()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} listDir={listDir} />)
+    await enterFilesCategory(user, screen.getByRole("textbox"))
+    await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument())
+    await user.keyboard("{Enter}") // into src
+    await waitFor(() => expect(screen.getByText("server.ts")).toBeInTheDocument())
+    await user.click(screen.getByRole("button", { name: /Go up a folder/i }))
+    await waitFor(() => expect(screen.getByText("README.md")).toBeInTheDocument())
+  })
+
+  it("typing a query switches from the browser to the flat file search", async () => {
+    const user = userEvent.setup()
+    const { listDir } = makeBrowser()
+    const searchFiles = vi.fn().mockResolvedValue([{ path: "src/foo.ts", name: "foo.ts" }])
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} listDir={listDir} />)
+    const textarea = screen.getByRole("textbox")
+    await enterFilesCategory(user, textarea)
+    await waitFor(() => expect(screen.getByText("src")).toBeInTheDocument()) // browser
+    await user.type(textarea, "foo")
+    await waitFor(() => expect(searchFiles).toHaveBeenCalledWith("foo"))
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
+    expect(screen.queryByText("Project root")).toBeNull()
+  })
+
+  it("falls back to the flat search when no listDir is provided", async () => {
+    const user = userEvent.setup()
+    const searchFiles = vi.fn().mockResolvedValue([{ path: "src/foo.ts", name: "foo.ts" }])
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />)
+    await enterFilesCategory(user, screen.getByRole("textbox"))
+    await waitFor(() => expect(screen.getByText("foo.ts")).toBeInTheDocument())
+    expect(screen.queryByText("Project root")).toBeNull()
   })
 })
 

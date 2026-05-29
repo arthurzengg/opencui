@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
-import type { AgentsStatusInfo, Attachment, FileSearchHit } from "../protocol"
+import type { AgentsStatusInfo, Attachment, DirEntry, FileSearchHit } from "../protocol"
 import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
@@ -36,6 +36,7 @@ export function MessageView({
   onRetry,
   agentActivity,
   searchFiles,
+  listDir,
   attachFile,
 }: {
   message: Message
@@ -49,6 +50,7 @@ export function MessageView({
   onRetry?: (assistantID: string) => void
   agentActivity?: AgentsStatusInfo
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
+  listDir?: (path: string) => Promise<DirEntry[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
 }) {
   if (message.role === "user") {
@@ -60,6 +62,7 @@ export function MessageView({
         onBeginEdit={onBeginEdit}
         onEndEdit={onEndEdit}
         searchFiles={searchFiles}
+        listDir={listDir}
         attachFile={attachFile}
       />
     )
@@ -133,6 +136,7 @@ function UserMessageView({
   onBeginEdit,
   onEndEdit,
   searchFiles,
+  listDir,
   attachFile,
 }: {
   message: Message
@@ -141,6 +145,7 @@ function UserMessageView({
   onBeginEdit?: (id: string) => void
   onEndEdit?: (id: string) => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
+  listDir?: (path: string) => Promise<DirEntry[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
 }) {
   const originalText = message.blocks
@@ -263,6 +268,7 @@ function UserMessageView({
             onSend={handleSubmit}
             onAbort={exitEditing}
             searchFiles={searchFiles}
+            listDir={listDir}
             attachFile={attachFile}
             variant="edit"
             initial={{

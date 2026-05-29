@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import type { Attachment, ConversationSummary, FileSearchHit } from "../protocol"
+import type { Attachment, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
 import {
   extractMentions,
   findChipAtCaret,
@@ -11,6 +11,7 @@ import { clipboardHasImage, readPastedImages } from "../paste-attachments"
 import { usePromptText } from "../hooks/usePromptText"
 import { useImageAttachments } from "../hooks/useImageAttachments"
 import { useMentionPicker } from "../hooks/useMentionPicker"
+import { useFileBrowser } from "../hooks/useFileBrowser"
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail } from "./ImageThumbnail"
 import { ICON_SIZE } from "../design-tokens"
@@ -39,6 +40,7 @@ type Props = {
   onSend: (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
   onAbort: () => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
+  listDir?: (path: string) => Promise<DirEntry[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
   /**
    * Pre-fill the input with text, mention paths, and attachments. Used by
@@ -91,7 +93,7 @@ function buildInitialConversations(
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, attachFile, initial, variant = "send", position = "bottom", conversations, onOpenConversation }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, onOpenConversation }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
@@ -130,8 +132,23 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
   }, [mention])
 
   const showCategoryMenu = !!mention && mentionCategory === null && !mention.query
-  const showFileHits = !!mention && hits.length > 0 && (mentionCategory === "files" || (mentionCategory === null && !!mention.query))
+  // Browse the project tree when the Files category is open and nothing's been
+  // typed yet; typing a query switches to the flat fuzzy search below. Requires
+  // the host's listDir — without it we fall back to the flat search so the
+  // picker still works (and existing flat-search tests stay valid).
+  const showBrowse = !!mention && mentionCategory === "files" && !mention.query && !!listDir
+  const showFileHits = !showBrowse && !!mention && hits.length > 0 && (mentionCategory === "files" || (mentionCategory === null && !!mention.query))
   const showChatList = !!mention && mentionCategory === "chats"
+
+  const {
+    dir: browseDir,
+    entries: browseEntries,
+    index: browseIndex,
+    setIndex: setBrowseIndex,
+    canGoUp,
+    drillInto,
+    goUp,
+  } = useFileBrowser({ listDir, active: showBrowse })
 
   const filteredConversations = showChatList
     ? (conversations ?? []).filter((c) => !mention.query || c.title.toLowerCase().includes(mention.query.toLowerCase()))
@@ -373,6 +390,43 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
         return
       }
     }
+    if (showBrowse) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        if (browseEntries.length > 0) setBrowseIndex((i) => (i + 1) % browseEntries.length)
+        return
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault()
+        if (browseEntries.length > 0) setBrowseIndex((i) => (i - 1 + browseEntries.length) % browseEntries.length)
+        return
+      }
+      if (e.key === "ArrowRight") {
+        const entry = browseEntries[browseIndex]
+        if (entry?.kind === "folder") {
+          e.preventDefault()
+          drillInto(entry)
+          return
+        }
+      }
+      if (e.key === "ArrowLeft" && canGoUp) {
+        e.preventDefault()
+        goUp()
+        return
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault()
+        const entry = browseEntries[browseIndex]
+        if (entry?.kind === "folder") drillInto(entry)
+        else if (entry) insertMention(entry)
+        return
+      }
+      if (e.key === "Escape") {
+        e.preventDefault()
+        closeMention()
+        return
+      }
+    }
     if (e.key === "Backspace" && !e.shiftKey && !e.metaKey && !e.altKey) {
       const ta = e.currentTarget
       // Only intercept when there's no real text selection
@@ -486,7 +540,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
               onMouseEnter={() => setMenuIndex(0)}
             >
               <FolderIcon />
-              <span className="mention-category-label">Files & Folders</span>
+              <span className="mention-category-label">Files</span>
               <ChevronIcon />
             </li>
             <li
@@ -501,6 +555,44 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
               <ChevronIcon />
             </li>
           </ul>
+        )}
+        {showBrowse && (
+          <div className="mention-popover mention-browser">
+            <div className="mention-breadcrumb">
+              <button
+                type="button"
+                className="mention-breadcrumb-up"
+                aria-label="Go up a folder"
+                disabled={!canGoUp}
+                onMouseDown={(e) => { e.preventDefault(); if (canGoUp) goUp() }}
+              >
+                <span className="mention-breadcrumb-chevron" aria-hidden="true"><ChevronIcon /></span>
+                <span className="mention-breadcrumb-path">{browseDir === "" ? "Project root" : browseDir}</span>
+              </button>
+            </div>
+            <ul role="listbox" aria-label="Project files">
+              {browseEntries.length > 0 ? browseEntries.map((entry, i) => (
+                <li
+                  key={entry.path}
+                  role="option"
+                  aria-selected={i === browseIndex}
+                  className={"mention-hit" + (i === browseIndex ? " active" : "") + (entry.kind === "folder" ? " mention-folder" : "")}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    if (entry.kind === "folder") drillInto(entry)
+                    else insertMention(entry)
+                  }}
+                  onMouseEnter={() => setBrowseIndex(i)}
+                >
+                  {entry.kind === "folder" && <FolderIcon />}
+                  <span className="mention-name">{entry.name}</span>
+                  {entry.kind === "folder" && <ChevronIcon />}
+                </li>
+              )) : (
+                <li className="mention-hit mention-empty">Empty folder</li>
+              )}
+            </ul>
+          </div>
         )}
         {showFileHits && (
           <ul className="mention-popover" role="listbox" aria-label="Files">

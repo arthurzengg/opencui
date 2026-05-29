@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { rankHits } from "../../src/file-search"
+import { rankHits, dirEntriesFrom } from "../../src/file-search"
 
 const fixtures = [
   { path: "src/foo.ts", name: "foo.ts" },
@@ -103,5 +103,47 @@ describe("rankHits", () => {
       expect(out[0]?.path).toBe("src/foo.ts")
       expect(out[1]?.path).toBe("src/bar.ts")
     })
+  })
+})
+
+describe("dirEntriesFrom", () => {
+  it("lists root-level entries, folders first", () => {
+    const out = dirEntriesFrom(fixtures, "")
+    expect(out).toEqual([
+      { name: "deep", path: "deep", kind: "folder" },
+      { name: "lib", path: "lib", kind: "folder" },
+      { name: "src", path: "src", kind: "folder" },
+    ])
+  })
+
+  it("lists a folder's immediate children, folders before files, each alphabetical", () => {
+    const out = dirEntriesFrom(fixtures, "src")
+    expect(out).toEqual([
+      { name: "bar", path: "src/bar", kind: "folder" },
+      { name: "foo", path: "src/foo", kind: "folder" },
+      { name: "bar.ts", path: "src/bar.ts", kind: "file" },
+      { name: "foo.ts", path: "src/foo.ts", kind: "file" },
+    ])
+  })
+
+  it("distinguishes a folder from a same-stem sibling file", () => {
+    const out = dirEntriesFrom(fixtures, "src")
+    // src/bar (folder, inferred from src/bar/foo.tsx) and src/bar.ts (file) are distinct.
+    expect(out.find((e) => e.path === "src/bar")?.kind).toBe("folder")
+    expect(out.find((e) => e.path === "src/bar.ts")?.kind).toBe("file")
+  })
+
+  it("returns only files when a folder has no subfolders", () => {
+    expect(dirEntriesFrom(fixtures, "src/foo")).toEqual([
+      { name: "index.ts", path: "src/foo/index.ts", kind: "file" },
+    ])
+  })
+
+  it("tolerates a trailing slash on the dir", () => {
+    expect(dirEntriesFrom(fixtures, "src/")).toEqual(dirEntriesFrom(fixtures, "src"))
+  })
+
+  it("returns empty for a folder with no matching files", () => {
+    expect(dirEntriesFrom(fixtures, "does/not/exist")).toEqual([])
   })
 })
