@@ -81,6 +81,11 @@ vi.mock("vscode", () => {
     ViewColumn: { One: 1, Two: 2, Three: 3 },
     StatusBarAlignment: { Left: 1, Right: 2 },
     QuickPickItemKind: { Separator: -1, Default: 0 },
+    ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 },
+    env: {
+      clipboard: { writeText: vi.fn(), readText: vi.fn() },
+      openExternal: vi.fn(),
+    },
     workspace: {
       workspaceFolders: [{ uri: Uri.file("/workspace") }],
       getConfiguration: vi.fn(() => ({ get: vi.fn() })),
@@ -127,6 +132,11 @@ vi.mock("vscode", () => {
       showErrorMessage: vi.fn(),
       showTextDocument: vi.fn(),
       showQuickPick: vi.fn(),
+      showInputBox: vi.fn(),
+      // Run the progress task immediately and return its result (the SDK call).
+      withProgress: vi.fn((_opts: unknown, task: (p: unknown, t: unknown) => unknown) =>
+        task({ report: vi.fn() }, { isCancellationRequested: false, onCancellationRequested: vi.fn() }),
+      ),
       createStatusBarItem: vi.fn((_align?: unknown, _priority?: number) => {
         const item: Record<string, unknown> = {
           text: "",

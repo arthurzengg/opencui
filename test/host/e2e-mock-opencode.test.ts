@@ -112,6 +112,74 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
   })
 })
 
+describe("E2E (mock opencode): MCP management", () => {
+  it("mcp.status returns the configured server map", async () => {
+    server.setMcpStatus({
+      github: { status: "connected" },
+      linear: { status: "needs_auth" },
+      postgres: { status: "failed", error: "ECONNREFUSED" },
+    })
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const res = await client.mcp.status({ query: { directory: "/tmp" } })
+    expect(res.error).toBeUndefined()
+    expect(res.data?.github?.status).toBe("connected")
+    expect(res.data?.linear?.status).toBe("needs_auth")
+    expect(res.data?.postgres?.status).toBe("failed")
+  })
+
+  it("mcp.add records a local config with a string[] command", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const res = await client.mcp.add({
+      query: { directory: "/tmp" },
+      body: { name: "gh", config: { type: "local", command: ["npx", "-y", "server-github"], enabled: true } },
+    })
+    expect(res.error).toBeUndefined()
+    expect(res.data?.gh?.status).toBe("connected")
+    expect(server.mcpAddCalls).toHaveLength(1)
+    const body = server.mcpAddCalls[0]!.body as { name?: string; config?: { type?: string; command?: unknown } }
+    expect(body.name).toBe("gh")
+    expect(body.config?.type).toBe("local")
+    expect(body.config?.command).toEqual(["npx", "-y", "server-github"])
+  })
+
+  it("mcp.add records a remote config with a url", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    await client.mcp.add({
+      query: { directory: "/tmp" },
+      body: { name: "remote1", config: { type: "remote", url: "https://example.com/mcp", enabled: true } },
+    })
+    const body = server.mcpAddCalls.at(-1)!.body as { config?: { type?: string; url?: string } }
+    expect(body.config?.type).toBe("remote")
+    expect(body.config?.url).toBe("https://example.com/mcp")
+  })
+
+  it("mcp.connect and mcp.disconnect return booleans and record the name", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const connected = await client.mcp.connect({ path: { name: "github" }, query: { directory: "/tmp" } })
+    const disconnected = await client.mcp.disconnect({ path: { name: "github" }, query: { directory: "/tmp" } })
+    expect(connected.data).toBe(true)
+    expect(disconnected.data).toBe(true)
+    expect(server.mcpConnectCalls).toEqual(["github"])
+    expect(server.mcpDisconnectCalls).toEqual(["github"])
+  })
+
+  it("mcp.auth.authenticate returns a status and records the name", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const res = await client.mcp.auth.authenticate({ path: { name: "linear" }, query: { directory: "/tmp" } })
+    expect(res.error).toBeUndefined()
+    expect(res.data?.status).toBe("connected")
+    expect(server.mcpAuthenticateCalls).toEqual(["linear"])
+  })
+
+  it("mcp.auth.remove reports success and records the name", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const res = await client.mcp.auth.remove({ path: { name: "linear" }, query: { directory: "/tmp" } })
+    expect(res.error).toBeUndefined()
+    expect(res.data?.success).toBe(true)
+    expect(server.mcpAuthRemoveCalls).toEqual(["linear"])
+  })
+})
+
 describe("E2E (mock opencode): subscribeSession streaming", () => {
   it("forwards onAssistantStart on first message.updated event", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })

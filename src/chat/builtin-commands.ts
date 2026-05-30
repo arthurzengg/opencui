@@ -21,6 +21,7 @@ export const BUILTIN_COMMANDS: ReadonlyArray<CommandInfo> = [
   { name: "init", description: "Analyze the codebase and write AGENTS.md", takesArguments: false },
   { name: "share", description: "Create a shareable link for this session", takesArguments: false },
   { name: "unshare", description: "Disable sharing for this session", takesArguments: false },
+  { name: "mcp", description: "Manage MCP servers", takesArguments: false },
 ]
 
 export const BUILTIN_COMMAND_NAMES: ReadonlySet<string> = new Set(BUILTIN_COMMANDS.map((c) => c.name))
