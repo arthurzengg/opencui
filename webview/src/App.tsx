@@ -14,6 +14,7 @@ export default function App() {
   const {
     state,
     send,
+    runCommand,
     abort,
     newSession,
     openConversation,
@@ -225,6 +226,8 @@ export default function App() {
           activeConversationID={state.conversationID}
           onOpenConversation={openConversation}
           contextUsage={state.contextUsage}
+          commands={state.commands}
+          onRunCommand={runCommand}
         />
       )}
       <div
@@ -338,6 +341,8 @@ export default function App() {
             activeConversationID={state.conversationID}
             onOpenConversation={openConversation}
             contextUsage={state.contextUsage}
+            commands={state.commands}
+            onRunCommand={runCommand}
           />
         </div>
       )}

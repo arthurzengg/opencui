@@ -200,6 +200,16 @@ export type FileSearchHit = { path: string; name: string }
 export type DirEntry = { name: string; path: string; kind: "file" | "folder" }
 
 /**
+ * One opencode custom command surfaced to the `/` picker. The host strips the
+ * `template` (it is expanded server-side by `session.command`) and keeps only
+ * what the picker renders + needs. `takesArguments` drives the smart run UX: a
+ * template containing `$ARGUMENTS` waits for the user to type args, otherwise
+ * the command runs the moment it is selected. `agent` is a display-only hint;
+ * the agent/model actually used are read host-side from prefs at run time.
+ */
+export type CommandInfo = { name: string; description?: string; agent?: string; takesArguments: boolean }
+
+/**
  * Status snapshot of the optional semantic index — Phase 6 of the
  * workspace-context plan. `disabled` is the default; flipping
  * `opencui.indexing.semantic.enabled` true plus configuring a real
@@ -368,6 +378,7 @@ export type Outbound =
   | { type: "connected"; connected: boolean; error?: string }
   | { type: "selection"; selection: Selection }
   | { type: "contextUsage"; usage?: ContextUsage }
+  | { type: "commands"; commands: CommandInfo[] }
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
@@ -416,6 +427,7 @@ export type Outbound =
 export type Inbound =
   | { type: "mounted" }
   | { type: "send"; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: string[] }
+  | { type: "runCommand"; command: string; arguments: string }
   | { type: "editMessage"; id: string; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: string[] }
   | { type: "abort" }
   | { type: "newSession" }

@@ -2588,6 +2588,13 @@ button {
 .promptbox--top .mention-popover {
   top: 26px;
 }
+/* The `/` command picker is a touch wider than the @-file picker (command
+   descriptions need the room) and never shows a horizontal scrollbar — long
+   descriptions ellipsize via .mention-path instead of forcing a scroll. */
+.command-popover {
+  width: min(320px, calc(100% - 16px));
+  overflow-x: hidden;
+}
 .mention-hit {
   display: flex;
   align-items: baseline;

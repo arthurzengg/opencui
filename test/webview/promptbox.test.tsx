@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup, waitFor } from "@testing-library/react"
+import { render, screen, cleanup, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { PromptBox, detectMention, extractMentions, findMentionRanges, findChipAtCaret, makeAttachmentLabel } from "../../webview/src/components/PromptBox"
 
@@ -15,7 +15,7 @@ async function enterFilesCategory(user: ReturnType<typeof userEvent.setup>, targ
 describe("PromptBox", () => {
   it("renders a textarea with placeholder", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
-    expect(screen.getByPlaceholderText(/@ for file, Enter to send/i)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/for commands.*for files.*Enter to send/i)).toBeInTheDocument()
   })
 
   it("uses a compact one-row textarea in edit mode", () => {
@@ -1308,5 +1308,113 @@ describe("PromptBox image paste from clipboard", () => {
     await user.click(screen.getByRole("button", { name: /Preview pasted-image\.png/i }))
     await user.click(screen.getByRole("button", { name: /Close preview/i }))
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  })
+})
+
+describe("PromptBox / command picker", () => {
+  const COMMANDS = [
+    { name: "deploy", description: "Ship it", takesArguments: true },
+    { name: "compact", description: "Compact the session", takesArguments: false },
+    { name: "review", description: "Review changes", takesArguments: true },
+  ]
+
+  it("opens the command picker listing all commands when you type /", async () => {
+    const user = userEvent.setup()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={vi.fn()} />)
+    await user.type(screen.getByRole("textbox"), "/")
+    const list = await screen.findByRole("listbox", { name: /Commands/i })
+    expect(within(list).getByText("/deploy")).toBeInTheDocument()
+    expect(within(list).getByText("/compact")).toBeInTheDocument()
+    expect(within(list).getByText("/review")).toBeInTheDocument()
+  })
+
+  it("filters commands as you type", async () => {
+    const user = userEvent.setup()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={vi.fn()} />)
+    await user.type(screen.getByRole("textbox"), "/dep")
+    const list = await screen.findByRole("listbox", { name: /Commands/i })
+    expect(within(list).getByText("/deploy")).toBeInTheDocument()
+    expect(within(list).queryByText("/compact")).toBeNull()
+    expect(within(list).queryByText("/review")).toBeNull()
+  })
+
+  it("selecting an argument-taking command inserts /name and waits (does not run)", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "/deploy")
+    await screen.findByRole("listbox", { name: /Commands/i })
+    await user.keyboard("{Enter}")
+    expect(textarea.value).toBe("/deploy ")
+    expect(onRunCommand).not.toHaveBeenCalled()
+    expect(screen.queryByRole("listbox", { name: /Commands/i })).toBeNull()
+  })
+
+  it("selecting an argument-less command runs it immediately and clears", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "/compact")
+    await screen.findByRole("listbox", { name: /Commands/i })
+    await user.keyboard("{Enter}")
+    expect(onRunCommand).toHaveBeenCalledWith("compact", "")
+    expect(textarea.value).toBe("")
+  })
+
+  it("typing /name args + Enter runs the command with its arguments", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    const onSend = vi.fn()
+    render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "/deploy prod")
+    await user.keyboard("{Enter}")
+    expect(onRunCommand).toHaveBeenCalledWith("deploy", "prod")
+    expect(onSend).not.toHaveBeenCalled()
+    expect(textarea.value).toBe("")
+  })
+
+  it("an unknown /command sends as a normal prompt (backward compatible)", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    const onSend = vi.fn()
+    render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />)
+    await user.type(screen.getByRole("textbox"), "/nope thing")
+    await user.keyboard("{Enter}")
+    expect(onRunCommand).not.toHaveBeenCalled()
+    expect(onSend).toHaveBeenCalledWith("/nope thing", undefined, undefined, undefined)
+  })
+
+  it("does not open the picker when there are no commands", async () => {
+    const user = userEvent.setup()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} commands={[]} onRunCommand={vi.fn()} />)
+    await user.type(screen.getByRole("textbox"), "/")
+    expect(screen.queryByRole("listbox", { name: /Commands/i })).toBeNull()
+  })
+
+  it("does not run a command on Enter during IME composition", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "/compact")
+    await screen.findByRole("listbox", { name: /Commands/i })
+    const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+    Object.defineProperty(event, "isComposing", { value: true, configurable: true })
+    textarea.dispatchEvent(event)
+    expect(onRunCommand).not.toHaveBeenCalled()
+  })
+
+  it("does not run a command while busy", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    render(<PromptBox busy={true} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "/compact")
+    await screen.findByRole("listbox", { name: /Commands/i })
+    await user.keyboard("{Enter}")
+    expect(onRunCommand).not.toHaveBeenCalled()
   })
 })
