@@ -27,6 +27,10 @@ export type MockOpencodeServer = {
   prompts: Array<{ sessionID: string; body: unknown }>
   /** Records of every revert call. */
   reverts: Array<{ sessionID: string; body: unknown }>
+  /** Records of every session.command call. */
+  commandCalls: Array<{ sessionID: string; body: unknown }>
+  /** Configure what GET /command returns. */
+  setCommands: (commands: Array<Record<string, unknown>>) => void
   /**
    * Configure what GET /session/status returns. Pass `undefined` to clear
    * the entry. Tests use this to drive the watchdog's recovery path.
@@ -41,6 +45,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const sseClients: ServerResponse[] = []
   const prompts: Array<{ sessionID: string; body: unknown }> = []
   const reverts: Array<{ sessionID: string; body: unknown }> = []
+  const commandCalls: Array<{ sessionID: string; body: unknown }> = []
+  let commands: Array<Record<string, unknown>> = []
   const sessionStatuses = new Map<string, { type: "idle" | "busy" | "retry" }>()
   let statusPolls = 0
   let clientResolver: (() => void) | undefined
@@ -114,6 +120,12 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       return
     }
 
+    // Custom command list
+    if (path === "/command" && req.method === "GET") {
+      reply(res, 200, commands)
+      return
+    }
+
     // Session create
     if (path === "/session" && req.method === "POST") {
       reply(res, 200, { id: "ses_test", title: "Test Session" })
@@ -127,6 +139,15 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       prompts.push({ sessionID: promptMatch[1]!, body })
       res.statusCode = 204
       res.end()
+      return
+    }
+
+    // Session command — runs a custom command; returns the created message.
+    const commandMatch = path.match(/^\/session\/([^/]+)\/command$/)
+    if (commandMatch && req.method === "POST") {
+      const body = await readBody(req)
+      commandCalls.push({ sessionID: commandMatch[1]!, body })
+      reply(res, 200, { info: { id: "msg_cmd", role: "assistant", sessionID: commandMatch[1] }, parts: [] })
       return
     }
 
@@ -183,6 +204,10 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     prompts,
     reverts,
+    commandCalls,
+    setCommands(next) {
+      commands = next
+    },
     setSessionStatus(sessionID, status) {
       if (status) sessionStatuses.set(sessionID, status)
       else sessionStatuses.delete(sessionID)

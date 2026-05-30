@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import type { Attachment, ContextUsage, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
+import type { Attachment, CommandInfo, ContextUsage, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
 import {
   extractMentions,
   findChipAtCaret,
@@ -7,10 +7,12 @@ import {
   makeAttachmentLabel,
   makeConversationLabel,
 } from "../mention-tokens"
+import { parseCommandInput } from "../command-tokens"
 import { clipboardHasImage, readPastedImages } from "../paste-attachments"
 import { usePromptText } from "../hooks/usePromptText"
 import { useImageAttachments } from "../hooks/useImageAttachments"
 import { useMentionPicker } from "../hooks/useMentionPicker"
+import { useCommandPicker } from "../hooks/useCommandPicker"
 import { useFileBrowser } from "../hooks/useFileBrowser"
 import {
   conversationDisplayTitle,
@@ -32,6 +34,7 @@ export {
   makeConversationLabel,
   formatBytes,
 } from "../mention-tokens"
+export { detectCommand, filterCommands, parseCommandInput } from "../command-tokens"
 
 type Props = {
   busy: boolean
@@ -66,6 +69,14 @@ type Props = {
   activeConversationID?: string
   onOpenConversation?: (id: string) => void
   contextUsage?: ContextUsage
+  /** Workspace opencode commands for the `/` picker. Empty disables it. */
+  commands?: CommandInfo[]
+  /**
+   * Run an opencode command. Only wired for the primary send composer — the
+   * in-message edit composers leave it undefined so a `/`-leading edit stays a
+   * normal prompt edit (preserving revert semantics).
+   */
+  onRunCommand?: (command: string, args: string) => void
 }
 
 function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachment> {
@@ -112,7 +123,7 @@ function extractConversationLabels(text: string | undefined): string[] {
   return Array.from(text.matchAll(/@chat:\S+/g), (match) => match[0].slice(1))
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage, commands = [], onRunCommand }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
@@ -138,6 +149,15 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
   }
   const { mention, hits, activeIndex, setActiveIndex, detectAtCaret, closeMention, insertMention } =
     useMentionPicker({ text, setText, searchFiles, knownMentions, pendingCursor })
+  const {
+    command,
+    filtered: commandHits,
+    activeIndex: commandIndex,
+    setActiveIndex: setCommandIndex,
+    detectAtCaret: detectCommandAtCaret,
+    closeCommand,
+    insertCommand,
+  } = useCommandPicker({ text, setText, commands, pendingCursor })
 
   type MentionCategory = "files" | "chats"
   const [mentionCategory, setMentionCategory] = useState<MentionCategory | null>(null)
@@ -218,11 +238,57 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
   const updateText = (next: string, caret: number) => {
     setText(next)
     setSelectedChipStart(undefined)
+    // The `/` and `@` pickers are mutually exclusive: a leading slash command
+    // wins, and we close the mention picker so they never render together.
+    if (detectCommandAtCaret(next, caret)) {
+      closeMention()
+      return
+    }
     detectAtCaret(next, caret)
+  }
+
+  /** Clear the composer to its empty state after a send or command run. */
+  const clearComposer = () => {
+    setText("")
+    knownMentions.current.clear()
+    knownAttachments.current.clear()
+    knownConversations.current.clear()
+    clearImageAttachments()
+    setSelectedChipStart(undefined)
+    setAttachError(undefined)
+    closeMention()
+    closeCommand()
+  }
+
+  const runCommandAndClear = (command: string, args: string) => {
+    // Respect busy on the picker-run path too (submit already guards busy).
+    if (busy || !onRunCommand) return
+    onRunCommand(command, args)
+    clearComposer()
+  }
+
+  /**
+   * Pick path for the `/` dropdown. A command whose template takes `$ARGUMENTS`
+   * inserts `/name ` and waits for the user to type args; an argument-less
+   * command runs the moment it is chosen.
+   */
+  const chooseCommand = (cmd: CommandInfo) => {
+    if (cmd.takesArguments) insertCommand(cmd)
+    else runCommandAndClear(cmd.name, "")
   }
 
   const submit = () => {
     const trimmed = text.trim()
+    // Route a typed `/name args` to the command path when the name matches a
+    // known command. Unknown slashes (and prose like `/etc/hosts`) fall through
+    // to a normal prompt send. Edit composers never route (no onRunCommand).
+    if (variant === "send" && !busy && onRunCommand) {
+      const parsed = parseCommandInput(trimmed)
+      if (parsed && commands.some((c) => c.name === parsed.name)) {
+        runCommandAndClear(parsed.name, parsed.args)
+        return
+      }
+    }
     const activeAttachments: Attachment[] = []
     if (knownAttachments.current.size > 0) {
       const labelsInText = extractMentions(text, new Set(knownAttachments.current.keys()))
@@ -247,14 +313,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
       activeAttachments.length ? activeAttachments : undefined,
       convIDs.length ? convIDs : undefined,
     )
-    setText("")
-    knownMentions.current.clear()
-    knownAttachments.current.clear()
-    knownConversations.current.clear()
-    clearImageAttachments()
-    setSelectedChipStart(undefined)
-    setAttachError(undefined)
-    closeMention()
+    clearComposer()
   }
 
   const handleAttachClick = async () => {
@@ -353,6 +412,39 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     // the IME. keyCode 229 is the legacy fallback for older Chromium builds
     // that don't surface isComposing reliably.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
+    if (command) {
+      // When nothing matches we only handle Escape — Enter must fall through to
+      // submit so `/unknown` sends as a normal prompt.
+      if (commandHits.length === 0) {
+        if (e.key === "Escape") {
+          e.preventDefault()
+          closeCommand()
+          return
+        }
+      } else {
+        if (e.key === "ArrowDown") {
+          e.preventDefault()
+          setCommandIndex((i) => (i + 1) % commandHits.length)
+          return
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault()
+          setCommandIndex((i) => (i - 1 + commandHits.length) % commandHits.length)
+          return
+        }
+        if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault()
+          const cmd = commandHits[commandIndex]
+          if (cmd) chooseCommand(cmd)
+          return
+        }
+        if (e.key === "Escape") {
+          e.preventDefault()
+          closeCommand()
+          return
+        }
+      }
+    }
     if (showCategoryMenu) {
       const categories: MentionCategory[] = ["files", "chats"]
       if (e.key === "ArrowDown") {
@@ -556,7 +648,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
           ref={ref}
           value={text}
           rows={variant === "edit" ? 1 : 2}
-          placeholder="@ for file, Enter to send"
+          placeholder="/ for commands, @ for files, Enter to send"
           onChange={(e) => updateText(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
@@ -566,7 +658,10 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
           }}
           onBlur={() => {
             // Defer so onMouseDown on a hit can fire first.
-            setTimeout(closeMention, 120)
+            setTimeout(() => {
+              closeMention()
+              closeCommand()
+            }, 120)
           }}
         />
         {showCategoryMenu && (
@@ -686,6 +781,28 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
               <li className="mention-hit mention-empty">
                 {pastConversations.length === 0 ? "No past chats" : `No chats match "${mention.query}"`}
               </li>
+            )}
+          </ul>
+        )}
+        {command && (
+          <ul className="mention-popover" role="listbox" aria-label="Commands">
+            {commandHits.length > 0 ? commandHits.map((cmd, i) => (
+              <li
+                key={cmd.name}
+                role="option"
+                aria-selected={i === commandIndex}
+                className={"mention-hit" + (i === commandIndex ? " active" : "")}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  chooseCommand(cmd)
+                }}
+                onMouseEnter={() => setCommandIndex(i)}
+              >
+                <span className="mention-name">/{cmd.name}</span>
+                <span className="mention-path">{cmd.description ?? (cmd.agent ? `agent: ${cmd.agent}` : "")}</span>
+              </li>
+            )) : (
+              <li className="mention-hit mention-empty">No commands match "/{command.query}"</li>
             )}
           </ul>
         )}

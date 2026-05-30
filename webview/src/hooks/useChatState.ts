@@ -5,6 +5,7 @@ import type {
   Attachment,
   ChatBlock,
   ChatMessage,
+  CommandInfo,
   ContextUsage,
   ConversationSummary,
   DirEntry,
@@ -46,6 +47,8 @@ export type ChatState = {
   conversations: ConversationSummary[]
   conversationID?: string
   contextUsage?: ContextUsage
+  /** Workspace opencode commands for the `/` picker (pushed by the host). */
+  commands: CommandInfo[]
   context?: EditorContextRef
   messages: Message[]
   reviewHunks: Record<string, ReviewHunkState>
@@ -68,6 +71,7 @@ const initial: ChatState = {
   continuationPending: false,
   selection: {},
   conversations: [],
+  commands: [],
   messages: [],
   reviewHunks: {},
 }
@@ -137,7 +141,7 @@ export { initial as initialChatState }
 export function reducer(state: ChatState, action: Action): ChatState {
   switch (action.type) {
     case "reset":
-      return { ...initial, selection: state.selection, context: state.context, connected: state.connected }
+      return { ...initial, selection: state.selection, context: state.context, connected: state.connected, commands: state.commands }
     case "ready":
       return { ...state, connected: action.connected, selection: action.selection }
     case "connected":
@@ -146,6 +150,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return { ...state, selection: action.selection }
     case "contextUsage":
       return { ...state, contextUsage: action.usage }
+    case "commands":
+      return { ...state, commands: action.commands }
     case "conversations":
       return { ...state, conversations: action.conversations, conversationID: action.activeID }
     case "restore":
@@ -330,7 +336,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return { ...state, messages: next, busy: state.busy && anyPending }
     }
     case "clear":
-      return { ...initial, selection: state.selection, context: state.context, connected: state.connected }
+      return { ...initial, selection: state.selection, context: state.context, connected: state.connected, commands: state.commands }
     default:
       return state
   }
@@ -381,6 +387,9 @@ export function useChatState() {
     state,
     send(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
       vscode.post({ type: "send", text, mentions, attachments, conversationMentions })
+    },
+    runCommand(command: string, args: string) {
+      vscode.post({ type: "runCommand", command, arguments: args })
     },
     editMessage(id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
       vscode.post({ type: "editMessage", id, text, mentions, attachments, conversationMentions })

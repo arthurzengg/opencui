@@ -20,6 +20,7 @@ import type {
   Attachment,
   ChatBlock,
   ChatMessage,
+  CommandInfo,
   ContextUsage,
   Inbound,
   Outbound,
@@ -555,6 +556,35 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * Fetch the workspace's opencode custom commands and push them to the webview
+   * for the `/` picker. Workspace/directory-scoped (not per-session), so there
+   * is no request-sequence guard — a redundant refresh just re-sends the same
+   * list. `takesArguments` (template contains `$ARGUMENTS`) drives the picker's
+   * smart run UX.
+   */
+  private async refreshCommands(backend?: Backend) {
+    try {
+      const activeBackend = backend ?? (await this.servers.ensure())
+      const res = await activeBackend.client.command.list({
+        query: { directory: activeBackend.directory },
+      })
+      if (res.error || !res.data) {
+        log("command.list failed", res.error)
+        return
+      }
+      const commands: CommandInfo[] = res.data.map((c) => ({
+        name: c.name,
+        description: c.description,
+        agent: c.agent,
+        takesArguments: /\$ARGUMENTS\b/.test(c.template),
+      }))
+      this.post({ type: "commands", commands })
+    } catch (e) {
+      log("command.list refresh failed", e)
+    }
+  }
+
   private async onMessage(msg: Inbound) {
     switch (msg.type) {
       case "mounted": {
@@ -576,6 +606,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         try {
           const backend = await this.servers.ensure()
           this.post({ type: "connected", connected: true })
+          void this.refreshCommands(backend)
           if (this.sessionID) void this.refreshContextUsage(backend)
         } catch (e) {
           this.post({ type: "connected", connected: false, error: (e as Error).message })
@@ -584,6 +615,9 @@ export class ChatView implements vscode.WebviewViewProvider {
       }
       case "send":
         await this.handleSend(msg.text, msg.mentions, msg.attachments, msg.conversationMentions)
+        return
+      case "runCommand":
+        await this.handleRunCommand(msg.command, msg.arguments)
         return
       case "editMessage":
         await this.handleEdit(msg.id, msg.text, msg.mentions, msg.attachments, msg.conversationMentions)
@@ -1072,6 +1106,79 @@ export class ChatView implements vscode.WebviewViewProvider {
     // No UI action here — the SSE subscription owns assistant lifecycle.
   }
 
+  /**
+   * Run an opencode custom command. Unlike handleSend this skips the entire
+   * auto-context/manifest pipeline: `session.command` takes no `parts`, so the
+   * server expands the command's own template (including its `!shell` / `@file`
+   * substitutions) and runs the turn. The existing SSE subscription renders it.
+   */
+  private async handleRunCommand(command: string, args: string) {
+    const ctx = getEditorContext()
+    const label = formatContextHeader(ctx)
+    const userMessageID = "u_" + Date.now()
+    // Show the typed invocation, never the expanded template — the SSE
+    // onUserMessage only associates the backend id, it never rewrites the text.
+    const display = "/" + command + (args ? " " + args : "")
+    this.pendingUserBackendID = userMessageID
+    this.post({
+      type: "userMessage",
+      id: userMessageID,
+      text: display,
+      ref: { path: ctx.filePath, label },
+    })
+    this.updateTitleFromPrompt(display)
+
+    let backend: Backend
+    try {
+      backend = await this.servers.ensure()
+    } catch (e) {
+      this.post({ type: "connected", connected: false, error: (e as Error).message })
+      return
+    }
+
+    if (!this.sessionID) {
+      const created = await backend.client.session.create({ body: {} })
+      if (created.error || !created.data) {
+        log("session.create failed", created.error)
+        return
+      }
+      this.sessionID = created.data.id
+      this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
+      void this.manager.persist()
+      log("created session", this.sessionID)
+      await this.attachSubscription(backend, this.sessionID)
+    } else if (!this.subscription) {
+      await this.attachSubscription(backend, this.sessionID)
+    }
+
+    // A command is a real main-agent turn (it can spawn subagents), so it must
+    // key the Agents popover identically to a prompt. Finish is handled by the
+    // shared SSE onAssistantEnd / onSessionIdle paths.
+    await this.subagentDispatch.recordMainTaskStart(display)
+
+    const sel = this.prefs.get()
+    // session.command's `model` is a single "providerID/modelID" string, unlike
+    // promptAsync's { providerID, modelID } object.
+    const model = sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : undefined
+    log("command dispatch", { sessionID: this.sessionID, command, agent: sel.agent ?? "default", model: model ?? "default" })
+    try {
+      const res = await backend.client.session.command({
+        path: { id: this.sessionID },
+        query: { directory: backend.directory },
+        body: {
+          command,
+          arguments: args,
+          ...(sel.agent ? { agent: sel.agent } : {}),
+          ...(model ? { model } : {}),
+        },
+      })
+      if (res.error) log("command failed", res.error)
+    } catch (e) {
+      log("command call threw", e)
+    }
+    // No UI action here — the SSE subscription owns assistant lifecycle.
+  }
+
   private async handleEdit(webviewID: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
     const target = this.messages.find((m) => m.id === webviewID && m.role === "user")
     if (!target) {
@@ -1304,6 +1411,9 @@ export class ChatView implements vscode.WebviewViewProvider {
     } catch {
       // error already surfaced via handler
     }
+    // Refresh the command list on every (re)connect — picks up newly-added
+    // command files and survives an opencode server restart.
+    void this.refreshCommands(backend)
   }
 
   private ensureWebviewID(opencodeID: string): string {
