@@ -52,8 +52,8 @@ describe("PromptBox", () => {
       />,
     )
     expect(screen.getByRole("status", { name: /context 25% used/i })).toBeInTheDocument()
-    const indicator = screen.getByTitle(/Context: 50K \/ 200K tokens · 25% · openai\/gpt-5/)
-    expect(indicator).toHaveAttribute("data-tooltip", "50K / 200K tokens · 25%")
+    const indicator = screen.getByTitle(/Context: 50K \/ 200K · 25% · openai\/gpt-5/)
+    expect(indicator).toHaveAttribute("data-tooltip", "50K / 200K · 25%")
   })
 
   it("keeps context usage out of edit composers", () => {
