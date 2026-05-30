@@ -785,7 +785,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
           </ul>
         )}
         {command && (
-          <ul className="mention-popover" role="listbox" aria-label="Commands">
+          <ul className="mention-popover command-popover" role="listbox" aria-label="Commands">
             {commandHits.length > 0 ? commandHits.map((cmd, i) => (
               <li
                 key={cmd.name}
