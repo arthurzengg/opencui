@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-30
+
+### Added
+- Slash-command picker in the chat composer. Typing `/` at the start of the input opens a picker (mirroring the `@`-file picker) listing the workspace's opencode commands, filtered as you type. Selecting a command whose template uses `$ARGUMENTS` inserts `/name ` and waits for arguments; an argument-less command runs immediately. Running a custom command calls the SDK's `session.command`, which expands the command template server-side (including opencode's own `!shell` / `@file` substitutions) and streams the assistant turn through the existing SSE subscription — so it renders exactly like a normal prompt, and the chat shows the typed invocation rather than the expanded template. The command list is fetched via `command.list` on connect and on each subscription (re)attach; unknown `/foo` and prose like `/etc/hosts` still send as normal prompts.
+- opencode's built-in commands in the same picker, since `command.list` returns only user-defined custom commands. `/compact` (summarize and compact the session), `/init` (analyze the codebase and write `AGENTS.md`), `/share`, and `/unshare` are merged in as synthetic entries and routed host-side to their dedicated session endpoints; `/share` surfaces the share URL through a notification with a Copy Link action. A custom command of the same name shadows the built-in.
+
+Closes #248.
+
 ## [0.10.1] - 2026-05-29
 
 ### Added
