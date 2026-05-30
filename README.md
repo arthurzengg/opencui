@@ -22,8 +22,18 @@
   <sub><b>Per-workspace chat history</b></sub>
 </td>
 <td align="center">
-  <img src="media/screenshots/edit-message.png" alt="Edit + regenerate" width="340"><br>
-  <sub><b>Edit + regenerate</b></sub>
+  <img src="media/screenshots/slash-commands.png" alt="Slash-command picker" width="340"><br>
+  <sub><b>Slash commands</b></sub>
+</td>
+</tr>
+<tr>
+<td align="center">
+  <img src="media/screenshots/mcp-servers.png" alt="Manage MCP servers" width="340"><br>
+  <sub><b>Manage MCP servers</b></sub>
+</td>
+<td align="center">
+  <img src="media/screenshots/context-usage.png" alt="Context-window usage" width="340"><br>
+  <sub><b>Context-window usage</b></sub>
 </td>
 </tr>
 </table>
