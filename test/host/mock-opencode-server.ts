@@ -27,6 +27,10 @@ export type MockOpencodeServer = {
   prompts: Array<{ sessionID: string; body: unknown }>
   /** Records of every revert call. */
   reverts: Array<{ sessionID: string; body: unknown }>
+  /** Records of every unrevert (redo) call's sessionID. */
+  unreverts: string[]
+  /** Records of every fork call. */
+  forks: Array<{ sessionID: string; body: unknown }>
   /** Records of every session.command call. */
   commandCalls: Array<{ sessionID: string; body: unknown }>
   /** Configure what GET /command returns. */
@@ -53,6 +57,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const sseClients: ServerResponse[] = []
   const prompts: Array<{ sessionID: string; body: unknown }> = []
   const reverts: Array<{ sessionID: string; body: unknown }> = []
+  const unreverts: string[] = []
+  const forks: Array<{ sessionID: string; body: unknown }> = []
   const commandCalls: Array<{ sessionID: string; body: unknown }> = []
   let commands: Array<Record<string, unknown>> = []
   const sessionStatuses = new Map<string, { type: "idle" | "busy" | "retry" }>()
@@ -196,6 +202,23 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       return
     }
 
+    // Session unrevert (the /redo endpoint)
+    const unrevertMatch = path.match(/^\/session\/([^/]+)\/unrevert$/)
+    if (unrevertMatch && req.method === "POST") {
+      unreverts.push(unrevertMatch[1]!)
+      reply(res, 200, { id: unrevertMatch[1], title: "Test Session" })
+      return
+    }
+
+    // Session fork (the /fork endpoint) — returns a NEW session.
+    const forkMatch = path.match(/^\/session\/([^/]+)\/fork$/)
+    if (forkMatch && req.method === "POST") {
+      const body = await readBody(req)
+      forks.push({ sessionID: forkMatch[1]!, body })
+      reply(res, 200, { id: "ses_forked", title: "Forked session" })
+      return
+    }
+
     // Session abort
     if (path.match(/^\/session\/[^/]+\/abort$/) && req.method === "POST") {
       reply(res, 200, true)
@@ -278,6 +301,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     prompts,
     reverts,
+    unreverts,
+    forks,
     commandCalls,
     setCommands(next) {
       commands = next

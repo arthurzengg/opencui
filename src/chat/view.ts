@@ -31,6 +31,7 @@ import type {
   ReviewHunkState,
 } from "../protocol"
 import { BUILTIN_COMMAND_NAMES, withBuiltinCommands, generateMessageID } from "./builtin-commands"
+import { lastUserTurnIndex, redoAction, userMessageText } from "./undo"
 import { migrateConversationsToWorkspace } from "./conversation-store"
 import { ConversationManager } from "./conversation-manager"
 import { ContinuationState } from "./continuation-state"
@@ -110,6 +111,13 @@ export class ChatView implements vscode.WebviewViewProvider {
   private continuationState: ContinuationState
   /** opencode messageID → webview-side id used in UI */
   private messageMap = new Map<string, string>()
+  /**
+   * Tails removed by `/undo`, newest last, so `/redo` can re-append them. Purely
+   * in-memory: it does not survive a reload, and any new turn or conversation
+   * switch clears it (the future has diverged). No server->ChatMessage converter
+   * exists, so this buffer is how redo rebuilds the removed messages.
+   */
+  private redoStack: ChatMessage[][] = []
   private manager: ConversationManager
   private messages: ChatMessage[] = []
   /** Webview ID of the user message currently awaiting a backend ID from the stream. */
@@ -322,6 +330,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.aborting = false
     this.sessionID = undefined
     this.messageMap.clear()
+    this.redoStack = []
     this.activePermissions.clear()
     this.activeQuestions.clear()
   }
@@ -894,6 +903,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private async handleSend(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+    this.redoStack = [] // a new turn diverges the history; nothing to redo
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
     const userMessageID = "u_" + Date.now()
@@ -1125,6 +1135,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       await this.handleBuiltinCommand(command)
       return
     }
+    this.redoStack = [] // a custom-command turn diverges the history
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
     const userMessageID = "u_" + Date.now()
@@ -1206,6 +1217,12 @@ export class ChatView implements vscode.WebviewViewProvider {
       await vscode.commands.executeCommand("opencui.manageMcp")
       return
     }
+    // `/new` starts a fresh chat — no backend needed (the next prompt creates the
+    // session lazily), and it must not post a bubble / Main task.
+    if (command === "new") {
+      await this.newSession()
+      return
+    }
     let backend: Backend
     try {
       backend = await this.servers.ensure()
@@ -1222,11 +1239,18 @@ export class ChatView implements vscode.WebviewViewProvider {
         return this.runShare(backend)
       case "unshare":
         return this.runUnshare(backend)
+      case "undo":
+        return this.runUndo(backend)
+      case "redo":
+        return this.runRedo(backend)
+      case "fork":
+        return this.runFork(backend)
     }
   }
 
   /** Post the typed-invocation bubble and key the Agents popover for a built-in turn. */
   private async beginBuiltinTurn(display: string) {
+    this.redoStack = [] // a /compact or /init turn diverges the history
     const ctx = getEditorContext()
     const userMessageID = "u_" + Date.now()
     this.pendingUserBackendID = userMessageID
@@ -1335,6 +1359,160 @@ export class ChatView implements vscode.WebviewViewProvider {
       void vscode.window.showInformationMessage("Session sharing disabled.")
     } catch (e) {
       log("unshare threw", e)
+    }
+  }
+
+  /**
+   * `/undo` — revert the last settled turn. Mirrors handleEdit's
+   * revert + truncate + sendConversationState, minus the resend: the removed
+   * tail is stashed for `/redo` and the undone prompt is restored to the composer.
+   */
+  private async runUndo(backend: Backend) {
+    if (!this.sessionID) {
+      void vscode.window.showInformationMessage("Nothing to undo yet.")
+      return
+    }
+    const idx = lastUserTurnIndex(this.messages)
+    if (idx < 0) {
+      void vscode.window.showInformationMessage("Nothing to undo.")
+      return
+    }
+    const target = this.messages[idx]!
+    try {
+      const res = await backend.client.session.revert({
+        path: { id: this.sessionID },
+        query: { directory: backend.directory },
+        body: { messageID: target.backendID! },
+      })
+      if (res.error) {
+        log("undo: session.revert failed", res.error)
+        void vscode.window.showErrorMessage("Failed to undo the last turn.")
+        return
+      }
+    } catch (e) {
+      log("undo: session.revert threw", e)
+      return
+    }
+    this.redoStack.push(this.messages.slice(idx))
+    this.messages = this.messages.slice(0, idx)
+    this.reviewHunks = {}
+    this.saveActive()
+    this.sendConversationState()
+    this.queueReviewDecorationsSync()
+    // Restore the undone prompt so the user can edit and resend. Plain text only:
+    // mentions/attachments are not re-hydrated.
+    this.post({ type: "setComposerText", text: userMessageText(target) })
+  }
+
+  /** `/redo` — re-apply the most recently undone turn from the in-memory buffer. */
+  private async runRedo(backend: Backend) {
+    if (!this.sessionID) return
+    const tail = this.redoStack.pop()
+    if (!tail || tail.length === 0) {
+      void vscode.window.showInformationMessage("Nothing to redo.")
+      return
+    }
+    // Move the server revert pointer forward to the next still-reverted tail, or
+    // clear it entirely when this restores the latest turn.
+    const action = redoAction(this.redoStack[this.redoStack.length - 1])
+    try {
+      const res =
+        action.kind === "revert"
+          ? await backend.client.session.revert({
+              path: { id: this.sessionID },
+              query: { directory: backend.directory },
+              body: { messageID: action.messageID },
+            })
+          : await backend.client.session.unrevert({
+              path: { id: this.sessionID },
+              query: { directory: backend.directory },
+            })
+      if (res.error) {
+        log("redo failed", res.error)
+        void vscode.window.showErrorMessage("Failed to redo.")
+        this.redoStack.push(tail)
+        return
+      }
+    } catch (e) {
+      log("redo threw", e)
+      this.redoStack.push(tail)
+      return
+    }
+    this.messages = [...this.messages, ...tail]
+    this.saveActive()
+    this.sendConversationState()
+    this.queueReviewDecorationsSync()
+    this.post({ type: "setComposerText", text: "" })
+  }
+
+  /**
+   * `/fork` — duplicate the current session into a new conversation. The fork
+   * copies the current session, so its history equals our in-memory messages; we
+   * adopt the forked session id onto a fresh conversation and copy the messages
+   * over (re-stamping their backendIDs from the forked session so revert/edit
+   * keep working). No server->ChatMessage converter exists, hence the copy.
+   */
+  private async runFork(backend: Backend) {
+    if (!this.sessionID) {
+      void vscode.window.showInformationMessage("Nothing to fork yet.")
+      return
+    }
+    try {
+      const res = await backend.client.session.fork({
+        path: { id: this.sessionID },
+        query: { directory: backend.directory },
+        body: {},
+      })
+      if (res.error || !res.data) {
+        log("fork failed", res.error)
+        void vscode.window.showErrorMessage("Failed to fork the conversation.")
+        return
+      }
+      const forked = res.data
+      const copied = this.messages.map((m) => ({ ...m, pending: false }))
+      await this.restampForkedIDs(backend, forked.id, copied)
+      const copiedHunks = { ...this.reviewHunks }
+
+      this.resetSessionState()
+      const conversation = this.manager.add(forked.title || "Forked chat")
+      this.manager.setActiveID(conversation.id)
+      this.manager.updateActive((c) => ({ ...c, sessionID: forked.id, messages: copied, reviewHunks: copiedHunks }))
+      this.applyActiveSnapshot()
+      await this.manager.persist()
+      this.sendConversationState()
+      this.post({ type: "contextUsage", usage: undefined })
+      await this.attachSubscription(backend, forked.id)
+      void this.refreshContextUsage(backend)
+    } catch (e) {
+      log("fork threw", e)
+      void vscode.window.showErrorMessage("Failed to fork the conversation.")
+    }
+  }
+
+  /**
+   * Align copied messages' backendIDs with the forked session's real message ids
+   * by position. Fork duplicates the whole session, so order + count match (every
+   * settled bubble has a server message, and `/fork` only runs when idle); if the
+   * counts diverge we keep the copied ids and log — edit/undo on a pre-fork message
+   * may then need a fresh turn first.
+   */
+  private async restampForkedIDs(backend: Backend, sessionID: string, messages: ChatMessage[]) {
+    try {
+      const res = await backend.client.session.messages({
+        path: { id: sessionID },
+        query: { directory: backend.directory },
+      })
+      const server = (res.data ?? []) as Array<{ info?: { id?: string } }>
+      if (res.error || server.length !== messages.length) {
+        log("fork: skipping backendID re-stamp", { error: res.error, server: server.length, local: messages.length })
+        return
+      }
+      messages.forEach((m, i) => {
+        const id = server[i]?.info?.id
+        if (id) m.backendID = id
+      })
+    } catch (e) {
+      log("fork: restamp threw", e)
     }
   }
 

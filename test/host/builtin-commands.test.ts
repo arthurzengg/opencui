@@ -34,6 +34,12 @@ describe("withBuiltinCommands", () => {
     expect(BUILTIN_COMMAND_NAMES.has("share")).toBe(true)
     expect(BUILTIN_COMMAND_NAMES.has("nope")).toBe(false)
   })
+
+  it("registers the session-management built-ins", () => {
+    for (const name of ["undo", "redo", "fork", "new", "mcp"]) {
+      expect(BUILTIN_COMMAND_NAMES.has(name)).toBe(true)
+    }
+  })
 })
 
 describe("generateMessageID", () => {

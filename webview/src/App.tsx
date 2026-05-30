@@ -228,6 +228,7 @@ export default function App() {
           contextUsage={state.contextUsage}
           commands={state.commands}
           onRunCommand={runCommand}
+          inject={state.injectedText}
         />
       )}
       <div
@@ -343,6 +344,7 @@ export default function App() {
             contextUsage={state.contextUsage}
             commands={state.commands}
             onRunCommand={runCommand}
+            inject={state.injectedText}
           />
         </div>
       )}

@@ -416,6 +416,9 @@ export type Outbound =
   | { type: "question"; id: string; questions: QuestionInfo[] }
   | { type: "questionResolved"; id: string }
   | { type: "messageRemoved"; id: string }
+  // Host -> webview: replace the live composer's text (e.g. /undo restoring the
+  // undone prompt, /redo clearing it). Applied to the bottom send composer only.
+  | { type: "setComposerText"; text: string }
   | { type: "indexStatus"; status: IndexStatusInfo }
   | { type: "agentsStatus"; status: AgentsStatusInfo }
   | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }
