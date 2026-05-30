@@ -766,7 +766,7 @@ function ContextUsageIndicator({ usage }: { usage?: ContextUsage }) {
   const value = clampPercent(percent ?? 0)
   const tooltip = usage
     ? [
-        `${formatTokenCount(usage.tokens)}${usage.limit ? ` / ${formatTokenCount(usage.limit)}` : ""} tokens`,
+        `${formatTokenCount(usage.tokens)}${usage.limit ? ` / ${formatTokenCount(usage.limit)}` : ""}`,
         percent !== undefined ? `${value}%` : undefined,
       ].filter(Boolean).join(" · ")
     : "Context usage unavailable"
