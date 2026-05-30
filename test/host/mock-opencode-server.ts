@@ -151,6 +151,28 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       return
     }
 
+    // Built-in command endpoints: /compact → summarize, /init → init,
+    // /share → share (POST) / unshare (DELETE).
+    if (path.match(/^\/session\/[^/]+\/summarize$/) && req.method === "POST") {
+      await readBody(req)
+      reply(res, 200, true)
+      return
+    }
+    if (path.match(/^\/session\/[^/]+\/init$/) && req.method === "POST") {
+      await readBody(req)
+      reply(res, 200, true)
+      return
+    }
+    const shareMatch = path.match(/^\/session\/([^/]+)\/share$/)
+    if (shareMatch && req.method === "POST") {
+      reply(res, 200, { id: shareMatch[1], title: "Test Session", share: { url: "https://opencode.ai/s/abc123" } })
+      return
+    }
+    if (shareMatch && req.method === "DELETE") {
+      reply(res, 200, { id: shareMatch[1], title: "Test Session" })
+      return
+    }
+
     // Session revert
     const revertMatch = path.match(/^\/session\/([^/]+)\/revert$/)
     if (revertMatch && req.method === "POST") {

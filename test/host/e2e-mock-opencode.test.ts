@@ -83,6 +83,33 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     expect(typeof body.model).toBe("string")
     expect(body.model).toBe("openai/gpt-5")
   })
+
+  it("session.summarize (the /compact endpoint) round-trips", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const res = await client.session.summarize({
+      path: { id: "ses_test" },
+      body: { providerID: "openai", modelID: "gpt-5" },
+    })
+    expect(res.error).toBeUndefined()
+    expect(res.data).toBe(true)
+  })
+
+  it("session.share (the /share endpoint) returns a share url", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const res = await client.session.share({ path: { id: "ses_test" } })
+    expect(res.error).toBeUndefined()
+    expect(res.data?.share?.url).toBe("https://opencode.ai/s/abc123")
+  })
+
+  it("session.init (the /init endpoint) accepts a client-supplied messageID", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const res = await client.session.init({
+      path: { id: "ses_test" },
+      body: { providerID: "openai", modelID: "gpt-5", messageID: "msg_0123456789ABCDEFGHJKMNPQRS" },
+    })
+    expect(res.error).toBeUndefined()
+    expect(res.data).toBe(true)
+  })
 })
 
 describe("E2E (mock opencode): subscribeSession streaming", () => {

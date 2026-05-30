@@ -30,6 +30,7 @@ import type {
   ReviewChangeActor,
   ReviewHunkState,
 } from "../protocol"
+import { BUILTIN_COMMAND_NAMES, withBuiltinCommands, generateMessageID } from "./builtin-commands"
 import { migrateConversationsToWorkspace } from "./conversation-store"
 import { ConversationManager } from "./conversation-manager"
 import { ContinuationState } from "./continuation-state"
@@ -115,6 +116,8 @@ export class ChatView implements vscode.WebviewViewProvider {
   private pendingUserBackendID?: string
   private reviewHunks: Record<string, ReviewHunkState> = {}
   private contextUsageRequest = 0
+  /** Names from the last `command.list` fetch — lets a custom command shadow a built-in. */
+  private customCommandNames = new Set<string>()
   /**
    * True between user-pressed Stop and the subsequent `session.idle` event.
    * While true, drop incoming SSE message/tool deltas — opencode keeps draining
@@ -573,13 +576,16 @@ export class ChatView implements vscode.WebviewViewProvider {
         log("command.list failed", res.error)
         return
       }
-      const commands: CommandInfo[] = res.data.map((c) => ({
+      const custom: CommandInfo[] = res.data.map((c) => ({
         name: c.name,
         description: c.description,
         agent: c.agent,
         takesArguments: /\$ARGUMENTS\b/.test(c.template),
       }))
-      this.post({ type: "commands", commands })
+      this.customCommandNames = new Set(custom.map((c) => c.name))
+      // Merge opencode's built-ins (/compact, /share, …); a custom command of
+      // the same name wins and is dispatched through session.command instead.
+      this.post({ type: "commands", commands: withBuiltinCommands(custom) })
     } catch (e) {
       log("command.list refresh failed", e)
     }
@@ -1113,6 +1119,12 @@ export class ChatView implements vscode.WebviewViewProvider {
    * substitutions) and runs the turn. The existing SSE subscription renders it.
    */
   private async handleRunCommand(command: string, args: string) {
+    // A built-in (/compact, /share, …) maps to a dedicated session endpoint,
+    // not session.command — unless a custom command of the same name shadows it.
+    if (!this.customCommandNames.has(command) && BUILTIN_COMMAND_NAMES.has(command)) {
+      await this.handleBuiltinCommand(command)
+      return
+    }
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
     const userMessageID = "u_" + Date.now()
@@ -1177,6 +1189,145 @@ export class ChatView implements vscode.WebviewViewProvider {
       log("command call threw", e)
     }
     // No UI action here — the SSE subscription owns assistant lifecycle.
+  }
+
+  /**
+   * Dispatch an opencode built-in command to its dedicated session endpoint.
+   * `/compact` and `/init` run a server-side turn (rendered via the existing
+   * SSE subscription); `/share` and `/unshare` are one-shot actions surfaced
+   * through a VS Code notification.
+   */
+  private async handleBuiltinCommand(command: string) {
+    let backend: Backend
+    try {
+      backend = await this.servers.ensure()
+    } catch (e) {
+      this.post({ type: "connected", connected: false, error: (e as Error).message })
+      return
+    }
+    switch (command) {
+      case "compact":
+        return this.runCompact(backend)
+      case "init":
+        return this.runInit(backend)
+      case "share":
+        return this.runShare(backend)
+      case "unshare":
+        return this.runUnshare(backend)
+    }
+  }
+
+  /** Post the typed-invocation bubble and key the Agents popover for a built-in turn. */
+  private async beginBuiltinTurn(display: string) {
+    const ctx = getEditorContext()
+    const userMessageID = "u_" + Date.now()
+    this.pendingUserBackendID = userMessageID
+    this.post({
+      type: "userMessage",
+      id: userMessageID,
+      text: display,
+      ref: { path: ctx.filePath, label: formatContextHeader(ctx) },
+    })
+    this.updateTitleFromPrompt(display)
+    await this.subagentDispatch.recordMainTaskStart(display)
+  }
+
+  private async runCompact(backend: Backend) {
+    if (!this.sessionID) {
+      void vscode.window.showInformationMessage("Nothing to compact yet.")
+      return
+    }
+    if (!this.subscription) await this.attachSubscription(backend, this.sessionID)
+    await this.beginBuiltinTurn("/compact")
+    const sel = this.prefs.get()
+    const body = sel.modelProviderID && sel.modelID ? { providerID: sel.modelProviderID, modelID: sel.modelID } : undefined
+    try {
+      const res = await backend.client.session.summarize({
+        path: { id: this.sessionID },
+        query: { directory: backend.directory },
+        body,
+      })
+      if (res.error) log("compact failed", res.error)
+    } catch (e) {
+      log("compact threw", e)
+    }
+  }
+
+  private async runInit(backend: Backend) {
+    const sel = this.prefs.get()
+    if (!sel.modelProviderID || !sel.modelID) {
+      void vscode.window.showWarningMessage("Select a model before running /init.")
+      return
+    }
+    if (!this.sessionID) {
+      const created = await backend.client.session.create({ body: {} })
+      if (created.error || !created.data) {
+        log("session.create failed", created.error)
+        return
+      }
+      this.sessionID = created.data.id
+      this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
+      void this.manager.persist()
+      await this.attachSubscription(backend, this.sessionID)
+    } else if (!this.subscription) {
+      await this.attachSubscription(backend, this.sessionID)
+    }
+    await this.beginBuiltinTurn("/init")
+    try {
+      const res = await backend.client.session.init({
+        path: { id: this.sessionID },
+        query: { directory: backend.directory },
+        body: { providerID: sel.modelProviderID, modelID: sel.modelID, messageID: generateMessageID() },
+      })
+      if (res.error) log("init failed", res.error)
+    } catch (e) {
+      log("init threw", e)
+    }
+  }
+
+  private async runShare(backend: Backend) {
+    if (!this.sessionID) {
+      void vscode.window.showInformationMessage("Start a conversation before sharing.")
+      return
+    }
+    try {
+      const res = await backend.client.session.share({
+        path: { id: this.sessionID },
+        query: { directory: backend.directory },
+      })
+      if (res.error || !res.data) {
+        log("share failed", res.error)
+        void vscode.window.showErrorMessage("Failed to share session.")
+        return
+      }
+      const url = res.data.share?.url
+      if (!url) {
+        void vscode.window.showInformationMessage("Session shared.")
+        return
+      }
+      const pick = await vscode.window.showInformationMessage(`Session shared: ${url}`, "Copy Link")
+      if (pick === "Copy Link") await vscode.env.clipboard.writeText(url)
+    } catch (e) {
+      log("share threw", e)
+    }
+  }
+
+  private async runUnshare(backend: Backend) {
+    if (!this.sessionID) return
+    try {
+      const res = await backend.client.session.unshare({
+        path: { id: this.sessionID },
+        query: { directory: backend.directory },
+      })
+      if (res.error) {
+        log("unshare failed", res.error)
+        void vscode.window.showErrorMessage("Failed to disable sharing.")
+        return
+      }
+      void vscode.window.showInformationMessage("Session sharing disabled.")
+    } catch (e) {
+      log("unshare threw", e)
+    }
   }
 
   private async handleEdit(webviewID: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
