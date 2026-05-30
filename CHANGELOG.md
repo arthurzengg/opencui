@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-05-29
+
+### Added
+- Context-window usage indicator in the bottom composer. A small ring fills as the active model's context window fills — amber at 85%, red at 95% — and a hover tooltip shows the token count against the model's limit, the percentage, the model id, and the conversation's cumulative cost. Usage is computed host-side from the latest assistant message's token counts (input + output + reasoning + cache read/write) and the model's `limit.context` from the providers config, mirroring opencode's own context accounting. It refreshes after each assistant turn, after a message is removed or reverted, and on connect/select/create, and clears when a new conversation starts; the ring appears only in the primary bottom composer once there is real usage to show. A request-counter guards against a stale async refresh overwriting a newer one.
+
+Closes #242, #244.
+
 ## [0.10.0] - 2026-05-28
 
 ### Added
