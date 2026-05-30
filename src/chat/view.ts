@@ -20,6 +20,7 @@ import type {
   Attachment,
   ChatBlock,
   ChatMessage,
+  ContextUsage,
   Inbound,
   Outbound,
   ToolUpdate as WireToolUpdate,
@@ -112,6 +113,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   /** Webview ID of the user message currently awaiting a backend ID from the stream. */
   private pendingUserBackendID?: string
   private reviewHunks: Record<string, ReviewHunkState> = {}
+  private contextUsageRequest = 0
   /**
    * True between user-pressed Stop and the subsequent `session.idle` event.
    * While true, drop incoming SSE message/tool deltas — opencode keeps draining
@@ -230,6 +232,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.reviewHunks = {}
     await this.manager.persist()
     this.sendConversationState()
+    this.post({ type: "contextUsage", usage: undefined })
     if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
   }
 
@@ -308,6 +311,7 @@ export class ChatView implements vscode.WebviewViewProvider {
    * resets the subscription + in-flight per-turn state.
    */
   private resetSessionState() {
+    this.contextUsageRequest++
     this.resetSessionTracking()
     this.subscription?.abort()
     this.subscription = undefined
@@ -325,6 +329,8 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.applyActiveSnapshot()
     await this.manager.persist()
     this.sendConversationState()
+    this.post({ type: "contextUsage", usage: undefined })
+    if (this.sessionID) void this.refreshContextUsage()
     if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
   }
 
@@ -349,6 +355,8 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.applyActiveSnapshot()
       await this.manager.persist()
       this.sendConversationState()
+      this.post({ type: "contextUsage", usage: undefined })
+      if (this.sessionID) void this.refreshContextUsage()
       return
     }
     await this.manager.persist()
@@ -530,6 +538,23 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
   }
 
+  private async refreshContextUsage(backend?: Backend) {
+    const sessionID = this.sessionID
+    if (!sessionID) {
+      this.post({ type: "contextUsage", usage: undefined })
+      return
+    }
+    const request = ++this.contextUsageRequest
+    try {
+      const activeBackend = backend ?? await this.servers.ensure()
+      const usage = await readContextUsage(activeBackend, sessionID)
+      if (request !== this.contextUsageRequest || this.sessionID !== sessionID) return
+      this.post({ type: "contextUsage", usage })
+    } catch (e) {
+      log("context usage refresh failed", e)
+    }
+  }
+
   private async onMessage(msg: Inbound) {
     switch (msg.type) {
       case "mounted": {
@@ -549,8 +574,9 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.post({ type: "indexStatus", status: this.indexManager.currentStatus() })
         if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
         try {
-          await this.servers.ensure()
+          const backend = await this.servers.ensure()
           this.post({ type: "connected", connected: true })
+          if (this.sessionID) void this.refreshContextUsage(backend)
         } catch (e) {
           this.post({ type: "connected", connected: false, error: (e as Error).message })
         }
@@ -1118,6 +1144,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           void this.subagentDispatch.recordMainTaskFinish(classified.status, classified.error)
         }
         this.post({ type: "assistantDone", id: webviewID, usage: payload.usage })
+        void this.refreshContextUsage(backend)
       },
       onTextDelta: (mid, delta) => {
         if (this.aborting) return
@@ -1177,6 +1204,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (!webviewID) return
         this.messageMap.delete(backendID)
         this.post({ type: "messageRemoved", id: webviewID })
+        void this.refreshContextUsage(backend)
       },
       onToast: (toast) => this.surfaceToast(toast),
       onSessionError: (message) => {
@@ -1565,6 +1593,93 @@ export function taskTitleFromUpdate(update: ToolUpdate): string {
   }
   if (update.title && update.title.trim()) return update.title.trim()
   return "Background agent"
+}
+
+type ContextUsageMessageInfo = {
+  role?: string
+  providerID?: string
+  modelID?: string
+  cost?: number
+  tokens?: {
+    input?: number
+    output?: number
+    reasoning?: number
+    cache?: { read?: number; write?: number }
+  }
+}
+
+type ContextUsageMessage = { info?: ContextUsageMessageInfo }
+type ContextUsageProvider = {
+  id?: string
+  models?: Record<string, { limit?: { context?: number } } | undefined>
+}
+
+async function readContextUsage(backend: Backend, sessionID: string): Promise<ContextUsage | undefined> {
+  const [messagesRes, providersRes] = await Promise.all([
+    backend.client.session.messages({
+      path: { id: sessionID },
+      query: { directory: backend.directory, limit: 100 },
+    }),
+    backend.client.config.providers(),
+  ])
+  if (messagesRes.error) throw new Error(`session.messages failed: ${JSON.stringify(messagesRes.error)}`)
+  if (providersRes.error) throw new Error(`config.providers failed: ${JSON.stringify(providersRes.error)}`)
+
+  const messages = (messagesRes.data ?? []) as ContextUsageMessage[]
+  const providers = ((providersRes.data as { providers?: ContextUsageProvider[] } | undefined)?.providers ?? [])
+  return contextUsageFromMessages(messages, providers)
+}
+
+export function contextUsageFromMessages(
+  messages: ContextUsageMessage[],
+  providers: ContextUsageProvider[],
+): ContextUsage | undefined {
+  const last = messages.findLast((item) =>
+    item.info?.role === "assistant" && numberOrZero(item.info.tokens?.output) > 0
+  )
+  if (!last?.info?.tokens) return undefined
+
+  const tokens = contextTokenCount(last.info.tokens)
+  if (tokens <= 0) return undefined
+
+  const providerID = last.info.providerID
+  const modelID = last.info.modelID
+  const limit = findContextLimit(providers, providerID, modelID)
+  const cost = messages.reduce((sum, item) => {
+    const info = item.info
+    return info?.role === "assistant" && typeof info.cost === "number" ? sum + info.cost : sum
+  }, 0)
+  return {
+    tokens,
+    limit,
+    percent: limit ? Math.round((tokens / limit) * 100) : undefined,
+    model: providerID && modelID ? `${providerID}/${modelID}` : undefined,
+    cost: cost > 0 ? cost : undefined,
+  }
+}
+
+function contextTokenCount(tokens: NonNullable<ContextUsageMessageInfo["tokens"]>): number {
+  return (
+    numberOrZero(tokens.input) +
+    numberOrZero(tokens.output) +
+    numberOrZero(tokens.reasoning) +
+    numberOrZero(tokens.cache?.read) +
+    numberOrZero(tokens.cache?.write)
+  )
+}
+
+function findContextLimit(
+  providers: ContextUsageProvider[],
+  providerID: string | undefined,
+  modelID: string | undefined,
+): number | undefined {
+  if (!providerID || !modelID) return undefined
+  const value = providers.find((provider) => provider.id === providerID)?.models?.[modelID]?.limit?.context
+  return typeof value === "number" && value > 0 ? value : undefined
+}
+
+function numberOrZero(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0
 }
 
 function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | undefined): string[] {

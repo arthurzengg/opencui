@@ -42,6 +42,34 @@ describe("PromptBox", () => {
     expect((screen.getByRole("button", { name: /^Send$/ }) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it("renders context usage in the bottom-left composer control", () => {
+    render(
+      <PromptBox
+        busy={false}
+        onSend={vi.fn()}
+        onAbort={vi.fn()}
+        contextUsage={{ tokens: 50_000, limit: 200_000, percent: 25, model: "openai/gpt-5" }}
+      />,
+    )
+    expect(screen.getByRole("status", { name: /context 25% used/i })).toBeInTheDocument()
+    const indicator = screen.getByTitle(/Context: 50K \/ 200K tokens · 25% · openai\/gpt-5/)
+    expect(indicator).toHaveAttribute("data-tooltip", "50K / 200K tokens · 25%")
+  })
+
+  it("keeps context usage out of edit composers", () => {
+    render(
+      <PromptBox
+        busy={false}
+        onSend={vi.fn()}
+        onAbort={vi.fn()}
+        variant="edit"
+        initial={{ text: "hi" }}
+        contextUsage={{ tokens: 50_000, limit: 200_000, percent: 25 }}
+      />,
+    )
+    expect(screen.queryByRole("status", { name: /context/i })).not.toBeInTheDocument()
+  })
+
   it("Send button enables once user types", async () => {
     const user = userEvent.setup()
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)

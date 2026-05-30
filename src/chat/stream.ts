@@ -50,8 +50,10 @@ export type Toast = {
 
 export type MessageUsage = {
   model?: string
+  providerID?: string
+  modelID?: string
   cost?: number
-  tokens?: { input: number; output: number; reasoning: number }
+  tokens?: { input: number; output: number; reasoning: number; cacheRead?: number; cacheWrite?: number }
 }
 
 export type StreamHandlers = {
@@ -774,12 +776,16 @@ function extractUsage(info: any): MessageUsage | undefined {
   if (!model && info.cost === undefined && !info.tokens) return undefined
   return {
     model,
+    providerID: typeof info.providerID === "string" ? info.providerID : undefined,
+    modelID: typeof info.modelID === "string" ? info.modelID : undefined,
     cost: typeof info.cost === "number" ? info.cost : undefined,
     tokens: info.tokens
       ? {
           input: info.tokens.input ?? 0,
           output: info.tokens.output ?? 0,
           reasoning: info.tokens.reasoning ?? 0,
+          cacheRead: info.tokens.cache?.read ?? 0,
+          cacheWrite: info.tokens.cache?.write ?? 0,
         }
       : undefined,
   }
