@@ -49,6 +49,24 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     expect((server.reverts[0]!.body as { messageID?: string })?.messageID).toBe("msg_abc")
   })
 
+  it("session.unrevert (the /redo endpoint) round-trips", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const res = await client.session.unrevert({ path: { id: "ses_test" } })
+    expect(res.error).toBeUndefined()
+    expect(res.data?.id).toBe("ses_test")
+    expect(server.unreverts).toEqual(["ses_test"])
+  })
+
+  it("session.fork returns a new session and records the source id", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const res = await client.session.fork({ path: { id: "ses_test" }, body: {} })
+    expect(res.error).toBeUndefined()
+    expect(res.data?.id).toBe("ses_forked")
+    expect(res.data?.title).toBe("Forked session")
+    expect(server.forks).toHaveLength(1)
+    expect(server.forks[0]!.sessionID).toBe("ses_test")
+  })
+
   it("command.list returns the workspace's commands", async () => {
     server.setCommands([
       { name: "deploy", description: "Ship it", template: "Deploy $ARGUMENTS" },

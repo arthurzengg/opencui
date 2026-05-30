@@ -37,6 +37,22 @@ describe("PromptBox", () => {
     expect(container.querySelector(".promptbox")).not.toHaveClass("promptbox--bottom")
   })
 
+  it("applies host-injected composer text on each nonce bump (/undo restore, /redo clear)", () => {
+    const textarea = () => screen.getByRole("textbox") as HTMLTextAreaElement
+    const { rerender } = render(
+      <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} inject={{ text: "", nonce: 0 }} />,
+    )
+    expect(textarea().value).toBe("")
+
+    rerender(
+      <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} inject={{ text: "restored prompt", nonce: 1 }} />,
+    )
+    expect(textarea().value).toBe("restored prompt")
+
+    rerender(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} inject={{ text: "", nonce: 2 }} />)
+    expect(textarea().value).toBe("")
+  })
+
   it("Send button is disabled when textarea is empty", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
     expect((screen.getByRole("button", { name: /^Send$/ }) as HTMLButtonElement).disabled).toBe(true)

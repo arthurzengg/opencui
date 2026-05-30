@@ -56,6 +56,12 @@ export type ChatState = {
   pendingQuestion?: { id: string; questions: QuestionInfo[] }
   indexStatus?: IndexStatusInfo
   agentsStatus?: AgentsStatusInfo
+  /**
+   * One-shot signal to set the live composer's text (host `/undo` restoring the
+   * undone prompt, `/redo` clearing it). The nonce makes identical text re-apply;
+   * `PromptBox` consumes it via an effect.
+   */
+  injectedText?: { text: string; nonce: number }
 }
 
 type Action =
@@ -152,9 +158,13 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return { ...state, contextUsage: action.usage }
     case "commands":
       return { ...state, commands: action.commands }
+    case "setComposerText":
+      return { ...state, injectedText: { text: action.text, nonce: (state.injectedText?.nonce ?? 0) + 1 } }
     case "conversations":
       return { ...state, conversations: action.conversations, conversationID: action.activeID }
     case "restore":
+      // Clear any pending composer inject — a conversation switch invalidates it.
+      // `/undo` posts `restore` then `setComposerText`, so its restore re-sets it.
       return {
         ...state,
         busy: false,
@@ -163,6 +173,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
         messages: action.messages,
         reviewHunks: action.reviewHunks ?? {},
         pendingPermission: undefined,
+        injectedText: undefined,
       }
     case "context":
       return { ...state, context: action.ref }
@@ -183,6 +194,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return {
         ...state,
         busy: true,
+        // Sending makes any pending /undo-restore inject stale.
+        injectedText: undefined,
         messages: [
           ...state.messages,
           {

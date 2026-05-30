@@ -77,6 +77,13 @@ type Props = {
    * normal prompt edit (preserving revert semantics).
    */
   onRunCommand?: (command: string, args: string) => void
+  /**
+   * One-shot host signal to set the composer text (e.g. `/undo` restoring the
+   * undone prompt, `/redo` clearing it). The nonce makes identical text re-apply.
+   * Only wired for the send composers; the parent reducer clears it after a send
+   * or conversation switch so a re-mounted composer never re-applies stale text.
+   */
+  inject?: { text: string; nonce: number }
 }
 
 function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachment> {
@@ -123,7 +130,7 @@ function extractConversationLabels(text: string | undefined): string[] {
   return Array.from(text.matchAll(/@chat:\S+/g), (match) => match[0].slice(1))
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage, commands = [], onRunCommand }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage, commands = [], onRunCommand, inject }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
@@ -158,6 +165,15 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     closeCommand,
     insertCommand,
   } = useCommandPicker({ text, setText, commands, pendingCursor })
+
+  // Apply host-driven composer text on each nonce bump (e.g. /undo restoring the
+  // undone prompt). pendingCursor places the caret at the end after setText.
+  useEffect(() => {
+    if (!inject) return
+    setText(inject.text)
+    pendingCursor.current = inject.text.length
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inject?.nonce])
 
   type MentionCategory = "files" | "chats"
   const [mentionCategory, setMentionCategory] = useState<MentionCategory | null>(null)
