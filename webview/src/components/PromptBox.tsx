@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import type { Attachment, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import type { Attachment, ContextUsage, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
 import {
   extractMentions,
   findChipAtCaret,
@@ -65,6 +65,7 @@ type Props = {
   conversations?: ConversationSummary[]
   activeConversationID?: string
   onOpenConversation?: (id: string) => void
+  contextUsage?: ContextUsage
 }
 
 function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachment> {
@@ -111,7 +112,7 @@ function extractConversationLabels(text: string | undefined): string[] {
   return Array.from(text.matchAll(/@chat:\S+/g), (match) => match[0].slice(1))
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
@@ -690,6 +691,9 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
         )}
         </div>
         <div className="promptbox-row">
+          {variant === "send" && position === "bottom" && (
+            <ContextUsageIndicator usage={contextUsage} />
+          )}
           <div className="spacer" />
           {attachFile && (
             <button
@@ -755,6 +759,61 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
       </div>
     </div>
   )
+}
+
+function ContextUsageIndicator({ usage }: { usage?: ContextUsage }) {
+  const percent = usage?.percent ?? (usage?.limit ? Math.round((usage.tokens / usage.limit) * 100) : undefined)
+  const value = clampPercent(percent ?? 0)
+  const tooltip = usage
+    ? [
+        `${formatTokenCount(usage.tokens)}${usage.limit ? ` / ${formatTokenCount(usage.limit)}` : ""} tokens`,
+        percent !== undefined ? `${value}%` : undefined,
+      ].filter(Boolean).join(" · ")
+    : "Context usage unavailable"
+  const title = usage
+    ? [
+        `Context: ${tooltip}`,
+        usage.model,
+        typeof usage.cost === "number" && usage.cost > 0 ? `$${usage.cost.toFixed(4)} spent` : undefined,
+      ].filter(Boolean).join(" · ")
+    : "Context usage appears after the first response"
+  const className = [
+    "context-usage",
+    usage ? "is-ready" : "is-empty",
+    value >= 95 ? "danger" : value >= 85 ? "warn" : "",
+  ].filter(Boolean).join(" ")
+  const style = { "--context-usage-deg": `${value * 3.6}deg` } as CSSProperties
+
+  return (
+    <span
+      className={className}
+      role="status"
+      aria-label={usage ? `Context ${value}% used` : "Context usage unavailable"}
+      title={title}
+      data-tooltip={tooltip}
+      style={style}
+    >
+      <span className="context-usage-ring" aria-hidden="true" />
+    </span>
+  )
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function formatTokenCount(value: number): string {
+  if (!Number.isFinite(value)) return "0"
+  if (value >= 1_000_000) {
+    const millions = value / 1_000_000
+    return `${millions >= 10 ? Math.round(millions) : Number(millions.toFixed(1))}M`
+  }
+  if (value >= 1_000) {
+    const thousands = value / 1_000
+    return `${thousands >= 10 ? Math.round(thousands) : Number(thousands.toFixed(1))}K`
+  }
+  return Math.max(0, Math.round(value)).toLocaleString()
 }
 
 function SendIcon() {

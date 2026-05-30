@@ -2200,6 +2200,80 @@ button {
 }
 .promptbox-row .spacer { flex: 1; }
 
+.context-usage {
+  --context-usage-color: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+  --context-usage-track: var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35));
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+}
+
+.context-usage::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: var(--z-popover);
+  max-width: 260px;
+  padding: 4px 7px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.context-usage:hover::before,
+.context-usage:focus-visible::before {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.context-usage-ring {
+  position: relative;
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--context-usage-color) var(--context-usage-deg, 0deg),
+    var(--context-usage-track) 0deg
+  );
+}
+
+.context-usage-ring::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--color-bg-input);
+}
+
+.context-usage.is-empty .context-usage-ring {
+  background: conic-gradient(var(--context-usage-track) 0deg, var(--context-usage-track) 360deg);
+  opacity: 0.75;
+}
+
+.context-usage.warn {
+  --context-usage-color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.context-usage.danger {
+  --context-usage-color: var(--vscode-editorError-foreground, #f14c4c);
+}
+
 .bottom-composer {
   position: absolute;
   left: 0;

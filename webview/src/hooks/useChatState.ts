@@ -5,6 +5,7 @@ import type {
   Attachment,
   ChatBlock,
   ChatMessage,
+  ContextUsage,
   ConversationSummary,
   DirEntry,
   EditorContextRef,
@@ -44,6 +45,7 @@ export type ChatState = {
   selection: Selection
   conversations: ConversationSummary[]
   conversationID?: string
+  contextUsage?: ContextUsage
   context?: EditorContextRef
   messages: Message[]
   reviewHunks: Record<string, ReviewHunkState>
@@ -142,12 +144,15 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return { ...state, connected: action.connected, error: action.error }
     case "selection":
       return { ...state, selection: action.selection }
+    case "contextUsage":
+      return { ...state, contextUsage: action.usage }
     case "conversations":
       return { ...state, conversations: action.conversations, conversationID: action.activeID }
     case "restore":
       return {
         ...state,
         busy: false,
+        contextUsage: undefined,
         conversationID: action.conversationID,
         messages: action.messages,
         reviewHunks: action.reviewHunks ?? {},

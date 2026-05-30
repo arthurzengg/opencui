@@ -133,12 +133,24 @@ export type Todo = {
 
 export type UsageDelta = {
   model?: string
+  providerID?: string
+  modelID?: string
   cost?: number
   tokens?: {
     input: number
     output: number
     reasoning: number
+    cacheRead?: number
+    cacheWrite?: number
   }
+}
+
+export type ContextUsage = {
+  tokens: number
+  percent?: number
+  limit?: number
+  model?: string
+  cost?: number
 }
 
 export type Selection = {
@@ -355,6 +367,7 @@ export type Outbound =
   | { type: "ready"; connected: boolean; selection: Selection }
   | { type: "connected"; connected: boolean; error?: string }
   | { type: "selection"; selection: Selection }
+  | { type: "contextUsage"; usage?: ContextUsage }
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }

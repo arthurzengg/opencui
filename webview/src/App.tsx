@@ -224,6 +224,7 @@ export default function App() {
           conversations={state.conversations}
           activeConversationID={state.conversationID}
           onOpenConversation={openConversation}
+          contextUsage={state.contextUsage}
         />
       )}
       <div
@@ -336,6 +337,7 @@ export default function App() {
             conversations={state.conversations}
             activeConversationID={state.conversationID}
             onOpenConversation={openConversation}
+            contextUsage={state.contextUsage}
           />
         </div>
       )}
