@@ -38,6 +38,14 @@ export type MockOpencodeServer = {
   setSessionStatus: (sessionID: string, status: { type: "idle" | "busy" | "retry" } | undefined) => void
   /** Number of times GET /session/status has been called. */
   statusPollCount: () => number
+  /** Records of every mcp.add body, and the server name for each lifecycle/auth call. */
+  mcpAddCalls: Array<{ body: unknown }>
+  mcpConnectCalls: string[]
+  mcpDisconnectCalls: string[]
+  mcpAuthenticateCalls: string[]
+  mcpAuthRemoveCalls: string[]
+  /** Configure what GET /mcp returns. */
+  setMcpStatus: (map: Record<string, { status: string; error?: string }>) => void
   close: () => Promise<void>
 }
 
@@ -49,6 +57,12 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   let commands: Array<Record<string, unknown>> = []
   const sessionStatuses = new Map<string, { type: "idle" | "busy" | "retry" }>()
   let statusPolls = 0
+  let mcpStatus: Record<string, { status: string; error?: string }> = {}
+  const mcpAddCalls: Array<{ body: unknown }> = []
+  const mcpConnectCalls: string[] = []
+  const mcpDisconnectCalls: string[] = []
+  const mcpAuthenticateCalls: string[] = []
+  const mcpAuthRemoveCalls: string[] = []
   let clientResolver: (() => void) | undefined
 
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -197,6 +211,44 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       return
     }
 
+    // MCP management. Order matters: the /auth/authenticate route must be
+    // checked before the bare /auth route below.
+    if (path === "/mcp" && req.method === "GET") {
+      reply(res, 200, mcpStatus)
+      return
+    }
+    if (path === "/mcp" && req.method === "POST") {
+      const body = (await readBody(req)) as { name?: string }
+      mcpAddCalls.push({ body })
+      if (body?.name) mcpStatus[body.name] = { status: "connected" }
+      reply(res, 200, mcpStatus)
+      return
+    }
+    const mcpAuthenticateMatch = path.match(/^\/mcp\/([^/]+)\/auth\/authenticate$/)
+    if (mcpAuthenticateMatch && req.method === "POST") {
+      mcpAuthenticateCalls.push(mcpAuthenticateMatch[1]!)
+      reply(res, 200, { status: "connected" })
+      return
+    }
+    const mcpAuthMatch = path.match(/^\/mcp\/([^/]+)\/auth$/)
+    if (mcpAuthMatch && req.method === "DELETE") {
+      mcpAuthRemoveCalls.push(mcpAuthMatch[1]!)
+      reply(res, 200, { success: true })
+      return
+    }
+    const mcpConnectMatch = path.match(/^\/mcp\/([^/]+)\/connect$/)
+    if (mcpConnectMatch && req.method === "POST") {
+      mcpConnectCalls.push(mcpConnectMatch[1]!)
+      reply(res, 200, true)
+      return
+    }
+    const mcpDisconnectMatch = path.match(/^\/mcp\/([^/]+)\/disconnect$/)
+    if (mcpDisconnectMatch && req.method === "POST") {
+      mcpDisconnectCalls.push(mcpDisconnectMatch[1]!)
+      reply(res, 200, true)
+      return
+    }
+
     // Health (used by some SDK clients before connecting)
     if (path === "/" && req.method === "GET") {
       reply(res, 200, { ok: true })
@@ -236,6 +288,14 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     statusPollCount() {
       return statusPolls
+    },
+    mcpAddCalls,
+    mcpConnectCalls,
+    mcpDisconnectCalls,
+    mcpAuthenticateCalls,
+    mcpAuthRemoveCalls,
+    setMcpStatus(map) {
+      mcpStatus = map
     },
     async close() {
       for (const c of sseClients) c.end()

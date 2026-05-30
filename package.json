@@ -81,6 +81,10 @@
         "title": "OpenCode Panel: Select Model"
       },
       {
+        "command": "opencui.manageMcp",
+        "title": "OpenCode Panel: Manage MCP Servers"
+      },
+      {
         "command": "opencui.server.restart",
         "title": "OpenCode Panel: Restart Backend"
       },

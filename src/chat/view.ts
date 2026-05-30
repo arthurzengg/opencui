@@ -1198,6 +1198,14 @@ export class ChatView implements vscode.WebviewViewProvider {
    * through a VS Code notification.
    */
   private async handleBuiltinCommand(command: string) {
+    // `/mcp` opens the native MCP management picker — it is NOT a session turn,
+    // so it posts no user bubble / Main task and does not ensure a backend here
+    // (the command's own handler does). Delegating to the registered command
+    // keeps a single source of truth for the picker.
+    if (command === "mcp") {
+      await vscode.commands.executeCommand("opencui.manageMcp")
+      return
+    }
     let backend: Backend
     try {
       backend = await this.servers.ensure()
