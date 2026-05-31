@@ -203,6 +203,38 @@ describe("ProviderManager.run — connect", () => {
     expect(win.showErrorMessage).not.toHaveBeenCalled()
   })
 
+  it("shows + copies the device code for an OAuth (auto) device flow", async () => {
+    const backend = makeBackend({
+      all: [{ id: "github-copilot", name: "GitHub Copilot" }],
+      auth: { "github-copilot": [{ type: "oauth", label: "GitHub" }] },
+    })
+    backend.client.provider.oauth.authorize = vi
+      .fn()
+      .mockResolvedValue({ data: { url: "https://github.com/login/device", method: "auto", instructions: "Enter code: ABCD-1234" } })
+    win.showQuickPick
+      .mockResolvedValueOnce({ connect: true })
+      .mockResolvedValueOnce({ choice: choice("github-copilot", "GitHub Copilot", [{ type: "oauth", label: "GitHub" }]) })
+      .mockResolvedValueOnce(undefined)
+    await makeManager(backend).run()
+    expect(writeText).toHaveBeenCalledWith("ABCD-1234")
+    expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("ABCD-1234"))
+    expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("connected"))
+  })
+
+  it("surfaces the real reason when an OAuth (auto) callback fails", async () => {
+    const backend = makeBackend({
+      all: [{ id: "github-copilot", name: "GitHub Copilot" }],
+      auth: { "github-copilot": [{ type: "oauth", label: "GitHub" }] },
+    })
+    backend.client.provider.oauth.callback = vi.fn().mockResolvedValue({ error: { data: { message: "device code expired" } } })
+    win.showQuickPick
+      .mockResolvedValueOnce({ connect: true })
+      .mockResolvedValueOnce({ choice: choice("github-copilot", "GitHub Copilot", [{ type: "oauth", label: "GitHub" }]) })
+      .mockResolvedValueOnce(undefined)
+    await makeManager(backend).run()
+    expect(win.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("device code expired"))
+  })
+
   it("connects via OAuth (code): prompts for the authorization code", async () => {
     const backend = makeBackend({ all: [{ id: "openai", name: "OpenAI" }], auth: { openai: [{ type: "oauth", label: "ChatGPT" }] } })
     backend.client.provider.oauth.authorize = vi

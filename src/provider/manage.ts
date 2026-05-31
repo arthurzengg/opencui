@@ -19,6 +19,9 @@ type ProviderItem = vscode.QuickPickItem & { row?: ProviderRow; connect?: typeof
 type MethodItem = vscode.QuickPickItem & { index: number }
 type ChoiceItem = vscode.QuickPickItem & { choice: ConnectableProvider }
 
+/** Result of awaiting a server-orchestrated ("auto") OAuth callback. */
+type AutoOutcome = { kind: "ok" } | { kind: "cancelled" } | { kind: "failed"; message?: string }
+
 type ProviderState = {
   rows: ProviderRow[]
   /** providerID -> display name, for the connect list. */
@@ -192,46 +195,57 @@ export class ProviderManager {
     try {
       const authRes = await backend.client.provider.oauth.authorize({ path, query, body: { method: methodIndex } })
       if (authRes.error || !authRes.data) {
-        vscode.window.showErrorMessage(`OpenCode Panel: could not start OAuth for "${choice.name}"`)
+        vscode.window.showErrorMessage(
+          `OpenCode Panel: could not start OAuth for "${choice.name}"${suffix(errorText(authRes.error))}`,
+        )
         return
       }
       const authz = authRes.data
       if (authz.url) await vscode.env.openExternal(vscode.Uri.parse(authz.url))
 
       if (authz.method === "auto") {
-        // The local opencode server captures the redirect itself, so the
-        // callback blocks until the user finishes in the browser. Make the
-        // progress cancellable and race the callback against cancellation:
-        // abandoning the flow (closing the browser) would otherwise leave this
-        // notification stuck forever on a callback that never resolves. On
-        // cancel we abort the in-flight request and bail quietly.
+        // Server-orchestrated flow. For device-code providers (e.g. GitHub
+        // Copilot) `instructions` carries a user code ("Enter code: XXXX-XXXX")
+        // the user must type at `url`; the callback then polls server-side until
+        // they finish. Surface that code (and copy it) or the user can't
+        // complete the flow — then block on the callback, cancellably, so
+        // abandoning it doesn't leave the notification stuck forever.
+        const code = deviceCode(authz.instructions)
+        if (code) {
+          await vscode.env.clipboard.writeText(code)
+          void vscode.window.showInformationMessage(
+            `OpenCode Panel: enter code ${code} in your browser to authorize "${choice.name}" (copied to clipboard).`,
+          )
+        }
         const outcome = await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
             cancellable: true,
-            title: `Authorizing "${choice.name}" — finish in your browser, or cancel...`,
+            title: code
+              ? `Authorizing "${choice.name}" — enter code ${code} in your browser, or cancel...`
+              : `Authorizing "${choice.name}" — finish in your browser, or cancel...`,
           },
-          async (_progress, token): Promise<"ok" | "cancelled" | "failed"> => {
+          async (_progress, token): Promise<AutoOutcome> => {
             const controller = new AbortController()
-            const onCancel = new Promise<"cancelled">((resolve) =>
+            const onCancel = new Promise<AutoOutcome>((resolve) =>
               token.onCancellationRequested(() => {
                 controller.abort()
-                resolve("cancelled")
+                resolve({ kind: "cancelled" })
               }),
             )
             const onCallback = backend.client.provider.oauth
               .callback({ path, query, body: { method: methodIndex }, signal: controller.signal })
-              .then((res): "ok" | "failed" => (!res.error && res.data === true ? "ok" : "failed"))
-              .catch((): "failed" => "failed")
+              .then((res): AutoOutcome => (!res.error && res.data === true ? { kind: "ok" } : { kind: "failed", message: errorText(res.error) }))
+              .catch((e): AutoOutcome => (controller.signal.aborted ? { kind: "cancelled" } : { kind: "failed", message: (e as Error).message }))
             return Promise.race([onCallback, onCancel])
           },
         )
-        if (outcome === "cancelled") {
+        if (outcome.kind === "cancelled") {
           vscode.window.showInformationMessage(`OpenCode Panel: connecting "${choice.name}" was cancelled.`)
           return
         }
-        if (outcome !== "ok") {
-          vscode.window.showErrorMessage(`OpenCode Panel: authorization failed for "${choice.name}"`)
+        if (outcome.kind !== "ok") {
+          vscode.window.showErrorMessage(`OpenCode Panel: authorization failed for "${choice.name}"${suffix(outcome.message)}`)
           return
         }
         vscode.window.showInformationMessage(`OpenCode Panel: connected "${choice.name}".`)
@@ -252,7 +266,7 @@ export class ProviderManager {
         body: { method: methodIndex, code: code.trim() },
       })
       if (cbRes.error || cbRes.data !== true) {
-        vscode.window.showErrorMessage(`OpenCode Panel: authorization failed for "${choice.name}"`)
+        vscode.window.showErrorMessage(`OpenCode Panel: authorization failed for "${choice.name}"${suffix(errorText(cbRes.error))}`)
         return
       }
       vscode.window.showInformationMessage(`OpenCode Panel: connected "${choice.name}".`)
@@ -298,4 +312,34 @@ export class ProviderManager {
     )
     if (choice === "Select model") await vscode.commands.executeCommand("opencui.selectModel")
   }
+}
+
+/**
+ * Extract the device/user code from an OAuth "auto" provider's `instructions`.
+ * opencode formats it as "Enter code: XXXX-XXXX" — take the part after the
+ * first colon. Returns "" when there is nothing actionable to show.
+ */
+function deviceCode(instructions: string | undefined): string {
+  const text = instructions?.trim()
+  if (!text) return ""
+  const colon = text.indexOf(":")
+  return colon >= 0 ? text.slice(colon + 1).trim() : text
+}
+
+/** Best-effort message from an SDK error union (BadRequestError, string, ...). */
+function errorText(err: unknown): string | undefined {
+  if (!err) return undefined
+  if (typeof err === "string") return err
+  if (typeof err === "object") {
+    const data = (err as { data?: { message?: string } }).data
+    if (data?.message) return data.message
+    const message = (err as { message?: string }).message
+    if (message) return message
+  }
+  return undefined
+}
+
+/** ": <msg>" when a reason is present, else "" — for appending to a notification. */
+function suffix(message: string | undefined): string {
+  return message ? `: ${message}` : ""
 }
