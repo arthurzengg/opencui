@@ -48,6 +48,10 @@ export type MockOpencodeServer = {
   mcpDisconnectCalls: string[]
   mcpAuthenticateCalls: string[]
   mcpAuthRemoveCalls: string[]
+  /** Records of every provider credential removal (DELETE /auth/{id}). */
+  providerAuthRemoveCalls: string[]
+  /** Toggle the DELETE /auth/{id} route off to simulate an older opencode (404). */
+  setAuthRemoveSupported: (v: boolean) => void
   /** Configure what GET /mcp returns. */
   setMcpStatus: (map: Record<string, { status: string; error?: string }>) => void
   close: () => Promise<void>
@@ -69,6 +73,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const mcpDisconnectCalls: string[] = []
   const mcpAuthenticateCalls: string[] = []
   const mcpAuthRemoveCalls: string[] = []
+  const providerAuthRemoveCalls: string[] = []
+  let authRemoveSupported = true
   let clientResolver: (() => void) | undefined
 
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -272,6 +278,21 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       return
     }
 
+    // Provider credential removal — the untyped DELETE the ProviderManager
+    // issues. `authRemoveSupported = false` simulates an older opencode whose
+    // server lacks the route (404 → "unsupported" in removeProviderAuth).
+    const authRemoveMatch = path.match(/^\/auth\/([^/]+)$/)
+    if (authRemoveMatch && req.method === "DELETE") {
+      if (!authRemoveSupported) {
+        res.statusCode = 404
+        res.end()
+        return
+      }
+      providerAuthRemoveCalls.push(decodeURIComponent(authRemoveMatch[1]!))
+      reply(res, 200, true)
+      return
+    }
+
     // Health (used by some SDK clients before connecting)
     if (path === "/" && req.method === "GET") {
       reply(res, 200, { ok: true })
@@ -319,6 +340,10 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     mcpDisconnectCalls,
     mcpAuthenticateCalls,
     mcpAuthRemoveCalls,
+    providerAuthRemoveCalls,
+    setAuthRemoveSupported(v) {
+      authRemoveSupported = v
+    },
     setMcpStatus(map) {
       mcpStatus = map
     },

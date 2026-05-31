@@ -22,6 +22,7 @@ export const BUILTIN_COMMANDS: ReadonlyArray<CommandInfo> = [
   { name: "share", description: "Create a shareable link for this session", takesArguments: false },
   { name: "unshare", description: "Disable sharing for this session", takesArguments: false },
   { name: "mcp", description: "Manage MCP servers", takesArguments: false },
+  { name: "provider", description: "Manage AI providers", takesArguments: false },
   { name: "undo", description: "Revert the last turn", takesArguments: false },
   { name: "redo", description: "Re-apply the last reverted turn", takesArguments: false },
   { name: "fork", description: "Duplicate this conversation", takesArguments: false },

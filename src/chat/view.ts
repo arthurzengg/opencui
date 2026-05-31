@@ -1217,6 +1217,12 @@ export class ChatView implements vscode.WebviewViewProvider {
       await vscode.commands.executeCommand("opencui.manageMcp")
       return
     }
+    // `/provider` opens the native AI-provider management picker — same
+    // no-bubble, no-backend-here contract as `/mcp`.
+    if (command === "provider") {
+      await vscode.commands.executeCommand("opencui.manageProviders")
+      return
+    }
     // `/new` starts a fresh chat — no backend needed (the next prompt creates the
     // session lazily), and it must not post a bubble / Main task.
     if (command === "new") {

@@ -36,7 +36,7 @@ describe("withBuiltinCommands", () => {
   })
 
   it("registers the session-management built-ins", () => {
-    for (const name of ["undo", "redo", "fork", "new", "mcp"]) {
+    for (const name of ["undo", "redo", "fork", "new", "mcp", "provider"]) {
       expect(BUILTIN_COMMAND_NAMES.has(name)).toBe(true)
     }
   })
