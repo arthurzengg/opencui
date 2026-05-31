@@ -48,6 +48,43 @@ export function removableProviders(
   return rows
 }
 
+/** A login method for a provider (mirrors the SDK's `ProviderAuthMethod`). */
+export type AuthMethod = { type: string; label: string }
+
+/** A provider the user can connect, with its available login methods. */
+export type ConnectableProvider = {
+  id: string
+  name: string
+  connected: boolean
+  /** In declared order — the array index is the `method` the OAuth endpoints expect. */
+  methods: AuthMethod[]
+}
+
+/**
+ * Build the "connect a provider" list from `provider.auth()` (providerID ->
+ * login methods), the id->name map (from `provider.list().all` /
+ * `config.providers()`), and the connected ids. Providers with no methods are
+ * dropped; already-connected providers stay (so they can re-auth) and are
+ * flagged. Sorted by name. Method order is preserved because the OAuth
+ * `method` field is an index into it.
+ */
+export function connectableProviders(
+  methodsByProvider: Readonly<Record<string, ReadonlyArray<AuthMethod>>>,
+  names: ReadonlyMap<string, string>,
+  connected: ReadonlyArray<string>,
+): ConnectableProvider[] {
+  const connectedSet = new Set(connected)
+  return Object.entries(methodsByProvider)
+    .filter(([, methods]) => methods.length > 0)
+    .map(([id, methods]): ConnectableProvider => ({
+      id,
+      name: names.get(id)?.trim() || id,
+      connected: connectedSet.has(id),
+      methods: methods.map((m) => ({ type: m.type, label: m.label })),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
 /** The opencode route that removes a provider's stored credentials. */
 export function authDeletePath(id: string): string {
   return `/auth/${encodeURIComponent(id)}`

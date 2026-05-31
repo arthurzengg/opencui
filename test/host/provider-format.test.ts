@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest"
-import { removableProviders, removeProviderAuth, authDeletePath } from "../../src/provider/provider-format"
+import {
+  removableProviders,
+  removeProviderAuth,
+  authDeletePath,
+  connectableProviders,
+} from "../../src/provider/provider-format"
 
 describe("removableProviders", () => {
   it("merges connected ids with config name/source and sorts by name", () => {
@@ -36,6 +41,44 @@ describe("authDeletePath", () => {
     expect(authDeletePath("https://x/.well-known/opencode")).toBe(
       "/auth/https%3A%2F%2Fx%2F.well-known%2Fopencode",
     )
+  })
+})
+
+describe("connectableProviders", () => {
+  const names = new Map([
+    ["openai", "OpenAI"],
+    ["anthropic", "Anthropic"],
+  ])
+
+  it("lists providers with methods, sorted by name, flagging connected ones", () => {
+    const out = connectableProviders(
+      {
+        openai: [{ type: "api", label: "API Key" }],
+        anthropic: [
+          { type: "oauth", label: "Claude Pro/Max" },
+          { type: "api", label: "API Key" },
+        ],
+      },
+      names,
+      ["anthropic"],
+    )
+    expect(out.map((p) => p.id)).toEqual(["anthropic", "openai"]) // sorted by name
+    expect(out[0]).toEqual({
+      id: "anthropic",
+      name: "Anthropic",
+      connected: true,
+      methods: [
+        { type: "oauth", label: "Claude Pro/Max" },
+        { type: "api", label: "API Key" },
+      ],
+    })
+    expect(out[1]!.connected).toBe(false)
+  })
+
+  it("drops providers with no methods and falls back to the id when unnamed", () => {
+    const out = connectableProviders({ foo: [], bar: [{ type: "api", label: "API Key" }] }, new Map(), [])
+    expect(out.map((p) => p.id)).toEqual(["bar"])
+    expect(out[0]!.name).toBe("bar")
   })
 })
 
