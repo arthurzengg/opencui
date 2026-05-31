@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-31
+
+### Added
+- `/provider` command + **OpenCode Panel: Manage AI Providers** picker (mirroring `/mcp`) to connect and disconnect AI providers. **Connect** lists every provider that exposes a login method (`client.provider.auth()`) and runs it — an **API key** (`client.auth.set`) or **OAuth** (`client.provider.oauth.authorize` → browser → `...oauth.callback`), handling both the server-orchestrated **device-code** flow (e.g. GitHub Copilot — the user code from the authorize `instructions` is shown and copied to the clipboard, under a cancellable "waiting" progress so an abandoned flow can't hang) and the **paste-a-code** flow. **Disconnect** lists authenticated providers (`client.provider.list().connected`), marks env-var providers as non-removable, and removes a provider's stored credentials behind a confirm — warning when you disconnect the model you currently have selected. Connect works on released opencode; credential removal uses the `DELETE /auth/{id}` route (currently opencode `dev`) and degrades gracefully with a clear hint (and `opencode auth logout`) on versions that lack it.
+
+Closes #260.
+
 ## [1.1.0] - 2026-05-30
 
 ### Added
