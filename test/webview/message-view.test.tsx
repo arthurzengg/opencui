@@ -292,6 +292,24 @@ describe("MessageView (assistant role)", () => {
     expect(screen.getByText(/150 tokens/)).toBeInTheDocument()
   })
 
+  it("keeps the process panel body mounted (clipped) when collapsed", () => {
+    // The grid-clip refactor animates expand/collapse by clipping an
+    // always-mounted body rather than mounting/unmounting it. Guard that the
+    // body stays in the DOM when collapsed, and the container lacks is-open.
+    const msg = {
+      id: "a-proc",
+      role: "assistant",
+      blocks: [
+        { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "src/foo.ts" } } },
+      ],
+    } as Message
+    const { container } = render(
+      <MessageView message={msg} processOpen={false} processOnly={true} />,
+    )
+    expect(container.querySelector(".process-body")).not.toBeNull()
+    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
+  })
+
   it("renders markdown in reasoning body when a title is extracted", () => {
     const msg = {
       id: "a-reason-titled",

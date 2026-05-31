@@ -1248,6 +1248,12 @@ button {
   font-size: 10px;
   opacity: 0.5;
   margin-top: 6px;
+  /* Fade in on completion so the line settles in rather than popping. */
+  animation: msg-usage-in 0.2s ease both;
+}
+@keyframes msg-usage-in {
+  from { opacity: 0; }
+  to { opacity: 0.5; }
 }
 
 /* Semantic-index status pill — sits in the status bar / header area. */
@@ -1291,6 +1297,9 @@ button {
 
 .thinking-dots {
   display: inline-block;
+  /* Reserve one line so the bubble doesn't nudge when the dots are replaced by
+     the first streamed token. */
+  min-height: 1.5em;
   padding: 6px 2px;
   color: var(--vscode-foreground);
   font-style: italic;
@@ -1349,8 +1358,24 @@ button {
 .process-caret.is-open {
   transform: rotate(90deg);
 }
-.process-body {
+/* Grid wrapper that clips the body to 0fr when collapsed. Animating
+   grid-template-rows (instead of mount/unmount) makes the fold glide rather
+   than snap. The body stays mounted, so content growth during streaming is not
+   animated — only the open/close toggle is. Mirrors `.review-body-clip`. */
+.process-body-clip {
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  transition:
+    grid-template-rows 0.18s ease,
+    margin-top 0.18s ease;
+}
+.process.is-open .process-body-clip {
+  grid-template-rows: 1fr;
   margin-top: 8px;
+}
+.process-body {
+  min-height: 0;
   padding-left: 12px;
   border-left: 1px solid var(--vscode-panel-border);
 }
@@ -2064,6 +2089,13 @@ button {
   .review-body,
   .review-body-clip {
     transition: none;
+  }
+  .process-caret,
+  .process-body-clip {
+    transition: none;
+  }
+  .msg-usage {
+    animation: none;
   }
 }
 /* ===== Prompt box ===== */

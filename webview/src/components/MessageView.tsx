@@ -455,12 +455,16 @@ function ProcessPanel({
   const title = pending ? processTitle(blocks) : processSummary(blocks) ?? processTitle(blocks)
 
   return (
-    <div className="process">
-      <button className="process-head" onClick={() => setOpen(!open)}>
+    <div className={`process ${open ? "is-open" : ""}`}>
+      <button className="process-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span className="process-title">{title}</span>
         <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
       </button>
-      {open && <div className="process-body">{renderBlocks(blocks, true, onReviewFile)}</div>}
+      {/* Body stays mounted; the grid wrapper clips it to 0fr when collapsed so
+          expand/collapse animates height instead of snapping. */}
+      <div className="process-body-clip">
+        <div className="process-body">{renderBlocks(blocks, true, onReviewFile)}</div>
+      </div>
     </div>
   )
 }
