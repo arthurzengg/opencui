@@ -6,6 +6,7 @@ import { InlineEdit } from "./inline/edit"
 import { Preferences } from "./preferences"
 import { Picker } from "./picker"
 import { McpManager } from "./mcp/manage"
+import { ProviderManager } from "./provider/manage"
 import { RecentEditsTracker } from "./workspace-context/recent-edits"
 import { IndexManager, readIndexSettings } from "./indexing/index-manager"
 import { AgentTaskStore } from "./agents/task-store"
@@ -35,6 +36,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const inline = new InlineEdit(servers, prefs)
   const picker = new Picker(servers, prefs)
   const mcp = new McpManager(servers)
+  const providers = new ProviderManager(servers, prefs)
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ChatView.viewType, chat, {
@@ -51,6 +53,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("opencui.selectModel", () => picker.pickModel()),
     vscode.commands.registerCommand("opencui.selectVariant", () => picker.pickVariantForCurrent()),
     vscode.commands.registerCommand("opencui.manageMcp", () => mcp.run()),
+    vscode.commands.registerCommand("opencui.manageProviders", () => providers.run()),
     vscode.commands.registerCommand("opencui.agents.open", () => showAgentsQuickPick(agentTaskStore!)),
     vscode.commands.registerCommand("opencui.server.restart", async () => {
       status.set("starting", "restarting backend")

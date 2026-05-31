@@ -85,6 +85,10 @@
         "title": "OpenCode Panel: Manage MCP Servers"
       },
       {
+        "command": "opencui.manageProviders",
+        "title": "OpenCode Panel: Manage AI Providers"
+      },
+      {
         "command": "opencui.server.restart",
         "title": "OpenCode Panel: Restart Backend"
       },
