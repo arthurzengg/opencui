@@ -175,8 +175,32 @@ describe("ProviderManager.run — connect", () => {
     await makeManager(backend).run()
     expect(openExternal).toHaveBeenCalled()
     expect(backend.client.provider.oauth.authorize).toHaveBeenCalledWith({ path: { id: "anthropic" }, query: QD, body: { method: 0 } })
-    expect(backend.client.provider.oauth.callback).toHaveBeenCalledWith({ path: { id: "anthropic" }, query: QD, body: { method: 0 } })
+    // callback also carries an AbortSignal (cancellable progress), so match loosely.
+    expect(backend.client.provider.oauth.callback).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { id: "anthropic" }, query: QD, body: { method: 0 } }),
+    )
     expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("connected"))
+  })
+
+  it("treats an abandoned OAuth (auto) flow as cancelled, not an error", async () => {
+    const backend = makeBackend({
+      all: [{ id: "github-copilot", name: "GitHub Copilot" }],
+      auth: { "github-copilot": [{ type: "oauth", label: "GitHub" }] },
+    })
+    // The callback never resolves — the user closed the browser without finishing.
+    backend.client.provider.oauth.callback = vi.fn(() => new Promise(() => {}))
+    // Simulate the user clicking Cancel on the progress notification.
+    const withProgress = vscode.window.withProgress as unknown as ReturnType<typeof vi.fn>
+    withProgress.mockImplementationOnce((_opts: unknown, task: (p: unknown, t: unknown) => unknown) =>
+      task({ report: vi.fn() }, { isCancellationRequested: false, onCancellationRequested: (cb: () => void) => cb() }),
+    )
+    win.showQuickPick
+      .mockResolvedValueOnce({ connect: true })
+      .mockResolvedValueOnce({ choice: choice("github-copilot", "GitHub Copilot", [{ type: "oauth", label: "GitHub" }]) })
+      .mockResolvedValueOnce(undefined)
+    await makeManager(backend).run()
+    expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("cancelled"))
+    expect(win.showErrorMessage).not.toHaveBeenCalled()
   })
 
   it("connects via OAuth (code): prompts for the authorization code", async () => {

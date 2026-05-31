@@ -199,17 +199,38 @@ export class ProviderManager {
       if (authz.url) await vscode.env.openExternal(vscode.Uri.parse(authz.url))
 
       if (authz.method === "auto") {
-        // The local opencode server captures the redirect itself — block on the
-        // callback while the user finishes in the browser (like MCP authenticate).
-        const cbRes = await vscode.window.withProgress(
+        // The local opencode server captures the redirect itself, so the
+        // callback blocks until the user finishes in the browser. Make the
+        // progress cancellable and race the callback against cancellation:
+        // abandoning the flow (closing the browser) would otherwise leave this
+        // notification stuck forever on a callback that never resolves. On
+        // cancel we abort the in-flight request and bail quietly.
+        const outcome = await vscode.window.withProgress(
           {
             location: vscode.ProgressLocation.Notification,
-            cancellable: false,
-            title: `Authorizing "${choice.name}" — finish in your browser...`,
+            cancellable: true,
+            title: `Authorizing "${choice.name}" — finish in your browser, or cancel...`,
           },
-          () => backend.client.provider.oauth.callback({ path, query, body: { method: methodIndex } }),
+          async (_progress, token): Promise<"ok" | "cancelled" | "failed"> => {
+            const controller = new AbortController()
+            const onCancel = new Promise<"cancelled">((resolve) =>
+              token.onCancellationRequested(() => {
+                controller.abort()
+                resolve("cancelled")
+              }),
+            )
+            const onCallback = backend.client.provider.oauth
+              .callback({ path, query, body: { method: methodIndex }, signal: controller.signal })
+              .then((res): "ok" | "failed" => (!res.error && res.data === true ? "ok" : "failed"))
+              .catch((): "failed" => "failed")
+            return Promise.race([onCallback, onCancel])
+          },
         )
-        if (cbRes.error || cbRes.data !== true) {
+        if (outcome === "cancelled") {
+          vscode.window.showInformationMessage(`OpenCode Panel: connecting "${choice.name}" was cancelled.`)
+          return
+        }
+        if (outcome !== "ok") {
           vscode.window.showErrorMessage(`OpenCode Panel: authorization failed for "${choice.name}"`)
           return
         }
