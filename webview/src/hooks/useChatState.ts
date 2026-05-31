@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef } from "react"
 import { vscode } from "../vscode"
+import { createDeltaCoalescer } from "../delta-coalescer"
 import type {
   AgentsStatusInfo,
   Attachment,
@@ -64,7 +65,7 @@ export type ChatState = {
   injectedText?: { text: string; nonce: number }
 }
 
-type Action =
+export type Action =
   | Outbound
   | { type: "reset" }
   | { type: "clearPermission" }
@@ -365,6 +366,10 @@ export function useChatState() {
   const nextRequestID = useRef(1)
 
   useEffect(() => {
+    // Streaming deltas are coalesced to one render per frame; request/response
+    // messages below resolve their pending refs immediately (order-independent)
+    // and bypass the queue.
+    const coalescer = createDeltaCoalescer(dispatch)
     const off = vscode.onMessage((msg) => {
       if (msg.type === "fileSearchResult") {
         const resolver = fileSearchPending.current.get(msg.requestID)
@@ -390,7 +395,7 @@ export function useChatState() {
         }
         return
       }
-      dispatch(msg as Action)
+      coalescer.enqueue(msg as Action)
     })
     vscode.post({ type: "mounted" })
     return off

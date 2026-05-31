@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
 import type { AgentsStatusInfo, Attachment, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
 import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
@@ -24,23 +24,7 @@ import { AgentActivity } from "./AgentActivity"
  */
 type EditPhase = "view" | "editing"
 
-export function MessageView({
-  message,
-  processOpen,
-  processOnly,
-  busy,
-  onReviewFile,
-  onEditMessage,
-  onBeginEdit,
-  onEndEdit,
-  onRetry,
-  agentActivity,
-  searchFiles,
-  listDir,
-  attachFile,
-  conversations,
-  activeConversationID,
-}: {
+type MessageViewProps = {
   message: Message
   processOpen: boolean
   processOnly: boolean
@@ -56,7 +40,48 @@ export function MessageView({
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
   conversations?: ConversationSummary[]
   activeConversationID?: string
-}) {
+}
+
+/**
+ * Render-affecting props only. Function props are intentionally excluded —
+ * `useChatState` returns fresh closures every render and `App` passes inline
+ * arrows, so comparing them would defeat the memo on every keystroke/delta.
+ * The reducer preserves object identity for messages it didn't touch
+ * (`appendToLastBlock`/`upsertTool` slice the array and replace one index), so
+ * `message` identity is a reliable "did this row change" signal — which lets a
+ * streaming turn re-render without dragging the whole transcript with it.
+ */
+export function sameMessageViewProps(prev: MessageViewProps, next: MessageViewProps): boolean {
+  return (
+    prev.message === next.message &&
+    prev.processOpen === next.processOpen &&
+    prev.processOnly === next.processOnly &&
+    prev.busy === next.busy &&
+    prev.agentActivity === next.agentActivity &&
+    prev.conversations === next.conversations &&
+    prev.activeConversationID === next.activeConversationID
+  )
+}
+
+export const MessageView = memo(MessageViewComponent, sameMessageViewProps)
+
+function MessageViewComponent({
+  message,
+  processOpen,
+  processOnly,
+  busy,
+  onReviewFile,
+  onEditMessage,
+  onBeginEdit,
+  onEndEdit,
+  onRetry,
+  agentActivity,
+  searchFiles,
+  listDir,
+  attachFile,
+  conversations,
+  activeConversationID,
+}: MessageViewProps) {
   if (message.role === "user") {
     return (
       <UserMessageView
