@@ -1201,6 +1201,10 @@ button {
   padding: 6px 10px;
   border-radius: var(--radius);
   margin-top: 6px;
+  /* Long spaceless errors (file paths, URLs) must break inside the column
+     rather than overflow it — this block is outside `.md`, so it needs its
+     own wrap rule. */
+  overflow-wrap: anywhere;
 }
 /* "Stopped" is a user action, not a failure — render as a quiet grey footer
    note (small italic text with a leading bullet dot), no chip background,
@@ -1447,6 +1451,14 @@ button {
   border: 0;
   border-top: 1px solid var(--vscode-panel-border);
   margin: 12px 0;
+}
+/* Assistant-emitted images carry their intrinsic pixel width. Without a cap a
+   wide image paints past the column and is clipped on the right by
+   `.messages { overflow-x: hidden }` (same failure mode as overflowing text).
+   Scale to the column and keep the aspect ratio. */
+.md img {
+  max-width: 100%;
+  height: auto;
 }
 .md table {
   border-collapse: collapse;
