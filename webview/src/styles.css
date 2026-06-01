@@ -878,7 +878,7 @@ button {
      right. `scrollbar-gutter: stable` still reserves the right-edge gutter so a
      classic scrollbar doesn't reflow the text when it appears. */
   scrollbar-gutter: stable;
-  padding: 10px 12px calc(4px + var(--bottom-composer-height, 0px));
+  padding: 10px 12px calc(4px + var(--bottom-dock-height, 0px));
   /* Firefox: thin transparent scrollbar that brightens on hover. */
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -1827,43 +1827,79 @@ button {
 
 /* ===== Review changes ===== */
 .review-panel {
-  border-top: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-sideBar-background);
-  padding: 7px 10px;
+  --review-head-target-height: 22px;
+  --review-file-target-height: 24px;
+  --review-head-text-line: var(--review-head-target-height);
+  --review-file-text-line: var(--review-file-target-height);
+  position: relative;
+  margin: 0 12px;
+  padding: 4px 6px 5px;
+  border: var(--bubble-border-width) solid var(--vscode-panel-border);
+  border-radius: var(--radius);
+  background: var(--color-bg-input);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  animation: review-panel-in 0.16s ease;
+}
+.review-panel::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: -4px;
+  height: 4px;
+  border-left: 1px solid var(--vscode-panel-border);
+  border-right: 1px solid var(--vscode-panel-border);
+  background: linear-gradient(180deg, var(--color-bg-input), transparent);
+  opacity: 0.48;
+  pointer-events: none;
 }
 .review-head-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 .review-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
+  flex: 1 1 180px;
   min-width: 0;
-  padding: 0;
+  height: var(--review-head-target-height);
+  padding: 0 6px 0 3px;
   border: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   text-align: left;
+  line-height: 1;
+  transition: background-color 0.12s ease;
+}
+.review-head:hover {
+  background: var(--hover-bg-icon);
 }
 .review-bulk-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 .review-bulk-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  padding: 2px 8px;
+  height: var(--review-head-target-height);
+  padding: 0 7px;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
   font-family: inherit;
+  line-height: var(--review-head-target-height);
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
@@ -1880,18 +1916,51 @@ button {
   outline: 1px solid var(--vscode-focusBorder);
 }
 .review-caret {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 12px;
   width: 12px;
-  height: 16px;
+  height: var(--review-head-target-height);
   color: var(--vscode-descriptionForeground);
-  transform: rotate(0deg);
+  line-height: 1;
+  font-size: 0;
   transition: transform 0.16s ease;
+}
+.review-caret::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 .review-caret.is-open {
   transform: rotate(90deg);
+}
+.review-title,
+.review-summary,
+.review-stat,
+.review-file-kind,
+.review-file-name,
+.review-file-stat {
+  display: block;
+  height: var(--review-text-line);
+  line-height: var(--review-text-line);
+}
+.review-title,
+.review-summary {
+  --review-text-line: var(--review-head-text-line);
+}
+.review-stat,
+.review-file-kind,
+.review-file-name,
+.review-file-stat {
+  --review-text-line: var(--review-file-text-line);
 }
 .review-title {
   flex: 0 0 auto;
@@ -1915,14 +1984,19 @@ button {
 .review-file-stat.add { grid-area: add; }
 .review-file-stat.del { grid-area: del; }
 .review-file-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  padding: 1px 7px;
+  min-height: 18px;
+  padding: 0 6px;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--vscode-descriptionForeground);
   font-size: 10px;
   font-family: inherit;
+  line-height: 1;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
@@ -1960,7 +2034,7 @@ button {
 .review-body-clip {
   display: grid;
   grid-template-rows: 1fr;
-  margin-top: 8px;
+  margin-top: 4px;
   overflow: hidden;
   opacity: 1;
   transition:
@@ -1977,9 +2051,9 @@ button {
 .review-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
+  gap: 4px;
   min-height: 0;
-  max-height: min(360px, 42vh);
+  max-height: min(300px, 36vh);
   transform: translateY(0);
   transition: transform 0.2s ease;
 }
@@ -1987,6 +2061,9 @@ button {
   transform: translateY(-4px);
 }
 .review-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
   /* Keep overflow hidden so the inner list never shows a scrollbar while the
      outer body-clip is animating its height. After the 0.2s expand transition
@@ -2015,13 +2092,16 @@ button {
   gap: 0 6px;
   width: 100%;
   min-width: 0;
-  padding: 4px 4px 4px 8px;
+  height: var(--review-file-target-height);
+  padding: 0 5px 0 8px;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   text-align: left;
+  line-height: 1;
   cursor: pointer;
+  transition: background-color 0.12s ease;
 }
 .review-file:hover {
   background: var(--vscode-list-hoverBackground);
@@ -2325,15 +2405,36 @@ button {
   --context-usage-color: var(--vscode-editorError-foreground, #f14c4c);
 }
 
-.bottom-composer {
+/* Bottom dock: stacks the transient overlays (permission/question dialogs and
+   the review card) above the floating composer and pins the whole group to the
+   panel's bottom edge. `.messages` reserves the dock's measured height as bottom
+   padding so the last message clears the stack instead of hiding behind it.
+   Before this, only the absolute composer was pinned; the review card stayed in
+   normal flow as the last `.app` child and landed *underneath* the composer. */
+.bottom-dock {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: column;
+  /* Transparent gaps (the composer's edge padding, the spacing between cards)
+     let clicks and wheel events reach the messages scrolling behind the dock. */
+  pointer-events: none;
+}
+.bottom-dock > .review-panel,
+.bottom-dock > .permission,
+.bottom-dock > .question {
+  pointer-events: auto;
+}
+.bottom-composer {
   padding: var(--composer-edge-gap) 12px var(--composer-edge-gap);
   background: transparent;
   pointer-events: none;
+}
+.bottom-dock > .review-panel + .bottom-composer {
+  padding-top: var(--space-1);
 }
 .bottom-composer > .promptbox {
   pointer-events: auto;
