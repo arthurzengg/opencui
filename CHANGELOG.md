@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-01
+
+### Changed
+- The bottom composer, the review card, and the permission/question dialogs now stack in a single absolutely-positioned bottom dock above the scroll area; `.messages` reserves the dock's measured height (`--bottom-dock-height`) so nothing hides behind the floating composer, and a dialog that co-occurs with pending changes no longer drops under it (#277).
+- The review card is restyled as a floating card - rounded border, input background, drop shadow, entry animation, and a fading connector toward the composer - with normalized head/file row heights, a CSS-drawn disclosure chevron, and right-aligned bulk actions (#277). Its top and bottom padding is symmetric and the header hover shares the file-row hover color, so the head and the list read as one surface (#279).
+- `MessageView` is memoized and stream deltas are coalesced per animation frame, cutting layout thrash while a turn streams (#265).
+- The work-panel fold is animated and streaming layout shift during a turn is reduced (#267).
+
+### Fixed
+- The answer is split from the process/thinking section deterministically instead of by prose heuristics (#269).
+- Message text is inset 12px so it lines up with the composer width (#271).
+- Code blocks in the work panel scroll horizontally instead of stretching the message column (#273).
+- Wide images and long unbroken error tokens are constrained to the message column instead of overflowing it (#275).
+
 ## [1.2.0] - 2026-05-31
 
 ### Added
