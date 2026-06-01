@@ -1833,7 +1833,11 @@ button {
   --review-file-text-line: var(--review-file-target-height);
   position: relative;
   margin: 0 12px;
-  padding: 4px 6px 5px;
+  /* Keep top and bottom padding equal. Each row already centers its own text,
+     so symmetric padding is what makes the card read as vertically balanced;
+     splitting it (4/5 or 5/4) leaves a visibly lopsided gap above vs below the
+     list. */
+  padding: 4px 6px;
   border: var(--bubble-border-width) solid var(--vscode-panel-border);
   border-radius: var(--radius);
   background: var(--color-bg-input);
@@ -1877,7 +1881,9 @@ button {
   transition: background-color 0.12s ease;
 }
 .review-head:hover {
-  background: var(--hover-bg-icon);
+  /* Same hover color as the file rows so the head and the list read as one
+     surface; the head keeps its own (sub-width) shape. */
+  background: var(--hover-bg-row);
 }
 .review-bulk-actions {
   display: inline-flex;
@@ -2104,7 +2110,7 @@ button {
   transition: background-color 0.12s ease;
 }
 .review-file:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: var(--hover-bg-row);
 }
 .review-file.is-selected {
   /* Use the neutral "inactive selection" token rather than the saturated blue
