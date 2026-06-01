@@ -416,19 +416,27 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
     return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
-  const finalTextIndex = lastTextIndex(message.blocks, Boolean(message.pending))
-  if (finalTextIndex < 0) {
+  // Deterministic split: the answer is the trailing run of text after the last
+  // activity (tool / patch / reasoning). Everything up to and including that
+  // activity is process (work + thinking); the trailing text is the answer.
+  // Block order already encodes the structure — no prose-pattern guessing, so a
+  // short closing line is never buried in the collapsed work panel.
+  const start = answerStartIndex(message.blocks)
+  const process = message.blocks.slice(0, start)
+  const answer = message.blocks.slice(start)
+  const answerHasText = answer.some((b) => b.type === "text" && b.text.trim().length > 0)
+
+  if (!answerHasText) {
+    // Ends on activity/reasoning (or is empty) — no distinct answer to surface.
     if (!hasProcessBlocks(message.blocks)) return renderBlocks(message.blocks, false, onReviewFile)
     return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
-  const process = message.blocks.slice(0, finalTextIndex)
-  const final = message.blocks.slice(finalTextIndex)
-  if (!hasProcessBlocks(process)) return renderBlocks(final, false, onReviewFile)
+  if (!hasProcessBlocks(process)) return renderBlocks(answer, false, onReviewFile)
   return (
     <>
-      <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}-${finalTextIndex}`} defaultOpen={false} onReviewFile={onReviewFile} />
-      {renderBlocks(final, false, onReviewFile)}
+      <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}-${start}`} defaultOpen={false} onReviewFile={onReviewFile} />
+      {renderBlocks(answer, false, onReviewFile)}
     </>
   )
 }
@@ -578,29 +586,25 @@ export function hasProcessBlocks(blocks: Block[]) {
   })
 }
 
-export function lastTextIndex(blocks: Block[], pending: boolean) {
-  const mixedWithActivity = blocks.some((block) => block.type !== "text") || blocks.filter((block) => block.type === "text").length > 1
+/**
+ * The answer is the trailing run of text blocks after the last "activity"
+ * block — a tool call, a patch, or a reasoning block. Everything up to and
+ * including that activity is process (work + thinking); only the trailing text
+ * is the final answer. Deterministic — relies on opencode's block emission
+ * order rather than guessing from prose, so a short closing line is never
+ * buried in the collapsed work panel.
+ *
+ * Returns the index where the answer region begins; equals `blocks.length`
+ * when the message ends on activity (no answer region).
+ */
+export function answerStartIndex(blocks: Block[]): number {
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i]
-    if (!block || block.type !== "text" || !block.text.trim()) continue
-    if (looksLikeFinalAnswer(block.text)) return i
-    if (looksLikeProcessText(block.text)) return -1
-    if (!pending && !mixedWithActivity) return i
-    return -1
+    if (block && (block.type === "tool" || block.type === "patch" || block.type === "reasoning")) {
+      return i + 1
+    }
   }
-  return -1
-}
-
-export function looksLikeFinalAnswer(text: string) {
-  const value = text.trim()
-  if (/^[-*]\s+\[[ x]\]/m.test(value)) return true
-  if (/^(short summary|summary|model|i['’]m|factoryflow)/i.test(value)) return true
-  return value.length > 240 && !/\b(i('|’)m|i am)\s+(checking|reading|looking|inspecting|exploring|going to|falling back)\b/i.test(value)
-}
-
-export function looksLikeProcessText(text: string) {
-  return /\b(i('|’)m|i am)\s+(checking|reading|looking|inspecting|exploring|going to|falling back|considering)\b/i.test(text)
-    || /^(found|next|now|the quick|i detect|i’ve confirmed|i’ve got|i need to|let’s|this will help)\b/i.test(text.trim())
+  return 0
 }
 
 export function processTitle(blocks: Block[]) {

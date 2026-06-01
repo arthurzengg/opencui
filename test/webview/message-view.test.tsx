@@ -310,6 +310,57 @@ describe("MessageView (assistant role)", () => {
     expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
   })
 
+  it("shows a short trailing text after a tool as the answer, not buried in the work panel", () => {
+    const msg = {
+      id: "a-trail",
+      role: "assistant",
+      blocks: [
+        { type: "tool", update: { callID: "c1", tool: "edit", status: "completed", input: { filePath: "src/foo.ts", oldString: "a", newString: "b" } } },
+        { type: "text", text: "Done." },
+      ],
+    } as Message
+    const { container } = render(<MessageView message={msg} processOpen={false} processOnly={false} />)
+    const panel = container.querySelector(".process")
+    expect(panel).not.toBeNull() // the tool shows as a work panel...
+    const answer = screen.getByText("Done.")
+    expect(panel?.contains(answer)).toBe(false) // ...and the answer renders outside it
+  })
+
+  it("renders no separate answer when the message ends on a tool", () => {
+    const msg = {
+      id: "a-toolend",
+      role: "assistant",
+      blocks: [
+        { type: "text", text: "Let me check the file." },
+        { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "src/foo.ts" } } },
+      ],
+    } as Message
+    const { container } = render(<MessageView message={msg} processOpen={false} processOnly={false} />)
+    const panel = container.querySelector(".process")
+    expect(panel).not.toBeNull()
+    // The narration is folded into the panel (as its title/body), not promoted.
+    expect(panel?.textContent).toContain("Let me check the file")
+    // No answer markdown is rendered as a sibling outside the panel.
+    expect(container.querySelector(".msg.role-assistant > .md")).toBeNull()
+  })
+
+  it("folds reasoning before the trailing answer while showing the answer", () => {
+    const msg = {
+      id: "a-reason-then-text",
+      role: "assistant",
+      blocks: [
+        { type: "reasoning", text: "Thinking about the null case." },
+        { type: "text", text: "The fix is a guard clause." },
+      ],
+    } as Message
+    const { container } = render(<MessageView message={msg} processOpen={false} processOnly={false} />)
+    const panel = container.querySelector(".process")
+    expect(panel).not.toBeNull()
+    expect(panel?.textContent).toContain("Thinking about the null case") // reasoning folded
+    const answer = screen.getByText("The fix is a guard clause.")
+    expect(panel?.contains(answer)).toBe(false) // answer outside the panel
+  })
+
   it("renders markdown in reasoning body when a title is extracted", () => {
     const msg = {
       id: "a-reason-titled",
