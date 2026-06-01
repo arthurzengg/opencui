@@ -867,16 +867,18 @@ button {
 .messages {
   flex: 1;
   overflow-y: auto;
-  /* Reserve gutter space on BOTH sides so message bubbles don't reflow narrower
-     when scrolling appears, AND stay visually centered (the symmetric reserve
-     mirrors the right scrollbar gutter on the left).
-     Horizontal padding is 2px on purpose: 2px + the 10px reserved gutter (the
-     `::-webkit-scrollbar` width below) sums to the 12px edge gap used by
-     `.bottom-composer`, so message bubbles, the in-place edit box, and the
-     docked composer all line up at the same width. If you change the scrollbar
-     width, adjust this padding so the two still sum to 12px. */
-  scrollbar-gutter: stable both-edges;
-  padding: 10px 2px calc(4px + var(--bottom-composer-height, 0px));
+  /* Never scroll sideways — wide children (code blocks, tables, KaTeX) scroll
+     inside their own `overflow-x: auto` boxes, so the panel itself stays put and
+     prose can't be pushed off the right edge. */
+  overflow-x: hidden;
+  /* Inset content a real 12px on each side to line up with `.bottom-composer`
+     (which pads 12px). This used to be synthesized as `2px padding + a reserved
+     scrollbar gutter`, but the gutter reserves ~0 with overlay-style scrollbars,
+     collapsing the inset to ~2px and letting text run under the scrollbar on the
+     right. `scrollbar-gutter: stable` still reserves the right-edge gutter so a
+     classic scrollbar doesn't reflow the text when it appears. */
+  scrollbar-gutter: stable;
+  padding: 10px 12px calc(4px + var(--bottom-composer-height, 0px));
   /* Firefox: thin transparent scrollbar that brightens on hover. */
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -1404,7 +1406,7 @@ button {
 }
 
 /* ===== Markdown ===== */
-.md { line-height: 1.5; word-wrap: break-word; }
+.md { line-height: 1.5; overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p { margin: 0 0 8px; }
