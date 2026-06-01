@@ -36,7 +36,7 @@ export default function App() {
     stopIndex,
   } = useChatState()
   const scrollRef = useRef<HTMLDivElement>(null)
-  const composerRef = useRef<HTMLDivElement>(null)
+  const dockRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
   // Tracks whether the next onScroll fired from our own scrollTop= write
   // (so the synthetic event doesn't masquerade as a user gesture and
@@ -46,7 +46,7 @@ export default function App() {
   const pendingScrollRestore = useRef<{ top: number; stick: boolean } | null>(null)
   const [activeHeaderPopover, setActiveHeaderPopover] = useState<HeaderPopoverID | null>(null)
   const [editingMessageID, setEditingMessageID] = useState<string | null>(null)
-  const [bottomComposerHeight, setBottomComposerHeight] = useState(0)
+  const [bottomDockHeight, setBottomDockHeight] = useState(0)
   // Distance-from-bottom threshold for *re-engaging* stick mode once the
   // user has manually disengaged it. Smaller than the old 80 px because we
   // now use scroll direction, not just position.
@@ -140,24 +140,24 @@ export default function App() {
     scrollToBottom()
   }, [state.messages])
 
+  // The bottom dock (dialogs + review card + floating composer) is pinned over
+  // the scroll area, so `.messages` reserves its height as bottom padding. The
+  // dock is always mounted, so observe it once; the ResizeObserver picks up the
+  // review card / dialogs appearing and disappearing.
   useLayoutEffect(() => {
-    if (state.messages.length === 0) {
-      setBottomComposerHeight(0)
-      return
-    }
-    const el = composerRef.current
+    const el = dockRef.current
     if (!el) return
-    const update = () => setBottomComposerHeight(el.getBoundingClientRect().height)
+    const update = () => setBottomDockHeight(el.getBoundingClientRect().height)
     update()
     const observer = new ResizeObserver(update)
     observer.observe(el)
     return () => observer.disconnect()
-  }, [state.messages.length])
+  }, [])
 
   useLayoutEffect(() => {
     if (!stickToBottom.current) return
     scrollToBottom()
-  }, [bottomComposerHeight])
+  }, [bottomDockHeight])
 
   // Entering/exiting in-place edit swaps a regular user bubble for an absolute
   // overlay. Chromium may treat the overlay's extra scrollable overflow as a
@@ -184,9 +184,7 @@ export default function App() {
     })
   }, [state.conversationID])
 
-  const appStyle = state.messages.length > 0
-    ? ({ "--bottom-composer-height": `${bottomComposerHeight}px` } as CSSProperties)
-    : undefined
+  const appStyle = { "--bottom-dock-height": `${bottomDockHeight}px` } as CSSProperties
 
   return (
     <div className="app" style={appStyle}>
@@ -303,51 +301,53 @@ export default function App() {
           </div>
         ))}
       </div>
-      {state.pendingPermission && (
-        <PermissionDialog
-          id={state.pendingPermission.id}
-          title={state.pendingPermission.title}
-          pattern={state.pendingPermission.pattern}
-          onReply={replyPermission}
-        />
-      )}
-      {state.pendingQuestion && (
-        <QuestionDialog
-          id={state.pendingQuestion.id}
-          questions={state.pendingQuestion.questions}
-          onReply={replyQuestion}
-          onReject={rejectQuestion}
-        />
-      )}
-      <ReviewPanel
-        messages={state.messages}
-        selectedPath={reviewRequest?.path}
-        selectedKey={reviewRequest?.key}
-        reviewedHunks={state.reviewHunks}
-        onSelectPath={openReviewFile}
-        onOpenReviewChange={openReviewChangeDebounced}
-        onReviewAllInChange={reviewAllInChange}
-      />
-      {state.messages.length > 0 && (
-        <div className="bottom-composer" ref={composerRef}>
-          <PromptBox
-            busy={busy}
-            aborting={state.aborting}
-            onSend={send}
-            onAbort={abort}
-            searchFiles={searchFiles}
-            listDir={listDir}
-            attachFile={attachFile}
-            conversations={state.conversations}
-            activeConversationID={state.conversationID}
-            onOpenConversation={openConversation}
-            contextUsage={state.contextUsage}
-            commands={state.commands}
-            onRunCommand={runCommand}
-            inject={state.injectedText}
+      <div className="bottom-dock" ref={dockRef}>
+        {state.pendingPermission && (
+          <PermissionDialog
+            id={state.pendingPermission.id}
+            title={state.pendingPermission.title}
+            pattern={state.pendingPermission.pattern}
+            onReply={replyPermission}
           />
-        </div>
-      )}
+        )}
+        {state.pendingQuestion && (
+          <QuestionDialog
+            id={state.pendingQuestion.id}
+            questions={state.pendingQuestion.questions}
+            onReply={replyQuestion}
+            onReject={rejectQuestion}
+          />
+        )}
+        <ReviewPanel
+          messages={state.messages}
+          selectedPath={reviewRequest?.path}
+          selectedKey={reviewRequest?.key}
+          reviewedHunks={state.reviewHunks}
+          onSelectPath={openReviewFile}
+          onOpenReviewChange={openReviewChangeDebounced}
+          onReviewAllInChange={reviewAllInChange}
+        />
+        {state.messages.length > 0 && (
+          <div className="bottom-composer">
+            <PromptBox
+              busy={busy}
+              aborting={state.aborting}
+              onSend={send}
+              onAbort={abort}
+              searchFiles={searchFiles}
+              listDir={listDir}
+              attachFile={attachFile}
+              conversations={state.conversations}
+              activeConversationID={state.conversationID}
+              onOpenConversation={openConversation}
+              contextUsage={state.contextUsage}
+              commands={state.commands}
+              onRunCommand={runCommand}
+              inject={state.injectedText}
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }
