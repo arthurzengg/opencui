@@ -1367,6 +1367,10 @@ button {
 .process-body-clip {
   display: grid;
   grid-template-rows: 0fr;
+  /* Constrain the column to the panel width (not max-content) so a wide code
+     line can't inflate the body past the panel and get clipped — inner code
+     blocks then scroll horizontally on their own. Mirrors `.review-body`. */
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
   transition:
     grid-template-rows 0.18s ease,
@@ -1378,6 +1382,7 @@ button {
 }
 .process-body {
   min-height: 0;
+  min-width: 0;
   padding-left: 12px;
   border-left: 1px solid var(--vscode-panel-border);
 }
