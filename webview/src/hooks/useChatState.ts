@@ -169,6 +169,13 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return {
         ...state,
         busy: false,
+        // A conversation switch invalidates any in-flight abort/continuation:
+        // the old session's SSE subscription is torn down, so its `sessionIdle`
+        // (the only thing that clears `aborting`) never arrives. Without this,
+        // a stranded `aborting` leaves the new conversation's composer disabled
+        // ("Stopping…") with no way to recover but a window reload.
+        aborting: false,
+        continuationPending: false,
         contextUsage: undefined,
         conversationID: action.conversationID,
         messages: action.messages,
@@ -226,6 +233,10 @@ export function reducer(state: ChatState, action: Action): ChatState {
         ),
       }
     case "assistantStart":
+      // Mirror the textDelta/tool/patch gates: a late message.start racing in
+      // after Stop must not append a fresh pending assistant bubble (it would
+      // render with no Stopped badge once sessionIdle clears its pending flag).
+      if (state.aborting) return state
       return {
         ...state,
         busy: true,

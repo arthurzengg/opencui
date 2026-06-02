@@ -1184,16 +1184,23 @@ export class ChatView implements vscode.WebviewViewProvider {
     // promptAsync's { providerID, modelID } object.
     const model = sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : undefined
     log("command dispatch", { sessionID: this.sessionID, command, agent: sel.agent ?? "default", model: model ?? "default" })
+    const body = {
+      command,
+      arguments: args,
+      ...(sel.agent ? { agent: sel.agent } : {}),
+      ...(model ? { model } : {}),
+    }
+    if (sel.modelVariant) {
+      // `variant` is a top-level field the command endpoint accepts (same as
+      // promptAsync in handleSend); the bundled SDK types don't expose it yet.
+      // Without this, custom /commands silently run at the model's default effort.
+      ;(body as unknown as { variant?: string }).variant = sel.modelVariant
+    }
     try {
       const res = await backend.client.session.command({
         path: { id: this.sessionID },
         query: { directory: backend.directory },
-        body: {
-          command,
-          arguments: args,
-          ...(sel.agent ? { agent: sel.agent } : {}),
-          ...(model ? { model } : {}),
-        },
+        body,
       })
       if (res.error) log("command failed", res.error)
     } catch (e) {
@@ -1659,6 +1666,22 @@ export class ChatView implements vscode.WebviewViewProvider {
       onToast: (toast) => this.surfaceToast(toast),
       onSessionError: (message) => {
         log("session error", message)
+        // A parent session.error that isn't mirrored by an assistant-message
+        // error (that case is handled in onAssistantEnd) would otherwise fail
+        // silently AND let the trailing session.idle's markSessionIdle sweep the
+        // Agents-popover Main row to "completed". Settle the Main task first so
+        // the terminal guard protects its status, then surface the failure.
+        // A server-side abort ("Aborted") settles quietly — mirroring the chat
+        // bubble's Stopped convention — instead of flashing a red toast.
+        const classified = classifyTerminal(message)
+        void this.subagentDispatch.recordMainTaskFinish(classified.status, classified.error)
+        if (classified.status === "error") {
+          this.surfaceToast({
+            variant: "error",
+            title: "Session error",
+            message: message || "The session reported an error.",
+          })
+        }
       },
       onSessionBusy: () => {
         // A new busy state means continuation (if any) took over — cancel

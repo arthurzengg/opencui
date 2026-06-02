@@ -102,6 +102,24 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     expect(body.model).toBe("openai/gpt-5")
   })
 
+  it("session.command forwards a top-level variant the SDK type does not declare", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    // handleRunCommand sends `variant` as a top-level field (like promptAsync).
+    // The SDK's SessionCommandData.body doesn't declare it, so it's cast on.
+    // This guards that the SDK doesn't strip the unknown field before the wire —
+    // the whole effort-on-/commands fix depends on it surviving serialization.
+    const commandBody = { command: "deploy", arguments: "prod", model: "openai/gpt-5" }
+    ;(commandBody as unknown as { variant?: string }).variant = "high"
+    await client.session.command({
+      path: { id: "ses_test" },
+      query: { directory: "/tmp" },
+      body: commandBody,
+    })
+    expect(server.commandCalls).toHaveLength(1)
+    const recorded = server.commandCalls[0]!.body as { variant?: string }
+    expect(recorded.variant).toBe("high")
+  })
+
   it("session.summarize (the /compact endpoint) round-trips", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const res = await client.session.summarize({

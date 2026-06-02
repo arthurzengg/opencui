@@ -113,6 +113,15 @@ describe("StatusBar", () => {
     expect(items[1]!.textContent).toMatch(/default/i)
   })
 
+  it("trigger shows the Effort segment with 'default' even when no variant is set", () => {
+    // Discoverability: the collapsed bar must always advertise Effort (like
+    // Model/Agent), not hide it until a variant is picked.
+    render(<StatusBar {...baseProps} selection={{ model: "openai/gpt-5.5" }} />)
+    const trigger = screen.getByRole("button", { name: /change agent, model, and effort/i })
+    expect(trigger.textContent).toMatch(/Effort/)
+    expect(trigger.textContent).toMatch(/default/)
+  })
+
   it("renders the New chat icon button and fires onCreateConversation", async () => {
     const user = userEvent.setup()
     const onCreateConversation = vi.fn()

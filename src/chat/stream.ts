@@ -678,10 +678,14 @@ export function subscribeSession(
       seenAssistantMessages.add(messageID)
       handlers.onAssistantStart?.(messageID)
     }
-    if (p.field === "text") {
+    // Guard `typeof p.delta === "string"` (same as onPartUpdated guards
+    // part.text): a malformed/empty delta would otherwise throw on
+    // `p.delta.length`, propagate out of the SSE reader loop, and tear down the
+    // live subscription mid-turn.
+    if (p.field === "text" && typeof p.delta === "string") {
       handlers.onTextDelta(messageID, p.delta)
       seenLen.set(partID, (seenLen.get(partID) ?? 0) + p.delta.length)
-    } else if (p.field === "reasoning") {
+    } else if (p.field === "reasoning" && typeof p.delta === "string") {
       handlers.onReasoningDelta?.(messageID, p.delta)
       seenLen.set(partID, (seenLen.get(partID) ?? 0) + p.delta.length)
     }

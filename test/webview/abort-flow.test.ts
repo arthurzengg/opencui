@@ -101,6 +101,30 @@ describe("reducer abort flow", () => {
     expect(msg.pending).toBe(false)
   })
 
+  it("assistantStart while aborting is dropped (no stray empty bubble)", () => {
+    const before = pendingAssistant("a1")
+    const aborted = reducer(before, { type: "aborted" })
+    // A late message.start races in after Stop.
+    const after = reducer(aborted, { type: "assistantStart", id: "a2" })
+    expect(after).toBe(aborted) // reference-equal: reducer returned the same state
+    expect(after.messages.filter((m) => m.role === "assistant")).toHaveLength(1)
+  })
+
+  it("restore after aborted clears aborting + continuationPending (composer recovers)", () => {
+    // Repro: user presses Stop, then switches conversations before the old
+    // session's sessionIdle (the only thing that clears `aborting`) arrives.
+    // Without the restore reset, `aborting` strands and PromptBox stays disabled.
+    const aborted = reducer(pendingAssistant("a1"), { type: "aborted" })
+    const pending = reducer(aborted, { type: "continuationPending", pending: true })
+    expect(pending.aborting).toBe(true)
+    expect(pending.continuationPending).toBe(true)
+    const restored = reducer(pending, { type: "restore", conversationID: "c2", messages: [] })
+    expect(restored.aborting).toBe(false)
+    expect(restored.continuationPending).toBe(false)
+    expect(restored.busy).toBe(false)
+    expect(restored.conversationID).toBe("c2")
+  })
+
   it("multiple pending assistants in a turn: only the LAST one gets the Stopped badge", () => {
     // Build a state with two pending assistants in the same turn (e.g. a
     // subtask intermediate step + the final answer).
