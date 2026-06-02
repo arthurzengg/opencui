@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-06-01
+
+### Fixed
+- The chat composer no longer locks up after you Stop a turn and immediately switch conversations - the abort state is cleared on conversation restore instead of stranding the disabled "Stopping..." button until a window reload (#283).
+- Custom `/commands` now run at the selected reasoning effort (the model `variant`) instead of the model's default, matching regular prompts (#283).
+- A session-level error from opencode is surfaced as a notification and settles the Agents popover, instead of failing silently and leaving the turn looking complete (#283).
+- A late assistant message arriving after Stop no longer appends a stray empty bubble (#283).
+- A malformed streaming delta can no longer throw and tear down the live SSE subscription mid-turn (#283).
+- The status bar always shows the Effort selector (defaulting to "default"), matching Model and Agent, so it is discoverable before one is picked (#283).
+
 ## [1.3.0] - 2026-06-01
 
 ### Changed
