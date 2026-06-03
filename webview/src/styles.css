@@ -1773,7 +1773,6 @@ button {
   border-radius: var(--radius);
   background: var(--color-bg-input);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
-  animation: review-panel-in 0.16s ease;
 }
 .review-panel::after {
   content: "";
@@ -1827,6 +1826,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   flex: 0 0 auto;
   height: var(--review-head-target-height);
   padding: 0 7px;
@@ -1852,31 +1852,19 @@ button {
 .review-bulk-action:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
 }
-.review-caret {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.review-bulk-action .codicon {
+  font-size: 13px;
+}
+/* The caret is a codicon glyph; the descendant selector outweighs the codicon
+   base `font` shorthand so this size and the rotation actually apply. */
+.review-head .review-caret {
   flex: 0 0 12px;
   width: 12px;
-  height: var(--review-head-target-height);
   color: var(--vscode-descriptionForeground);
-  line-height: 1;
-  font-size: 0;
+  font-size: 14px;
   transition: transform 0.16s ease;
 }
-.review-caret::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 5px;
-  height: 5px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: translate(-50%, -50%) rotate(-45deg);
-}
-.review-caret.is-open {
+.review-head .review-caret.is-open {
   transform: rotate(90deg);
 }
 .review-title,
@@ -1956,6 +1944,9 @@ button {
 .review-file-action:focus-visible {
   opacity: 1;
   outline: 1px solid var(--vscode-focusBorder);
+}
+.review-file-action .codicon {
+  font-size: 13px;
 }
 @media (hover: none) {
   .review-file-action { opacity: 1; }
@@ -2105,22 +2096,7 @@ button {
   font-size: 13px;
   font-weight: 600;
 }
-.review-file-stat.add { grid-area: add; }
-.review-file-stat.del { grid-area: del; }
-@keyframes review-panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .review-panel {
-    animation: none;
-  }
   .review-caret,
   .review-body,
   .review-body-clip {
