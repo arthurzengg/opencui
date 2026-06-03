@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-02
+
+### Added
+- File-type icons in the `@` file picker: file rows now lead with a category glyph (code, JSON, Markdown, image, lock, archive, ...) so the list is scannable at a glance (#291).
+
+### Changed
+- Icons across the UI - the status bar, the `@` picker, the dialogs, and the image controls - now render from VS Code's built-in **codicon** font, so they follow your active color theme and match the rest of VS Code's chrome, replacing the previous mix of inline SVGs, hand-drawn CSS shapes, and unicode glyphs (#289).
+- The Review card is refined: the disclosure caret and the Keep / Undo actions (and the bulk Keep all / Undo all) are now codicons, a single-file review collapses to one clean row with inline actions instead of repeating the filename, and the card's entry animation was removed so it no longer flashes when the turn re-renders (#293).
+
 ## [1.3.1] - 2026-06-01
 
 ### Fixed
