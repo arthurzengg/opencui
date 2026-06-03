@@ -50,8 +50,8 @@ describe("ReviewPanel: subagent attribution stays on the tooltip", () => {
     // No `.review-file-actor` element — the old badge is gone.
     expect(container.querySelector(".review-file-actor")).toBeNull()
     // The row title tooltip still carries the attribution so power users can hover.
-    const row = container.querySelector(".review-file") as HTMLElement
-    expect(row.title).toContain("Modified by: explore")
+    const head = container.querySelector(".review-head") as HTMLElement
+    expect(head.title).toContain("Modified by: explore")
   })
 
   it("keeps tooltip clean (just the path) for main-agent changes", () => {
@@ -66,8 +66,8 @@ describe("ReviewPanel: subagent attribution stays on the tooltip", () => {
     ]
     const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
     expect(container.querySelector(".review-file-actor")).toBeNull()
-    const row = container.querySelector(".review-file") as HTMLElement
-    expect(row.title).toBe("src/foo.ts")
+    const head = container.querySelector(".review-head") as HTMLElement
+    expect(head.title).toBe("src/foo.ts")
   })
 
   it("lists multiple subagents in the tooltip when more than one touched the file", () => {
@@ -88,9 +88,9 @@ describe("ReviewPanel: subagent attribution stays on the tooltip", () => {
       ]),
     ]
     const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
-    const row = container.querySelector(".review-file") as HTMLElement
-    expect(row.title).toContain("explore")
-    expect(row.title).toContain("hephaestus")
+    const head = container.querySelector(".review-head") as HTMLElement
+    expect(head.title).toContain("explore")
+    expect(head.title).toContain("hephaestus")
   })
 
   it("still collapses main + subagent edits onto one row (no duplicate visible attribution)", () => {
@@ -111,9 +111,9 @@ describe("ReviewPanel: subagent attribution stays on the tooltip", () => {
       ]),
     ]
     const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
-    expect(container.querySelectorAll(".review-file")).toHaveLength(1)
+    expect(container.querySelectorAll(".review-head")).toHaveLength(1)
     expect(container.querySelector(".review-file-actor")).toBeNull()
-    const row = container.querySelector(".review-file") as HTMLElement
-    expect(row.title).toContain("Modified by: hephaestus")
+    const head = container.querySelector(".review-head") as HTMLElement
+    expect(head.title).toContain("Modified by: hephaestus")
   })
 })

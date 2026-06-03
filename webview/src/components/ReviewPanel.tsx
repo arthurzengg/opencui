@@ -74,8 +74,15 @@ export function ReviewPanel({
   return (
     <div className={`review-panel ${open ? "" : "is-collapsed"}`}>
       <div className="review-head-row">
-        <button className="review-head" onClick={() => setOpen(!open)} aria-expanded={open}>
-          <span className={`review-caret ${open ? "is-open" : ""}`}>›</span>
+        <button
+          className={`review-head${isSingle ? ` kind-${onlyChange!.kind}` : ""}`}
+          onClick={() => (isSingle ? selectChange(onlyChange!) : setOpen(!open))}
+          aria-expanded={isSingle ? undefined : open}
+          title={isSingle ? actorTooltip(onlyChange!) : undefined}
+        >
+          {!isSingle && (
+            <span className={`review-caret codicon codicon-chevron-right ${open ? "is-open" : ""}`} aria-hidden="true" />
+          )}
           <span className="review-title">{isSingle ? "Review" : "Review changes"}</span>
           <span className="review-summary" title={onlyChange?.path}>
             {onlyChange ? (displayNames.get(onlyChange.path) ?? basename(onlyChange.path)) : `${pendingChanges.length} files`}
@@ -83,81 +90,108 @@ export function ReviewPanel({
           <span className="review-stat add">+{additions}</span>
           <span className="review-stat del">-{deletions}</span>
         </button>
-        {!isSingle && (
-          <div className="review-bulk-actions">
-            <button
-              className="review-bulk-action accept"
-              onClick={(event) => { stopHead(event); bulkAct("accepted") }}
-              onKeyDown={stopHead}
-              title={`Keep changes in all ${pendingChanges.length} files`}
-              aria-label="Keep all changes"
-            >
-              Keep all
-            </button>
-            <button
-              className="review-bulk-action reject"
-              onClick={(event) => { stopHead(event); bulkAct("rejected") }}
-              onKeyDown={stopHead}
-              title={`Undo changes in all ${pendingChanges.length} files`}
-              aria-label="Undo all changes"
-            >
-              Undo all
-            </button>
-          </div>
-        )}
-      </div>
-      <div className="review-body-clip" aria-hidden={!open}>
-        <div className="review-body">
-          <div className="review-files">
-            {pendingChanges.map(({ change }) => {
-              const isSelected = change.source === selected.source && change.path === selected.path
-              const stop = (event: MouseEvent | KeyboardEvent) => event.stopPropagation()
-              const act = (action: ReviewHunkState) => {
-                onReviewAllInChange?.(change.source, change.path, action)
-              }
-              return (
-                <div
-                  key={`${change.source}:${change.path}`}
-                  className={`review-file kind-${change.kind} ${isSelected ? "is-selected" : ""}`}
-                  onClick={() => selectChange(change)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault()
-                      selectChange(change)
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  title={actorTooltip(change)}
-                >
-                  <span className="review-file-kind" aria-label={kindLabel(change.kind)}>{kindLetter(change.kind)}</span>
-                  <span className="review-file-name">{displayNames.get(change.path) ?? basename(change.path)}</span>
-                  <span className="review-file-stat add">+{change.additions}</span>
-                  <span className="review-file-stat del">-{change.deletions}</span>
-                  <button
-                    className="review-file-action accept"
-                    onClick={(event) => { stop(event); act("accepted") }}
-                    onKeyDown={stop}
-                    aria-label={`Keep changes in ${basename(change.path)}`}
-                    title="Keep all changes in this file"
-                  >
-                    Keep
-                  </button>
-                  <button
-                    className="review-file-action reject"
-                    onClick={(event) => { stop(event); act("rejected") }}
-                    onKeyDown={stop}
-                    aria-label={`Undo changes in ${basename(change.path)}`}
-                    title="Undo all changes in this file"
-                  >
-                    Undo
-                  </button>
-                </div>
-              )
-            })}
-          </div>
+        <div className="review-bulk-actions">
+          {isSingle ? (
+            <>
+              <button
+                className="review-bulk-action accept"
+                onClick={(event) => { stopHead(event); onReviewAllInChange?.(onlyChange!.source, onlyChange!.path, "accepted") }}
+                onKeyDown={stopHead}
+                title="Keep all changes in this file"
+                aria-label={`Keep changes in ${basename(onlyChange!.path)}`}
+              >
+                <span className="codicon codicon-check" aria-hidden="true" />
+              </button>
+              <button
+                className="review-bulk-action reject"
+                onClick={(event) => { stopHead(event); onReviewAllInChange?.(onlyChange!.source, onlyChange!.path, "rejected") }}
+                onKeyDown={stopHead}
+                title="Undo all changes in this file"
+                aria-label={`Undo changes in ${basename(onlyChange!.path)}`}
+              >
+                <span className="codicon codicon-discard" aria-hidden="true" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="review-bulk-action accept"
+                onClick={(event) => { stopHead(event); bulkAct("accepted") }}
+                onKeyDown={stopHead}
+                title={`Keep changes in all ${pendingChanges.length} files`}
+                aria-label="Keep all changes"
+              >
+                <span className="codicon codicon-check" aria-hidden="true" />
+                Keep all
+              </button>
+              <button
+                className="review-bulk-action reject"
+                onClick={(event) => { stopHead(event); bulkAct("rejected") }}
+                onKeyDown={stopHead}
+                title={`Undo changes in all ${pendingChanges.length} files`}
+                aria-label="Undo all changes"
+              >
+                <span className="codicon codicon-discard" aria-hidden="true" />
+                Undo all
+              </button>
+            </>
+          )}
         </div>
       </div>
+      {!isSingle && (
+        <div className="review-body-clip" aria-hidden={!open}>
+          <div className="review-body">
+            <div className="review-files">
+              {pendingChanges.map(({ change }) => {
+                const isSelected = change.source === selected.source && change.path === selected.path
+                const stop = (event: MouseEvent | KeyboardEvent) => event.stopPropagation()
+                const act = (action: ReviewHunkState) => {
+                  onReviewAllInChange?.(change.source, change.path, action)
+                }
+                return (
+                  <div
+                    key={`${change.source}:${change.path}`}
+                    className={`review-file kind-${change.kind} ${isSelected ? "is-selected" : ""}`}
+                    onClick={() => selectChange(change)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        selectChange(change)
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    title={actorTooltip(change)}
+                  >
+                    <span className="review-file-kind" aria-label={kindLabel(change.kind)}>{kindLetter(change.kind)}</span>
+                    <span className="review-file-name">{displayNames.get(change.path) ?? basename(change.path)}</span>
+                    <span className="review-file-stat add">+{change.additions}</span>
+                    <span className="review-file-stat del">-{change.deletions}</span>
+                    <button
+                      className="review-file-action accept"
+                      onClick={(event) => { stop(event); act("accepted") }}
+                      onKeyDown={stop}
+                      aria-label={`Keep changes in ${basename(change.path)}`}
+                      title="Keep all changes in this file"
+                    >
+                      <span className="codicon codicon-check" aria-hidden="true" />
+                    </button>
+                    <button
+                      className="review-file-action reject"
+                      onClick={(event) => { stop(event); act("rejected") }}
+                      onKeyDown={stop}
+                      aria-label={`Undo changes in ${basename(change.path)}`}
+                      title="Undo all changes in this file"
+                    >
+                      <span className="codicon codicon-discard" aria-hidden="true" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

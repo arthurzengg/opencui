@@ -60,7 +60,7 @@ describe("ReviewPanel", () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it("shows single-file collapsed header for one pending change", () => {
+  it("shows a single-row header for one pending change", () => {
     const messages = [
       editMessage("m1", {
         filePath: "src/foo.ts",
@@ -71,8 +71,9 @@ describe("ReviewPanel", () => {
     ]
     const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
     expect(screen.getByText("Review")).toBeInTheDocument()
-    // foo.ts appears in both the header summary and the row file-name
-    expect(screen.getAllByText("foo.ts").length).toBeGreaterThanOrEqual(2)
+    // The single-file card is one row: the filename shows once (no duplicate
+    // body row), with inline Keep/Undo in the header.
+    expect(screen.getByText("foo.ts")).toBeInTheDocument()
     expect(container.querySelector(".review-stat.add")?.textContent).toBe("+1")
     expect(container.querySelector(".review-stat.del")?.textContent).toBe("-1")
   })
@@ -101,11 +102,10 @@ describe("ReviewPanel", () => {
     expect(container.querySelector(".review-stat.del")?.textContent).toBe("-1")
   })
 
-  it("applies kind-created class to row for new files", () => {
+  it("applies the kind-created class for a new file", () => {
     const messages = [createMessage("m1", { filePath: "new.ts", content: "line1\nline2\nline3" })]
     const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
-    const row = container.querySelector(".review-file.kind-created")
-    expect(row).not.toBeNull()
+    expect(container.querySelector(".kind-created")).not.toBeNull()
   })
 
   it("disambiguates same-basename paths in row labels", () => {
@@ -153,7 +153,7 @@ describe("ReviewPanel", () => {
     expect(onReviewAllInChange).toHaveBeenCalledWith(expect.any(String), "foo.ts", "rejected")
   })
 
-  it("calls onSelectPath and onOpenReviewChange when row is clicked (selection)", async () => {
+  it("calls onSelectPath and onOpenReviewChange when the single-file header is clicked", async () => {
     const user = userEvent.setup()
     const onSelectPath = vi.fn()
     const onOpenReviewChange = vi.fn()
@@ -168,8 +168,8 @@ describe("ReviewPanel", () => {
         onOpenReviewChange={onOpenReviewChange}
       />,
     )
-    const row = container.querySelector(".review-file") as HTMLElement
-    await user.click(row)
+    const head = container.querySelector(".review-head") as HTMLElement
+    await user.click(head)
     expect(onSelectPath).toHaveBeenCalledWith("foo.ts")
     expect(onOpenReviewChange).toHaveBeenCalled()
   })
@@ -188,10 +188,11 @@ describe("ReviewPanel", () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it("toggles the panel via the header button", async () => {
+  it("toggles the panel via the header button (multi-file)", async () => {
     const user = userEvent.setup()
     const messages = [
-      editMessage("m1", { filePath: "foo.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
+      editMessage("m1", { filePath: "a.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
+      editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
     ]
     const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
     const header = container.querySelector(".review-head") as HTMLButtonElement
@@ -279,7 +280,7 @@ describe("ReviewPanel", () => {
       editMessage("m2", { filePath: "new.ts", patch: "@@\n+x", additions: 1, deletions: 0 }),
     ]
     const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
-    expect(container.querySelector(".review-file.kind-created")).not.toBeNull()
-    expect(container.querySelector(".review-file.kind-updated")).toBeNull()
+    expect(container.querySelector(".kind-created")).not.toBeNull()
+    expect(container.querySelector(".kind-updated")).toBeNull()
   })
 })
