@@ -37,6 +37,18 @@ describe("StatusBar", () => {
     expect(screen.getByText("Code Reviewer")).toBeInTheDocument()
   })
 
+  it("renders the new-chat button as a codicon-add glyph", () => {
+    render(<StatusBar {...baseProps} />)
+    const button = screen.getByRole("button", { name: "New chat" })
+    expect(button.querySelector(".codicon-add")).toBeTruthy()
+  })
+
+  it("renders the history button as a codicon-history glyph", () => {
+    render(<StatusBar {...baseProps} />)
+    const button = screen.getByRole("button", { name: /Chat history/ })
+    expect(button.querySelector(".codicon-history")).toBeTruthy()
+  })
+
   it("falls back to 'default' when selection is empty", () => {
     render(<StatusBar {...baseProps} />)
     expect(screen.getAllByText("default").length).toBeGreaterThanOrEqual(1)
