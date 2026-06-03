@@ -2743,6 +2743,7 @@ button {
 .mention-popover .codicon {
   font-size: 14px;
   flex-shrink: 0;
+  align-self: center;
 }
 .mention-category-chevron {
   opacity: 0.5;
@@ -2803,11 +2804,6 @@ button {
 }
 .mention-browser .mention-hit {
   align-items: center;
-}
-.mention-browser .mention-hit:not(.mention-folder) {
-  /* Indent files so their names line up under folder names, which are pushed
-     right by the folder icon + gap. */
-  padding-left: 32px;
 }
 .mention-folder .mention-name {
   flex: 1;
