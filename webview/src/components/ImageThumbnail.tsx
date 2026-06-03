@@ -1,6 +1,5 @@
 import type { Attachment } from "../protocol"
 import { formatBytes } from "../mention-tokens"
-import { ICON_SIZE } from "../design-tokens"
 
 /** The minimum shape ImageThumbnail needs. `id` is only required when
  *  `onRemove` is wired up (paperclip/paste flow); read-only sent bubbles
@@ -53,9 +52,7 @@ export function ImageThumbnail({ attachment, onPreview, onRemove }: Props) {
             onRemove(attachment.id!)
           }}
         >
-          <svg width={ICON_SIZE.xs} height={ICON_SIZE.xs} viewBox="0 0 8 8" aria-hidden="true">
-            <path d="M1 1l6 6M7 1l-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
+          <span className="codicon codicon-close" aria-hidden="true" />
         </button>
       )}
     </li>

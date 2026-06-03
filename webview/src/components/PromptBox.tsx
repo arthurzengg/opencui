@@ -979,29 +979,15 @@ function StopIcon() {
 }
 
 function FolderIcon() {
-  return (
-    <svg width={ICON_SIZE.lg} height={ICON_SIZE.lg} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M2 4a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4z"
-        stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-    </svg>
-  )
+  return <span className="codicon codicon-folder" aria-hidden="true" />
 }
 
 function ChatIcon() {
-  return (
-    <svg width={ICON_SIZE.lg} height={ICON_SIZE.lg} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H6l-3 2.5V4a1 1 0 0 1 1-1z"
-        stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-    </svg>
-  )
+  return <span className="codicon codicon-comment-discussion" aria-hidden="true" />
 }
 
 function ChevronIcon() {
-  return (
-    <svg width={ICON_SIZE.sm} height={ICON_SIZE.sm} viewBox="0 0 16 16" fill="none" aria-hidden="true" className="mention-category-chevron">
-      <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
+  return <span className="codicon codicon-chevron-right mention-category-chevron" aria-hidden="true" />
 }
 
 /**

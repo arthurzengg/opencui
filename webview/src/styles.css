@@ -519,60 +519,13 @@ button {
 .new-chat-trigger:hover {
   background: var(--hover-bg-pill);
 }
-.new-chat-icon {
-  position: relative;
-  width: 11px;
-  height: 11px;
+.new-chat-trigger .codicon {
+  font-size: 14px;
   opacity: 0.85;
 }
-.new-chat-icon::before,
-.new-chat-icon::after {
-  content: "";
-  position: absolute;
-  background: currentColor;
-  border-radius: 1px;
-}
-.new-chat-icon::before {
-  left: 50%;
-  top: 0;
-  width: 1.6px;
-  height: 100%;
-  transform: translateX(-50%);
-}
-.new-chat-icon::after {
-  top: 50%;
-  left: 0;
-  width: 100%;
-  height: 1.6px;
-  transform: translateY(-50%);
-}
-.history-clock {
-  position: relative;
-  width: 11px;
-  height: 11px;
-  border: 1.4px solid currentColor;
-  border-radius: 50%;
-  opacity: 0.78;
-  box-sizing: border-box;
-}
-.history-clock::before,
-.history-clock::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 1.2px;
-  border-radius: 1px;
-  background: currentColor;
-  transform-origin: 50% 0;
-}
-.history-clock::before {
-  height: 3.8px;
-  transform: translate(-50%, -0.8px) rotate(180deg);
-}
-.history-clock::after {
-  height: 3px;
-  transform: translate(-50%, -0.8px) rotate(300deg);
+.history-trigger .codicon {
+  font-size: 14px;
+  opacity: 0.8;
 }
 .history-popover {
   position: absolute;
@@ -620,32 +573,9 @@ button {
 .history-new:hover {
   background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #3fb950) 14%, transparent);
 }
-.history-new-icon {
-  position: relative;
+.history-new .codicon {
   flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
-}
-.history-new-icon::before,
-.history-new-icon::after {
-  content: "";
-  position: absolute;
-  background: currentColor;
-  border-radius: 1px;
-}
-.history-new-icon::before {
-  left: 50%;
-  top: 0;
-  width: 1.6px;
-  height: 100%;
-  transform: translateX(-50%);
-}
-.history-new-icon::after {
-  top: 50%;
-  left: 0;
-  width: 100%;
-  height: 1.6px;
-  transform: translateY(-50%);
+  font-size: 13px;
 }
 .history-new-text {
   flex: 0 0 auto;
@@ -1792,6 +1722,7 @@ button {
 }
 .question-option-marker.circle { border-radius: 50%; }
 .question-option-marker.square { border-radius: 3px; }
+.question-option-marker .codicon { font-size: 11px; }
 .question-option.is-checked .question-option-marker {
   border-color: var(--vscode-focusBorder);
   color: var(--vscode-focusBorder);
@@ -2554,6 +2485,9 @@ button {
 .image-preview-close:hover {
   background: rgba(0, 0, 0, 0.85);
 }
+.image-preview-close .codicon {
+  font-size: 16px;
+}
 .attachment-icon {
   width: auto;
   height: 14px;
@@ -2656,6 +2590,9 @@ button {
 }
 .image-thumb-remove:hover {
   background: rgba(0, 0, 0, 0.78);
+}
+.image-thumb-remove .codicon {
+  font-size: 10px;
 }
 .icon-btn.attach-btn {
   display: inline-flex;
@@ -2802,6 +2739,10 @@ button {
 .mention-hit.active .mention-category-meta {
   color: var(--vscode-list-activeSelectionForeground);
   opacity: 0.8;
+}
+.mention-popover .codicon {
+  font-size: 14px;
+  flex-shrink: 0;
 }
 .mention-category-chevron {
   opacity: 0.5;

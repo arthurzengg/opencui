@@ -99,7 +99,7 @@ export function StatusBar({
         aria-label="New chat"
         title="New chat"
       >
-        <span className="new-chat-icon" aria-hidden="true" />
+        <span className="codicon codicon-add" aria-hidden="true" />
       </button>
       <ChatHistoryMenu
         conversations={conversations}
@@ -197,7 +197,7 @@ function ChatHistoryMenu({
         aria-label="Chat history"
         title={activeTitle ? `Chat history: ${activeTitle}` : "Chat history"}
       >
-        <span className="history-clock" />
+        <span className="codicon codicon-history" aria-hidden="true" />
       </button>
       {open && (
         <div className="history-popover">
@@ -211,7 +211,7 @@ function ChatHistoryMenu({
                 onCreate()
               }}
             >
-              <span className="history-new-icon" aria-hidden="true" />
+              <span className="codicon codicon-add" aria-hidden="true" />
               <span className="history-new-text">New chat</span>
             </button>
           </div>

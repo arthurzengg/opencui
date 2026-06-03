@@ -127,7 +127,7 @@ function QuestionItem({
                   onClick={() => onToggle(opt.label)}
                 >
                   <span className={`question-option-marker ${multiple ? "square" : "circle"}`} aria-hidden="true">
-                    {checked && (multiple ? "✓" : "●")}
+                    {checked && (multiple ? <span className="codicon codicon-check" /> : "●")}
                   </span>
                   <span className="question-option-text">
                     <span className="question-option-label">{opt.label}</span>
