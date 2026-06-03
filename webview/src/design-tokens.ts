@@ -7,9 +7,10 @@
  */
 
 /**
- * Icon-pixel sizes for inline SVG icons. Maps to the four visual scales the
- * UI actually uses, no more. If you need a new size, prefer extending this
- * scale (e.g. `xl: 18`) rather than inlining a literal.
+ * Icon-pixel sizes for inline SVG icons. These scales cover every inline SVG
+ * in the webview. CSS-drawn icons (pseudo-element shapes, codicon glyphs) size
+ * themselves in styles.css and may sit outside this scale. If an SVG needs a
+ * new size, extend this scale (e.g. `xl: 18`) rather than inlining a literal.
  */
 export const ICON_SIZE = {
   /** Tiny X buttons (thumbnail remove, stop-square inside send button). */
