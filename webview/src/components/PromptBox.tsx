@@ -23,6 +23,7 @@ import {
 import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail } from "./ImageThumbnail"
 import { ICON_SIZE } from "../design-tokens"
+import { fileTypeCodicon } from "../file-icons"
 
 // Re-export so existing consumers (tests, integrators) keep working through PromptBox.
 export {
@@ -737,7 +738,9 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
                   }}
                   onMouseEnter={() => setBrowseIndex(i)}
                 >
-                  {entry.kind === "folder" && <FolderIcon />}
+                  {entry.kind === "folder"
+                    ? <FolderIcon />
+                    : <span className={`codicon codicon-${fileTypeCodicon(entry.name)}`} aria-hidden="true" />}
                   <span className="mention-name">{entry.name}</span>
                   {entry.kind === "folder" && <ChevronIcon />}
                 </li>
@@ -761,6 +764,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
                 }}
                 onMouseEnter={() => setActiveIndex(i)}
               >
+                <span className={`codicon codicon-${fileTypeCodicon(hit.name)}`} aria-hidden="true" />
                 <span className="mention-name">{hit.name}</span>
                 <span className="mention-path">{hit.path}</span>
               </li>
