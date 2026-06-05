@@ -19,6 +19,9 @@ export type ActiveSnapshot = {
   reviewHunks: Record<string, ReviewHunkState>
 }
 
+/** Debounce window for the streaming hot path's disk writes. */
+const PERSIST_DEBOUNCE_MS = 300
+
 /**
  * Workspace-state-backed list of saved conversations. Owns the
  * conversation array, the active-conversation-id pointer, and the
@@ -30,6 +33,8 @@ export type ActiveSnapshot = {
 export class ConversationManager {
   private conversations: SavedConversation[]
   private activeID: string
+  private pendingPersist?: ReturnType<typeof setTimeout>
+  private disposed = false
 
   constructor(private context: vscode.ExtensionContext) {
     this.conversations = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
@@ -164,5 +169,50 @@ export class ConversationManager {
   async persist(): Promise<void> {
     await this.context.workspaceState.update(CONVERSATIONS_KEY, this.conversations)
     await this.context.workspaceState.update(ACTIVE_CONVERSATION_KEY, this.activeID)
+  }
+
+  /**
+   * Debounced disk write for the streaming hot path. `saveActiveSnapshot`
+   * already updated the in-memory state synchronously, so this only
+   * coalesces the expensive workspaceState serialization. Non-resetting
+   * trailing edge: an already-pending timer is left to fire rather than
+   * pushed back, so inter-write latency stays capped at PERSIST_DEBOUNCE_MS
+   * even through an unbroken token stream — and `persist()` always writes
+   * the latest `this.conversations`, so a late-firing timer is never stale.
+   */
+  schedulePersist(): void {
+    if (this.disposed || this.pendingPersist) return
+    this.pendingPersist = setTimeout(() => {
+      this.pendingPersist = undefined
+      if (this.disposed) return
+      void this.persist()
+    }, PERSIST_DEBOUNCE_MS)
+  }
+
+  /**
+   * Cancel any pending debounced write and persist the latest state now.
+   * Called at every conversation boundary, at turn end, and on shutdown so
+   * a debounced tail is never lost.
+   */
+  async flushPersist(): Promise<void> {
+    this.clearPending()
+    await this.persist()
+  }
+
+  private clearPending(): void {
+    if (this.pendingPersist) {
+      clearTimeout(this.pendingPersist)
+      this.pendingPersist = undefined
+    }
+  }
+
+  /**
+   * Stop accepting debounced writes. Guards against a stray timer firing
+   * after the owning ChatView (and its context) is torn down. Callers that
+   * need the tail on disk must `flushPersist()` first.
+   */
+  dispose(): void {
+    this.disposed = true
+    this.clearPending()
   }
 }

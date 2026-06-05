@@ -17,6 +17,7 @@ let servers: ServerManager | undefined
 let recentEdits: RecentEditsTracker | undefined
 let indexManager: IndexManager | undefined
 let agentTaskStore: AgentTaskStore | undefined
+let chatView: ChatView | undefined
 
 export async function activate(context: vscode.ExtensionContext) {
   log("activating OpenCode Panel")
@@ -33,6 +34,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const prefs = new Preferences(context.globalState)
   const status = new StatusBar(context, prefs)
   const chat = new ChatView(context, servers, prefs, recentEdits, indexManager, agentTaskStore)
+  chatView = chat
   const inline = new InlineEdit(servers, prefs)
   const picker = new Picker(servers, prefs)
   const mcp = new McpManager(servers)
@@ -76,5 +78,8 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
+  // Flush any debounced conversation write before the host tears down so a
+  // graceful shutdown mid-stream persists the full transcript.
+  await chatView?.flushPersist()
   await servers?.dispose()
 }
