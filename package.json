@@ -209,7 +209,7 @@
     "compile": "bun run build:webview && node esbuild.js",
     "watch": "bun run build:webview && node esbuild.js --watch",
     "package": "bun run build:webview && node esbuild.js --production",
-    "build:webview": "cd webview && bun install --silent && bun run build",
+    "build:webview": "cd webview && bun install --frozen-lockfile --silent && bun run build",
     "check-types": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
