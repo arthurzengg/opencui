@@ -242,7 +242,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.manager.setActiveID(conversation.id)
     this.messages = []
     this.reviewHunks = {}
-    await this.manager.persist()
+    await this.manager.flushPersist()
     this.sendConversationState()
     this.post({ type: "contextUsage", usage: undefined })
     if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
@@ -276,6 +276,20 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.aborting = false
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
+    // Write any debounced tail before the view (and its context) goes away,
+    // then stop accepting further debounced writes so a late timer can't fire
+    // after teardown.
+    void this.manager.flushPersist()
+    this.manager.dispose()
+  }
+
+  /**
+   * Flush any debounced conversation write to disk. Awaited from the
+   * extension's `deactivate()` so a graceful shutdown mid-stream loses
+   * nothing beyond the in-flight token.
+   */
+  flushPersist(): Promise<void> {
+    return this.manager.flushPersist()
   }
 
   private post(msg: Outbound) {
@@ -340,7 +354,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.resetSessionState()
     this.manager.setActiveID(id)
     this.applyActiveSnapshot()
-    await this.manager.persist()
+    await this.manager.flushPersist()
     this.sendConversationState()
     this.post({ type: "contextUsage", usage: undefined })
     if (this.sessionID) void this.refreshContextUsage()
@@ -349,7 +363,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async renameConversation(id: string, title: string) {
     this.manager.rename(id, title)
-    await this.manager.persist()
+    await this.manager.flushPersist()
     this.postConversationsList()
   }
 
@@ -366,13 +380,13 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.resetSessionState()
       this.manager.setActiveID(this.manager.summaries()[0]!.id)
       this.applyActiveSnapshot()
-      await this.manager.persist()
+      await this.manager.flushPersist()
       this.sendConversationState()
       this.post({ type: "contextUsage", usage: undefined })
       if (this.sessionID) void this.refreshContextUsage()
       return
     }
-    await this.manager.persist()
+    await this.manager.flushPersist()
     this.postConversationsList()
   }
 
@@ -382,7 +396,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       messages: this.messages,
       reviewHunks: this.reviewHunks,
     })
-    void this.manager.persist()
+    this.manager.schedulePersist()
   }
 
   private updateTitleFromPrompt(text: string) {
@@ -940,7 +954,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       }
       this.sessionID = created.data.id
       this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
-      void this.manager.persist()
+      await this.manager.flushPersist()
       log("created session", this.sessionID)
       await this.attachSubscription(backend, this.sessionID)
     } else if (!this.subscription) {
@@ -1167,7 +1181,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       }
       this.sessionID = created.data.id
       this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
-      void this.manager.persist()
+      await this.manager.flushPersist()
       log("created session", this.sessionID)
       await this.attachSubscription(backend, this.sessionID)
     } else if (!this.subscription) {
@@ -1312,7 +1326,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       }
       this.sessionID = created.data.id
       this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
-      void this.manager.persist()
+      await this.manager.flushPersist()
       await this.attachSubscription(backend, this.sessionID)
     } else if (!this.subscription) {
       await this.attachSubscription(backend, this.sessionID)
@@ -1491,7 +1505,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.manager.setActiveID(conversation.id)
       this.manager.updateActive((c) => ({ ...c, sessionID: forked.id, messages: copied, reviewHunks: copiedHunks }))
       this.applyActiveSnapshot()
-      await this.manager.persist()
+      await this.manager.flushPersist()
       this.sendConversationState()
       this.post({ type: "contextUsage", usage: undefined })
       await this.attachSubscription(backend, forked.id)
@@ -1710,6 +1724,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           }
           this.subagentDispatch.clearMainTaskID()
           this.post({ type: "sessionIdle" })
+          void this.manager.flushPersist()
           return
         }
         if (this.continuationState.hasGate()) {
@@ -1722,6 +1737,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         }
         this.subagentDispatch.clearMainTaskID()
         this.post({ type: "sessionIdle" })
+        void this.manager.flushPersist()
       },
       onChildSessionEvent: (event) => {
         if (this.aborting) return
@@ -1742,7 +1758,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       },
       onSessionTitleUpdate: (title) => {
         this.manager.rename(this.manager.getActiveID(), title)
-        void this.manager.persist()
+        this.manager.schedulePersist()
         this.postConversationsList()
       },
       onChildSessionDiscovered: (info) => {
@@ -2090,19 +2106,38 @@ type ContextUsageProvider = {
   models?: Record<string, { limit?: { context?: number } } | undefined>
 }
 
+// Provider metadata (model context limits) changes only when the user edits
+// their opencode config, but readContextUsage runs after every turn. Cache it
+// per backend with a short TTL so the indicator stops re-fetching it each turn.
+type CachedProviders = { providers: ContextUsageProvider[]; at: number }
+const providersCache = new Map<string, CachedProviders>()
+const PROVIDERS_CACHE_MS = 5 * 60 * 1000
+
+async function fetchProviders(backend: Backend): Promise<ContextUsageProvider[]> {
+  const now = Date.now()
+  const cached = providersCache.get(backend.url)
+  if (cached && now - cached.at < PROVIDERS_CACHE_MS) return cached.providers
+  const res = await backend.client.config.providers()
+  if (res.error) {
+    if (cached) return cached.providers
+    throw new Error(`config.providers failed: ${JSON.stringify(res.error)}`)
+  }
+  const providers = (res.data as { providers?: ContextUsageProvider[] } | undefined)?.providers ?? []
+  providersCache.set(backend.url, { providers, at: now })
+  return providers
+}
+
 async function readContextUsage(backend: Backend, sessionID: string): Promise<ContextUsage | undefined> {
-  const [messagesRes, providersRes] = await Promise.all([
+  const [messagesRes, providers] = await Promise.all([
     backend.client.session.messages({
       path: { id: sessionID },
       query: { directory: backend.directory, limit: 100 },
     }),
-    backend.client.config.providers(),
+    fetchProviders(backend),
   ])
   if (messagesRes.error) throw new Error(`session.messages failed: ${JSON.stringify(messagesRes.error)}`)
-  if (providersRes.error) throw new Error(`config.providers failed: ${JSON.stringify(providersRes.error)}`)
 
   const messages = (messagesRes.data ?? []) as ContextUsageMessage[]
-  const providers = ((providersRes.data as { providers?: ContextUsageProvider[] } | undefined)?.providers ?? [])
   return contextUsageFromMessages(messages, providers)
 }
 
