@@ -47,6 +47,7 @@ export default function App() {
   const [activeHeaderPopover, setActiveHeaderPopover] = useState<HeaderPopoverID | null>(null)
   const [editingMessageID, setEditingMessageID] = useState<string | null>(null)
   const [bottomDockHeight, setBottomDockHeight] = useState(0)
+  const [messagesHeight, setMessagesHeight] = useState(0)
   // Distance-from-bottom threshold for *re-engaging* stick mode once the
   // user has manually disengaged it. Smaller than the old 80 px because we
   // now use scroll direction, not just position.
@@ -75,6 +76,17 @@ export default function App() {
       top: scrollRef.current.scrollTop,
       stick: stickToBottom.current,
     }
+  }
+  // Sending (or running a command) re-engages stick-to-bottom so the new turn
+  // scrolls its question to the top via the last-turn spacer, even if the user
+  // had scrolled up to read earlier messages.
+  const sendAndPinTop = (...args: Parameters<typeof send>) => {
+    stickToBottom.current = true
+    send(...args)
+  }
+  const runCommandAndPinTop = (...args: Parameters<typeof runCommand>) => {
+    stickToBottom.current = true
+    runCommand(...args)
   }
   const [reviewRequest, setReviewRequest] = useState<{ path: string; key: number }>()
   const openReviewFile = (path: string) => {
@@ -160,10 +172,22 @@ export default function App() {
     return () => observer.disconnect()
   }, [])
 
+  // Measure the scroll viewport so the last-turn spacer (which pins the newest
+  // question to the top) can be sized to roughly one viewport minus the dock.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const update = () => setMessagesHeight(el.clientHeight)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   useLayoutEffect(() => {
     if (!stickToBottom.current) return
     scrollToBottom()
-  }, [bottomDockHeight])
+  }, [bottomDockHeight, messagesHeight])
 
   // Entering/exiting in-place edit swaps a regular user bubble for an absolute
   // overlay. Chromium may treat the overlay's extra scrollable overflow as a
@@ -190,7 +214,10 @@ export default function App() {
     })
   }, [state.conversationID])
 
-  const appStyle = { "--bottom-dock-height": `${bottomDockHeight}px` } as CSSProperties
+  const appStyle = {
+    "--bottom-dock-height": `${bottomDockHeight}px`,
+    "--messages-height": `${messagesHeight}px`,
+  } as CSSProperties
 
   return (
     <div className="app" style={appStyle}>
@@ -220,7 +247,7 @@ export default function App() {
         <PromptBox
           busy={busy}
           aborting={state.aborting}
-          onSend={send}
+          onSend={sendAndPinTop}
           onAbort={abort}
           searchFiles={searchFiles}
           listDir={listDir}
@@ -231,7 +258,7 @@ export default function App() {
           onOpenConversation={openConversation}
           contextUsage={state.contextUsage}
           commands={state.commands}
-          onRunCommand={runCommand}
+          onRunCommand={runCommandAndPinTop}
           inject={state.injectedText}
         />
       )}
@@ -338,7 +365,7 @@ export default function App() {
             <PromptBox
               busy={busy}
               aborting={state.aborting}
-              onSend={send}
+              onSend={sendAndPinTop}
               onAbort={abort}
               searchFiles={searchFiles}
               listDir={listDir}
@@ -348,7 +375,7 @@ export default function App() {
               onOpenConversation={openConversation}
               contextUsage={state.contextUsage}
               commands={state.commands}
-              onRunCommand={runCommand}
+              onRunCommand={runCommandAndPinTop}
               inject={state.injectedText}
             />
           </div>
