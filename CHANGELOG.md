@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-04
+
+### Added
+- The newest question now pins to the top of the chat when you send it, so the answer streams in just below it instead of being pushed off-screen as it grows. Short or cancelled answers leave the question parked at the top, ChatGPT-style (#303).
+
+### Changed
+- Conversation history is persisted with a short debounce instead of re-writing the entire history to disk on every streamed token. The in-memory state stays current on every event and a flush still runs at every turn boundary and on shutdown, so nothing is lost - only the redundant per-token disk writes during long replies are gone (#297).
+- The chat view memoizes turn grouping and the message-list scans that ran on every streaming frame, trimming re-render work on the hot path (#299).
+- Builds are faster: the webview dependency install is skipped when the lockfile is unchanged (`--frozen-lockfile`), and confirmed-dead code was removed (#301).
+
 ## [1.4.0] - 2026-06-02
 
 ### Added
