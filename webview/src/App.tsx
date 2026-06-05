@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useChatState } from "./hooks/useChatState"
 import type { Message } from "./hooks/useChatState"
 import type { Attachment } from "./protocol"
@@ -125,11 +125,17 @@ export default function App() {
     }
   }
 
-  const busy = state.busy || state.messages.some((m) => m.pending)
-  const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
-  const agentActivityMessageID = (state.agentsStatus?.total ?? 0) > 0
-    ? activeProcessID ?? state.messages.findLast((m) => m.role === "assistant")?.id
-    : undefined
+  const { busy, activeProcessID, agentActivityMessageID } = useMemo(() => {
+    const busy = state.busy || state.messages.some((m) => m.pending)
+    const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
+    const agentActivityMessageID = (state.agentsStatus?.total ?? 0) > 0
+      ? activeProcessID ?? state.messages.findLast((m) => m.role === "assistant")?.id
+      : undefined
+    return { busy, activeProcessID, agentActivityMessageID }
+  }, [state.messages, state.busy, state.agentsStatus?.total])
+  // Rebuild the turn structure only when the message list actually changes,
+  // not on every coalesced streaming frame.
+  const turns = useMemo(() => groupTurns(state.messages), [state.messages])
 
   useEffect(() => {
     if (editingMessageID) setActiveHeaderPopover(null)
@@ -258,7 +264,7 @@ export default function App() {
           }
         }}
       >
-        {groupTurns(state.messages).map((turn) => (
+        {turns.map((turn) => (
           <div className="turn" key={turn.key}>
             {turn.user && (
               <MessageView
