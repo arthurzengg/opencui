@@ -21,11 +21,6 @@ async function loadFiles(): Promise<FileSearchHit[]> {
   return cache
 }
 
-export function invalidateFileCache() {
-  cache = undefined
-  cacheLoadedAt = 0
-}
-
 export async function searchWorkspaceFiles(query: string): Promise<FileSearchHit[]> {
   const all = await loadFiles()
   const recent = getRecentlyOpenedPaths()

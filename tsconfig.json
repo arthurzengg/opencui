@@ -12,7 +12,8 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": false,
-    "noEmit": true
+    "noEmit": true,
+    "incremental": true
   },
   "include": ["src/**/*", "webview/src/protocol.ts"],
   "exclude": ["webview/src/**", "!webview/src/protocol.ts", "dist", "out", "node_modules"]

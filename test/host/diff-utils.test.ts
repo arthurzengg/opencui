@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { samePath, normalizePath, isRecord, escapeHtml, unique } from "../../src/chat/paths"
+import { samePath, normalizePath, isRecord, unique } from "../../src/chat/paths"
 import {
   isTextReviewPath,
   countDiff,
@@ -108,14 +108,6 @@ describe("unique / isRecord", () => {
     expect(isRecord("x")).toBe(false)
     expect(isRecord(42)).toBe(false)
     expect(isRecord({})).toBe(true)
-  })
-})
-
-describe("escapeHtml", () => {
-  it("escapes &, <, >, and double quotes (single quotes pass through)", () => {
-    expect(escapeHtml(`<script>alert("y" & x)</script>`)).toBe(
-      "&lt;script&gt;alert(&quot;y&quot; &amp; x)&lt;/script&gt;",
-    )
   })
 })
 
