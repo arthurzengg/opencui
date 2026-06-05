@@ -825,6 +825,15 @@ button {
 .turn {
   display: block;
 }
+/* Reserve a roughly viewport-tall slot under the most recent turn so scrolling
+   to the bottom lands its user question at the top of the view (ChatGPT-style),
+   with the answer streaming into the space below. A short or cancelled answer
+   simply leaves blank space here; a long answer outgrows this min-height and
+   scrolls normally with the question sticky-pinned at the top. The height is
+   one scroll viewport minus the docked composer/cards, less a small top gap. */
+.turn:last-child {
+  min-height: calc(var(--messages-height, 0px) - var(--bottom-dock-height, 0px) - 16px);
+}
 /* Chromium / WebKit (VS Code's webview): track blends with the chat background,
    thumb is invisible by default and appears only on hover or while scrolling. */
 .messages::-webkit-scrollbar {
