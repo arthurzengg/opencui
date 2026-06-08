@@ -91,6 +91,13 @@ vi.mock("vscode", () => {
       getConfiguration: vi.fn(() => ({ get: vi.fn() })),
       openTextDocument: vi.fn(),
       applyEdit: vi.fn().mockResolvedValue(true),
+      findFiles: vi.fn().mockResolvedValue([]),
+      createFileSystemWatcher: vi.fn(() => ({
+        onDidCreate: vi.fn(() => ({ dispose: vi.fn() })),
+        onDidDelete: vi.fn(() => ({ dispose: vi.fn() })),
+        onDidChange: vi.fn(() => ({ dispose: vi.fn() })),
+        dispose: vi.fn(),
+      })),
       asRelativePath: vi.fn((uri: Uri | string) => {
         const fsPath = typeof uri === "string" ? uri : uri.fsPath
         return fsPath.replace(/^\/workspace\//, "").replace(/^\/workspace$/, "")

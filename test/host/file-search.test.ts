@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest"
-import { rankHits, dirEntriesFrom } from "../../src/file-search"
+import { describe, it, expect, vi, beforeEach } from "vitest"
+import * as vscode from "vscode"
+import { rankHits, dirEntriesFrom, initFileSearch, searchWorkspaceFiles } from "../../src/file-search"
 
 const fixtures = [
   { path: "src/foo.ts", name: "foo.ts" },
@@ -103,6 +104,47 @@ describe("rankHits", () => {
       expect(out[0]?.path).toBe("src/foo.ts")
       expect(out[1]?.path).toBe("src/bar.ts")
     })
+  })
+})
+
+describe("cache invalidation", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function uri(p: string) {
+    return vscode.Uri.file(`/workspace/${p}`)
+  }
+
+  it("drops the cached index when the watcher fires create/delete", async () => {
+    const created: Array<() => void> = []
+    const deleted: Array<() => void> = []
+    vi.spyOn(vscode.workspace, "createFileSystemWatcher").mockReturnValue({
+      onDidCreate: (cb: () => void) => (created.push(cb), { dispose: vi.fn() }),
+      onDidDelete: (cb: () => void) => (deleted.push(cb), { dispose: vi.fn() }),
+      onDidChange: () => ({ dispose: vi.fn() }),
+      dispose: vi.fn(),
+    } as unknown as vscode.FileSystemWatcher)
+
+    const findFiles = vi.spyOn(vscode.workspace, "findFiles")
+    findFiles.mockResolvedValue([uri("a.ts")] as never)
+
+    initFileSearch({ subscriptions: [] } as unknown as vscode.ExtensionContext)
+
+    const first = await searchWorkspaceFiles("")
+    expect(first.map((h) => h.path)).toEqual(["a.ts"])
+
+    // A second file now exists, but within the 30s TTL the cache still serves
+    // the stale listing.
+    findFiles.mockResolvedValue([uri("a.ts"), uri("b.ts")] as never)
+    const cached = await searchWorkspaceFiles("")
+    expect(cached.map((h) => h.path)).toEqual(["a.ts"])
+
+    // The watcher fires → cache is dropped → the fresh listing is loaded.
+    deleted.forEach((cb) => cb())
+    const fresh = await searchWorkspaceFiles("")
+    expect(fresh.map((h) => h.path)).toEqual(["a.ts", "b.ts"])
+    expect(findFiles).toHaveBeenCalledTimes(2)
   })
 })
 

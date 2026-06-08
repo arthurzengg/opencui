@@ -9,6 +9,28 @@ let cache: FileSearchHit[] | undefined
 let cacheLoadedAt = 0
 const CACHE_TTL_MS = 30_000
 
+function invalidateCache(): void {
+  cache = undefined
+  cacheLoadedAt = 0
+}
+
+/**
+ * Wire cache invalidation to the workspace lifecycle. The 30s TTL alone lets
+ * the @-picker show files that were just deleted (still listed, then fail to
+ * read) and miss freshly created ones for up to 30s. A FileSystemWatcher on
+ * create/delete and a workspace-folder-change listener drop the stale index
+ * immediately. Registered once from activate(); disposables go on the context.
+ */
+export function initFileSearch(context: vscode.ExtensionContext): void {
+  const watcher = vscode.workspace.createFileSystemWatcher("**/*")
+  watcher.onDidCreate(invalidateCache)
+  watcher.onDidDelete(invalidateCache)
+  context.subscriptions.push(
+    watcher,
+    vscode.workspace.onDidChangeWorkspaceFolders(invalidateCache),
+  )
+}
+
 async function loadFiles(): Promise<FileSearchHit[]> {
   const now = Date.now()
   if (cache && now - cacheLoadedAt < CACHE_TTL_MS) return cache

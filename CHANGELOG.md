@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-06-07
+
+### Fixed
+- The `@` file picker now reflects file creates and deletes immediately. Previously the workspace file index was cached for up to 30 seconds with no invalidation, so newly created files were missing from the picker and deleted files lingered (and failed to read when mentioned). The cache is now dropped as soon as a file is created or deleted, and on any workspace-folder change (#306).
+
 ## [1.4.1] - 2026-06-04
 
 ### Added

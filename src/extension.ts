@@ -12,6 +12,7 @@ import { IndexManager, readIndexSettings } from "./indexing/index-manager"
 import { AgentTaskStore } from "./agents/task-store"
 import { showAgentsQuickPick } from "./agents/quickpick"
 import { getOutputChannel, log } from "./output"
+import { initFileSearch } from "./file-search"
 
 let servers: ServerManager | undefined
 let recentEdits: RecentEditsTracker | undefined
@@ -26,6 +27,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const indexSettings = readIndexSettings(vscode.workspace.getConfiguration("opencui"))
   indexManager = new IndexManager(indexSettings)
   agentTaskStore = new AgentTaskStore(context.workspaceState)
+  initFileSearch(context)
   context.subscriptions.push(
     { dispose: () => recentEdits?.dispose() },
     { dispose: () => void indexManager?.stop() },
