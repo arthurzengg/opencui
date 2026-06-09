@@ -67,6 +67,17 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     expect(server.forks[0]!.sessionID).toBe("ses_test")
   })
 
+  it("records parent and child session aborts in call order (Stop cancels the whole tree)", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    // Mirror ChatView.abortCurrent: abort the parent first, then each
+    // background child the parent's propagation does not reach.
+    await client.session.abort({ path: { id: "ses_parent" } })
+    for (const childID of ["ses_child_a", "ses_child_b"]) {
+      await client.session.abort({ path: { id: childID } })
+    }
+    expect(server.aborts).toEqual(["ses_parent", "ses_child_a", "ses_child_b"])
+  })
+
   it("command.list returns the workspace's commands", async () => {
     server.setCommands([
       { name: "deploy", description: "Ship it", template: "Deploy $ARGUMENTS" },

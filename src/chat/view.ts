@@ -886,29 +886,41 @@ export class ChatView implements vscode.WebviewViewProvider {
     //      child error event (rate-limit / token-expired races
     //      arriving after the abort propagation) can no longer flip
     //      a cancelled row to `error`.
+    let childSessionIDs: string[] = []
     if (this.subagentTracker) {
-      await this.subagentTracker.cancelForSession(sessionID)
+      childSessionIDs = await this.subagentTracker.cancelForSession(sessionID)
     } else if (this.taskStore) {
       await this.taskStore.cancelSessionTasks(sessionID)
     }
 
     try {
       const backend = await this.servers.ensure()
-      // Abort ONLY the parent. opencode's `session.abort` propagates
-      // down to the parent's "wait on tool" (the in-flight tool call
-      // dispatched to the child session), so cancelling the parent
-      // also cancels the children atomically.
+      // Abort the parent FIRST, and await it. opencode's `session.abort`
+      // propagates down to the parent's "wait on tool" (the in-flight
+      // tool call dispatched to a foreground child session), so those
+      // children are cancelled atomically with the parent.
       //
-      // Earlier we issued explicit aborts for parent + each child in
-      // parallel as a "belt and suspenders" measure. That introduced
-      // a race: the child's abort processed first, the child's tool
-      // result returned to the parent with a cancel error, the parent
-      // started a NEW LLM call to process that result, and the
-      // parent's own abort then arrived *after* the new call started
-      // — leaving the parent visibly continuing. The user had to
-      // press Stop a second time to abort the new LLM call. Trusting
-      // opencode's propagation avoids the race entirely.
+      // Background subagents (`run_in_background: true`) are NOT covered:
+      // the parent is not awaiting them, so they run as independent
+      // sessions that the parent abort never reaches. We abort them
+      // explicitly below.
+      //
+      // Ordering matters. An earlier version aborted parent + children in
+      // parallel and hit a race: a child's abort landed first, its tool
+      // result returned to the still-live parent with a cancel error, the
+      // parent started a NEW LLM call to process it, and the parent's own
+      // abort arrived *after* that new call started — leaving the parent
+      // visibly continuing. Awaiting the parent abort before touching the
+      // children closes that race: once the parent has settled, a child's
+      // cancellation can no longer spawn a new parent turn.
       await backend.client.session.abort({ path: { id: sessionID } })
+      for (const childID of childSessionIDs) {
+        try {
+          await backend.client.session.abort({ path: { id: childID } })
+        } catch (e) {
+          log("child session.abort failed", childID, e)
+        }
+      }
     } catch (e) {
       log("session.abort failed", e)
     }
