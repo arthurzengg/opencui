@@ -181,6 +181,10 @@ export function reducer(state: ChatState, action: Action): ChatState {
         messages: action.messages,
         reviewHunks: action.reviewHunks ?? {},
         pendingPermission: undefined,
+        // The host drops the old session's activeQuestions without posting
+        // questionResolved on switch, so a question left open here would
+        // render forever in the new conversation's dock.
+        pendingQuestion: undefined,
         injectedText: undefined,
       }
     case "context":
