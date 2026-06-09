@@ -29,9 +29,17 @@ export async function migrateConversationsToWorkspace(context: vscode.ExtensionC
   if (context.workspaceState.get<boolean>(MIGRATED_TO_WORKSPACE_KEY, false)) return
   const legacy = context.globalState.get<SavedConversation[]>(CONVERSATIONS_KEY)
   if (legacy && legacy.length) {
-    await context.workspaceState.update(CONVERSATIONS_KEY, legacy)
     const legacyActive = context.globalState.get<string>(ACTIVE_CONVERSATION_KEY)
-    if (legacyActive) await context.workspaceState.update(ACTIVE_CONVERSATION_KEY, legacyActive)
+    // Issue BOTH workspaceState writes before the first await: the caller
+    // constructs ConversationManager (which reads both keys synchronously)
+    // without awaiting this function, and only the synchronous cache write
+    // of an update that has already STARTED is visible to it. Awaiting the
+    // conversations write before starting the active-pointer write meant the
+    // manager fell back to conversations[0] and persisted that over the
+    // legacy pointer — with globalState already cleared, unrecoverably.
+    const writes = [context.workspaceState.update(CONVERSATIONS_KEY, legacy)]
+    if (legacyActive) writes.push(context.workspaceState.update(ACTIVE_CONVERSATION_KEY, legacyActive))
+    await Promise.all(writes)
     await context.globalState.update(CONVERSATIONS_KEY, undefined)
     await context.globalState.update(ACTIVE_CONVERSATION_KEY, undefined)
   }
