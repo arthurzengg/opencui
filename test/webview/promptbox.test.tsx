@@ -104,6 +104,19 @@ describe("PromptBox", () => {
     expect(textarea.value).toBe("")
   })
 
+  it("Enter does NOT submit while aborting, matching the disabled Stopping… button", async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    // During the abort drain, assistantDone can clear busy while aborting is
+    // still true — Enter used to slip through and race the in-flight abort.
+    render(<PromptBox busy={false} aborting={true} onSend={onSend} onAbort={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "too eager")
+    await user.keyboard("{Enter}")
+    expect(onSend).not.toHaveBeenCalled()
+    expect(textarea.value).toBe("too eager")
+  })
+
   it("Shift+Enter inserts a newline instead of submitting", async () => {
     const user = userEvent.setup()
     const onSend = vi.fn()

@@ -133,6 +133,10 @@ function extractConversationLabels(text: string | undefined): string[] {
 
 export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage, commands = [], onRunCommand, inject }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
+  // The Send button renders a disabled "Stopping…" while aborting, but Enter
+  // routes through submit() — both must honor the same block, or a prompt
+  // races the in-flight abort and gets its early events dropped.
+  const sendBlocked = busy || aborting
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
   const [attaching, setAttaching] = useState(false)
@@ -278,8 +282,8 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
   }
 
   const runCommandAndClear = (command: string, args: string) => {
-    // Respect busy on the picker-run path too (submit already guards busy).
-    if (busy || !onRunCommand) return
+    // Respect busy/aborting on the picker-run path too (submit guards both).
+    if (sendBlocked || !onRunCommand) return
     onRunCommand(command, args)
     clearComposer()
   }
@@ -299,7 +303,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     // Route a typed `/name args` to the command path when the name matches a
     // known command. Unknown slashes (and prose like `/etc/hosts`) fall through
     // to a normal prompt send. Edit composers never route (no onRunCommand).
-    if (variant === "send" && !busy && onRunCommand) {
+    if (variant === "send" && !sendBlocked && onRunCommand) {
       const parsed = parseCommandInput(trimmed)
       if (parsed && commands.some((c) => c.name === parsed.name)) {
         runCommandAndClear(parsed.name, parsed.args)
@@ -318,7 +322,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     // so display order in the bubble matches input order: chip-cited
     // files first, pasted images second.
     for (const a of imageAttachments) activeAttachments.push(a)
-    if ((!trimmed && activeAttachments.length === 0) || busy) return
+    if ((!trimmed && activeAttachments.length === 0) || sendBlocked) return
     const allMentions = extractMentions(text, knownMentions.current)
     const fileMentions = allMentions.filter((m) => !knownConversations.current.has(m))
     const convIDs = allMentions
