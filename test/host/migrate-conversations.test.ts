@@ -74,6 +74,23 @@ describe("migrateConversationsToWorkspace", () => {
     expect(globalState.store.has("opencui.conversations")).toBe(false) // never had it
   })
 
+  it("makes BOTH keys visible to a synchronous read before the first await settles", () => {
+    // ChatView constructs ConversationManager (which synchronously reads both
+    // keys) immediately after calling the migration WITHOUT awaiting it.
+    // Memento.update populates its cache synchronously — but only for updates
+    // that have already started. The regression: the active-pointer write
+    // used to start only after the conversations write resolved, so the
+    // manager fell back to conversations[0] and clobbered the legacy pointer.
+    const { context, workspaceState } = fakeContext({
+      "opencui.conversations": [{ id: "c1" }, { id: "c2" }],
+      "opencui.activeConversation": "c2",
+    })
+    void migrateConversationsToWorkspace(context)
+    // Synchronous read, no await: both keys must already be in the cache.
+    expect(workspaceState.store.get("opencui.conversations")).toEqual([{ id: "c1" }, { id: "c2" }])
+    expect(workspaceState.store.get("opencui.activeConversation")).toBe("c2")
+  })
+
   it("leaves the migration flag unset when a data write rejects", async () => {
     const globalStore: Map<string, unknown> = new Map([["opencui.conversations", [{ id: "c1" }]]])
     const workspaceStore: Map<string, unknown> = new Map()
