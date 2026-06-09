@@ -387,33 +387,39 @@ async function undoMove(
     )
   }
   const { uri: fromUri } = await findExistingWorkspaceFile(change.path, root, { preferAbsolute: change.absolutePath })
-  if (!fromUri) {
+  const restored = await existingWorkspaceFileUri(change.oldPath, root)
+  if (fromUri) {
+    if (restored) {
+      return reportConflict(
+        change.oldPath,
+        `Cannot restore move target: ${change.oldPath} already exists.`,
+        silent,
+      )
+    }
+    const toUri = await workspaceFileUri(change.oldPath, root)
+    try {
+      await vscode.workspace.fs.rename(fromUri, toUri, { overwrite: false })
+    } catch (e) {
+      return reportConflict(
+        change.path,
+        `Could not undo move of ${change.path}: ${(e as Error).message ?? "unknown error"}.`,
+        silent,
+      )
+    }
+  } else if (!restored) {
     return reportMissing(change.path, `${change.path} is no longer present; cannot move back.`, silent)
   }
-  const toExisting = await existingWorkspaceFileUri(change.oldPath, root)
-  if (toExisting) {
-    return reportConflict(
-      change.oldPath,
-      `Cannot restore move target: ${change.oldPath} already exists.`,
-      silent,
-    )
-  }
-  const toUri = await workspaceFileUri(change.oldPath, root)
-  try {
-    await vscode.workspace.fs.rename(fromUri, toUri, { overwrite: false })
-    // If the move was accompanied by edits, restore the old content too.
-    if (hunk.oldText) {
-      const data = new TextEncoder().encode(hunk.oldText)
-      await vscode.workspace.fs.writeFile(toUri, data)
-    }
+  // else: an earlier hunk of this move already renamed the file back — only
+  // this hunk's content revert remains.
+
+  if (!hunk.oldText && !hunk.newText) {
     return { status: "applied" }
-  } catch (e) {
-    return reportConflict(
-      change.path,
-      `Could not undo move of ${change.path}: ${(e as Error).message ?? "unknown error"}.`,
-      silent,
-    )
   }
+  // Revert the edits carried by the move with the same ranged replace as a
+  // plain update. Writing `hunk.oldText` as the whole file (the previous
+  // behavior) truncated everything outside the hunk — oldText is one hunk's
+  // fragment, not the original file.
+  return undoUpdate({ ...change, path: change.oldPath, absolutePath: undefined }, hunk, root, silent)
 }
 
 async function undoUpdate(
