@@ -35,6 +35,7 @@ import { lastUserTurnIndex, redoAction, userMessageText } from "./undo"
 import { migrateConversationsToWorkspace } from "./conversation-store"
 import { ConversationManager } from "./conversation-manager"
 import { ContinuationState } from "./continuation-state"
+import { sweepAbortTree, drainAbortTree } from "./abort-tree"
 import { SubagentDispatch } from "./subagent-dispatch"
 export { summarizePrompt } from "./subagent-dispatch"
 import { relativeToCwd, samePath } from "./paths"
@@ -890,6 +891,10 @@ export class ChatView implements vscode.WebviewViewProvider {
     //      arriving after the abort propagation) can no longer flip
     //      a cancelled row to `error`.
     const gen = ++this.abortGen
+    // Each Stop is a fresh generation: sessions aborted by a PREVIOUS Stop
+    // must be re-abortable, or a second Stop in the same conversation skips
+    // the root entirely and the server keeps generating.
+    this.abortedTree.clear()
     let childSessionIDs: string[] = []
     if (this.subagentTracker) {
       childSessionIDs = await this.subagentTracker.cancelForSession(sessionID)
@@ -915,11 +920,15 @@ export class ChatView implements vscode.WebviewViewProvider {
       // in parallel and hit a race where a child's cancel result reached the
       // still-live parent and spun up a new turn. Settling the parent before
       // its children closes that race.
-      await this.sweepAbortTree(backend.client, sessionID, childSessionIDs, gen)
+      const state = { aborted: this.abortedTree, isLive: () => gen === this.abortGen }
+      await sweepAbortTree(backend.client, sessionID, childSessionIDs, state)
       // The first sweep can miss sessions the orchestrator dispatches while
       // the sweep is in flight. Drain in the background until a sweep finds
       // nothing new (or the user starts a new turn, bumping `abortGen`).
-      void this.drainAbortTree(backend.client, sessionID, gen)
+      void drainAbortTree(backend.client, sessionID, state, {
+        passes: ChatView.ABORT_DRAIN_PASSES,
+        intervalMs: ChatView.ABORT_DRAIN_INTERVAL_MS,
+      })
     } catch (e) {
       log("session.abort failed", e)
     }
@@ -928,9 +937,10 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Tracks every session id aborted in the current Stop so re-sweeps don't
-   * re-abort the same node and the drain loop can tell when it has gone quiet.
-   * Cleared at the start of each sweep generation.
+   * Session ids aborted in the current Stop generation, shared by the initial
+   * sweep and the background drain so they don't re-abort the same node.
+   * Cleared in `abortCurrent` when a new generation starts — a stale entry
+   * would make the next Stop skip the session entirely.
    */
   private abortedTree = new Set<string>()
   /**
@@ -940,59 +950,6 @@ export class ChatView implements vscode.WebviewViewProvider {
    * the user has since restarted.
    */
   private abortGen = 0
-
-  /**
-   * One breadth-first pass over the session subtree rooted at `rootID`,
-   * aborting every session not already aborted this generation. Returns the
-   * number of sessions newly aborted in this pass. `seed` lets the caller
-   * inject child IDs known to the tracker that may not yet show up in
-   * `session.children`.
-   */
-  private async sweepAbortTree(
-    client: Backend["client"],
-    rootID: string,
-    seed: string[],
-    gen: number,
-  ): Promise<number> {
-    let newlyAborted = 0
-    const queue = [rootID, ...seed]
-    while (queue.length) {
-      if (gen !== this.abortGen) break
-      const id = queue.shift()!
-      if (this.abortedTree.has(id)) continue
-      this.abortedTree.add(id)
-      newlyAborted++
-      try {
-        await client.session.abort({ path: { id } })
-      } catch (e) {
-        log("session.abort failed", id, e)
-      }
-      try {
-        const res = await client.session.children({ path: { id } })
-        for (const child of res.data ?? []) {
-          if (child?.id && !this.abortedTree.has(child.id)) queue.push(child.id)
-        }
-      } catch (e) {
-        log("session.children failed", id, e)
-      }
-    }
-    return newlyAborted
-  }
-
-  /**
-   * Re-sweep the subtree until a pass finds no new sessions, catching tasks
-   * the orchestrator dispatches in the window after the initial sweep. Bounded
-   * by iteration count and abandoned the moment `abortGen` moves on.
-   */
-  private async drainAbortTree(client: Backend["client"], rootID: string, gen: number): Promise<void> {
-    for (let i = 0; i < ChatView.ABORT_DRAIN_PASSES && gen === this.abortGen; i++) {
-      await delay(ChatView.ABORT_DRAIN_INTERVAL_MS)
-      if (gen !== this.abortGen) return
-      const found = await this.sweepAbortTree(client, rootID, [], gen)
-      if (found === 0) return
-      log(`[abort] drain pass ${i + 1} aborted ${found} late session(s)`)
-    }
-  }
 
   private async handleSend(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
     // A new turn supersedes any in-flight abort drain from a prior Stop so it
@@ -2272,10 +2229,6 @@ function findContextLimit(
 
 function numberOrZero(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | undefined): string[] {

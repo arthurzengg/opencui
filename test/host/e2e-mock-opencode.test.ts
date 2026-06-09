@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { subscribeSession } from "../../src/chat/stream"
+import { sweepAbortTree, drainAbortTree } from "../../src/chat/abort-tree"
 
 let server: MockOpencodeServer
 
@@ -75,30 +76,80 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     expect((res.data ?? []).map((s) => s.id)).toEqual(["ses_child_a", "ses_child_b"])
   })
 
-  it("a recursive children-walk aborts the whole subtree, root first (Stop cancels every descendant)", async () => {
+  it("sweepAbortTree aborts the whole subtree, root first (Stop cancels every descendant)", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     // Tree: parent → [a, b]; a → [a1 (orchestrator grandchild)]. A parent-only
     // abort would miss a1 entirely — the bug this guards against.
     server.setChildren("ses_parent", ["ses_child_a", "ses_child_b"])
     server.setChildren("ses_child_a", ["ses_grand_a1"])
 
-    // Mirror ChatView.sweepAbortTree: BFS from the root, abort each node, then
-    // enqueue its children.
-    const aborted = new Set<string>()
-    const queue = ["ses_parent"]
-    while (queue.length) {
-      const id = queue.shift()!
-      if (aborted.has(id)) continue
-      aborted.add(id)
-      await client.session.abort({ path: { id } })
-      const res = await client.session.children({ path: { id } })
-      for (const child of res.data ?? []) if (!aborted.has(child.id)) queue.push(child.id)
-    }
+    const state = { aborted: new Set<string>(), isLive: () => true }
+    const found = await sweepAbortTree(client, "ses_parent", [], state)
 
+    expect(found).toBe(4)
     expect(server.aborts[0]).toBe("ses_parent") // root settles before any child
     expect(new Set(server.aborts)).toEqual(
       new Set(["ses_parent", "ses_child_a", "ses_child_b", "ses_grand_a1"]),
     )
+  })
+
+  it("a re-sweep finds children dispatched after the first sweep without re-aborting settled nodes", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    server.setChildren("ses_parent", ["ses_child_a"])
+
+    const state = { aborted: new Set<string>(), isLive: () => true }
+    expect(await sweepAbortTree(client, "ses_parent", [], state)).toBe(2)
+
+    // Orchestrator dispatches a late background task between sweeps — the
+    // drain regression: a traversal gated on the aborted set would skip the
+    // already-aborted root, never list its children, and miss ses_late.
+    server.setChildren("ses_parent", ["ses_child_a", "ses_late"])
+    expect(await sweepAbortTree(client, "ses_parent", [], state)).toBe(1)
+
+    expect(server.aborts).toEqual(["ses_parent", "ses_child_a", "ses_late"])
+    // Quiet tree → 0, which is what lets drainAbortTree terminate.
+    expect(await sweepAbortTree(client, "ses_parent", [], state)).toBe(0)
+  })
+
+  it("a fresh generation re-aborts a session aborted by a previous Stop", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+
+    // Stop 1 aborts the root; the user sends a new turn in the same session
+    // and presses Stop again. ChatView.abortCurrent starts each generation
+    // with a cleared aborted-set, so the root must be aborted again — the old
+    // ChatView-lifetime set made every Stop after the first a no-op.
+    const stop1 = { aborted: new Set<string>(), isLive: () => true }
+    await sweepAbortTree(client, "ses_parent", [], stop1)
+    const stop2 = { aborted: new Set<string>(), isLive: () => true }
+    expect(await sweepAbortTree(client, "ses_parent", [], stop2)).toBe(1)
+
+    expect(server.aborts).toEqual(["ses_parent", "ses_parent"])
+  })
+
+  it("drainAbortTree aborts sessions dispatched after the initial sweep", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    server.setChildren("ses_parent", [])
+
+    const state = { aborted: new Set<string>(), isLive: () => true }
+    await sweepAbortTree(client, "ses_parent", [], state)
+    expect(server.aborts).toEqual(["ses_parent"])
+
+    server.setChildren("ses_parent", ["ses_late_dispatch"])
+    await drainAbortTree(client, "ses_parent", state, { passes: 3, intervalMs: 5 })
+
+    expect(server.aborts).toEqual(["ses_parent", "ses_late_dispatch"])
+  })
+
+  it("sweepAbortTree abandons the walk when the generation is superseded", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    server.setChildren("ses_parent", ["ses_child_a", "ses_child_b"])
+
+    // Generation dies as soon as the root abort lands (the user sent a new
+    // turn); the children must NOT be aborted out from under the new turn.
+    const state = { aborted: new Set<string>(), isLive: () => server.aborts.length === 0 }
+    await sweepAbortTree(client, "ses_parent", [], state)
+
+    expect(server.aborts).toEqual(["ses_parent"])
   })
 
   it("command.list returns the workspace's commands", async () => {
