@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-06-09
+
+### Fixed
+- Stop now cancels background subagents, not just the main agent. Pressing Stop previously aborted only the active session and any foreground subagents it was blocked on; background subagents and omo orchestrator sessions ran on independently and could keep dispatching new work seconds later. Stop now walks opencode's authoritative session tree (`session.children`, recursively) and aborts every descendant, root first, with a short background re-sweep to catch tasks dispatched while the first sweep is in flight (#310, #311).
+
 ## [1.4.2] - 2026-06-07
 
 ### Fixed
