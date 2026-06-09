@@ -1755,6 +1755,10 @@ export class ChatView implements vscode.WebviewViewProvider {
         })
       },
       onPermissionNeeded: (perm) => {
+        // Same ignore-while-aborting gate as the other non-terminal events:
+        // a permission raised mid-Stop targets a session being torn down,
+        // and no resolution event exists that would ever clear the dialog.
+        if (this.aborting) return
         this.activePermissions.set(perm.id, perm)
         this.post({
           type: "permission",
@@ -1764,6 +1768,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         })
       },
       onQuestionAsked: (q) => {
+        if (this.aborting) return
         this.activeQuestions.set(q.id, q)
         this.post({
           type: "question",

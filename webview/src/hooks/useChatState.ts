@@ -318,6 +318,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
         busy: true,
         aborting: true,
         pendingPermission: undefined,
+        pendingQuestion: undefined,
         messages: state.messages.map((m, i) => {
           if (m.role !== "assistant" || !m.pending) return m
           if (i === lastPendingIdx) return { ...m, pending: false, stopped: true }
@@ -343,6 +344,10 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "continuationPending":
       return { ...state, continuationPending: action.pending }
     case "permission":
+      // Ignore-while-aborting, like the other non-terminal events: there is
+      // no permission-resolved wire event, so a dialog raised mid-Stop could
+      // never be cleared once the session dies.
+      if (state.aborting) return state
       return {
         ...state,
         pendingPermission: { id: action.id, title: action.title, pattern: action.pattern },
@@ -350,6 +355,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "clearPermission":
       return { ...state, pendingPermission: undefined }
     case "question":
+      if (state.aborting) return state
       return {
         ...state,
         pendingQuestion: { id: action.id, questions: action.questions },

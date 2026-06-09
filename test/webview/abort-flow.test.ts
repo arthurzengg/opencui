@@ -104,6 +104,29 @@ describe("reducer abort flow", () => {
     expect(after.pendingPermission).toBeUndefined()
   })
 
+  it("aborted also clears a pending question", () => {
+    const withQuestion = reducer(pendingAssistant(), {
+      type: "question",
+      id: "q1",
+      questions: [{ question: "Pick", header: "Pick", options: [{ label: "A", description: "a" }] }],
+    })
+    expect(withQuestion.pendingQuestion?.id).toBe("q1")
+    const after = reducer(withQuestion, { type: "aborted" })
+    expect(after.pendingQuestion).toBeUndefined()
+  })
+
+  it("permission / question racing in DURING aborting are dropped (nothing could ever clear them)", () => {
+    const aborted = reducer(pendingAssistant(), { type: "aborted" })
+    const withPerm = reducer(aborted, { type: "permission", id: "p_late", title: "Allow?" })
+    expect(withPerm).toBe(aborted)
+    const withQuestion = reducer(aborted, {
+      type: "question",
+      id: "q_late",
+      questions: [{ question: "Pick", header: "Pick", options: [{ label: "A", description: "a" }] }],
+    })
+    expect(withQuestion).toBe(aborted)
+  })
+
   it("assistantError on an already-stopped message is suppressed (no red block)", () => {
     const before = pendingAssistant("a1")
     const aborted = reducer(before, { type: "aborted" })
