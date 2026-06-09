@@ -41,7 +41,7 @@ describe("reducer abort flow", () => {
     expect(msg.blocks.find((b) => b.type === "text" && b.text.includes("leftover"))).toBeUndefined()
   })
 
-  it("reasoningDelta / tool / patch during aborting are also dropped", () => {
+  it("reasoningDelta / non-terminal tool during aborting are also dropped", () => {
     const before = pendingAssistant()
     const aborted = reducer(before, { type: "aborted" })
     const after1 = reducer(aborted, { type: "reasoningDelta", id: "a1", delta: "x" })
@@ -52,8 +52,30 @@ describe("reducer abort flow", () => {
       update: { callID: "c1", tool: "read", status: "running" },
     })
     expect(after2).toBe(aborted)
-    const after3 = reducer(aborted, { type: "patch", id: "a1", files: ["foo.ts"], diff: "@@" })
-    expect(after3).toBe(aborted)
+  })
+
+  it("terminal tool closure during aborting IS applied (no perpetual 'running' block)", () => {
+    const before = reducer(pendingAssistant(), {
+      type: "tool",
+      id: "a1",
+      update: { callID: "c1", tool: "read", status: "running" },
+    })
+    const aborted = reducer(before, { type: "aborted" })
+    const after = reducer(aborted, {
+      type: "tool",
+      id: "a1",
+      update: { callID: "c1", tool: "read", status: "completed" },
+    })
+    const msg = after.messages.find((m) => m.id === "a1")!
+    const tool = msg.blocks.find((b) => b.type === "tool")
+    expect(tool?.type === "tool" && tool.update.status).toBe("completed")
+  })
+
+  it("patch during aborting IS applied (the disk mutation already happened)", () => {
+    const aborted = reducer(pendingAssistant(), { type: "aborted" })
+    const after = reducer(aborted, { type: "patch", id: "a1", files: ["foo.ts"], diff: "@@" })
+    const msg = after.messages.find((m) => m.id === "a1")!
+    expect(msg.blocks.find((b) => b.type === "patch")).toBeDefined()
   })
 
   it("textDelta when NOT aborting still appends normally (control test)", () => {

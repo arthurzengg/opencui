@@ -258,10 +258,20 @@ export function reducer(state: ChatState, action: Action): ChatState {
         messages: appendToLastBlock(state.messages, action.id, "reasoning", action.delta),
       }
     case "tool":
-      if (state.aborting) return state
+      // Drop in-flight churn while aborting, but apply TERMINAL closures —
+      // a tool that finished before the abort propagated must not render
+      // as "running" forever (mirrors the host-side gate).
+      if (
+        state.aborting &&
+        action.update.status !== "completed" &&
+        action.update.status !== "error"
+      ) {
+        return state
+      }
       return { ...state, messages: upsertTool(state.messages, action.id, action.update, action.actor) }
     case "patch":
-      if (state.aborting) return state
+      // Patches describe disk mutations that already happened; hiding them
+      // while aborting only desyncs the Review panel from reality.
       return {
         ...state,
         messages: state.messages.map((m) =>

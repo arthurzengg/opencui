@@ -1726,7 +1726,12 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.post({ type: "reasoningDelta", id: webviewID, delta })
       },
       onTool: (mid, update) => {
-        if (this.aborting) return
+        // While aborting, drop in-flight churn but let TERMINAL closures
+        // through: a tool that finished (or errored) before the abort
+        // propagated must not persist as "running" forever. Only for
+        // messages we already know — never mint a new bubble mid-abort.
+        const terminal = update.status === "completed" || update.status === "error"
+        if (this.aborting && (!terminal || !this.messageMap.has(mid))) return
         // Forward to the subagent tracker FIRST so the store is
         // up-to-date before any downstream consumer (continuation gate,
         // popover snapshot) reads from it. `forwardToolForSubagentTracking`
@@ -1738,7 +1743,9 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.post({ type: "tool", id: webviewID, update: wire })
       },
       onPatch: (mid, files, diff) => {
-        if (this.aborting) return
+        // Patches describe disk mutations that ALREADY happened — dropping
+        // them while aborting just hides real changes from the Review panel.
+        if (this.aborting && !this.messageMap.has(mid)) return
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
         this.post({
           type: "patch",
