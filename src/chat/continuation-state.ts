@@ -53,6 +53,13 @@ export class ContinuationState {
     private deps: {
       post: (msg: Outbound) => void
       activeSubagentCount: () => number
+      /**
+       * Full idle settlement, not just the webview post — must also settle
+       * the task store and clear the per-turn Main task ID, or the deferred
+       * path leaves the turn's Main row `running` forever (persisted, so it
+       * survives reload) and the next turn shows two running Main rows.
+       */
+      emitIdle: () => void
     },
   ) {}
 
@@ -139,7 +146,7 @@ export class ContinuationState {
       log(`[continuation] timer (${source}) resolved; emitting sessionIdle`)
       this.deferActive = false
       this.deps.post({ type: "continuationPending", pending: false })
-      this.deps.post({ type: "sessionIdle" })
+      this.deps.emitIdle()
     }, delay)
   }
 
