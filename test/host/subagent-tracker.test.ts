@@ -509,6 +509,59 @@ describe("SubagentTracker.reconcile", () => {
     expect(store.get(seed.id)!.status).toBe("completed")
   })
 
+  it("completes callID-keyed orphan rows (no childSessionID) — nothing can ever settle them post-reload", async () => {
+    const { tracker, store } = setupTracker()
+    const seed: AgentTask = {
+      id: "subagent:ses_parent:c_orphan",
+      kind: "subagent",
+      conversationID: "conv1",
+      sessionID: "ses_parent",
+      callID: "c_orphan",
+      title: "metadata never arrived",
+      status: "running",
+      startedAt: 1,
+      updatedAt: 1,
+    }
+    await store.upsert(seed)
+    // Even with the parent still busy: the dispatch map is gone post-reload.
+    await tracker.reconcile(mockBackend({ ses_parent: { type: "busy" } }), "ses_parent")
+    expect(store.get(seed.id)!.status).toBe("completed")
+  })
+
+  it("completes a stale Main row when the parent session is idle", async () => {
+    const { tracker, store } = setupTracker()
+    const seed: AgentTask = {
+      id: "main:conv1:ses_parent:turn1",
+      kind: "main",
+      conversationID: "conv1",
+      sessionID: "ses_parent",
+      title: "old turn",
+      status: "running",
+      startedAt: 1,
+      updatedAt: 1,
+    }
+    await store.upsert(seed)
+    await tracker.reconcile(mockBackend({ ses_parent: { type: "idle" } }), "ses_parent")
+    expect(store.get(seed.id)!.status).toBe("completed")
+  })
+
+  it("leaves a Main row running while the parent session is still busy (live turn settles it)", async () => {
+    const { tracker, store } = setupTracker()
+    const seed: AgentTask = {
+      id: "main:conv1:ses_parent:turn2",
+      kind: "main",
+      conversationID: "conv1",
+      sessionID: "ses_parent",
+      title: "live turn",
+      status: "running",
+      startedAt: 1,
+      updatedAt: 1,
+    }
+    await store.upsert(seed)
+    await tracker.reconcile(mockBackend({ ses_parent: { type: "busy" } }), "ses_parent")
+    expect(store.get(seed.id)!.status).toBe("running")
+  })
+
   it("skips reconcile for rows whose conversationID does NOT match (cross-conversation safety)", async () => {
     const { tracker, store } = setupTracker({ conversationID: "conv1" })
     const seed: AgentTask = {
