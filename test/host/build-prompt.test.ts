@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import * as vscode from "vscode"
 import { buildPrompt, readMentions } from "../../src/chat/prompt-builder"
 import type { WorkspaceRoot } from "../../src/workspace-root"
@@ -131,5 +131,65 @@ describe("readMentions", () => {
     )
     const out = await readMentions(["styles.css"])
     expect(out.block).toContain("```css")
+  })
+})
+
+describe("readMentions: multi-root workspaces", () => {
+  // asRelativePath prefixes the owning folder's name in multi-root setups,
+  // so a mention arrives as "folderB/src/x.ts". The old code resolved it
+  // against folder 0 only → /workspace/folderB/src/x.ts → ENOENT, and the
+  // file silently never reached the prompt.
+  const original = vscode.workspace.workspaceFolders
+
+  beforeEach(() => {
+    vi.mocked(vscode.workspace.fs.readFile).mockReset()
+    ;(vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = [
+      { uri: vscode.Uri.file("/repos/folderA"), name: "folderA", index: 0 },
+      { uri: vscode.Uri.file("/repos/folderB"), name: "folderB", index: 1 },
+    ]
+  })
+
+  afterEach(() => {
+    ;(vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = original
+  })
+
+  it("resolves a folder-prefixed mention inside the owning folder", async () => {
+    const attempted: string[] = []
+    vi.mocked(vscode.workspace.fs.readFile).mockImplementation(async (uri: vscode.Uri) => {
+      attempted.push(uri.fsPath)
+      if (uri.fsPath === "/repos/folderB/src/x.ts") {
+        return new TextEncoder().encode("const b = 2\n")
+      }
+      throw new Error("ENOENT")
+    })
+    const out = await readMentions(["folderB/src/x.ts"])
+    expect(out.failed).toEqual([])
+    expect(out.block).toContain("@folderB/src/x.ts")
+    expect(out.block).toContain("const b = 2")
+    expect(attempted).toContain("/repos/folderB/src/x.ts")
+  })
+
+  it("prefers the exact path over the folder-name-stripped variant", async () => {
+    // folderA really contains a subdirectory named folderA — the exact path
+    // must win over stripping the prefix.
+    vi.mocked(vscode.workspace.fs.readFile).mockImplementation(async (uri: vscode.Uri) => {
+      if (uri.fsPath === "/repos/folderA/folderA/x.ts") {
+        return new TextEncoder().encode("nested")
+      }
+      if (uri.fsPath === "/repos/folderA/x.ts") {
+        return new TextEncoder().encode("stripped")
+      }
+      throw new Error("ENOENT")
+    })
+    const out = await readMentions(["folderA/x.ts"])
+    expect(out.block).toContain("nested")
+    expect(out.block).not.toContain("stripped")
+  })
+
+  it("records the mention as failed when no folder has the file", async () => {
+    vi.mocked(vscode.workspace.fs.readFile).mockRejectedValue(new Error("ENOENT"))
+    const out = await readMentions(["folderB/missing.ts"])
+    expect(out.failed).toEqual(["folderB/missing.ts"])
+    expect(out.block).toBeUndefined()
   })
 })
