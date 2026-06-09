@@ -423,15 +423,17 @@ export class SubagentTracker {
    */
   async reconcile(backend: Backend, parentSessionID: string): Promise<void> {
     const conversationID = this.getConversationID()
+    // Snapshot synchronously at attach time: rows a new turn creates AFTER
+    // this point (fresh Main row, fresh dispatches) are never candidates,
+    // so the late-resolving status fetch below can't wrongly settle them.
     const candidates = this.store
       .list()
       .filter(
         (t) =>
-          t.kind === "subagent" &&
+          (t.kind === "subagent" || t.kind === "main") &&
           t.conversationID === conversationID &&
           t.sessionID === parentSessionID &&
-          (t.status === "running" || t.status === "waiting") &&
-          t.childSessionID,
+          (t.status === "running" || t.status === "waiting"),
       )
     if (candidates.length === 0) return
     let statuses: Record<string, { type?: string } | undefined> = {}
@@ -446,7 +448,27 @@ export class SubagentTracker {
     }
     const now = Date.now()
     for (const task of candidates) {
-      const childSid = task.childSessionID!
+      if (task.kind === "main") {
+        // A stale Main row only settles via its own session.idle — which a
+        // reload mid-turn may have swallowed. If the parent is idle (or
+        // forgotten), settle it here; if it's still busy, the live turn's
+        // session.idle will do it.
+        const parentStatus = statuses[parentSessionID]
+        if (!parentStatus || parentStatus.type === "idle") {
+          await this.store.update(task.id, { status: "completed", updatedAt: now })
+          log(`[subagent-tracker] reconcile ${task.id} main row, parent idle/absent → completed`)
+        }
+        continue
+      }
+      if (!task.childSessionID) {
+        // callID-keyed row from before the reload/switch. The in-memory
+        // dispatch map that could ever update it is gone, and markSessionIdle
+        // is main-only — nothing can settle it later. Close it out now.
+        await this.store.update(task.id, { status: "completed", updatedAt: now })
+        log(`[subagent-tracker] reconcile ${task.id} callID-keyed orphan → completed`)
+        continue
+      }
+      const childSid = task.childSessionID
       const childStatus = statuses[childSid]
       if (!childStatus) {
         // Server has no record of this session — it ended (or was
