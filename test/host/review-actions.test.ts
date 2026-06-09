@@ -267,6 +267,60 @@ describe("reviewHunk: moved files", () => {
   })
 })
 
+describe("reviewHunk: moved files with edits", () => {
+  // Mirror WorkspaceEdit.replace onto the in-memory file map so the content
+  // revert is observable (the shared applyEdit mock just returns true).
+  beforeEach(() => {
+    ;(vscode.workspace.applyEdit as ReturnType<typeof vi.fn>).mockImplementation(
+      async (edit: unknown) => {
+        const ops = (edit as { edits?: Array<{ uri: vscode.Uri; range: vscode.Range; text: string }> }).edits
+        if (!ops) return true
+        for (const op of [...ops].reverse()) {
+          const entry = files.get(op.uri.fsPath)
+          if (!entry) continue
+          const start = offsetFromPosition(entry.content, op.range.start)
+          const end = offsetFromPosition(entry.content, op.range.end)
+          entry.content = entry.content.slice(0, start) + op.text + entry.content.slice(end)
+        }
+        return true
+      },
+    )
+  })
+
+  it("Undo: reverts only the hunk's lines and keeps the rest of the file intact", async () => {
+    files.set("/workspace/new-name.ts", { content: "line1\nEDITED\nline3\nline4\n" })
+    const patch = "@@ -2,1 +2,1 @@\n-ORIGINAL\n+EDITED"
+    const { change, hunk } = makeChange({
+      path: "new-name.ts",
+      kind: "moved",
+      patch,
+      oldPath: "old-name.ts",
+    })
+    const outcome = await reviewHunk(change, hunk, "rejected", { silent: true })
+    expect(outcome.status).toBe("applied")
+    expect(renames[0]?.from.fsPath).toBe("/workspace/new-name.ts")
+    expect(renames[0]?.to.fsPath).toBe("/workspace/old-name.ts")
+    // The regression: the old code wrote hunk.oldText as the WHOLE file,
+    // destroying line1/line3/line4.
+    expect(files.get("/workspace/old-name.ts")?.content).toBe("line1\nORIGINAL\nline3\nline4\n")
+  })
+
+  it("Undo: a later hunk applies its content revert after an earlier hunk already renamed the file back", async () => {
+    files.set("/workspace/old-name.ts", { content: "line1\nEDITED\nline3\n" })
+    const patch = "@@ -2,1 +2,1 @@\n-ORIGINAL\n+EDITED"
+    const { change, hunk } = makeChange({
+      path: "new-name.ts",
+      kind: "moved",
+      patch,
+      oldPath: "old-name.ts",
+    })
+    const outcome = await reviewHunk(change, hunk, "rejected", { silent: true })
+    expect(outcome.status).toBe("applied")
+    expect(renames).toHaveLength(0)
+    expect(files.get("/workspace/old-name.ts")?.content).toBe("line1\nORIGINAL\nline3\n")
+  })
+})
+
 describe("reviewAllForPath: multi-tool turn", () => {
   // `applyEdit` in the shared mock just returns `true`; for these tests we need
   // it to actually mutate the on-disk file map so chained undos see the
