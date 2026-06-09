@@ -12,6 +12,8 @@ export type OpencodeConfigMode = "isolated" | "user"
 type ServerHandle = {
   url: string
   close(): void
+  /** Register a callback fired if the process exits AFTER successful startup. */
+  onExit(listener: () => void): void
 }
 
 export type Backend = {
@@ -80,6 +82,16 @@ export class ServerManager {
     this.client = client
     this.workspace = workspace
     this.configMode = configMode
+    server.onExit(() => {
+      // Only invalidate if this handle is still the active one — a crash
+      // notification from a server we already replaced (restart/dispose)
+      // must not clobber its successor.
+      if (this.server !== server) return
+      log("opencode server exited unexpectedly; clearing cached backend")
+      this.server = undefined
+      this.client = undefined
+      this.workspace = undefined
+    })
     return this.toBackend(server, client)
   }
 
@@ -148,7 +160,7 @@ function bundledBinaryPath(extensionPath: string): string | undefined {
   }
 }
 
-function startOpencodeServer(
+export function startOpencodeServer(
   binaryPath: string,
   options: {
     hostname: string
@@ -177,6 +189,8 @@ function startOpencodeServer(
   return new Promise((resolve, reject) => {
     let output = ""
     let settled = false
+    let started = false
+    const exitListeners: Array<() => void> = []
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
@@ -203,10 +217,12 @@ function startOpencodeServer(
           return
         }
         settled = true
+        started = true
         clearTimeout(timer)
         resolve({
           url: match[1],
           close: () => closeProcess(proc),
+          onExit: (listener) => exitListeners.push(listener),
         })
         return
       }
@@ -217,8 +233,13 @@ function startOpencodeServer(
     })
     proc.on("error", fail)
     proc.on("exit", (code) => {
-      if (settled) return
-      fail(new Error(`Server exited with code ${code}${formatServerOutput(output)}`))
+      if (!settled) {
+        fail(new Error(`Server exited with code ${code}${formatServerOutput(output)}`))
+        return
+      }
+      if (!started) return
+      log(`opencode server process exited (code ${code})`)
+      for (const listener of exitListeners) listener()
     })
   })
 }

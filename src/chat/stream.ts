@@ -88,6 +88,14 @@ export type StreamHandlers = {
   onSessionIdle?: () => void
   onSessionBusy?: () => void
   /**
+   * Fired exactly once when the SSE connection ends for any reason other
+   * than a deliberate `Subscription.abort()` — transport error or the server
+   * closing the stream (e.g. the opencode process died). After this fires no
+   * further events will arrive on this subscription; the owner must drop it
+   * and re-subscribe to keep receiving events.
+   */
+  onStreamClosed?: (reason: "error" | "ended") => void
+  /**
    * Optional second routing branch for child (subagent) sessions. The
    * SSE stream is process-wide (`client.global.event()` returns every
    * session's events), so we can listen for child-session lifecycle
@@ -256,11 +264,15 @@ export function subscribeSession(
         if (!payload?.type) continue
         route(payload.type, payload.properties)
       }
+      if (controller.signal.aborted || stopped) return
+      log(`[sse] stream ended for session ${sessionID}`)
+      handlers.onStreamClosed?.("ended")
     } catch (e) {
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted || stopped) return
       log("event stream error", e)
       handlers.onSessionError?.((e as Error).message)
       readyReject(e)
+      handlers.onStreamClosed?.("error")
     }
   })()
 

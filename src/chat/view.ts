@@ -107,6 +107,8 @@ export class ChatView implements vscode.WebviewViewProvider {
   /** Background re-sweeps after a Stop, to catch late orchestrator dispatches. */
   private static readonly ABORT_DRAIN_PASSES = 6
   private static readonly ABORT_DRAIN_INTERVAL_MS = 1000
+  /** Minimum gap between automatic SSE re-attach attempts after stream loss. */
+  private static readonly STREAM_REATTACH_MIN_MS = 10_000
   /**
    * "This turn isn't done yet" defer for opencode/omo continuations.
    * Owns its own timer + signal gating; see {@link ContinuationState}
@@ -1184,11 +1186,23 @@ export class ChatView implements vscode.WebviewViewProvider {
       })
       if (res.error) {
         log("prompt failed", res.error)
+        this.failSend("opencode rejected the prompt; see the output log for details.")
       }
     } catch (e) {
       log("prompt call threw", e)
+      this.failSend((e as Error).message || "Could not reach the opencode server.")
     }
-    // No UI action here — the SSE subscription owns assistant lifecycle.
+    // No further UI action here — the SSE subscription owns assistant lifecycle.
+  }
+
+  /**
+   * A send that never reached opencode produces no SSE events, so nothing
+   * would ever clear the webview's `busy` — unstick it explicitly and tell
+   * the user instead of failing silently into a permanent "Working…".
+   */
+  private failSend(message: string) {
+    this.post({ type: "sessionIdle" })
+    this.surfaceToast({ variant: "error", title: "Send failed", message })
   }
 
   /**
@@ -1271,11 +1285,15 @@ export class ChatView implements vscode.WebviewViewProvider {
         query: { directory: backend.directory },
         body,
       })
-      if (res.error) log("command failed", res.error)
+      if (res.error) {
+        log("command failed", res.error)
+        this.failSend("opencode rejected the command; see the output log for details.")
+      }
     } catch (e) {
       log("command call threw", e)
+      this.failSend((e as Error).message || "Could not reach the opencode server.")
     }
-    // No UI action here — the SSE subscription owns assistant lifecycle.
+    // No further UI action here — the SSE subscription owns assistant lifecycle.
   }
 
   /**
@@ -1634,6 +1652,31 @@ export class ChatView implements vscode.WebviewViewProvider {
     await this.handleSend(trimmed, mentions, attachments, conversationMentions)
   }
 
+  private lastStreamReattachAt = 0
+
+  /**
+   * Best-effort re-subscribe after the SSE stream died. Throttled so a server
+   * that crashes immediately on every boot can't drive a respawn loop —
+   * outside the window the next user action re-attaches lazily instead.
+   */
+  private async reattachAfterStreamLoss() {
+    if (!this.sessionID) return
+    const now = Date.now()
+    if (now - this.lastStreamReattachAt < ChatView.STREAM_REATTACH_MIN_MS) {
+      log("[sse] re-attach throttled; will reconnect on next action")
+      return
+    }
+    this.lastStreamReattachAt = now
+    try {
+      const backend = await this.servers.ensure()
+      if (!this.sessionID || this.subscription) return
+      await this.attachSubscription(backend, this.sessionID)
+      log("[sse] re-attached after stream loss")
+    } catch (e) {
+      log("[sse] re-attach failed; will reconnect on next action", e)
+    }
+  }
+
   private async attachSubscription(backend: Backend, sessionID: string) {
     this.subscription?.abort()
     const subscription = subscribeSession(backend, sessionID, {
@@ -1819,6 +1862,20 @@ export class ChatView implements vscode.WebviewViewProvider {
         subscription.addChildSession(info.id)
         if (!this.subagentTracker) return
         void this.subagentTracker.registerChildSession(info)
+      },
+      onStreamClosed: (reason) => {
+        // No further events will arrive on this subscription. Drop it so the
+        // `!this.subscription` re-attach checks work again (a dead-but-truthy
+        // subscription used to block reconnection forever), unstick the
+        // composer, and try one throttled re-attach — `ensure()` respawns the
+        // server if the process died.
+        if (this.subscription !== subscription) return
+        log(`[sse] stream closed (${reason}); scheduling re-attach`)
+        this.subscription = undefined
+        this.aborting = false
+        this.continuationState.finishPending()
+        this.post({ type: "sessionIdle" })
+        void this.reattachAfterStreamLoss()
       },
     })
     this.subscription = subscription
