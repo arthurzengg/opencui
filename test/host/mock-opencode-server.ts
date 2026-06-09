@@ -31,6 +31,10 @@ export type MockOpencodeServer = {
   unreverts: string[]
   /** Records of every fork call. */
   forks: Array<{ sessionID: string; body: unknown }>
+  /** SessionIDs passed to POST /session/{id}/abort, in call order. */
+  aborts: string[]
+  /** Configure the direct children returned by GET /session/{id}/children. */
+  setChildren: (parentID: string, childIDs: string[]) => void
   /** Records of every session.command call. */
   commandCalls: Array<{ sessionID: string; body: unknown }>
   /** Configure what GET /command returns. */
@@ -63,6 +67,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const reverts: Array<{ sessionID: string; body: unknown }> = []
   const unreverts: string[] = []
   const forks: Array<{ sessionID: string; body: unknown }> = []
+  const aborts: string[] = []
+  const childrenByParent = new Map<string, string[]>()
   const commandCalls: Array<{ sessionID: string; body: unknown }> = []
   let commands: Array<Record<string, unknown>> = []
   const sessionStatuses = new Map<string, { type: "idle" | "busy" | "retry" }>()
@@ -226,8 +232,18 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     }
 
     // Session abort
-    if (path.match(/^\/session\/[^/]+\/abort$/) && req.method === "POST") {
+    const abortMatch = path.match(/^\/session\/([^/]+)\/abort$/)
+    if (abortMatch && req.method === "POST") {
+      aborts.push(abortMatch[1]!)
       reply(res, 200, true)
+      return
+    }
+
+    // Session children — direct children only (the SDK/extension recurses).
+    const childrenMatch = path.match(/^\/session\/([^/]+)\/children$/)
+    if (childrenMatch && req.method === "GET") {
+      const kids = (childrenByParent.get(childrenMatch[1]!) ?? []).map((id) => ({ id, parentID: childrenMatch[1] }))
+      reply(res, 200, kids)
       return
     }
 
@@ -324,6 +340,10 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     reverts,
     unreverts,
     forks,
+    aborts,
+    setChildren(parentID, childIDs) {
+      childrenByParent.set(parentID, childIDs)
+    },
     commandCalls,
     setCommands(next) {
       commands = next

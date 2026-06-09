@@ -103,6 +103,9 @@ export class ChatView implements vscode.WebviewViewProvider {
    */
   private lastToast?: { key: string; at: number }
   private static readonly TOAST_DEDUP_MS = 3000
+  /** Background re-sweeps after a Stop, to catch late orchestrator dispatches. */
+  private static readonly ABORT_DRAIN_PASSES = 6
+  private static readonly ABORT_DRAIN_INTERVAL_MS = 1000
   /**
    * "This turn isn't done yet" defer for opencode/omo continuations.
    * Owns its own timer + signal gating; see {@link ContinuationState}
@@ -886,29 +889,37 @@ export class ChatView implements vscode.WebviewViewProvider {
     //      child error event (rate-limit / token-expired races
     //      arriving after the abort propagation) can no longer flip
     //      a cancelled row to `error`.
+    const gen = ++this.abortGen
+    let childSessionIDs: string[] = []
     if (this.subagentTracker) {
-      await this.subagentTracker.cancelForSession(sessionID)
+      childSessionIDs = await this.subagentTracker.cancelForSession(sessionID)
     } else if (this.taskStore) {
       await this.taskStore.cancelSessionTasks(sessionID)
     }
 
     try {
       const backend = await this.servers.ensure()
-      // Abort ONLY the parent. opencode's `session.abort` propagates
-      // down to the parent's "wait on tool" (the in-flight tool call
-      // dispatched to the child session), so cancelling the parent
-      // also cancels the children atomically.
+      // Abort the WHOLE session subtree, root first.
       //
-      // Earlier we issued explicit aborts for parent + each child in
-      // parallel as a "belt and suspenders" measure. That introduced
-      // a race: the child's abort processed first, the child's tool
-      // result returned to the parent with a cancel error, the parent
-      // started a NEW LLM call to process that result, and the
-      // parent's own abort then arrived *after* the new call started
-      // — leaving the parent visibly continuing. The user had to
-      // press Stop a second time to abort the new LLM call. Trusting
-      // opencode's propagation avoids the race entirely.
-      await backend.client.session.abort({ path: { id: sessionID } })
+      // opencode's `session.abort` only propagates to foreground children
+      // (the parent is blocked on their tool call). Background subagents and
+      // omo's orchestrator sessions (e.g. Sisyphus) run as independent
+      // sessions the parent never awaits, so a parent-only abort leaves them
+      // alive — and an alive orchestrator keeps dispatching NEW background
+      // tasks seconds after Stop. We therefore walk opencode's authoritative
+      // tree (`session.children`, recursive) and abort every descendant,
+      // seeded with the tracker's known child IDs in case a just-spawned
+      // child isn't in `session.children` yet.
+      //
+      // Root is aborted first: an earlier version aborted parent + children
+      // in parallel and hit a race where a child's cancel result reached the
+      // still-live parent and spun up a new turn. Settling the parent before
+      // its children closes that race.
+      await this.sweepAbortTree(backend.client, sessionID, childSessionIDs, gen)
+      // The first sweep can miss sessions the orchestrator dispatches while
+      // the sweep is in flight. Drain in the background until a sweep finds
+      // nothing new (or the user starts a new turn, bumping `abortGen`).
+      void this.drainAbortTree(backend.client, sessionID, gen)
     } catch (e) {
       log("session.abort failed", e)
     }
@@ -916,7 +927,77 @@ export class ChatView implements vscode.WebviewViewProvider {
     // assistant message ended (session.idle clears this.aborting).
   }
 
+  /**
+   * Tracks every session id aborted in the current Stop so re-sweeps don't
+   * re-abort the same node and the drain loop can tell when it has gone quiet.
+   * Cleared at the start of each sweep generation.
+   */
+  private abortedTree = new Set<string>()
+  /**
+   * Monotonic token identifying the current Stop. Bumped on each
+   * `abortCurrent` and on each new user turn (`handleSend`) so a background
+   * drain loop from a previous Stop cannot abort sessions belonging to work
+   * the user has since restarted.
+   */
+  private abortGen = 0
+
+  /**
+   * One breadth-first pass over the session subtree rooted at `rootID`,
+   * aborting every session not already aborted this generation. Returns the
+   * number of sessions newly aborted in this pass. `seed` lets the caller
+   * inject child IDs known to the tracker that may not yet show up in
+   * `session.children`.
+   */
+  private async sweepAbortTree(
+    client: Backend["client"],
+    rootID: string,
+    seed: string[],
+    gen: number,
+  ): Promise<number> {
+    let newlyAborted = 0
+    const queue = [rootID, ...seed]
+    while (queue.length) {
+      if (gen !== this.abortGen) break
+      const id = queue.shift()!
+      if (this.abortedTree.has(id)) continue
+      this.abortedTree.add(id)
+      newlyAborted++
+      try {
+        await client.session.abort({ path: { id } })
+      } catch (e) {
+        log("session.abort failed", id, e)
+      }
+      try {
+        const res = await client.session.children({ path: { id } })
+        for (const child of res.data ?? []) {
+          if (child?.id && !this.abortedTree.has(child.id)) queue.push(child.id)
+        }
+      } catch (e) {
+        log("session.children failed", id, e)
+      }
+    }
+    return newlyAborted
+  }
+
+  /**
+   * Re-sweep the subtree until a pass finds no new sessions, catching tasks
+   * the orchestrator dispatches in the window after the initial sweep. Bounded
+   * by iteration count and abandoned the moment `abortGen` moves on.
+   */
+  private async drainAbortTree(client: Backend["client"], rootID: string, gen: number): Promise<void> {
+    for (let i = 0; i < ChatView.ABORT_DRAIN_PASSES && gen === this.abortGen; i++) {
+      await delay(ChatView.ABORT_DRAIN_INTERVAL_MS)
+      if (gen !== this.abortGen) return
+      const found = await this.sweepAbortTree(client, rootID, [], gen)
+      if (found === 0) return
+      log(`[abort] drain pass ${i + 1} aborted ${found} late session(s)`)
+    }
+  }
+
   private async handleSend(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+    // A new turn supersedes any in-flight abort drain from a prior Stop so it
+    // can't abort the session tree the new turn is about to (re)use.
+    this.abortGen++
     this.redoStack = [] // a new turn diverges the history; nothing to redo
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
@@ -2191,6 +2272,10 @@ function findContextLimit(
 
 function numberOrZero(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | undefined): string[] {

@@ -67,6 +67,40 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     expect(server.forks[0]!.sessionID).toBe("ses_test")
   })
 
+  it("session.children returns the configured direct children", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    server.setChildren("ses_parent", ["ses_child_a", "ses_child_b"])
+    const res = await client.session.children({ path: { id: "ses_parent" } })
+    expect(res.error).toBeUndefined()
+    expect((res.data ?? []).map((s) => s.id)).toEqual(["ses_child_a", "ses_child_b"])
+  })
+
+  it("a recursive children-walk aborts the whole subtree, root first (Stop cancels every descendant)", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    // Tree: parent → [a, b]; a → [a1 (orchestrator grandchild)]. A parent-only
+    // abort would miss a1 entirely — the bug this guards against.
+    server.setChildren("ses_parent", ["ses_child_a", "ses_child_b"])
+    server.setChildren("ses_child_a", ["ses_grand_a1"])
+
+    // Mirror ChatView.sweepAbortTree: BFS from the root, abort each node, then
+    // enqueue its children.
+    const aborted = new Set<string>()
+    const queue = ["ses_parent"]
+    while (queue.length) {
+      const id = queue.shift()!
+      if (aborted.has(id)) continue
+      aborted.add(id)
+      await client.session.abort({ path: { id } })
+      const res = await client.session.children({ path: { id } })
+      for (const child of res.data ?? []) if (!aborted.has(child.id)) queue.push(child.id)
+    }
+
+    expect(server.aborts[0]).toBe("ses_parent") // root settles before any child
+    expect(new Set(server.aborts)).toEqual(
+      new Set(["ses_parent", "ses_child_a", "ses_child_b", "ses_grand_a1"]),
+    )
+  })
+
   it("command.list returns the workspace's commands", async () => {
     server.setCommands([
       { name: "deploy", description: "Ship it", template: "Deploy $ARGUMENTS" },
