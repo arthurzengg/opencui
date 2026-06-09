@@ -51,4 +51,21 @@ describe("reducer — question flow", () => {
     const closed = reducer(opened, { type: "clearQuestion", id: "que_1" })
     expect(closed.pendingQuestion).toBeUndefined()
   })
+
+  it("restore (conversation switch) dismisses an open question, like pendingPermission", () => {
+    const opened = reducer(initialChatState, {
+      type: "question",
+      id: "que_1",
+      questions: [question],
+    })
+    const switched = reducer(opened, {
+      type: "restore",
+      conversationID: "conv_b",
+      messages: [],
+    })
+    // The host already dropped the old session's activeQuestions without
+    // posting questionResolved — without this clear, A's dialog renders
+    // forever in conversation B.
+    expect(switched.pendingQuestion).toBeUndefined()
+  })
 })
