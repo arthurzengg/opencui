@@ -644,3 +644,36 @@ describe("E2E (mock opencode): child session routing", () => {
     expect(parentIdleCount).toBe(0)
   })
 })
+
+describe("E2E (mock opencode): stream loss detection", () => {
+  it("fires onStreamClosed when the server ends the SSE stream", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const closed: string[] = []
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onAssistantStart: () => {},
+      onStreamClosed: (reason) => closed.push(reason),
+    })
+    await subscription.ready
+    await server.awaitClient()
+    await server.close()
+    await new Promise((r) => setTimeout(r, 100))
+    // Regression: a dead-but-truthy subscription used to block all
+    // re-attach checks; the owner now learns the stream is gone.
+    expect(closed).toHaveLength(1)
+    subscription.abort()
+  })
+
+  it("does NOT fire onStreamClosed on deliberate abort", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const closed: string[] = []
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onAssistantStart: () => {},
+      onStreamClosed: (reason) => closed.push(reason),
+    })
+    await subscription.ready
+    await server.awaitClient()
+    subscription.abort()
+    await new Promise((r) => setTimeout(r, 100))
+    expect(closed).toHaveLength(0)
+  })
+})
