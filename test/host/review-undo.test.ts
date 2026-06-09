@@ -169,6 +169,33 @@ describe("findHunkInFile: safe location for repeated text blocks", () => {
     })
     expect(result).toBeDefined()
   })
+
+  it("anchors a pure-deletion hunk (+N,0) AFTER line N, not at line N", () => {
+    // line3/line4 were deleted after line2: `@@ -3,2 +2,0 @@`. The restore
+    // point is the start of line 3 — the old newStart-1 anchoring put it at
+    // the start of line 2, one line too early.
+    const file = "line1\nline2\nline5\n"
+    const result = findHunkInFile(file, {
+      newText: "",
+      newStart: 2,
+      newCount: 0,
+      leadingContext: [],
+      trailingContext: [],
+    })
+    expect(result).toEqual({ start: 12, end: 12 })
+  })
+
+  it("anchors a deletion at the very top (+0,0) at offset 0", () => {
+    const file = "line2\nline3\n"
+    const result = findHunkInFile(file, {
+      newText: "",
+      newStart: 0,
+      newCount: 0,
+      leadingContext: [],
+      trailingContext: [],
+    })
+    expect(result).toEqual({ start: 0, end: 0 })
+  })
 })
 
 describe("splitReviewDiff round-trip with findHunkInFile", () => {

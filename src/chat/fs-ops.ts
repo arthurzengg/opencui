@@ -442,11 +442,20 @@ async function undoUpdate(
       silent,
     )
   }
+  // A zero-width match means we're re-inserting a deleted block at a line
+  // boundary. `hunk.oldText` is newline-JOINED (no trailing separator), so
+  // add the one the join dropped: trailing mid-file, leading when appending
+  // to a file that doesn't end in a newline.
+  let restored = hunk.oldText
+  if (located.start === located.end) {
+    if (located.start < current.length) restored = `${restored}\n`
+    else if (current.length > 0 && !current.endsWith("\n")) restored = `\n${restored}`
+  }
   const edit = new vscode.WorkspaceEdit()
   edit.replace(
     existing,
     new vscode.Range(doc.positionAt(located.start), doc.positionAt(located.end)),
-    hunk.oldText,
+    restored,
   )
   const ok = await vscode.workspace.applyEdit(edit)
   if (!ok) {
