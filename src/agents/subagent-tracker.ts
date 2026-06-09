@@ -487,14 +487,9 @@ export class SubagentTracker {
    *     beats us here, but doing it again is idempotent).
    *
    * Returns the list of child sessionIDs that were active at the
-   * moment of teardown. `ChatView.abortCurrent` uses these to abort
-   * background subagents explicitly: opencode's `session.abort`
-   * propagation only settles foreground children (the parent is
-   * blocked on their tool call), so background children — which the
-   * parent is not awaiting — must be aborted directly. The caller does
-   * this only AFTER the parent abort has settled; issuing parent and
-   * child aborts in parallel introduced a race that left the parent
-   * visibly continuing after Stop (see `ChatView.abortCurrent`).
+   * moment of teardown. `ChatView.abortCurrent` seeds its session-tree
+   * sweep with these so a just-spawned child that the tracker knows
+   * about but `session.children` hasn't surfaced yet is still aborted.
    */
   async cancelForSession(parentSessionID: string): Promise<string[]> {
     const active = this.store.activeSubagentsForSession(parentSessionID)
