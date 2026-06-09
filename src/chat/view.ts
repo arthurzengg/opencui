@@ -176,12 +176,29 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.continuationState = new ContinuationState({
       post: (msg) => this.post(msg),
       activeSubagentCount: () => this.subagentDispatch.activeSubagentCount(),
+      emitIdle: () => this.settleSessionIdle(),
     })
     this.applyActiveSnapshot()
     void this.manager.persist()
     if (this.taskStore) {
       this.taskStoreUnsub = this.taskStore.onDidChange((tasks) => this.postAgentsStatus(tasks))
     }
+  }
+
+  /**
+   * The full end-of-turn settlement: settle the session's task rows, drop
+   * the per-turn Main task ID, tell the webview, persist. Shared by the
+   * direct `session.idle` path and ContinuationState's deferred-idle timers —
+   * the deferred path once posted only `sessionIdle`, leaving the Main row
+   * `running` in workspaceState forever.
+   */
+  private settleSessionIdle() {
+    if (this.sessionID && this.taskStore) {
+      void this.taskStore.markSessionIdle(this.sessionID)
+    }
+    this.subagentDispatch.clearMainTaskID()
+    this.post({ type: "sessionIdle" })
+    void this.manager.flushPersist()
   }
 
   private postAgentsStatus(tasks: AgentTask[]) {
@@ -1770,12 +1787,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           return
         }
         this.continuationState.finishPending()
-        if (this.sessionID && this.taskStore) {
-          void this.taskStore.markSessionIdle(this.sessionID)
-        }
-        this.subagentDispatch.clearMainTaskID()
-        this.post({ type: "sessionIdle" })
-        void this.manager.flushPersist()
+        this.settleSessionIdle()
       },
       onChildSessionEvent: (event) => {
         if (this.aborting) return
