@@ -267,6 +267,46 @@ describe("reviewHunk: moved files", () => {
   })
 })
 
+describe("reviewHunk: undo of context-free deletion hunks", () => {
+  beforeEach(() => {
+    ;(vscode.workspace.applyEdit as ReturnType<typeof vi.fn>).mockImplementation(
+      async (edit: unknown) => {
+        const ops = (edit as { edits?: Array<{ uri: vscode.Uri; range: vscode.Range; text: string }> }).edits
+        if (!ops) return true
+        for (const op of [...ops].reverse()) {
+          const entry = files.get(op.uri.fsPath)
+          if (!entry) continue
+          const start = offsetFromPosition(entry.content, op.range.start)
+          const end = offsetFromPosition(entry.content, op.range.end)
+          entry.content = entry.content.slice(0, start) + op.text + entry.content.slice(end)
+        }
+        return true
+      },
+    )
+  })
+
+  it("restores deleted lines at their original position with the separator newline", async () => {
+    // Original: line1..line5. opencode deleted line3+line4 (no context lines).
+    files.set("/workspace/a.ts", { content: "line1\nline2\nline5\n" })
+    const patch = "@@ -3,2 +2,0 @@\n-line3\n-line4"
+    const { change, hunk } = makeChange({ path: "a.ts", patch })
+    const outcome = await reviewHunk(change, hunk, "rejected", { silent: true })
+    expect(outcome.status).toBe("applied")
+    // Regression: the old anchor put the block one line early and glued it
+    // to the following line ("line1\nline3\nline4line2\n…").
+    expect(files.get("/workspace/a.ts")?.content).toBe("line1\nline2\nline3\nline4\nline5\n")
+  })
+
+  it("restores a deleted trailing block at EOF of a newline-terminated file", async () => {
+    files.set("/workspace/b.ts", { content: "line1\nline2\n" })
+    const patch = "@@ -3,1 +2,0 @@\n-line3"
+    const { change, hunk } = makeChange({ path: "b.ts", patch })
+    const outcome = await reviewHunk(change, hunk, "rejected", { silent: true })
+    expect(outcome.status).toBe("applied")
+    expect(files.get("/workspace/b.ts")?.content).toBe("line1\nline2\nline3")
+  })
+})
+
 describe("reviewHunk: moved files with edits", () => {
   // Mirror WorkspaceEdit.replace onto the in-memory file map so the content
   // revert is observable (the shared applyEdit mock just returns true).

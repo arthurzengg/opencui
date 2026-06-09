@@ -240,6 +240,16 @@ export function findHunkInFile(
   current: string,
   hunk: Pick<ReviewDiffHunk, "newText" | "newStart" | "newCount" | "leadingContext" | "trailingContext">,
 ): { start: number; end: number } | undefined {
+  // Pure-deletion hunks (`+N,0`): per unified-diff convention the anchor is
+  // AFTER line N, so the restore point is the start of line N+1 — offset of
+  // line index N, not N-1. (N=0, deletion at the very top, yields offset 0.)
+  // Without this, the generic newStart-1 anchoring below matched the empty
+  // candidate one line too early.
+  if (hunk.newText === "" && hunk.newCount === 0) {
+    const offset = lineToByteOffset(current, hunk.newStart)
+    return { start: offset, end: offset }
+  }
+
   // Primary: line-anchored exact match. We try a few variants because opencode
   // and the editor may disagree on trailing-newline normalization.
   if (hunk.newStart > 0) {
