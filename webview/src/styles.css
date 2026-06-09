@@ -20,8 +20,11 @@
 
   /* === Radii ===
      `--radius` is the long-standing default used by most surfaces and is
-     kept at 6px so the existing visuals don't shift. */
-  --radius-sm:   3px;
+     kept at 6px so the existing visuals don't shift. `--radius-sm` is the
+     ONE small-control radius — rows, chips, small buttons, inline code,
+     popover inputs. The body rules used to split between literal 3px and
+     4px with no system behind the choice; they were collapsed to 4px. */
+  --radius-sm:   4px;
   --radius:      6px;
   --radius-lg:   10px;
   --radius-pill: 50%;
@@ -61,6 +64,29 @@
   --color-status-err:      #f85149;
   --color-status-pending:  #58a6ff;
   --color-scrollbar-thumb: rgba(121, 121, 121, 0.4);
+  /* Green shared by the live "agents running" pill, dot, and popover rows. */
+  --color-agent-running:   #7ee787;
+
+  /* === Semantic accent colors (theme token + fixed fallback) ===
+     One name per meaning, one fallback hex everywhere. Body rules used to
+     repeat the full `var(--vscode-…, #hex)` chain per site and the fallbacks
+     had drifted (two different error reds; "moved" files amber in the trace
+     list but blue in the review panel). Renamed/moved deliberately uses
+     charts-blue rather than the theme's renamed token so R stays distinct
+     from the U green and M amber beside it. */
+  --color-error:        var(--vscode-errorForeground, #f85149);
+  --color-warn:         var(--vscode-notificationsWarningIcon-foreground, #d29922);
+  --color-diff-add:     var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+  --color-diff-del:     var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+  --color-diff-mod:     var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow, #d29922));
+  --color-diff-renamed: var(--vscode-charts-blue, #79c0ff);
+
+  /* === Shadows ===
+     All dropdown-style popovers (selector / history / agents / @-mention)
+     share one elevation; the bottom-docked permission and question cards
+     share an upward one. The review panel keeps its own bespoke shadow. */
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.32);
+  --shadow-dock:    0 -4px 16px rgba(0, 0, 0, 0.22);
 
   /* === Component bindings ===
      Per-component spacing tokens. Centralising these names is what keeps
@@ -105,6 +131,15 @@ button {
   font-family: inherit;
   font-size: inherit;
   cursor: pointer;
+}
+/* One themed keyboard-focus ring for every button. Without this, controls
+   that lack their own :focus-visible rule fall back to Chromium's default
+   double ring, which looks alien next to VS Code chrome. Component rules
+   that need a different inset (e.g. .review-file's -1px) still win on
+   specificity. */
+button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
 }
 
 .app {
@@ -203,7 +238,7 @@ button {
      fades in. */
   padding: 2px 9px;
   min-height: 22px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   margin: 0;
   font: inherit;
   font-weight: 600;
@@ -234,7 +269,7 @@ button {
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--color-status-default);
 }
 .agents-pill:hover,
@@ -246,26 +281,26 @@ button {
   opacity: 0.55;
 }
 .agents-pill.is-running {
-  color: #7ee787;
+  color: var(--color-agent-running);
   animation: agents-breathe 1.6s ease-in-out infinite;
 }
 .agents-pill.is-running .agent-activity-dot {
-  background: #7ee787;
+  background: var(--color-agent-running);
 }
 .agents-pill.is-error {
-  color: var(--vscode-errorForeground, #f85149);
+  color: var(--color-error);
 }
 .agents-pill.is-error .agent-activity-dot {
-  background: var(--vscode-errorForeground, #f85149);
+  background: var(--color-error);
 }
 .agents-pill.is-waiting {
-  color: var(--vscode-notificationsWarningIcon-foreground, #d29922);
+  color: var(--color-warn);
 }
 .agents-pill.is-waiting .agent-activity-dot {
-  background: var(--vscode-notificationsWarningIcon-foreground, #d29922);
+  background: var(--color-warn);
 }
 @keyframes agents-breathe {
-  0%, 100% { opacity: 1; color: #7ee787; }
+  0%, 100% { opacity: 1; color: var(--color-agent-running); }
   50%      { opacity: 0.55; color: #39d353; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -284,7 +319,7 @@ button {
   color: var(--vscode-foreground);
   border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  box-shadow: var(--shadow-popover);
   padding: 8px 0;
   z-index: var(--z-popover);
   font-size: 12px;
@@ -316,7 +351,7 @@ button {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   opacity: 0.7;
 }
 .agents-popover-section {
@@ -324,7 +359,7 @@ button {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   opacity: 0.55;
 }
 .agents-row {
@@ -357,9 +392,9 @@ button {
   overflow: hidden;
   font-variant-numeric: tabular-nums;
 }
-.agents-row-running .agents-row-title { color: #7ee787; }
-.agents-row-error .agents-row-meta { color: var(--vscode-errorForeground, #f85149); }
-.agents-row-waiting .agents-row-meta { color: var(--vscode-notificationsWarningIcon-foreground, #d29922); }
+.agents-row-running .agents-row-title { color: var(--color-agent-running); }
+.agents-row-error .agents-row-meta { color: var(--color-error); }
+.agents-row-waiting .agents-row-meta { color: var(--color-warn); }
 .agents-popover-empty {
   padding: 6px 12px;
   opacity: 0.6;
@@ -382,7 +417,7 @@ button {
   min-height: 22px;
   padding: 2px 9px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
   font-size: 11px;
@@ -446,7 +481,7 @@ button {
   border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
   border-radius: var(--radius);
   background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  box-shadow: var(--shadow-popover);
 }
 .selector-row {
   display: grid;
@@ -455,7 +490,7 @@ button {
   gap: 8px;
   padding: 7px 8px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   font-size: 12px;
@@ -469,7 +504,9 @@ button {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  /* All uppercase micro-labels track at 0.05em (see .question-header,
+     .mention-section, .agents-popover-*). */
+  letter-spacing: 0.05em;
 }
 .selector-row-value {
   min-width: 0;
@@ -508,7 +545,7 @@ button {
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--vscode-foreground);
   line-height: 1;
@@ -540,7 +577,7 @@ button {
   border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
   border-radius: var(--radius);
   background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  box-shadow: var(--shadow-popover);
 }
 .history-popover-header {
   display: flex;
@@ -562,16 +599,16 @@ button {
   gap: 6px;
   padding: 3px 6px;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+  color: var(--color-diff-add);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .history-new:hover {
-  background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #3fb950) 14%, transparent);
+  background: color-mix(in srgb, var(--color-diff-add) 14%, transparent);
 }
 .history-new .codicon {
   flex: 0 0 auto;
@@ -586,7 +623,7 @@ button {
   height: 26px;
   padding: 3px 8px;
   border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   font-family: inherit;
@@ -612,7 +649,7 @@ button {
   align-items: center;
   gap: 4px;
   padding: 2px 4px 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .history-item:hover {
   background: var(--hover-bg-row);
@@ -660,7 +697,7 @@ button {
 .history-action {
   padding: 3px 5px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
@@ -690,7 +727,7 @@ button {
 }
 .history-action.danger:hover,
 .history-action.danger.is-confirming {
-  color: var(--vscode-errorForeground);
+  color: var(--color-error);
 }
 .history-action.danger.is-confirming {
   background: var(--vscode-inputValidation-errorBackground, rgba(248, 81, 73, 0.18));
@@ -706,7 +743,7 @@ button {
   height: 24px;
   padding: 3px 6px;
   border: 1px solid var(--vscode-input-border, var(--vscode-focusBorder));
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   font-size: 12px;
@@ -762,7 +799,7 @@ button {
   width: 12px;
   height: 12px;
   border: 1.4px solid var(--vscode-descriptionForeground);
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   opacity: 0.9;
 }
 .trace-todo-item.status-in_progress .trace-todo-status {
@@ -772,7 +809,7 @@ button {
   content: "";
   position: absolute;
   inset: 3px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--vscode-charts-yellow);
 }
 .trace-todo-item.status-completed .trace-todo-status {
@@ -889,7 +926,7 @@ button {
   opacity: 0.85;
 }
 .welcome-suggestion:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: var(--hover-bg-row);
   opacity: 1;
 }
 
@@ -1135,7 +1172,7 @@ button {
 }
 
 .msg-error {
-  color: var(--vscode-errorForeground);
+  color: var(--color-error);
   background: rgba(248, 81, 73, 0.1);
   padding: 6px 10px;
   border-radius: var(--radius);
@@ -1166,7 +1203,7 @@ button {
   flex: 0 0 auto;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: currentColor;
   opacity: 0.7;
 }
@@ -1176,7 +1213,7 @@ button {
   margin-left: 4px;
   padding: 1px 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
   font-size: 11px;
@@ -1208,14 +1245,14 @@ button {
   gap: 6px;
   padding: 2px 6px;
   font-size: 11px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--vscode-editorWidget-background);
   border: 1px solid var(--vscode-editorWidget-border, transparent);
 }
 .index-status-dot {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--vscode-descriptionForeground);
 }
 .index-status.state-ready    .index-status-dot { background: var(--vscode-charts-green); }
@@ -1229,10 +1266,10 @@ button {
   color: inherit;
   font-size: 10px;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.index-status-action:hover { background: var(--vscode-list-hoverBackground); }
+.index-status-action:hover { background: var(--hover-bg-icon); }
 .index-status-wrap {
   display: flex;
   justify-content: flex-end;
@@ -1363,7 +1400,7 @@ button {
 .md code {
   background: var(--vscode-textCodeBlock-background);
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-family: var(--vscode-editor-font-family);
   font-size: 0.9em;
 }
@@ -1501,20 +1538,20 @@ button {
   text-align: left;
 }
 .edit-row:hover {
-  background: var(--vscode-list-hoverBackground);
+  background: var(--hover-bg-row);
 }
 .edit-row.status-running {
   opacity: 0.7;
 }
 .edit-row.kind-created .edit-name {
-  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+  color: var(--color-diff-add);
 }
 .edit-row.kind-deleted .edit-name {
-  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+  color: var(--color-diff-del);
   text-decoration: line-through;
 }
 .edit-row.kind-moved .edit-name {
-  color: var(--vscode-gitDecoration-renamedResourceForeground, var(--vscode-charts-yellow, #d29922));
+  color: var(--color-diff-renamed);
 }
 .edit-name {
   min-width: 0;
@@ -1529,8 +1566,8 @@ button {
   font-family: var(--vscode-editor-font-family);
   font-size: 11px;
 }
-.edit-add { color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950); }
-.edit-del { color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149); }
+.edit-add { color: var(--color-diff-add); }
+.edit-del { color: var(--color-diff-del); }
 .edit-running {
   opacity: 0.65;
   font-style: italic;
@@ -1539,7 +1576,7 @@ button {
 .edit-error {
   grid-column: 1 / -1;
   margin-top: 2px;
-  color: var(--vscode-errorForeground);
+  color: var(--color-error);
   font-size: 11px;
   overflow: hidden;
   white-space: nowrap;
@@ -1611,7 +1648,7 @@ button {
   color: var(--vscode-descriptionForeground);
 }
 .other-row.status-error {
-  color: var(--vscode-errorForeground);
+  color: var(--color-error);
 }
 .other-action {
   flex: 0 0 auto;
@@ -1633,7 +1670,7 @@ button {
 }
 .other-error {
   min-width: 0;
-  color: var(--vscode-errorForeground);
+  color: var(--color-error);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1650,7 +1687,7 @@ button {
   border-left: 3px solid var(--vscode-focusBorder);
   background: var(--vscode-editorWidget-background);
   border-radius: var(--radius);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-dock);
 }
 .permission-title { font-weight: 600; margin-bottom: 6px; }
 .permission-body { font-size: 12px; margin-bottom: 8px; }
@@ -1658,7 +1695,7 @@ button {
   display: block;
   background: var(--vscode-textCodeBlock-background);
   padding: 4px 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   margin-top: 4px;
   font-family: var(--vscode-editor-font-family);
   overflow: hidden;
@@ -1683,7 +1720,7 @@ button {
   border-left: 3px solid var(--vscode-focusBorder);
   background: var(--vscode-editorWidget-background);
   border-radius: var(--radius);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-dock);
   max-height: 60vh;
   overflow-y: auto;
 }
@@ -1706,13 +1743,13 @@ button {
   width: 100%;
   padding: 6px 8px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
-.question-option:hover { background: var(--vscode-list-hoverBackground); }
+.question-option:hover { background: var(--hover-bg-row); }
 .question-option.is-checked {
   background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
 }
@@ -1729,8 +1766,8 @@ button {
   font-size: 10px;
   line-height: 1;
 }
-.question-option-marker.circle { border-radius: 50%; }
-.question-option-marker.square { border-radius: 3px; }
+.question-option-marker.circle { border-radius: var(--radius-pill); }
+.question-option-marker.square { border-radius: var(--radius-sm); }
 .question-option-marker .codicon { font-size: 11px; }
 .question-option.is-checked .question-option-marker {
   border-color: var(--vscode-focusBorder);
@@ -1749,7 +1786,7 @@ button {
   margin-top: 2px;
   padding: 6px 8px;
   border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--vscode-input-background);
   color: var(--vscode-input-foreground);
   font-family: inherit;
@@ -1850,13 +1887,13 @@ button {
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .review-bulk-action:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--hover-bg-icon);
 }
 .review-bulk-action.accept:hover {
-  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+  color: var(--color-diff-add);
 }
 .review-bulk-action.reject:hover {
-  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+  color: var(--color-diff-del);
 }
 .review-bulk-action:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
@@ -1942,13 +1979,13 @@ button {
   opacity: 1;
 }
 .review-file-action:hover {
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--hover-bg-icon);
 }
 .review-file-action.accept:hover {
-  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+  color: var(--color-diff-add);
 }
 .review-file-action.reject:hover {
-  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+  color: var(--color-diff-del);
 }
 .review-file-action:focus-visible {
   opacity: 1;
@@ -1962,11 +1999,11 @@ button {
 }
 .review-stat.add,
 .review-file-stat.add {
-  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+  color: var(--color-diff-add);
 }
 .review-stat.del,
 .review-file-stat.del {
-  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+  color: var(--color-diff-del);
 }
 .review-body-clip {
   display: grid;
@@ -2074,16 +2111,16 @@ button {
    stays in the default foreground so long paths remain easy to scan.
    Palette: M amber, U green, D red, R blue. */
 .review-file.kind-updated .review-file-kind {
-  color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-charts-yellow, #d29922));
+  color: var(--color-diff-mod);
 }
 .review-file.kind-created .review-file-kind {
-  color: var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+  color: var(--color-diff-add);
 }
 .review-file.kind-deleted .review-file-kind {
-  color: var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+  color: var(--color-diff-del);
 }
 .review-file.kind-moved .review-file-kind {
-  color: var(--vscode-charts-blue, #79c0ff);
+  color: var(--color-diff-renamed);
 }
 .review-file-kind {
   grid-area: kind;
@@ -2175,7 +2212,7 @@ button {
 }
 .promptbox-backdrop .mention-chip {
   background: var(--vscode-editor-wordHighlightStrongBackground, rgba(80, 140, 255, 0.22));
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 0 0 1px var(--vscode-editor-wordHighlightStrongBorder, rgba(80, 140, 255, 0.4));
 }
 .promptbox-backdrop .mention-chip-selected {
@@ -2299,7 +2336,7 @@ button {
   display: block;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: conic-gradient(
     var(--context-usage-color) var(--context-usage-deg, 0deg),
     var(--context-usage-track) 0deg
@@ -2310,7 +2347,7 @@ button {
   content: "";
   position: absolute;
   inset: 3px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--color-bg-input);
 }
 
@@ -2368,7 +2405,7 @@ button {
   padding: 0;
   border: 1px solid var(--vscode-panel-border);
   border-left: 3px solid var(--vscode-charts-blue, var(--vscode-textLink-foreground));
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--vscode-editorWidget-background);
   font-size: 12px;
   overflow: hidden;
@@ -2390,7 +2427,9 @@ button {
   flex: 0 0 10px;
   font-size: 10px;
   line-height: 1;
-  transition: transform 0.15s ease;
+  /* 0.16s matches .process-caret / .review-caret — every disclosure chevron
+     rotates at the same speed. */
+  transition: transform 0.16s ease;
   transform-origin: 50% 55%;
 }
 .system-reminder[open] > .system-reminder-summary .system-reminder-chevron {
@@ -2417,7 +2456,7 @@ button {
   padding: 2px 7px 2px 4px;
   background: var(--vscode-editor-inactiveSelectionBackground, var(--vscode-editorWidget-background));
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   font-size: 11px;
   line-height: 1.4;
   max-width: 220px;
@@ -2444,7 +2483,7 @@ button {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: var(--radius);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
   /* Image itself shouldn't show zoom-out cursor — only the backdrop
      dismisses on click. */
@@ -2458,7 +2497,7 @@ button {
   height: 30px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
   display: inline-flex;
@@ -2468,7 +2507,9 @@ button {
   transition: background-color 0.12s ease;
 }
 .image-preview-close:hover {
-  background: rgba(0, 0, 0, 0.85);
+  /* Same rest/hover scrim pair as .image-thumb-remove — the two dark circle
+     buttons on imagery darken identically. */
+  background: rgba(0, 0, 0, 0.78);
 }
 .image-preview-close .codicon {
   font-size: 16px;
@@ -2495,7 +2536,7 @@ button {
 }
 .attachment-error {
   font-size: 11px;
-  color: var(--vscode-errorForeground, #f14c4c);
+  color: var(--color-error);
   margin-bottom: 4px;
 }
 /* Pasted-image thumbnail strip above the prompt textarea. Synthesised
@@ -2527,7 +2568,7 @@ button {
   width: 100%;
   height: 100%;
   padding: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   background-color: var(--vscode-input-background);
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, transparent));
@@ -2559,7 +2600,7 @@ button {
   height: 12px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
   display: inline-flex;
@@ -2587,12 +2628,12 @@ button {
   height: 24px;
   background: transparent;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--vscode-foreground);
   cursor: pointer;
   padding: 0;
 }
-.icon-btn.attach-btn:hover { background: var(--vscode-toolbar-hoverBackground); }
+.icon-btn.attach-btn:hover { background: var(--hover-bg-icon); }
 .icon-btn.attach-btn:disabled { opacity: 0.4; cursor: default; }
 .msg-attachments {
   list-style: none;
@@ -2619,7 +2660,7 @@ button {
   background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
   border-radius: var(--radius);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-popover);
   z-index: var(--z-popover);
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -2846,7 +2887,7 @@ button {
   color: var(--vscode-button-secondaryForeground);
   border: none;
   padding: 4px 10px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: 11px;
 }
 .btn.compact { padding: 2px 7px; }
@@ -2860,7 +2901,7 @@ button {
   width: 18px;
   height: 18px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   flex: 0 0 auto;
   transition: background-color 160ms ease-out, transform 160ms ease-out, box-shadow 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out;
 }
@@ -2886,7 +2927,7 @@ button {
 .btn.danger.icon:hover {
   color: var(--vscode-foreground);
   border-color: var(--vscode-foreground);
-  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  background: var(--hover-bg-icon);
 }
 .btn.primary.icon:disabled,
 .btn.danger.icon:disabled {
@@ -2924,7 +2965,7 @@ button {
   color: white;
 }
 .btn.subtle { opacity: 0.7; background: transparent; }
-.btn.subtle:hover { background: var(--vscode-list-hoverBackground); }
+.btn.subtle:hover { background: var(--hover-bg-row); }
 .btn.link {
   background: transparent;
   color: var(--vscode-textLink-foreground);
