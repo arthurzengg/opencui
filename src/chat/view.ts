@@ -18,16 +18,13 @@ import { getWorkspaceRoots, primaryWorkspaceRoot } from "../workspace-root"
 import type { WorkspaceInfo } from "../protocol"
 import type {
   Attachment,
-  ChatBlock,
   ChatMessage,
   CommandInfo,
   ContextUsage,
   Inbound,
   Outbound,
-  ToolUpdate as WireToolUpdate,
   Selection,
   ReviewChange,
-  ReviewChangeActor,
   ReviewHunkState,
 } from "../protocol"
 import { BUILTIN_COMMAND_NAMES, withBuiltinCommands, generateMessageID } from "./builtin-commands"
@@ -38,6 +35,7 @@ import { ContinuationState } from "./continuation-state"
 import { SubagentDispatch } from "./subagent-dispatch"
 export { summarizePrompt } from "./subagent-dispatch"
 import { relativeToCwd, samePath } from "./paths"
+import { reduceLocal } from "./message-reducer"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { extractChanges, reviewChanges } from "./review-changes"
 import { reviewAllForPath } from "./review-actions"
@@ -406,126 +404,12 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private applyLocal(msg: Outbound) {
-    switch (msg.type) {
-      case "restore":
-        this.messages = msg.messages.map((m) => ({ ...m, pending: false }))
-        this.reviewHunks = msg.reviewHunks ?? {}
-        this.queueReviewDecorationsSync()
-        return
-      case "clear":
-        this.messages = []
-        this.reviewHunks = {}
-        this.saveActive()
-        return
-      case "userMessage": {
-        const blocks: ChatBlock[] = []
-        if (msg.attachments) {
-          for (const a of msg.attachments) {
-            blocks.push({
-              type: "attachment",
-              mime: a.mime,
-              filename: a.filename,
-              dataUrl: a.dataUrl,
-              bytes: a.bytes,
-            })
-          }
-        }
-        blocks.push({ type: "text", text: msg.text })
-        this.messages = [
-          ...this.messages,
-          {
-            id: msg.id,
-            role: "user",
-            blocks,
-            ref: msg.ref,
-            backendID: msg.backendID,
-            mentions: msg.mentions,
-            conversationMentions: msg.conversationMentions,
-          },
-        ]
-        this.saveActive()
-        return
-      }
-      case "userMessageBackendID":
-        this.messages = this.messages.map((m) =>
-          m.id === msg.id ? { ...m, backendID: msg.backendID } : m,
-        )
-        this.saveActive()
-        return
-      case "userMessageContext":
-        this.messages = this.messages.map((m) =>
-          m.id === msg.id ? { ...m, context: msg.context } : m,
-        )
-        this.saveActive()
-        return
-      case "assistantStart":
-        this.messages = [...this.messages, { id: msg.id, role: "assistant", blocks: [], pending: true }]
-        this.saveActive()
-        return
-      case "textDelta":
-        this.messages = appendText(this.messages, msg.id, "text", msg.delta)
-        this.saveActive()
-        return
-      case "reasoningDelta":
-        this.messages = appendText(this.messages, msg.id, "reasoning", msg.delta)
-        this.saveActive()
-        return
-      case "tool":
-        this.messages = upsertTool(this.messages, msg.id, msg.update, msg.actor)
-        this.saveActive()
-        this.queueReviewDecorationsSync()
-        return
-      case "patch":
-        this.messages = this.messages.map((m) =>
-          m.id === msg.id
-            ? { ...m, blocks: [...m.blocks, { type: "patch", files: msg.files, diff: msg.diff, actor: msg.actor }] }
-            : m,
-        )
-        this.saveActive()
-        this.queueReviewDecorationsSync()
-        return
-      case "reviewHunkState":
-        this.reviewHunks = { ...this.reviewHunks }
-        if (msg.state) this.reviewHunks[msg.key] = msg.state
-        else delete this.reviewHunks[msg.key]
-        this.saveActive()
-        this.queueReviewDecorationsSync()
-        return
-      case "assistantError":
-        this.messages = this.messages.map((m) =>
-          m.id === msg.id ? { ...m, error: msg.message, pending: false } : m,
-        )
-        this.saveActive()
-        return
-      case "assistantDone":
-        this.messages = this.messages.map((m) =>
-          m.id === msg.id ? { ...m, pending: false, usage: msg.usage } : m,
-        )
-        this.saveActive()
-        return
-      case "aborted": {
-        // Only the LAST pending assistant in the turn carries the Stopped
-        // badge; intermediate ones just clear pending. Otherwise multi-step
-        // turns (subtasks, retries) show several Stopped badges per abort.
-        let lastPendingIdx = -1
-        this.messages.forEach((m, i) => {
-          if (m.role === "assistant" && m.pending) lastPendingIdx = i
-        })
-        this.messages = this.messages.map((m, i) => {
-          if (m.role !== "assistant" || !m.pending) return m
-          if (i === lastPendingIdx) return { ...m, pending: false, stopped: true }
-          return { ...m, pending: false }
-        })
-        this.saveActive()
-        return
-      }
-      case "sessionIdle":
-        this.messages = this.messages.map((m) =>
-          m.role === "assistant" && m.pending ? { ...m, pending: false } : m,
-        )
-        this.saveActive()
-        return
-    }
+    const next = reduceLocal({ messages: this.messages, reviewHunks: this.reviewHunks }, msg)
+    if (!next) return
+    this.messages = next.messages
+    this.reviewHunks = next.reviewHunks
+    if (next.save) this.saveActive()
+    if (next.syncDecorations) this.queueReviewDecorationsSync()
   }
 
   private postSelection() {
@@ -2208,44 +2092,3 @@ function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | 
   return out
 }
 
-function appendText(
-  messages: ChatMessage[],
-  id: string,
-  kind: "text" | "reasoning",
-  delta: string,
-): ChatMessage[] {
-  return messages.map((message) => {
-    if (message.id !== id) return message
-    const last = message.blocks[message.blocks.length - 1]
-    if (last?.type === kind) {
-      return {
-        ...message,
-        blocks: [...message.blocks.slice(0, -1), { type: kind, text: last.text + delta }],
-      }
-    }
-    return { ...message, blocks: [...message.blocks, { type: kind, text: delta }] }
-  })
-}
-
-function upsertTool(
-  messages: ChatMessage[],
-  id: string,
-  update: WireToolUpdate,
-  actor?: ReviewChangeActor,
-): ChatMessage[] {
-  return messages.map((message) => {
-    if (message.id !== id) return message
-    const existing = message.blocks.findIndex((b) => b.type === "tool" && b.update.callID === update.callID)
-    if (existing >= 0) {
-      const blocks = message.blocks.slice()
-      const prev = blocks[existing]
-      blocks[existing] = {
-        type: "tool",
-        update,
-        actor: actor ?? (prev.type === "tool" ? prev.actor : undefined),
-      }
-      return { ...message, blocks }
-    }
-    return { ...message, blocks: [...message.blocks, { type: "tool", update, actor }] }
-  })
-}
