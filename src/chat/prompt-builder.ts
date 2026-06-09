@@ -5,6 +5,7 @@ import type { ChatMessage } from "../protocol"
 import type { WorkspaceRoot } from "../workspace-root"
 import type { PromptContextBlock } from "../workspace-context/types"
 import { log } from "../output"
+import { stripWorkspaceFolderPrefix } from "./paths"
 
 export const DEFAULT_MENTION_MAX_BYTES = 200_000
 export const DEFAULT_CONVERSATION_MAX_BYTES = 100_000
@@ -83,8 +84,8 @@ export async function readMentions(
   if (!mentions || mentions.length === 0) {
     return { bytes: {}, capped: [], failed: [] }
   }
-  const folder = vscode.workspace.workspaceFolders?.[0]
-  if (!folder) return { bytes: {}, capped: [], failed: [] }
+  const folders = vscode.workspace.workspaceFolders ?? []
+  if (!folders.length) return { bytes: {}, capped: [], failed: [] }
   const seen = new Set<string>()
   const blocks: string[] = []
   const bytes: Record<string, { included: number; original: number }> = {}
@@ -98,9 +99,8 @@ export async function readMentions(
       capped.push(rel)
       continue
     }
-    const uri = path.isAbsolute(rel) ? vscode.Uri.file(rel) : vscode.Uri.joinPath(folder.uri, rel)
     try {
-      const buf = await vscode.workspace.fs.readFile(uri)
+      const buf = await readFirstCandidate(rel, folders)
       const remaining = maxBytes - totalBytes
       if (remaining <= 0) {
         capped.push(rel)
@@ -121,6 +121,39 @@ export async function readMentions(
   }
   const block = blocks.length > 0 ? ["Files attached:", ...blocks].join("\n") : undefined
   return { block, bytes, capped, failed }
+}
+
+/**
+ * Resolve a mention path against every workspace folder and return the first
+ * readable file. Exact paths are tried before folder-name-stripped variants:
+ * in multi-root workspaces `asRelativePath` (the source of picker paths)
+ * prefixes the owning folder's name, so `folderB/src/x.ts` must resolve
+ * inside folder B — but a real subdirectory that happens to share the folder
+ * name must still win.
+ */
+async function readFirstCandidate(
+  rel: string,
+  folders: readonly vscode.WorkspaceFolder[],
+): Promise<Uint8Array> {
+  const candidates: vscode.Uri[] = []
+  if (path.isAbsolute(rel)) {
+    candidates.push(vscode.Uri.file(rel))
+  } else {
+    for (const folder of folders) candidates.push(vscode.Uri.joinPath(folder.uri, rel))
+    for (const folder of folders) {
+      const stripped = stripWorkspaceFolderPrefix(folder.uri.fsPath, rel)
+      if (stripped) candidates.push(vscode.Uri.joinPath(folder.uri, stripped))
+    }
+  }
+  let lastError: unknown
+  for (const uri of candidates) {
+    try {
+      return await vscode.workspace.fs.readFile(uri)
+    } catch (e) {
+      lastError = e
+    }
+  }
+  throw lastError ?? new Error(`no candidate for ${rel}`)
 }
 
 export type ConversationMentionResult = {
