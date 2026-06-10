@@ -106,6 +106,15 @@ export class SubagentTracker {
   private readonly getConversationID: () => string
   private readonly getParentSessionID: () => string | undefined
   private readonly dispatches = new Map<string, DispatchState>()
+  /**
+   * Child sessions re-activated by a task_id-reuse resume. Their store rows
+   * are already terminal and the terminal-state guard (correctly) refuses to
+   * resurrect them — but the child IS working again, so the continuation
+   * gate must count it or the parent's session.idle clears busy mid-run.
+   * In-memory only: a reload loses it, and reconcile() re-checks live
+   * children anyway.
+   */
+  private readonly resumedActive = new Set<string>()
 
   constructor(deps: SubagentTrackerDeps) {
     this.store = deps.store
@@ -198,6 +207,21 @@ export class SubagentTracker {
         updatedAt: now,
       }
       await this.store.upsert(next)
+      const after = this.store.get(dispatch.taskID)
+      if (
+        dispatch.childSessionID &&
+        after &&
+        (after.status === "completed" || after.status === "error" || after.status === "cancelled")
+      ) {
+        // The upsert was rejected by the terminal guard: this is a task_id
+        // reuse resume. Track the re-activated child in memory so the
+        // continuation gate stays closed while it works.
+        if (!this.resumedActive.has(dispatch.childSessionID)) {
+          this.resumedActive.add(dispatch.childSessionID)
+          this.subscription.addChildSession(dispatch.childSessionID)
+          log(`[subagent-tracker] resume detected for ${dispatch.taskID} — gating via in-memory active set`)
+        }
+      }
       log(
         `[subagent-tracker] running ${dispatch.taskID} child=${dispatch.childSessionID ?? "(unknown)"} bg=${merged.runInBackground ?? false} agent=${merged.subagent ?? "?"}`,
       )
@@ -253,6 +277,7 @@ export class SubagentTracker {
       // any late child events are stale.
       if (dispatch.childSessionID) {
         this.subscription.removeChildSession(dispatch.childSessionID)
+        this.resumedActive.delete(dispatch.childSessionID)
       }
       this.dispatches.delete(update.callID)
       log(
@@ -291,6 +316,11 @@ export class SubagentTracker {
         // the subscription doesn't keep routing its future events
         // (some plugins keep sessions warm for resume).
         if (existing.status === "completed" || existing.status === "error" || existing.status === "cancelled") {
+          // A resumed child settling: release the in-memory gate hold.
+          if (this.resumedActive.delete(event.sessionID)) {
+            this.subscription.removeChildSession(event.sessionID)
+            log(`[subagent-tracker] resumed child ${event.sessionID} idle → gate released`)
+          }
           return
         }
         await this.store.update(taskID, { status: "completed", updatedAt: now })
@@ -299,6 +329,7 @@ export class SubagentTracker {
         log(`[subagent-tracker] ${taskID} child idle → completed`)
         return
       case "error": {
+        this.resumedActive.delete(event.sessionID)
         const classified = classifyTerminal(event.message)
         await this.store.update(taskID, {
           status: classified.status,
@@ -312,6 +343,7 @@ export class SubagentTracker {
       }
       case "assistantEnd":
         if (event.error) {
+          this.resumedActive.delete(event.sessionID)
           const classified = classifyTerminal(event.error)
           await this.store.update(taskID, {
             status: classified.status,
@@ -492,6 +524,15 @@ export class SubagentTracker {
   /** Drop in-memory dispatch state — called on conversation switch. */
   reset(): void {
     this.dispatches.clear()
+    this.resumedActive.clear()
+  }
+
+  /**
+   * Resumed children currently holding the continuation gate open. Added to
+   * the store-derived count by `SubagentDispatch.activeSubagentCount`.
+   */
+  resumedActiveCount(): number {
+    return this.resumedActive.size
   }
 
   /**
@@ -523,6 +564,13 @@ export class SubagentTracker {
       }
       this.forgetCallIDsFor(task.id)
     }
+    // Resumed children live only in memory (their rows are terminal) —
+    // seed them into the abort sweep too, or Stop leaves them running.
+    for (const sid of this.resumedActive) {
+      this.subscription.removeChildSession(sid)
+      if (!childSessionIDs.includes(sid)) childSessionIDs.push(sid)
+    }
+    this.resumedActive.clear()
     await this.store.cancelSessionTasks(parentSessionID)
     return childSessionIDs
   }
