@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-06-09
+
+### Fixed
+- A second Stop in the same conversation aborts the session tree again — the aborted-session set previously lived for the window's lifetime, so every Stop after the first was a no-op. Stop remains a single abort volley: sessions that appear under the root after Stop (opencode's internal title/summary agents, follow-up work) are not hunted down by background re-sweeps (#316, #317, #342, #343).
+- Tools still in flight when you press Stop now settle to their final completed/error state instead of rendering as "running" forever, and disk-mutating patches arriving mid-stop are still recorded (#328, #329).
+- Permission prompts and agent questions no longer pop up for a turn that is being stopped (#330, #331).
+- Enter no longer submits a new prompt while the composer is in the "Stopping…" state (#332, #333).
+- An open question dialog is dismissed when switching conversations instead of surviving into the other chat (#326, #327).
+- The extension recovers from opencode server crashes and dropped SSE streams: the dead backend handle is cleared, the event stream re-attaches (throttled), and a failed send surfaces an error instead of leaving the turn stuck on "Working…" (#324, #325).
+- Agents popover: the Main row settles when a deferred idle resolves by timer (#318, #319), rows no longer survive a window reload as ghosts (#338, #339), and resumed subagents are counted by the continuation gate so a turn doesn't end while they are still working (#340, #341).
+- Review: undoing a moved file restores the full original content instead of truncating it to a single hunk's fragment (#320, #321), and undoing a pure-deletion hunk re-inserts the lines at the correct anchor with a separating newline instead of gluing them to the following line (#336, #337).
+- `@file` mentions resolve across all folders of a multi-root workspace (#322, #323).
+- The active-conversation pointer survives the globalState-to-workspaceState migration instead of resetting to the first conversation (#334, #335).
+
+### Changed
+- Drifted hover colors, radii, and spacing unified behind shared design tokens (#314, #315).
+
 ## [1.4.3] - 2026-06-09
 
 ### Fixed
