@@ -941,9 +941,10 @@ export class ChatView implements vscode.WebviewViewProvider {
       // its children closes that race.
       const state = { aborted: this.abortedTree, isLive: () => gen === this.abortGen }
       await sweepAbortTree(backend.client, sessionID, childSessionIDs, state)
-      // The first sweep can miss sessions the orchestrator dispatches while
-      // the sweep is in flight. Drain in the background until a sweep finds
-      // nothing new (or the user starts a new turn, bumping `abortGen`).
+      // Bounded safety net from the original design: with traversal gated on
+      // the aborted set, a pass after a complete sweep terminates at the root
+      // and goes quiet. Stop is one volley — the drain must NOT re-hunt the
+      // tree, or it kills sessions spawned after Stop (see sweepAbortTree).
       void drainAbortTree(backend.client, sessionID, state, {
         passes: ChatView.ABORT_DRAIN_PASSES,
         intervalMs: ChatView.ABORT_DRAIN_INTERVAL_MS,

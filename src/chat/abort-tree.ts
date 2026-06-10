@@ -18,6 +18,16 @@ export interface AbortSweepState {
  * number of sessions newly aborted in this pass. `seed` lets the caller
  * inject child IDs known to the tracker that may not yet show up in
  * `session.children`.
+ *
+ * Traversal is gated on `state.aborted` itself: a session aborted this
+ * generation is neither re-aborted NOR re-listed, so a re-sweep over a
+ * fully swept tree terminates at the root and touches nothing. This is
+ * deliberate (and a revert of #317's visited/aborted split): a sweep that
+ * re-listed children of aborted nodes kept shooting down every session
+ * that appeared under the root for the whole drain window — opencode's
+ * own post-abort children (title/summary/compaction agents) and follow-up
+ * work started through paths that don't bump the generation. Stop must be
+ * one volley, then silence.
  */
 export async function sweepAbortTree(
   client: Backend["client"],
@@ -26,31 +36,22 @@ export async function sweepAbortTree(
   state: AbortSweepState,
 ): Promise<number> {
   let newlyAborted = 0
-  // Per-pass traversal guard, deliberately distinct from `state.aborted`:
-  // drain passes must re-list children of already-aborted nodes to catch
-  // sessions the orchestrator dispatched after the node was first aborted.
-  // Gating traversal on `state.aborted` made every drain pass skip the root
-  // and exit having seen nothing.
-  const visited = new Set<string>()
   const queue = [rootID, ...seed]
   while (queue.length) {
     if (!state.isLive()) break
     const id = queue.shift()!
-    if (visited.has(id)) continue
-    visited.add(id)
-    if (!state.aborted.has(id)) {
-      state.aborted.add(id)
-      newlyAborted++
-      try {
-        await client.session.abort({ path: { id } })
-      } catch (e) {
-        log("session.abort failed", id, e)
-      }
+    if (state.aborted.has(id)) continue
+    state.aborted.add(id)
+    newlyAborted++
+    try {
+      await client.session.abort({ path: { id } })
+    } catch (e) {
+      log("session.abort failed", id, e)
     }
     try {
       const res = await client.session.children({ path: { id } })
       for (const child of res.data ?? []) {
-        if (child?.id && !visited.has(child.id)) queue.push(child.id)
+        if (child?.id && !state.aborted.has(child.id)) queue.push(child.id)
       }
     } catch (e) {
       log("session.children failed", id, e)
@@ -60,9 +61,12 @@ export async function sweepAbortTree(
 }
 
 /**
- * Re-sweep the subtree until a pass finds no new sessions, catching tasks
- * the orchestrator dispatches in the window after the initial sweep. Bounded
- * by iteration count and abandoned the moment the generation is superseded.
+ * Bounded re-sweep safety net carried over from the original design. With
+ * traversal gated on `state.aborted`, a pass after a COMPLETE initial sweep
+ * stops at the already-aborted root and returns 0 immediately — the drain
+ * only matters for sessions seeded late into a sweep that was still
+ * mid-walk. It must never become a window that aborts sessions spawned
+ * after Stop (see `sweepAbortTree`).
  */
 export async function drainAbortTree(
   client: Backend["client"],
