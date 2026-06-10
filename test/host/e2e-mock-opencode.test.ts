@@ -93,22 +93,23 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     )
   })
 
-  it("a re-sweep finds children dispatched after the first sweep without re-aborting settled nodes", async () => {
+  it("a re-sweep over a fully swept tree is silent — post-Stop sessions are NOT hunted down", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     server.setChildren("ses_parent", ["ses_child_a"])
 
     const state = { aborted: new Set<string>(), isLive: () => true }
     expect(await sweepAbortTree(client, "ses_parent", [], state)).toBe(2)
 
-    // Orchestrator dispatches a late background task between sweeps — the
-    // drain regression: a traversal gated on the aborted set would skip the
-    // already-aborted root, never list its children, and miss ses_late.
-    server.setChildren("ses_parent", ["ses_child_a", "ses_late"])
-    expect(await sweepAbortTree(client, "ses_parent", [], state)).toBe(1)
-
-    expect(server.aborts).toEqual(["ses_parent", "ses_child_a", "ses_late"])
-    // Quiet tree → 0, which is what lets drainAbortTree terminate.
+    // A new session appears under the root right after Stop: opencode's own
+    // title/summary/compaction children, or follow-up work that doesn't bump
+    // the generation. The #317 visited/aborted split re-listed children of
+    // aborted nodes and shot these down for the whole drain window — the
+    // regression vs v1.4.3. Original semantics: traversal terminates at the
+    // already-aborted root and the late session survives.
+    server.setChildren("ses_parent", ["ses_child_a", "ses_post_stop"])
     expect(await sweepAbortTree(client, "ses_parent", [], state)).toBe(0)
+
+    expect(server.aborts).toEqual(["ses_parent", "ses_child_a"])
   })
 
   it("a fresh generation re-aborts a session aborted by a previous Stop", async () => {
@@ -126,7 +127,7 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     expect(server.aborts).toEqual(["ses_parent", "ses_parent"])
   })
 
-  it("drainAbortTree aborts sessions dispatched after the initial sweep", async () => {
+  it("drainAbortTree does NOT abort sessions dispatched after a completed sweep", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     server.setChildren("ses_parent", [])
 
@@ -134,10 +135,12 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     await sweepAbortTree(client, "ses_parent", [], state)
     expect(server.aborts).toEqual(["ses_parent"])
 
+    // Stop is one volley: once the initial sweep covered the tree, the drain
+    // must go quiet, not keep killing whatever spawns under the root next.
     server.setChildren("ses_parent", ["ses_late_dispatch"])
     await drainAbortTree(client, "ses_parent", state, { passes: 3, intervalMs: 5 })
 
-    expect(server.aborts).toEqual(["ses_parent", "ses_late_dispatch"])
+    expect(server.aborts).toEqual(["ses_parent"])
   })
 
   it("sweepAbortTree abandons the walk when the generation is superseded", async () => {
