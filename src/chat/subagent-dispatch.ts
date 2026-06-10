@@ -58,7 +58,10 @@ export class SubagentDispatch {
   activeSubagentCount(): number {
     const sessionID = this.deps.getSessionID()
     if (!this.deps.taskStore || !sessionID) return 0
-    return this.deps.taskStore.activeSubagentsForSession(sessionID).length
+    // Resumed (task_id-reuse) children have terminal store rows but are
+    // genuinely working again — the tracker holds them in memory only.
+    const resumed = this.tracker?.resumedActiveCount() ?? 0
+    return this.deps.taskStore.activeSubagentsForSession(sessionID).length + resumed
   }
 
   /**

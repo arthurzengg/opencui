@@ -330,6 +330,37 @@ describe("SubagentTracker.handleToolUpdate", () => {
     const childTasks = store.list().filter((t) => t.childSessionID === "ses_child_x")
     expect(childTasks).toHaveLength(1)
     expect(subscription.added.filter((s) => s === "ses_child_x").length).toBeGreaterThanOrEqual(1)
+    // The row stays terminal, but the resume must still hold the
+    // continuation gate: the child is genuinely working again.
+    expect(tracker.resumedActiveCount()).toBe(1)
+    // Child finishes its second run → gate releases.
+    await tracker.handleChildSessionEvent({ type: "idle", sessionID: "ses_child_x" })
+    expect(tracker.resumedActiveCount()).toBe(0)
+    expect(store.get(subagentTaskIDByChildSession("ses_child_x"))!.status).toBe("completed")
+  })
+
+  it("Stop sweeps a resumed child: cancelForSession returns its sessionID and clears the gate", async () => {
+    const { tracker } = setupTracker()
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c1",
+        status: "running",
+        metadata: { sessionId: "ses_child_r", run_in_background: true },
+      }),
+    )
+    await tracker.handleChildSessionEvent({ type: "idle", sessionID: "ses_child_r" })
+    // Resume under a new callID; the store row is terminal.
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c2",
+        status: "running",
+        metadata: { sessionId: "ses_child_r", run_in_background: true },
+      }),
+    )
+    expect(tracker.resumedActiveCount()).toBe(1)
+    const swept = await tracker.cancelForSession("ses_parent")
+    expect(swept).toContain("ses_child_r")
+    expect(tracker.resumedActiveCount()).toBe(0)
   })
 })
 
