@@ -89,7 +89,7 @@ bun install
 bun run watch         # esbuild + vite single-file
 ```
 
-Open the folder in VS Code and press `F5` to launch an Extension Development Host. See [CLAUDE.md](./CLAUDE.md) for architecture notes and the test layout.
+Open the folder in VS Code and press `F5` to launch an Extension Development Host.
 
 ## License
 
