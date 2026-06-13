@@ -48,11 +48,6 @@ export async function openFileDocument(relPath: string, root?: string) {
   return vscode.workspace.openTextDocument(uri)
 }
 
-export function visibleReviewDocument(relPath: string) {
-  const uris = new Set(workspaceFileUriCandidates(relPath).map(({ uri }) => uri.toString()))
-  return vscode.window.visibleTextEditors.find((editor) => uris.has(editor.document.uri.toString()))?.document
-}
-
 export async function workspaceFileUri(relPath: string, root?: string) {
   const existing = await existingWorkspaceFileUri(relPath, root)
   if (existing) return existing
