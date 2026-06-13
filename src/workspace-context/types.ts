@@ -29,5 +29,3 @@ export type CollectorOutput = {
 export type CollectorInput = {
   workspace: WorkspaceRoot
 }
-
-export type Collector = (input: CollectorInput) => Promise<CollectorOutput>
