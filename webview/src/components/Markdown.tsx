@@ -1,4 +1,4 @@
-import { isValidElement, type ReactNode } from "react"
+import { isValidElement, memo, useMemo, type ReactNode } from "react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
@@ -178,16 +178,35 @@ function flattenChildren(node: ReactNode): string {
 // as faint red text and keeps going.
 const katexOptions = { strict: "ignore", throwOnError: false } as const
 
-export function Markdown({ text }: Props) {
+// Math is comparatively expensive: normalizeMath's regex passes, the
+// remark-math tokenizer, and the rehype-katex tree walk all re-run on every
+// render of a streaming message. Most chat messages contain no math, so detect
+// the delimiters once and skip the whole math pipeline when there are none.
+// Covers `$…$` / `$$…$$` plus the `\(…\)` / `\[…\]` forms normalizeMath would
+// convert into dollar math. Currency like `$5` trips this too — intentional:
+// the pipeline then escapes it correctly, exactly as before.
+const MATH_HINT = /\$|\\\(|\\\[/
+
+function MarkdownImpl({ text }: Props) {
+  const { source, hasMath } = useMemo(() => {
+    const enveloped = normalizeAgentEnvelopes(text)
+    const math = MATH_HINT.test(enveloped)
+    return { source: math ? normalizeMath(enveloped) : enveloped, hasMath: math }
+  }, [text])
   return (
     <div className="md">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]}
-        rehypePlugins={[[rehypeKatex, katexOptions]]}
+        remarkPlugins={hasMath ? [remarkGfm, remarkBreaks, remarkMath] : [remarkGfm, remarkBreaks]}
+        rehypePlugins={hasMath ? [[rehypeKatex, katexOptions]] : []}
         components={components}
       >
-        {normalizeMath(normalizeAgentEnvelopes(text))}
+        {source}
       </ReactMarkdown>
     </div>
   )
 }
+
+// Memoized on `text` (its only prop): every settled segment above the one
+// currently streaming skips the full remark/rehype re-parse when an unrelated
+// part of the tree re-renders.
+export const Markdown = memo(MarkdownImpl)
