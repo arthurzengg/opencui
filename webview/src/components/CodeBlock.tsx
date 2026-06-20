@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { memo, useEffect, useMemo, useState } from "react"
 import { codeToHtml, type BundledLanguage } from "shiki/bundle/web"
 import { vscode } from "../vscode"
 
@@ -11,7 +11,12 @@ const SUPPORTED = new Set<string>([
   "xml", "docker", "dockerfile", "ini", "diff",
 ])
 
-export function CodeBlock({ code, language }: Props) {
+// While a fenced block streams in, `code` grows on every delta. Debounce the
+// shiki tokenization so it runs once the content settles instead of
+// re-highlighting the whole (immediately superseded) snippet on each token.
+const HIGHLIGHT_DEBOUNCE_MS = 90
+
+function CodeBlockImpl({ code, language }: Props) {
   const [html, setHtml] = useState<string>("")
   const [copied, setCopied] = useState(false)
   const theme = useMemo(() => {
@@ -23,15 +28,18 @@ export function CodeBlock({ code, language }: Props) {
   useEffect(() => {
     let cancelled = false
     const lang = normaliseLang(language)
-    codeToHtml(code, { lang: lang as BundledLanguage, theme })
-      .then((h) => {
-        if (!cancelled) setHtml(h)
-      })
-      .catch(() => {
-        if (!cancelled) setHtml(`<pre><code>${escape(code)}</code></pre>`)
-      })
+    const timer = setTimeout(() => {
+      codeToHtml(code, { lang: lang as BundledLanguage, theme })
+        .then((h) => {
+          if (!cancelled) setHtml(h)
+        })
+        .catch(() => {
+          if (!cancelled) setHtml(`<pre><code>${escape(code)}</code></pre>`)
+        })
+    }, HIGHLIGHT_DEBOUNCE_MS)
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
   }, [code, language, theme])
 
@@ -80,6 +88,8 @@ export function CodeBlock({ code, language }: Props) {
     </div>
   )
 }
+
+export const CodeBlock = memo(CodeBlockImpl)
 
 function escape(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
