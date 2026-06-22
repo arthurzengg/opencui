@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-22
+
+### Changed
+- The assistant message renderer is memoized on the streaming hot path. Markdown is no longer re-parsed from scratch on every streamed token, the KaTeX math pipeline is skipped entirely for messages that contain no math, and syntax highlighting is debounced so a code block is tokenized once its content settles instead of on every delta. Long replies stream with noticeably less CPU (#351, #352).
+- Updated the bundled opencode SDK to 1.17.9, tracking the current opencode release. This keeps the extension aligned with the event and API shapes of the opencode server users run locally; opencode 1.15.0 also restored the session and message event types the chat stream relies on (#353, #354).
+
 ## [1.4.4] - 2026-06-09
 
 ### Fixed
