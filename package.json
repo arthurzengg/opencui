@@ -219,7 +219,7 @@
     "publish:marketplace": "vsce publish --no-dependencies"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.14.25"
+    "@opencode-ai/sdk": "^1.17.9"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
