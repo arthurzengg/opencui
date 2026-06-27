@@ -23,9 +23,9 @@ describe("PromptBox", () => {
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(1)
   })
 
-  it("keeps the send composer at two rows", () => {
+  it("keeps the send composer at three rows", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
-    expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(2)
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(3)
   })
 
   it("applies bottom composer chrome only to the send composer", () => {

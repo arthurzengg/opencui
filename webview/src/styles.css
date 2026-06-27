@@ -2221,7 +2221,7 @@ button:focus-visible {
 }
 .promptbox textarea {
   width: 100%;
-  min-height: 48px;
+  min-height: 64px;
   /* Hard upper bound mirrors the JS TEXTAREA_MAX_HEIGHT in PromptBox.tsx —
      once the scroll height exceeds the cap, the textarea's own vertical
      scrollbar takes over rather than letting the input keep eating chat
