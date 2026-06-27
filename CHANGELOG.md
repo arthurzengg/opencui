@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-06-27
+
+### Changed
+- The new-chat composer (the input shown on an empty conversation) now opens about a line taller, so there is more room to start typing; the docked composer used during an active conversation keeps its original compact height (#357, #358, #359, #360).
+
 ## [1.5.0] - 2026-06-22
 
 ### Changed
