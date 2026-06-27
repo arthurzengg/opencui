@@ -2173,6 +2173,14 @@ button:focus-visible {
      is the same width as the docked one. */
   padding: var(--composer-edge-gap) 12px 4px;
 }
+/* The empty-state ("new chat") composer rests one line taller than the docked
+   bottom composer: nothing else is on screen yet, so a roomier input reads as
+   the primary call to action. The docked composer keeps the original 48px floor
+   so it doesn't crowd the conversation above it. Mirrors the rows={3} the
+   component sets for position="top". */
+.promptbox--top textarea {
+  min-height: 64px;
+}
 .promptbox-input {
   background: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
@@ -2221,7 +2229,7 @@ button:focus-visible {
 }
 .promptbox textarea {
   width: 100%;
-  min-height: 64px;
+  min-height: 48px;
   /* Hard upper bound mirrors the JS TEXTAREA_MAX_HEIGHT in PromptBox.tsx —
      once the scroll height exceeds the cap, the textarea's own vertical
      scrollbar takes over rather than letting the input keep eating chat

@@ -23,8 +23,13 @@ describe("PromptBox", () => {
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(1)
   })
 
-  it("keeps the send composer at three rows", () => {
+  it("keeps the docked (bottom) send composer at two rows", () => {
     render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(2)
+  })
+
+  it("gives the empty-state (top) composer an extra row", () => {
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} position="top" />)
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(3)
   })
 

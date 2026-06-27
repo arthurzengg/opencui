@@ -668,7 +668,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
         <textarea
           ref={ref}
           value={text}
-          rows={variant === "edit" ? 1 : 3}
+          rows={variant === "edit" ? 1 : position === "top" ? 3 : 2}
           placeholder="/ for commands, @ for files, Enter to send"
           onChange={(e) => updateText(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onKeyDown={onKeyDown}
