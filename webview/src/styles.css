@@ -591,8 +591,10 @@ button:focus-visible {
   font-size: 11px;
   font-weight: 600;
 }
-/* "New chat" — small green link-style action so it reads as "create"
-   rather than "select" against the regular history rows below. */
+/* "New chat" — small link-style action so it reads as "create" rather than
+   "select" against the regular history rows below. Uses the theme link color
+   (matches .btn.link / .md a) so it tracks the user's UI accent instead of a
+   hardcoded git-add green. */
 .history-new {
   display: inline-flex;
   align-items: center;
@@ -601,14 +603,14 @@ button:focus-visible {
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--color-diff-add);
+  color: var(--vscode-textLink-foreground);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .history-new:hover {
-  background: color-mix(in srgb, var(--color-diff-add) 14%, transparent);
+  background: color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent);
 }
 .history-new .codicon {
   flex: 0 0 auto;
