@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-06-28
+
+### Changed
+- The "+ New chat" action in the chat-history popover now uses the theme's link/accent color instead of a hardcoded git-add green, so it matches the rest of the UI across light and dark themes (#363, #364).
+
 ## [1.5.1] - 2026-06-27
 
 ### Changed
