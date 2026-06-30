@@ -70,6 +70,34 @@ export class ConversationManager {
     return conversation
   }
 
+  /**
+   * Whether a conversation is an untouched "New conversation": still the
+   * default title with no messages. Such a chat is a reuse candidate for the
+   * New-chat action.
+   */
+  private isUntouchedNew(c: SavedConversation): boolean {
+    return c.title === "New conversation" && c.messages.length === 0
+  }
+
+  /**
+   * Backing for the New-chat action ("+" / "+ New chat"). If the active
+   * conversation is already an untouched "New conversation", reuse it — bump
+   * its created/updated time and move it to the front (`reused: true`) —
+   * instead of stacking a second identical empty chat. This is what keeps
+   * repeated New-chat clicks from piling up duplicate empty conversations.
+   * Otherwise add a fresh one (`reused: false`).
+   */
+  addOrReuseEmpty(title: string): { conversation: SavedConversation; reused: boolean } {
+    const active = this.conversations.find((c) => c.id === this.activeID)
+    if (active && this.isUntouchedNew(active)) {
+      const now = Date.now()
+      const refreshed: SavedConversation = { ...active, createdAt: now, updatedAt: now }
+      this.conversations = [refreshed, ...this.conversations.filter((c) => c.id !== refreshed.id)]
+      return { conversation: refreshed, reused: true }
+    }
+    return { conversation: this.add(title), reused: false }
+  }
+
   getMessages(id: string): ChatMessage[] | undefined {
     const conv = this.conversations.find((c) => c.id === id)
     if (!conv) return undefined

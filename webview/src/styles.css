@@ -594,7 +594,11 @@ button:focus-visible {
 /* "New chat" — small link-style action so it reads as "create" rather than
    "select" against the regular history rows below. Uses the theme link color
    (matches .btn.link / .md a) so it tracks the user's UI accent instead of a
-   hardcoded git-add green. */
+   hardcoded git-add green.
+   `line-height: 1` collapses the icon (13px) and label (11px) onto a single
+   tight line box so they center on the same horizontal line instead of each
+   sitting at its own default-line-height box centre (see .status-indicator and
+   .review-bulk-action for the same glyph-pair alignment treatment). */
 .history-new {
   display: inline-flex;
   align-items: center;
@@ -606,6 +610,7 @@ button:focus-visible {
   color: var(--vscode-textLink-foreground);
   font-size: 11px;
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease;
 }

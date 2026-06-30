@@ -261,7 +261,10 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   async createConversation() {
     this.resetSessionState()
-    const conversation = this.manager.add("New conversation")
+    // Reuse the active chat if it is already an untouched "New conversation"
+    // so repeated New-chat clicks refresh that empty chat instead of piling
+    // up duplicates.
+    const { conversation } = this.manager.addOrReuseEmpty("New conversation")
     this.manager.setActiveID(conversation.id)
     this.messages = []
     this.reviewHunks = {}
