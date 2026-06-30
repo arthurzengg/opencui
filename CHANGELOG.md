@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-06-29
+
+### Fixed
+- Clicking New chat ("+" or "+ New chat") while already on a fresh, empty "New conversation" no longer stacks a second identical empty chat. It now refreshes the existing empty conversation instead, so repeated clicks stop piling up duplicate "New conversation" entries in the history list. Starting a new chat from a conversation that has messages still creates a fresh one as before (#367, #368).
+- The "+ New chat" icon and label in the chat-history popover are now vertically aligned on the same horizontal line (#367, #368).
+
 ## [1.5.2] - 2026-06-28
 
 ### Changed
