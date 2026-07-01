@@ -908,35 +908,6 @@ button:focus-visible {
   background: transparent;
 }
 
-.welcome {
-  text-align: center;
-  padding: 16px 10px 0;
-}
-.welcome-title { font-size: 18px; font-weight: 600; opacity: 0.7; }
-.welcome-sub { font-size: 12px; margin-top: 6px; opacity: 0.55; }
-.welcome-suggestions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  max-width: 320px;
-  margin: 18px auto 0;
-}
-.welcome-suggestion {
-  padding: 7px 10px;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: var(--radius);
-  background: var(--vscode-editorWidget-background);
-  color: var(--vscode-foreground);
-  font-size: 12px;
-  text-align: left;
-  opacity: 0.85;
-}
-.welcome-suggestion:hover {
-  background: var(--hover-bg-row);
-  opacity: 1;
-}
-
 .msg {
   margin-bottom: var(--message-gap);
 }
