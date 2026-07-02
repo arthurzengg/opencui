@@ -9,7 +9,7 @@
 <tr>
 <td width="50%" align="center">
   <img src="media/screenshots/panel-overview.png" alt="Panel overview" width="340"><br>
-  <sub><b>Welcome panel</b></sub>
+  <sub><b>Chat panel</b></sub>
 </td>
 <td width="50%" align="center">
   <img src="media/screenshots/model-picker.png" alt="Model · Agent · Effort picker" width="340"><br>
