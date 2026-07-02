@@ -79,7 +79,7 @@ export const ACTIVE_STATUSES: ReadonlyArray<AgentTaskStatus> = ["running", "wait
 /**
  * Statuses the Agents popover shows. Active work plus `error` so a
  * failed task stays visible until the user starts the next turn. Exported
- * so call sites (e.g. `summarizeAgentTasks` in `src/chat/view.ts`) iterate
+ * so call sites (e.g. `summarizeAgentTasks` in `src/agents/summary.ts`) iterate
  * the same set and `isAttentionStatus` narrows the union, instead of
  * duplicating the membership check inline.
  */

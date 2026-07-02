@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { isContinuationToast } from "../../src/chat/view"
+import { isContinuationToast } from "../../src/chat/continuation-state"
 
 describe("isContinuationToast", () => {
   it("matches omo TodoContinuationEnforcer toast", () => {

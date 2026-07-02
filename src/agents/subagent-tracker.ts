@@ -9,22 +9,7 @@ import {
   subagentTaskID,
   subagentTaskIDByChildSession,
 } from "./task-store"
-
-/**
- * Set of tool names that count as "dispatching a subagent". Mirrors
- * `TARGET_TOOLS2` in oh-my-opencode source. Kept in sync with
- * `SUBAGENT_TOOLS` in `chat/view.ts` — the export there is the public
- * spelling used by tests; this internal copy avoids a circular import
- * between view.ts and this file.
- */
-const SUBAGENT_DISPATCH_TOOLS: ReadonlySet<string> = new Set([
-  "task",
-  "Task",
-  "task_tool",
-  "delegate_task",
-  "call_omo_agent",
-  "background_task",
-])
+import { SUBAGENT_TOOLS } from "./summary"
 
 export type SubagentSubscription = {
   addChildSession: (sessionID: string) => void
@@ -124,7 +109,7 @@ export class SubagentTracker {
   }
 
   static isSubagentDispatchTool(toolName: string): boolean {
-    return SUBAGENT_DISPATCH_TOOLS.has(toolName)
+    return SUBAGENT_TOOLS.has(toolName)
   }
 
   /**
@@ -132,7 +117,7 @@ export class SubagentTracker {
    * to dispatch tools and updates the AgentTask accordingly.
    */
   async handleToolUpdate(update: ToolUpdate, messageID?: string): Promise<void> {
-    if (!SUBAGENT_DISPATCH_TOOLS.has(update.tool)) return
+    if (!SUBAGENT_TOOLS.has(update.tool)) return
     const parentSessionID = this.getParentSessionID()
     if (!parentSessionID) {
       log(`[subagent-tracker] skip ${update.tool}:${update.callID} — no parent sessionID yet`)

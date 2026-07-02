@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { contextUsageFromMessages } from "../../src/chat/view"
+import { contextUsageFromMessages } from "../../src/chat/context-usage"
 
 describe("contextUsageFromMessages", () => {
   it("matches opencode's context calculation from the latest assistant token usage", () => {

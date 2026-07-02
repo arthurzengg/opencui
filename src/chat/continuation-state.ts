@@ -1,5 +1,28 @@
 import type { Outbound } from "../protocol"
+import type { Toast } from "./stream"
 import { log } from "../output"
+
+/**
+ * Recognize a toast that signals an imminent continuation. Exported so the
+ * regex is testable in isolation. Patterns matched:
+ *   - `Todo Continuation` / `Resuming in Ns...` — omo TodoContinuationEnforcer
+ *     (`src/hooks/todo-continuation-enforcer/countdown.ts:20-30`).
+ *   - `Background task complete|failed — ... Resuming the main thread.` —
+ *     opencode's `task` tool auto-resume after a background subagent finishes
+ *     (`packages/opencode/src/tool/task.ts:217-225`).
+ *   - `New Background Task` — omo's task-toast-manager when a backgrounded
+ *     subagent spawns (`src/features/task-toast-manager/manager.ts:193`).
+ *   - Any phrasing containing `resuming` as a defensive catch-all.
+ *
+ * Notably we do NOT match `Task Completed` on its own — that toast can fire
+ * for both midway and final task completions, so by itself it isn't a reliable
+ * "expect another turn" signal. The structural check on running `task` tool
+ * parts handles that case more precisely.
+ */
+export function isContinuationToast(toast: Toast): boolean {
+  const haystack = `${toast.title ?? ""} ${toast.message}`.toLowerCase()
+  return /continuation|resuming|new background task|background task (complete|failed)/.test(haystack)
+}
 
 /**
  * Tracks the deferred-idle state for "this turn isn't really done, a
@@ -12,7 +35,7 @@ import { log } from "../output"
  *    structural gate keeps `continuationPending: true` until the
  *    children settle.
  *  - **Signal**: a toast-style hint (e.g. omo's TodoContinuationEnforcer
- *    countdown). Recognized by `isContinuationToast` in view.ts; routed
+ *    countdown). Recognized by `isContinuationToast` in this module; routed
  *    here via `markSignal`. Caps at `DEFER_MS` so a missing follow-up
  *    can't pin the UI indefinitely.
  *
