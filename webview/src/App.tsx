@@ -1,9 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useChatState } from "./hooks/useChatState"
 import type { Message } from "./hooks/useChatState"
+import { useQueueFlush } from "./hooks/useQueueFlush"
 import type { Attachment } from "./protocol"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
+import { QueuedMessages } from "./components/QueuedMessages"
 import { StatusBar, type HeaderPopoverID } from "./components/StatusBar"
 import { PermissionDialog } from "./components/PermissionDialog"
 import { QuestionDialog } from "./components/QuestionDialog"
@@ -14,6 +16,8 @@ export default function App() {
   const {
     state,
     send,
+    queueMessage,
+    unqueueMessage,
     runCommand,
     abort,
     newSession,
@@ -88,6 +92,13 @@ export default function App() {
     stickToBottom.current = true
     runCommand(...args)
   }
+  // Auto-send the oldest queued message when the session goes idle. Plain
+  // `send` (not sendAndPinTop): the user may be reading scrollback when the
+  // flush fires, and an auto-send must not yank their scroll position.
+  useQueueFlush(state, (q) => {
+    unqueueMessage(q.id)
+    send(q.text, q.mentions, q.attachments, q.conversationMentions)
+  })
   const [reviewRequest, setReviewRequest] = useState<{ path: string; key: number }>()
   const openReviewFile = (path: string) => {
     setReviewRequest((current) => ({ path, key: (current?.key ?? 0) + 1 }))
@@ -248,6 +259,7 @@ export default function App() {
           busy={busy}
           aborting={state.aborting}
           onSend={sendAndPinTop}
+          onQueue={queueMessage}
           onAbort={abort}
           searchFiles={searchFiles}
           listDir={listDir}
@@ -360,12 +372,14 @@ export default function App() {
           onOpenReviewChange={openReviewChangeDebounced}
           onReviewAllInChange={reviewAllInChange}
         />
+        <QueuedMessages queued={state.queued} onRemove={unqueueMessage} />
         {state.messages.length > 0 && (
           <div className="bottom-composer">
             <PromptBox
               busy={busy}
               aborting={state.aborting}
               onSend={sendAndPinTop}
+              onQueue={queueMessage}
               onAbort={abort}
               searchFiles={searchFiles}
               listDir={listDir}
