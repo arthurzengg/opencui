@@ -1452,3 +1452,109 @@ describe("PromptBox / command picker", () => {
     expect(onRunCommand).not.toHaveBeenCalled()
   })
 })
+
+describe("PromptBox / queueing while busy", () => {
+  it("Enter while busy queues the message and clears the composer when onQueue is wired", async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    const onQueue = vi.fn()
+    render(<PromptBox busy={true} onSend={onSend} onQueue={onQueue} onAbort={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "follow-up prompt")
+    await user.keyboard("{Enter}")
+    expect(onSend).not.toHaveBeenCalled()
+    expect(onQueue).toHaveBeenCalledWith("follow-up prompt", undefined, undefined, undefined)
+    expect(textarea.value).toBe("")
+  })
+
+  it("Enter while aborting queues too — a follow-up typed after Stop is deliberate", async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    const onQueue = vi.fn()
+    render(<PromptBox busy={false} aborting={true} onSend={onSend} onQueue={onQueue} onAbort={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "after the stop")
+    await user.keyboard("{Enter}")
+    expect(onSend).not.toHaveBeenCalled()
+    expect(onQueue).toHaveBeenCalledWith("after the stop", undefined, undefined, undefined)
+    expect(textarea.value).toBe("")
+  })
+
+  it("Enter while busy WITHOUT onQueue keeps the old block: nothing fires, text retained", async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    render(<PromptBox busy={true} onSend={onSend} onAbort={vi.fn()} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "not queued")
+    await user.keyboard("{Enter}")
+    expect(onSend).not.toHaveBeenCalled()
+    expect(textarea.value).toBe("not queued")
+  })
+
+  it("the edit composer never queues, even with onQueue passed", async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    const onQueue = vi.fn()
+    render(
+      <PromptBox
+        busy={true}
+        variant="edit"
+        initial={{ text: "edited text" }}
+        onSend={onSend}
+        onQueue={onQueue}
+        onAbort={vi.fn()}
+      />,
+    )
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    textarea.focus()
+    await user.keyboard("{Enter}")
+    expect(onSend).not.toHaveBeenCalled()
+    expect(onQueue).not.toHaveBeenCalled()
+    expect(textarea.value).toBe("edited text")
+  })
+
+  it("a typed known command while busy neither runs nor queues (would send '/compact' as prose)", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    const onQueue = vi.fn()
+    const commands = [{ name: "compact", description: "Compact the session", takesArguments: false }]
+    render(
+      <PromptBox
+        busy={true}
+        onSend={vi.fn()}
+        onQueue={onQueue}
+        onAbort={vi.fn()}
+        commands={commands}
+        onRunCommand={onRunCommand}
+      />,
+    )
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "/compact")
+    await screen.findByRole("listbox", { name: /Commands/i })
+    // Close the picker so Enter reaches submit() instead of the picker.
+    await user.keyboard("{Escape}")
+    await user.keyboard("{Enter}")
+    expect(onRunCommand).not.toHaveBeenCalled()
+    expect(onQueue).not.toHaveBeenCalled()
+    expect(textarea.value).toBe("/compact")
+  })
+
+  it("swaps the placeholder to the queue hint while busy with onQueue wired", () => {
+    const { rerender } = render(<PromptBox busy={true} onSend={vi.fn()} onQueue={vi.fn()} onAbort={vi.fn()} />)
+    expect(screen.getByPlaceholderText(/Enter to queue/i)).toBeInTheDocument()
+    rerender(<PromptBox busy={false} onSend={vi.fn()} onQueue={vi.fn()} onAbort={vi.fn()} />)
+    expect(screen.getByPlaceholderText(/Enter to send/i)).toBeInTheDocument()
+  })
+
+  it("keeps the attach button enabled while busy when queueing is available", () => {
+    const { rerender } = render(
+      <PromptBox busy={true} onSend={vi.fn()} onQueue={vi.fn()} onAbort={vi.fn()} attachFile={async () => ({ attachments: [] })} />,
+    )
+    const attach = () => screen.getByRole("button", { name: /Attach image/i }) as HTMLButtonElement
+    expect(attach().disabled).toBe(false)
+    rerender(
+      <PromptBox busy={true} onSend={vi.fn()} onAbort={vi.fn()} attachFile={async () => ({ attachments: [] })} />,
+    )
+    expect(attach().disabled).toBe(true)
+  })
+})

@@ -26,6 +26,19 @@ import type {
 export type Block = ChatBlock
 export type Message = ChatMessage
 
+/**
+ * A prompt the user submitted while a turn was still running. Held
+ * webview-side (never crosses the wire) and flushed through the normal
+ * `send` path when the session goes idle.
+ */
+export type QueuedMessage = {
+  id: string
+  text: string
+  mentions?: string[]
+  attachments?: Attachment[]
+  conversationMentions?: string[]
+}
+
 export type ChatState = {
   connected: boolean
   busy: boolean
@@ -63,6 +76,16 @@ export type ChatState = {
    * `PromptBox` consumes it via an effect.
    */
   injectedText?: { text: string; nonce: number }
+  /** Prompts submitted while busy, waiting for the session to go idle. */
+  queued: QueuedMessage[]
+  /**
+   * Counts `sessionIdle` events. The queue flush keys off this rather than
+   * `busy`, because `busy` flickers false between assistant messages inside
+   * one turn (`assistantDone` → next `assistantStart`) — flushing there would
+   * inject the queued prompt mid-turn. `sessionIdle` is the only end-of-turn
+   * signal, and the host already defers it during pending continuations.
+   */
+  idleNonce: number
 }
 
 export type Action =
@@ -70,6 +93,8 @@ export type Action =
   | { type: "reset" }
   | { type: "clearPermission" }
   | { type: "clearQuestion"; id: string }
+  | { type: "queueMessage"; message: QueuedMessage }
+  | { type: "unqueueMessage"; id: string }
 
 const initial: ChatState = {
   connected: false,
@@ -81,6 +106,8 @@ const initial: ChatState = {
   commands: [],
   messages: [],
   reviewHunks: {},
+  queued: [],
+  idleNonce: 0,
 }
 
 function upsertMessage(messages: Message[], id: string, patch: Partial<Message>): Message[] {
@@ -148,7 +175,9 @@ export { initial as initialChatState }
 export function reducer(state: ChatState, action: Action): ChatState {
   switch (action.type) {
     case "reset":
-      return { ...initial, selection: state.selection, context: state.context, connected: state.connected, commands: state.commands }
+      // idleNonce is monotonic for the webview's lifetime — resetting it to 0
+      // would desync the flush hook's last-seen ref.
+      return { ...initial, selection: state.selection, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce }
     case "ready":
       return { ...state, connected: action.connected, selection: action.selection }
     case "connected":
@@ -186,6 +215,9 @@ export function reducer(state: ChatState, action: Action): ChatState {
         // render forever in the new conversation's dock.
         pendingQuestion: undefined,
         injectedText: undefined,
+        // The queue is per-conversation: a switch (or /undo rewind) must not
+        // fire the old conversation's follow-ups into the restored one.
+        queued: [],
       }
     case "context":
       return { ...state, context: action.ref }
@@ -319,6 +351,10 @@ export function reducer(state: ChatState, action: Action): ChatState {
         aborting: true,
         pendingPermission: undefined,
         pendingQuestion: undefined,
+        // Stop means stop: a queued follow-up auto-firing right after the
+        // abort would restart the very work the user just killed. Messages
+        // queued AFTER this (during the drain) are deliberate and survive.
+        queued: [],
         messages: state.messages.map((m, i) => {
           if (m.role !== "assistant" || !m.pending) return m
           if (i === lastPendingIdx) return { ...m, pending: false, stopped: true }
@@ -337,6 +373,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
         busy: false,
         aborting: false,
         continuationPending: false,
+        idleNonce: state.idleNonce + 1,
         messages: state.messages.map((m) =>
           m.role === "assistant" && m.pending ? { ...m, pending: false } : m,
         ),
@@ -380,8 +417,12 @@ export function reducer(state: ChatState, action: Action): ChatState {
       const anyPending = next.some((m) => m.pending)
       return { ...state, messages: next, busy: state.busy && anyPending }
     }
+    case "queueMessage":
+      return { ...state, queued: [...state.queued, action.message] }
+    case "unqueueMessage":
+      return { ...state, queued: state.queued.filter((q) => q.id !== action.id) }
     case "clear":
-      return { ...initial, selection: state.selection, context: state.context, connected: state.connected, commands: state.commands }
+      return { ...initial, selection: state.selection, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce }
     default:
       return state
   }
@@ -395,6 +436,7 @@ export function useChatState() {
     new Map<number, (result: { attachments: Attachment[]; error?: string }) => void>(),
   )
   const nextRequestID = useRef(1)
+  const nextQueueID = useRef(1)
 
   useEffect(() => {
     // Streaming deltas are coalesced to one render per frame; request/response
@@ -436,6 +478,15 @@ export function useChatState() {
     state,
     send(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
       vscode.post({ type: "send", text, mentions, attachments, conversationMentions })
+    },
+    queueMessage(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+      dispatch({
+        type: "queueMessage",
+        message: { id: `q_${Date.now()}_${nextQueueID.current++}`, text, mentions, attachments, conversationMentions },
+      })
+    },
+    unqueueMessage(id: string) {
+      dispatch({ type: "unqueueMessage", id })
     },
     runCommand(command: string, args: string) {
       vscode.post({ type: "runCommand", command, arguments: args })

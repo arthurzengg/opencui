@@ -48,6 +48,13 @@ type Props = {
    */
   aborting?: boolean
   onSend: (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
+  /**
+   * Queue the message for auto-send when the running turn finishes. When
+   * provided (the primary send composers), Enter while busy/aborting queues
+   * instead of being a no-op. Absent (edit composers), submit stays blocked
+   * while busy — the old behavior.
+   */
+  onQueue?: (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
   onAbort: () => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   listDir?: (path: string) => Promise<DirEntry[]>
@@ -131,12 +138,14 @@ function extractConversationLabels(text: string | undefined): string[] {
   return Array.from(text.matchAll(/@chat:\S+/g), (match) => match[0].slice(1))
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage, commands = [], onRunCommand, inject }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage, commands = [], onRunCommand, inject }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   // The Send button renders a disabled "Stopping…" while aborting, but Enter
   // routes through submit() — both must honor the same block, or a prompt
-  // races the in-flight abort and gets its early events dropped.
+  // races the in-flight abort and gets its early events dropped. With onQueue
+  // wired, a blocked submit queues instead of dropping.
   const sendBlocked = busy || aborting
+  const canQueue = sendBlocked && variant === "send" && Boolean(onQueue)
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
   const [attaching, setAttaching] = useState(false)
@@ -303,10 +312,13 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     // Route a typed `/name args` to the command path when the name matches a
     // known command. Unknown slashes (and prose like `/etc/hosts`) fall through
     // to a normal prompt send. Edit composers never route (no onRunCommand).
-    if (variant === "send" && !sendBlocked && onRunCommand) {
+    // While a turn runs, a known command neither runs NOR queues — commands
+    // are immediate session operations, not prompts; queueing one as prose
+    // would send the literal "/compact" text to the model.
+    if (variant === "send" && onRunCommand) {
       const parsed = parseCommandInput(trimmed)
       if (parsed && commands.some((c) => c.name === parsed.name)) {
-        runCommandAndClear(parsed.name, parsed.args)
+        if (!sendBlocked) runCommandAndClear(parsed.name, parsed.args)
         return
       }
     }
@@ -322,13 +334,15 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
     // so display order in the bubble matches input order: chip-cited
     // files first, pasted images second.
     for (const a of imageAttachments) activeAttachments.push(a)
-    if ((!trimmed && activeAttachments.length === 0) || sendBlocked) return
+    if (!trimmed && activeAttachments.length === 0) return
+    const deliver = sendBlocked ? (canQueue ? onQueue : undefined) : onSend
+    if (!deliver) return
     const allMentions = extractMentions(text, knownMentions.current)
     const fileMentions = allMentions.filter((m) => !knownConversations.current.has(m))
     const convIDs = allMentions
       .map((m) => knownConversations.current.get(m))
       .filter((id): id is string => !!id)
-    onSend(
+    deliver(
       trimmed,
       fileMentions.length ? fileMentions : undefined,
       activeAttachments.length ? activeAttachments : undefined,
@@ -669,7 +683,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
           ref={ref}
           value={text}
           rows={variant === "edit" ? 1 : position === "top" ? 3 : 2}
-          placeholder="/ for commands, @ for files, Enter to send"
+          placeholder={canQueue ? "@ for files, Enter to queue" : "/ for commands, @ for files, Enter to send"}
           onChange={(e) => updateText(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
@@ -842,7 +856,7 @@ export function PromptBox({ busy, aborting = false, onSend, onAbort, searchFiles
               className="icon-btn attach-btn"
               aria-label="Attach image, PDF, or code/text file"
               title="Attach image, PDF, or code/text file"
-              disabled={attaching || busy}
+              disabled={attaching || (busy && !canQueue)}
               onClick={handleAttachClick}
             >
               <svg width={ICON_SIZE.lg} height={ICON_SIZE.lg} viewBox="5.5 1.5 8 14" aria-hidden="true" style={{ display: "block" }}>

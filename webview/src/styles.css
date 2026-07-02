@@ -2385,6 +2385,66 @@ button:focus-visible {
   pointer-events: auto;
 }
 
+/* ===== Queued messages (typed while a turn was running) ===== */
+.queued-messages {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 12px;
+}
+.queued-messages + .bottom-composer {
+  padding-top: var(--space-1);
+}
+.queued-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 4px 3px 8px;
+  border: 1px dashed var(--vscode-panel-border);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-editorWidget-background);
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+.queued-badge {
+  flex: none;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+.queued-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vscode-foreground);
+}
+.queued-remove {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+.queued-remove:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
+}
+.queued-remove .codicon {
+  font-size: 12px;
+}
+
 /* ===== System reminder callout ===== */
 .system-reminder {
   margin: 8px 0;
