@@ -21,7 +21,6 @@ import type {
   ChatBlock,
   ChatMessage,
   CommandInfo,
-  ContextUsage,
   Inbound,
   Outbound,
   ToolUpdate as WireToolUpdate,
@@ -30,14 +29,14 @@ import type {
   ReviewChangeActor,
   ReviewHunkState,
 } from "../protocol"
-import { BUILTIN_COMMAND_NAMES, withBuiltinCommands, generateMessageID } from "./builtin-commands"
-import { lastUserTurnIndex, redoAction, userMessageText } from "./undo"
+import { BUILTIN_COMMAND_NAMES, withBuiltinCommands } from "./builtin-commands"
+import { BuiltinRunners } from "./builtin-runners"
+import { readContextUsage } from "./context-usage"
 import { migrateConversationsToWorkspace } from "./conversation-store"
 import { ConversationManager } from "./conversation-manager"
-import { ContinuationState } from "./continuation-state"
+import { ContinuationState, isContinuationToast } from "./continuation-state"
 import { sweepAbortTree, drainAbortTree } from "./abort-tree"
 import { SubagentDispatch } from "./subagent-dispatch"
-export { summarizePrompt } from "./subagent-dispatch"
 import { relativeToCwd, samePath } from "./paths"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { extractChanges, reviewChanges } from "./review-changes"
@@ -48,16 +47,9 @@ import { collectAutoContext } from "../workspace-context/collector"
 import { RecentEditsTracker } from "../workspace-context/recent-edits"
 import { readContextSettings } from "../workspace-context/budget"
 import type { IndexManager } from "../indexing/index-manager"
-import {
-  AgentTaskStore,
-  ATTENTION_STATUSES,
-  classifyTerminal,
-  isAttentionStatus,
-  type AgentTask,
-  type AttentionStatus,
-} from "../agents/task-store"
+import { AgentTaskStore, classifyTerminal, type AgentTask } from "../agents/task-store"
+import { summarizeAgentTasks } from "../agents/summary"
 import { SubagentTracker } from "../agents/subagent-tracker"
-import type { AgentsStatusInfo, AgentsTaskInfo } from "../protocol"
 import { toWire } from "./wire-format"
 import {
   applyCode,
@@ -65,28 +57,6 @@ import {
   openFileDocument,
   reviewPathExists,
 } from "./fs-ops"
-
-/**
- * Recognize a toast that signals an imminent continuation. Exported so the
- * regex is testable in isolation. Patterns matched:
- *   - `Todo Continuation` / `Resuming in Ns...` — omo TodoContinuationEnforcer
- *     (`src/hooks/todo-continuation-enforcer/countdown.ts:20-30`).
- *   - `Background task complete|failed — ... Resuming the main thread.` —
- *     opencode's `task` tool auto-resume after a background subagent finishes
- *     (`packages/opencode/src/tool/task.ts:217-225`).
- *   - `New Background Task` — omo's task-toast-manager when a backgrounded
- *     subagent spawns (`src/features/task-toast-manager/manager.ts:193`).
- *   - Any phrasing containing `resuming` as a defensive catch-all.
- *
- * Notably we do NOT match `Task Completed` on its own — that toast can fire
- * for both midway and final task completions, so by itself it isn't a reliable
- * "expect another turn" signal. The structural check on running `task` tool
- * parts handles that case more precisely.
- */
-export function isContinuationToast(toast: Toast): boolean {
-  const haystack = `${toast.title ?? ""} ${toast.message}`.toLowerCase()
-  return /continuation|resuming|new background task|background task (complete|failed)/.test(haystack)
-}
 
 export class ChatView implements vscode.WebviewViewProvider {
   static viewType = "opencui.chat"
@@ -147,6 +117,12 @@ export class ChatView implements vscode.WebviewViewProvider {
    */
   private subagentDispatch: SubagentDispatch
   /**
+   * Implementations of the backend-bound built-in slash commands
+   * (`/compact`, `/init`, `/share`, `/unshare`, `/undo`, `/redo`,
+   * `/fork`). See {@link BuiltinRunners}.
+   */
+  private builtinRunners: BuiltinRunners
+  /**
    * Single per-conversation subagent state machine. Reset on
    * `createConversation` / `selectConversation` / `dispose`. Constructed
    * lazily inside `attachSubscription` because the SSE subscription's
@@ -179,6 +155,33 @@ export class ChatView implements vscode.WebviewViewProvider {
       post: (msg) => this.post(msg),
       activeSubagentCount: () => this.subagentDispatch.activeSubagentCount(),
       emitIdle: () => this.settleSessionIdle(),
+    })
+    this.builtinRunners = new BuiltinRunners({
+      prefs: this.prefs,
+      manager: this.manager,
+      getSessionID: () => this.sessionID,
+      setSessionID: (id) => {
+        this.sessionID = id
+      },
+      hasSubscription: () => this.subscription !== undefined,
+      attachSubscription: (backend, sessionID) => this.attachSubscription(backend, sessionID),
+      beginBuiltinTurn: (display) => this.beginBuiltinTurn(display),
+      post: (msg) => this.post(msg),
+      getMessages: () => this.messages,
+      setMessages: (messages) => {
+        this.messages = messages
+      },
+      getRedoStack: () => this.redoStack,
+      getReviewHunks: () => this.reviewHunks,
+      clearReviewHunks: () => {
+        this.reviewHunks = {}
+      },
+      saveActive: () => this.saveActive(),
+      sendConversationState: () => this.sendConversationState(),
+      queueReviewDecorationsSync: () => this.queueReviewDecorationsSync(),
+      resetSessionState: () => this.resetSessionState(),
+      applyActiveSnapshot: () => this.applyActiveSnapshot(),
+      refreshContextUsage: (backend) => this.refreshContextUsage(backend),
     })
     this.applyActiveSnapshot()
     void this.manager.persist()
@@ -1334,22 +1337,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.post({ type: "connected", connected: false, error: (e as Error).message })
       return
     }
-    switch (command) {
-      case "compact":
-        return this.runCompact(backend)
-      case "init":
-        return this.runInit(backend)
-      case "share":
-        return this.runShare(backend)
-      case "unshare":
-        return this.runUnshare(backend)
-      case "undo":
-        return this.runUndo(backend)
-      case "redo":
-        return this.runRedo(backend)
-      case "fork":
-        return this.runFork(backend)
-    }
+    await this.builtinRunners.run(command, backend)
   }
 
   /** Post the typed-invocation bubble and key the Agents popover for a built-in turn. */
@@ -1366,258 +1354,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     })
     this.updateTitleFromPrompt(display)
     await this.subagentDispatch.recordMainTaskStart(display)
-  }
-
-  private async runCompact(backend: Backend) {
-    if (!this.sessionID) {
-      void vscode.window.showInformationMessage("Nothing to compact yet.")
-      return
-    }
-    if (!this.subscription) await this.attachSubscription(backend, this.sessionID)
-    await this.beginBuiltinTurn("/compact")
-    const sel = this.prefs.get()
-    const body = sel.modelProviderID && sel.modelID ? { providerID: sel.modelProviderID, modelID: sel.modelID } : undefined
-    try {
-      const res = await backend.client.session.summarize({
-        path: { id: this.sessionID },
-        query: { directory: backend.directory },
-        body,
-      })
-      if (res.error) log("compact failed", res.error)
-    } catch (e) {
-      log("compact threw", e)
-    }
-  }
-
-  private async runInit(backend: Backend) {
-    const sel = this.prefs.get()
-    if (!sel.modelProviderID || !sel.modelID) {
-      void vscode.window.showWarningMessage("Select a model before running /init.")
-      return
-    }
-    if (!this.sessionID) {
-      const created = await backend.client.session.create({ body: {} })
-      if (created.error || !created.data) {
-        log("session.create failed", created.error)
-        return
-      }
-      this.sessionID = created.data.id
-      this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
-      await this.manager.flushPersist()
-      await this.attachSubscription(backend, this.sessionID)
-    } else if (!this.subscription) {
-      await this.attachSubscription(backend, this.sessionID)
-    }
-    await this.beginBuiltinTurn("/init")
-    try {
-      const res = await backend.client.session.init({
-        path: { id: this.sessionID },
-        query: { directory: backend.directory },
-        body: { providerID: sel.modelProviderID, modelID: sel.modelID, messageID: generateMessageID() },
-      })
-      if (res.error) log("init failed", res.error)
-    } catch (e) {
-      log("init threw", e)
-    }
-  }
-
-  private async runShare(backend: Backend) {
-    if (!this.sessionID) {
-      void vscode.window.showInformationMessage("Start a conversation before sharing.")
-      return
-    }
-    try {
-      const res = await backend.client.session.share({
-        path: { id: this.sessionID },
-        query: { directory: backend.directory },
-      })
-      if (res.error || !res.data) {
-        log("share failed", res.error)
-        void vscode.window.showErrorMessage("Failed to share session.")
-        return
-      }
-      const url = res.data.share?.url
-      if (!url) {
-        void vscode.window.showInformationMessage("Session shared.")
-        return
-      }
-      const pick = await vscode.window.showInformationMessage(`Session shared: ${url}`, "Copy Link")
-      if (pick === "Copy Link") await vscode.env.clipboard.writeText(url)
-    } catch (e) {
-      log("share threw", e)
-    }
-  }
-
-  private async runUnshare(backend: Backend) {
-    if (!this.sessionID) return
-    try {
-      const res = await backend.client.session.unshare({
-        path: { id: this.sessionID },
-        query: { directory: backend.directory },
-      })
-      if (res.error) {
-        log("unshare failed", res.error)
-        void vscode.window.showErrorMessage("Failed to disable sharing.")
-        return
-      }
-      void vscode.window.showInformationMessage("Session sharing disabled.")
-    } catch (e) {
-      log("unshare threw", e)
-    }
-  }
-
-  /**
-   * `/undo` — revert the last settled turn. Mirrors handleEdit's
-   * revert + truncate + sendConversationState, minus the resend: the removed
-   * tail is stashed for `/redo` and the undone prompt is restored to the composer.
-   */
-  private async runUndo(backend: Backend) {
-    if (!this.sessionID) {
-      void vscode.window.showInformationMessage("Nothing to undo yet.")
-      return
-    }
-    const idx = lastUserTurnIndex(this.messages)
-    if (idx < 0) {
-      void vscode.window.showInformationMessage("Nothing to undo.")
-      return
-    }
-    const target = this.messages[idx]!
-    try {
-      const res = await backend.client.session.revert({
-        path: { id: this.sessionID },
-        query: { directory: backend.directory },
-        body: { messageID: target.backendID! },
-      })
-      if (res.error) {
-        log("undo: session.revert failed", res.error)
-        void vscode.window.showErrorMessage("Failed to undo the last turn.")
-        return
-      }
-    } catch (e) {
-      log("undo: session.revert threw", e)
-      return
-    }
-    this.redoStack.push(this.messages.slice(idx))
-    this.messages = this.messages.slice(0, idx)
-    this.reviewHunks = {}
-    this.saveActive()
-    this.sendConversationState()
-    this.queueReviewDecorationsSync()
-    // Restore the undone prompt so the user can edit and resend. Plain text only:
-    // mentions/attachments are not re-hydrated.
-    this.post({ type: "setComposerText", text: userMessageText(target) })
-  }
-
-  /** `/redo` — re-apply the most recently undone turn from the in-memory buffer. */
-  private async runRedo(backend: Backend) {
-    if (!this.sessionID) return
-    const tail = this.redoStack.pop()
-    if (!tail || tail.length === 0) {
-      void vscode.window.showInformationMessage("Nothing to redo.")
-      return
-    }
-    // Move the server revert pointer forward to the next still-reverted tail, or
-    // clear it entirely when this restores the latest turn.
-    const action = redoAction(this.redoStack[this.redoStack.length - 1])
-    try {
-      const res =
-        action.kind === "revert"
-          ? await backend.client.session.revert({
-              path: { id: this.sessionID },
-              query: { directory: backend.directory },
-              body: { messageID: action.messageID },
-            })
-          : await backend.client.session.unrevert({
-              path: { id: this.sessionID },
-              query: { directory: backend.directory },
-            })
-      if (res.error) {
-        log("redo failed", res.error)
-        void vscode.window.showErrorMessage("Failed to redo.")
-        this.redoStack.push(tail)
-        return
-      }
-    } catch (e) {
-      log("redo threw", e)
-      this.redoStack.push(tail)
-      return
-    }
-    this.messages = [...this.messages, ...tail]
-    this.saveActive()
-    this.sendConversationState()
-    this.queueReviewDecorationsSync()
-    this.post({ type: "setComposerText", text: "" })
-  }
-
-  /**
-   * `/fork` — duplicate the current session into a new conversation. The fork
-   * copies the current session, so its history equals our in-memory messages; we
-   * adopt the forked session id onto a fresh conversation and copy the messages
-   * over (re-stamping their backendIDs from the forked session so revert/edit
-   * keep working). No server->ChatMessage converter exists, hence the copy.
-   */
-  private async runFork(backend: Backend) {
-    if (!this.sessionID) {
-      void vscode.window.showInformationMessage("Nothing to fork yet.")
-      return
-    }
-    try {
-      const res = await backend.client.session.fork({
-        path: { id: this.sessionID },
-        query: { directory: backend.directory },
-        body: {},
-      })
-      if (res.error || !res.data) {
-        log("fork failed", res.error)
-        void vscode.window.showErrorMessage("Failed to fork the conversation.")
-        return
-      }
-      const forked = res.data
-      const copied = this.messages.map((m) => ({ ...m, pending: false }))
-      await this.restampForkedIDs(backend, forked.id, copied)
-      const copiedHunks = { ...this.reviewHunks }
-
-      this.resetSessionState()
-      const conversation = this.manager.add(forked.title || "Forked chat")
-      this.manager.setActiveID(conversation.id)
-      this.manager.updateActive((c) => ({ ...c, sessionID: forked.id, messages: copied, reviewHunks: copiedHunks }))
-      this.applyActiveSnapshot()
-      await this.manager.flushPersist()
-      this.sendConversationState()
-      this.post({ type: "contextUsage", usage: undefined })
-      await this.attachSubscription(backend, forked.id)
-      void this.refreshContextUsage(backend)
-    } catch (e) {
-      log("fork threw", e)
-      void vscode.window.showErrorMessage("Failed to fork the conversation.")
-    }
-  }
-
-  /**
-   * Align copied messages' backendIDs with the forked session's real message ids
-   * by position. Fork duplicates the whole session, so order + count match (every
-   * settled bubble has a server message, and `/fork` only runs when idle); if the
-   * counts diverge we keep the copied ids and log — edit/undo on a pre-fork message
-   * may then need a fresh turn first.
-   */
-  private async restampForkedIDs(backend: Backend, sessionID: string, messages: ChatMessage[]) {
-    try {
-      const res = await backend.client.session.messages({
-        path: { id: sessionID },
-        query: { directory: backend.directory },
-      })
-      const server = (res.data ?? []) as Array<{ info?: { id?: string } }>
-      if (res.error || server.length !== messages.length) {
-        log("fork: skipping backendID re-stamp", { error: res.error, server: server.length, local: messages.length })
-        return
-      }
-      messages.forEach((m, i) => {
-        const id = server[i]?.info?.id
-        if (id) m.backendID = id
-      })
-    } catch (e) {
-      log("fork: restamp threw", e)
-    }
   }
 
   private async handleEdit(webviewID: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
@@ -2121,199 +1857,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     html = html.replace("<head>", `<head><meta http-equiv="Content-Security-Policy" content="${csp}">`)
     return html
   }
-}
-
-/**
- * Tool names that represent dispatching a subagent. Mirrors
- * `TASK_TOOLS` + `TARGET_TOOLS2` from oh-my-opencode's source plus the
- * omo background-task and delegate-task families:
- *   - `task` / `Task` / `task_tool` — opencode's built-in task tool (and
- *     omo's `delegateTask` which is registered under the name `task`).
- *   - `delegate_task` — defensive: if a future omo version re-registers
- *     this with its lowercase name we still catch it.
- *   - `call_omo_agent` — omo's parallel subagent dispatcher used by the
- *     deep-agent stack (Hephaestus / Sisyphus / Prometheus).
- *   - `background_task` — omo's pure background dispatcher, used by
- *     Hephaestus prompts for fire-and-forget worker tasks.
- * Kept in sync with the internal set in `src/agents/subagent-tracker.ts`.
- */
-export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set([
-  "task",
-  "Task",
-  "task_tool",
-  "delegate_task",
-  "call_omo_agent",
-  "background_task",
-])
-
-export function isSubagentTool(toolName: string): boolean {
-  return SUBAGENT_TOOLS.has(toolName)
-}
-
-export function summarizeAgentTasks(
-  tasks: AgentTask[],
-  conversationID?: string,
-): AgentsStatusInfo {
-  const scoped = conversationID
-    ? tasks.filter((task) => task.conversationID === conversationID)
-    : tasks
-
-  // The popover shows ONLY currently-active work — main tasks and any
-  // subagents whose status is in ATTENTION_STATUSES. `completed` and
-  // `cancelled` rows are dropped so the popover reflects "what's happening
-  // right now," not a per-chat history. A second user prompt gets its own
-  // main row (see mainTaskID's per-turn keying); the prior turn's row is
-  // settled and filtered out.
-  const counts: Record<AttentionStatus, number> = Object.fromEntries(
-    ATTENTION_STATUSES.map((status) => [status, 0]),
-  ) as Record<AttentionStatus, number>
-  const items: AgentsTaskInfo[] = []
-  for (const task of scoped) {
-    if (!isAttentionStatus(task.status)) continue
-    counts[task.status] += 1
-    items.push({
-      id: task.id,
-      kind: task.kind,
-      title: task.title,
-      status: task.status,
-      error: task.error,
-      startedAt: task.startedAt,
-      updatedAt: task.updatedAt,
-      subagent: task.kind === "subagent" ? task.subagent : undefined,
-      category: task.kind === "subagent" ? task.category : undefined,
-      model: task.kind === "subagent" ? task.model : undefined,
-    })
-  }
-  // Stable order: main tasks first (the user's prompt anchor), then
-  // subagents by startedAt asc. Within each kind, chronological order
-  // is what makes "scrolling back through the turn" make sense.
-  items.sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === "main" ? -1 : 1
-    return a.startedAt - b.startedAt
-  })
-  return {
-    running: counts.running,
-    waiting: counts.waiting,
-    error: counts.error,
-    total: counts.running + counts.waiting + counts.error,
-    tasks: items,
-  }
-}
-
-export function taskTitleFromUpdate(update: ToolUpdate): string {
-  const input = update.input
-  if (input && typeof input === "object") {
-    const description = (input as Record<string, unknown>).description
-    if (typeof description === "string" && description.trim()) return description.trim()
-  }
-  if (update.title && update.title.trim()) return update.title.trim()
-  return "Background agent"
-}
-
-type ContextUsageMessageInfo = {
-  role?: string
-  providerID?: string
-  modelID?: string
-  cost?: number
-  tokens?: {
-    input?: number
-    output?: number
-    reasoning?: number
-    cache?: { read?: number; write?: number }
-  }
-}
-
-type ContextUsageMessage = { info?: ContextUsageMessageInfo }
-type ContextUsageProvider = {
-  id?: string
-  models?: Record<string, { limit?: { context?: number } } | undefined>
-}
-
-// Provider metadata (model context limits) changes only when the user edits
-// their opencode config, but readContextUsage runs after every turn. Cache it
-// per backend with a short TTL so the indicator stops re-fetching it each turn.
-type CachedProviders = { providers: ContextUsageProvider[]; at: number }
-const providersCache = new Map<string, CachedProviders>()
-const PROVIDERS_CACHE_MS = 5 * 60 * 1000
-
-async function fetchProviders(backend: Backend): Promise<ContextUsageProvider[]> {
-  const now = Date.now()
-  const cached = providersCache.get(backend.url)
-  if (cached && now - cached.at < PROVIDERS_CACHE_MS) return cached.providers
-  const res = await backend.client.config.providers()
-  if (res.error) {
-    if (cached) return cached.providers
-    throw new Error(`config.providers failed: ${JSON.stringify(res.error)}`)
-  }
-  const providers = (res.data as { providers?: ContextUsageProvider[] } | undefined)?.providers ?? []
-  providersCache.set(backend.url, { providers, at: now })
-  return providers
-}
-
-async function readContextUsage(backend: Backend, sessionID: string): Promise<ContextUsage | undefined> {
-  const [messagesRes, providers] = await Promise.all([
-    backend.client.session.messages({
-      path: { id: sessionID },
-      query: { directory: backend.directory, limit: 100 },
-    }),
-    fetchProviders(backend),
-  ])
-  if (messagesRes.error) throw new Error(`session.messages failed: ${JSON.stringify(messagesRes.error)}`)
-
-  const messages = (messagesRes.data ?? []) as ContextUsageMessage[]
-  return contextUsageFromMessages(messages, providers)
-}
-
-export function contextUsageFromMessages(
-  messages: ContextUsageMessage[],
-  providers: ContextUsageProvider[],
-): ContextUsage | undefined {
-  const last = messages.findLast((item) =>
-    item.info?.role === "assistant" && numberOrZero(item.info.tokens?.output) > 0
-  )
-  if (!last?.info?.tokens) return undefined
-
-  const tokens = contextTokenCount(last.info.tokens)
-  if (tokens <= 0) return undefined
-
-  const providerID = last.info.providerID
-  const modelID = last.info.modelID
-  const limit = findContextLimit(providers, providerID, modelID)
-  const cost = messages.reduce((sum, item) => {
-    const info = item.info
-    return info?.role === "assistant" && typeof info.cost === "number" ? sum + info.cost : sum
-  }, 0)
-  return {
-    tokens,
-    limit,
-    percent: limit ? Math.round((tokens / limit) * 100) : undefined,
-    model: providerID && modelID ? `${providerID}/${modelID}` : undefined,
-    cost: cost > 0 ? cost : undefined,
-  }
-}
-
-function contextTokenCount(tokens: NonNullable<ContextUsageMessageInfo["tokens"]>): number {
-  return (
-    numberOrZero(tokens.input) +
-    numberOrZero(tokens.output) +
-    numberOrZero(tokens.reasoning) +
-    numberOrZero(tokens.cache?.read) +
-    numberOrZero(tokens.cache?.write)
-  )
-}
-
-function findContextLimit(
-  providers: ContextUsageProvider[],
-  providerID: string | undefined,
-  modelID: string | undefined,
-): number | undefined {
-  if (!providerID || !modelID) return undefined
-  const value = providers.find((provider) => provider.id === providerID)?.models?.[modelID]?.limit?.context
-  return typeof value === "number" && value > 0 ? value : undefined
-}
-
-function numberOrZero(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0
 }
 
 function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | undefined): string[] {

@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest"
 import {
   taskTitleFromUpdate,
-  summarizePrompt,
   summarizeAgentTasks,
   isSubagentTool,
-} from "../../src/chat/view"
+} from "../../src/agents/summary"
+import { summarizePrompt } from "../../src/chat/subagent-dispatch"
 import type { ToolUpdate } from "../../src/chat/stream"
 import type { AgentTask } from "../../src/agents/task-store"
 

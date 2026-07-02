@@ -5,8 +5,7 @@ import type { ToolUpdate } from "./stream"
 
 /**
  * Reduce a user prompt to a short title for the Agents popover. Lives
- * here because `recordMainTaskStart` is the only host-side caller; the
- * test suite imports it through the view.ts re-export.
+ * here because `recordMainTaskStart` is the only host-side caller.
  */
 export function summarizePrompt(text: string): string {
   return text.replace(/\s+/g, " ").trim().slice(0, 64) || "Main agent"
