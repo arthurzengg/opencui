@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-02
+
+### Added
+- Messages typed while a turn is running are now queued instead of ignored. Pressing Enter while the assistant is working stores the prompt — including its @file mentions, attachments, and @chat conversation mentions — in a visible strip above the composer, and sends it automatically when the current turn finishes. Multiple queued messages run as separate, sequential turns, and each queued row has a remove control. Pressing Stop discards the queue so an abort never auto-restarts the work it just killed, while anything typed after Stop survives and sends once the session settles. Typed slash commands still neither run nor queue while busy (#379, #380).
+
+### Changed
+- README screenshots refreshed to match the current UI: chat panel overview and the Model · Agent · Effort picker (#373, #374).
+- Internal: the chat host's built-in command runners and context-usage calculation were extracted from `view.ts` into focused modules, and the Stop flow gained end-to-end regression tests pinning that Stop aborts the main session and every running subagent (#375, #376, #377, #378).
+
 ## [1.5.3] - 2026-06-29
 
 ### Fixed
