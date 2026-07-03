@@ -249,7 +249,11 @@ function ChatHistoryMenu({
                           // the IME candidate — don't intercept it as Save.
                           if (event.nativeEvent.isComposing || event.keyCode === 229) return
                           if (event.key === "Enter") commitRename()
-                          if (event.key === "Escape") setRenamingID(undefined)
+                          if (event.key === "Escape") {
+                            // Consume so Esc-to-stop doesn't also abort the turn.
+                            event.preventDefault()
+                            setRenamingID(undefined)
+                          }
                         }}
                       />
                       <button className="history-action" onClick={commitRename}>

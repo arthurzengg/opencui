@@ -46,14 +46,20 @@ export function useDismissableMenu(options: DismissableMenuOptions = {}): {
       if (ref.current?.contains(event.target as Node)) return
       setOpen(false)
     }
+    // Escape marks itself consumed and listens on `document` (which bubbles
+    // BEFORE `window`) so the Esc-to-stop window listener sees
+    // `defaultPrevented` and lets the popover close win over stopping the
+    // running turn.
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false)
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      setOpen(false)
     }
     window.addEventListener("click", onClick)
-    window.addEventListener("keydown", onKeyDown)
+    document.addEventListener("keydown", onKeyDown)
     return () => {
       window.removeEventListener("click", onClick)
-      window.removeEventListener("keydown", onKeyDown)
+      document.removeEventListener("keydown", onKeyDown)
     }
   }, [open])
 

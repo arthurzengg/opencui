@@ -618,6 +618,12 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     }
     if (e.key !== "Backspace" && selectedChipStart !== undefined) {
       setSelectedChipStart(undefined)
+      // Esc that dismisses a highlighted chip is consumed like the pickers'
+      // Esc — it must not fall through to the Esc-to-stop window listener.
+      if (e.key === "Escape") {
+        e.preventDefault()
+        return
+      }
     }
     // In edit variant, Escape cancels (matches the original edit-textarea UX).
     if (variant === "edit" && e.key === "Escape") {
@@ -895,7 +901,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
               className="btn danger icon"
               onClick={onAbort}
               aria-label="Stop"
-              title="Stop"
+              title="Stop (Esc)"
             >
               <StopIcon />
             </button>
