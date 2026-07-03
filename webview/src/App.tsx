@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { useChatState } from "./hooks/useChatState"
 import type { Message } from "./hooks/useChatState"
 import { useQueueFlush } from "./hooks/useQueueFlush"
+import { useEscapeToStop } from "./hooks/useEscapeToStop"
 import type { Attachment } from "./protocol"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
@@ -159,6 +160,9 @@ export default function App() {
   // Rebuild the turn structure only when the message list actually changes,
   // not on every coalesced streaming frame.
   const turns = useMemo(() => groupTurns(state.messages), [state.messages])
+
+  // Active exactly when the Stop button is clickable.
+  useEscapeToStop(busy && !state.aborting, abort)
 
   useEffect(() => {
     if (editingMessageID) setActiveHeaderPopover(null)

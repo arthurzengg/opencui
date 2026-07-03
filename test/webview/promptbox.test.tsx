@@ -864,6 +864,24 @@ describe("PromptBox two-step Backspace on chip", () => {
     expect(textarea.value).toBe("@src/foo.ts a")
   })
 
+  it("Escape clears the selected chip and is consumed, not left for Esc-to-stop", async () => {
+    const { user, container } = await setupChip()
+    await user.keyboard("{Backspace}")
+    expect(container.querySelector(".mention-chip-selected")).not.toBeNull()
+    const seen: boolean[] = []
+    const record = (e: KeyboardEvent) => {
+      if (e.key === "Escape") seen.push(e.defaultPrevented)
+    }
+    window.addEventListener("keydown", record)
+    try {
+      await user.keyboard("{Escape}")
+    } finally {
+      window.removeEventListener("keydown", record)
+    }
+    expect(container.querySelector(".mention-chip-selected")).toBeNull()
+    expect(seen).toEqual([true])
+  })
+
   it("Backspace away from a chip deletes a single character normally", async () => {
     const { user, textarea } = await setupChip()
     await user.type(textarea, "abc")
