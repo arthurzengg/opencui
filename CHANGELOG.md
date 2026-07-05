@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-07-05
+
+### Fixed
+- Clicking New chat ("+" or "+ New chat") from any conversation now switches to an existing empty "New conversation" instead of creating a duplicate. Previously the reuse only worked when the empty chat was already active; starting from an older chat stacked identical "New conversation" entries in the history list (#387, #388).
+- opencode plugins that rewrite the user prompt server-side (for example oh-my-opencode's `[search-mode]` / `[analyze-mode]` directives) no longer cause the entire built prompt — workspace context, injected docs, and your own text — to be echoed back into the chat as a phantom assistant bubble at the start of the turn. The echo was also being persisted into conversation history; new turns stay clean (#389, #390).
+
 ## [1.7.0] - 2026-07-04
 
 ### Added
