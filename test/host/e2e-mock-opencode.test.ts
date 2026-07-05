@@ -443,6 +443,78 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
     expect(deltas.join("")).toBe("Hello, world")
   })
 
+  it("ignores part updates for user messages so plugin prompt rewrites are not echoed", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const starts: string[] = []
+    const deltas: string[] = []
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onUserMessage: () => {},
+      onAssistantStart: (mid) => starts.push(mid),
+      onTextDelta: (_mid, delta) => deltas.push(delta),
+    })
+    await subscription.ready
+    await server.awaitClient()
+    // opencode saves the user message info before its parts
+    server.push({
+      type: "message.updated",
+      info: { id: "usr_1", role: "user", sessionID: "ses_test" },
+    })
+    // A server-side plugin (e.g. oh-my-opencode) rewrites the user prompt,
+    // which re-emits the user message's text part
+    server.push({
+      type: "message.part.updated",
+      part: {
+        id: "part_u",
+        messageID: "usr_1",
+        sessionID: "ses_test",
+        type: "text",
+        text: "[search-mode]\nMAXIMIZE SEARCH EFFORT\n\nWorkspace:\n- Name: opencui\n\nHello",
+      },
+    })
+    // The real assistant reply still streams normally
+    server.push({
+      type: "message.updated",
+      info: { id: "msg_a", role: "assistant", sessionID: "ses_test" },
+    })
+    server.push({
+      type: "message.part.updated",
+      part: { id: "part_1", messageID: "msg_a", sessionID: "ses_test", type: "text", text: "Hi" },
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    subscription.abort()
+    expect(starts).toEqual(["msg_a"])
+    expect(deltas).toEqual(["Hi"])
+  })
+
+  it("ignores part deltas for user messages", async () => {
+    const client = createOpencodeClient({ baseUrl: server.url })
+    const starts: string[] = []
+    const deltas: string[] = []
+    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+      onUserMessage: () => {},
+      onAssistantStart: (mid) => starts.push(mid),
+      onTextDelta: (_mid, delta) => deltas.push(delta),
+    })
+    await subscription.ready
+    await server.awaitClient()
+    server.push({
+      type: "message.updated",
+      info: { id: "usr_1", role: "user", sessionID: "ses_test" },
+    })
+    server.push({
+      type: "message.part.delta",
+      sessionID: "ses_test",
+      messageID: "usr_1",
+      partID: "part_u",
+      field: "text",
+      delta: "[analyze-mode]\nANALYSIS MODE",
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    subscription.abort()
+    expect(starts).toEqual([])
+    expect(deltas).toEqual([])
+  })
+
   it("forwards tool updates with status running/completed", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const toolUpdates: { tool: string; status: string }[] = []

@@ -617,6 +617,13 @@ export function subscribeSession(
     if (!part || part.sessionID !== sessionID) return
     const messageID = part.messageID as string | undefined
     if (!messageID) return
+    // Server-side plugins (e.g. oh-my-opencode) rewrite the USER message's
+    // text part after prompt submission, re-emitting message.part.updated for
+    // a user-role message. Without this guard the unseen id below would mint
+    // a phantom assistant bubble echoing the entire built prompt. opencode
+    // saves the message info before its parts, so seenUserMessages is
+    // populated before any part event for that message arrives.
+    if (seenUserMessages.has(messageID)) return
     if (!seenAssistantMessages.has(messageID)) {
       seenAssistantMessages.add(messageID)
       handlers.onAssistantStart?.(messageID)
@@ -686,6 +693,9 @@ export function subscribeSession(
     const messageID = p.messageID as string | undefined
     const partID = p.partID as string | undefined
     if (!messageID || !partID) return
+    // Same user-role guard as onPartUpdated: plugin rewrites of the user
+    // prompt must not stream into a phantom assistant bubble.
+    if (seenUserMessages.has(messageID)) return
     if (!seenAssistantMessages.has(messageID)) {
       seenAssistantMessages.add(messageID)
       handlers.onAssistantStart?.(messageID)
