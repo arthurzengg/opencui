@@ -12,6 +12,14 @@ export type ScriptedEvent =
   | { type: "session.idle"; sessionID: string }
   | { type: "message.updated"; info: Record<string, unknown> }
   | { type: "message.part.updated"; part: Record<string, unknown> }
+  | {
+      type: "message.part.delta"
+      sessionID: string
+      messageID: string
+      partID: string
+      field: string
+      delta: string
+    }
   | { type: "session.error"; error: { name?: string; data?: { message?: string } } }
   | { type: "session.status"; sessionID: string; status: { type: string } }
   | { type: "session.created"; info: Record<string, unknown> }
