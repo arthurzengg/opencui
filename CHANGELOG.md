@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-04
+
+### Added
+- Pressing Esc now stops the running turn, exactly when the Stop button is clickable. Esc keeps its dismiss-first meaning: an open slash-command picker, @ mention picker, header popover, image preview, rename input, or highlighted mention chip consumes the first Esc and the turn keeps running; the next Esc stops it. Esc during IME composition cancels the composition, not the turn, and the Stop button tooltip now advertises the shortcut as "Stop (Esc)" (#383, #384).
+
 ## [1.6.0] - 2026-07-02
 
 ### Added
