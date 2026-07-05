@@ -80,18 +80,22 @@ export class ConversationManager {
   }
 
   /**
-   * Backing for the New-chat action ("+" / "+ New chat"). If the active
-   * conversation is already an untouched "New conversation", reuse it — bump
-   * its created/updated time and move it to the front (`reused: true`) —
-   * instead of stacking a second identical empty chat. This is what keeps
-   * repeated New-chat clicks from piling up duplicate empty conversations.
-   * Otherwise add a fresh one (`reused: false`).
+   * Backing for the New-chat action ("+" / "+ New chat"). If an untouched
+   * "New conversation" already exists anywhere in the list — not just as the
+   * active chat — reuse it: bump its created/updated time and move it to the
+   * front (`reused: true`) instead of stacking a second identical empty
+   * chat. The active conversation is preferred when several qualify (legacy
+   * duplicates). Otherwise add a fresh one (`reused: false`).
    */
   addOrReuseEmpty(title: string): { conversation: SavedConversation; reused: boolean } {
     const active = this.conversations.find((c) => c.id === this.activeID)
-    if (active && this.isUntouchedNew(active)) {
+    const candidate =
+      active && this.isUntouchedNew(active)
+        ? active
+        : this.conversations.find((c) => this.isUntouchedNew(c))
+    if (candidate) {
       const now = Date.now()
-      const refreshed: SavedConversation = { ...active, createdAt: now, updatedAt: now }
+      const refreshed: SavedConversation = { ...candidate, createdAt: now, updatedAt: now }
       this.conversations = [refreshed, ...this.conversations.filter((c) => c.id !== refreshed.id)]
       return { conversation: refreshed, reused: true }
     }

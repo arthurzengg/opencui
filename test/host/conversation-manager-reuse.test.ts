@@ -55,6 +55,33 @@ describe("ConversationManager.addOrReuseEmpty", () => {
     expect(manager.summaries()[0]!.updatedAt).toBeGreaterThan(before)
   })
 
+  it("reuses an untouched New conversation even when another chat is active", () => {
+    const { context } = fakeContext()
+    const manager = new ConversationManager(context)
+    const untouchedID = manager.getActiveID()
+    const touched = manager.add("Touched chat")
+    manager.setActiveID(touched.id)
+    manager.saveActiveSnapshot(withMessage())
+
+    const { conversation, reused } = manager.addOrReuseEmpty("New conversation")
+
+    expect(reused).toBe(true)
+    expect(conversation.id).toBe(untouchedID)
+    expect(manager.summaries()).toHaveLength(2) // no duplicate empty chat
+  })
+
+  it("prefers the active conversation when several untouched New conversations exist", () => {
+    const { context } = fakeContext()
+    const manager = new ConversationManager(context)
+    const second = manager.add("New conversation")
+    manager.setActiveID(second.id)
+
+    const { conversation, reused } = manager.addOrReuseEmpty("New conversation")
+
+    expect(reused).toBe(true)
+    expect(conversation.id).toBe(second.id)
+  })
+
   it("adds a fresh conversation when the active one already has messages", () => {
     const { context } = fakeContext()
     const manager = new ConversationManager(context)
