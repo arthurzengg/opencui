@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-07-06
+
+### Changed
+- Renaming a chat in the history popover now edits the title in place. The input keeps the title's exact font and no longer draws a bordered box, so the row doesn't jump or reflow when entering edit mode — the only visible change is the caret and the Save/Cancel buttons replacing Rename/Delete. Save and Cancel behave as before: Save (or Enter) commits, Cancel (or Escape) discards, and clicking elsewhere never commits by accident (#393–#398).
+
 ## [1.7.1] - 2026-07-05
 
 ### Fixed
