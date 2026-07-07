@@ -278,14 +278,32 @@ describe("StatusBar: history popover", () => {
     expect(onRename).toHaveBeenCalledWith("c1", "renamed")
   })
 
-  it("rename mode renders only the input, no Save/Cancel buttons", async () => {
+  it("rename mode shows Save and Cancel; Save commits the rename", async () => {
     const user = userEvent.setup()
-    render(<StatusBar {...baseProps} conversations={conversations} />)
+    const onRename = vi.fn()
+    render(<StatusBar {...baseProps} conversations={conversations} onRenameConversation={onRename} />)
     await user.click(screen.getByRole("button", { name: /chat history/i }))
     await user.click(screen.getAllByRole("button", { name: /^Rename$/ })[0]!)
-    expect(screen.getByDisplayValue("First chat")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /^Save$/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /^Cancel$/ })).not.toBeInTheDocument()
+    const input = screen.getByDisplayValue("First chat")
+    await user.clear(input)
+    await user.type(input, "saved title")
+    await user.click(screen.getByRole("button", { name: /^Save$/ }))
+    expect(onRename).toHaveBeenCalledWith("c1", "saved title")
+    expect(screen.queryByDisplayValue("saved title")).not.toBeInTheDocument()
+  })
+
+  it("Cancel exits rename mode without committing", async () => {
+    const user = userEvent.setup()
+    const onRename = vi.fn()
+    render(<StatusBar {...baseProps} conversations={conversations} onRenameConversation={onRename} />)
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    await user.click(screen.getAllByRole("button", { name: /^Rename$/ })[0]!)
+    const input = screen.getByDisplayValue("First chat")
+    await user.type(input, " edited")
+    await user.click(screen.getByRole("button", { name: /^Cancel$/ }))
+    expect(onRename).not.toHaveBeenCalled()
+    expect(screen.queryByDisplayValue(/First chat/)).not.toBeInTheDocument()
+    expect(screen.getByText("First chat")).toBeInTheDocument()
   })
 
   it("does not commit or exit edit mode on blur; Enter is the commit", async () => {

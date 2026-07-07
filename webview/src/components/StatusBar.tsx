@@ -230,27 +230,35 @@ function ChatHistoryMenu({
               const isEditing = conversation.id === renamingID
               return (
                 <div
-                  className={`history-item ${conversation.id === activeID ? "is-active" : ""} ${isConfirming ? "is-confirming" : ""}`}
+                  className={`history-item ${conversation.id === activeID ? "is-active" : ""} ${isEditing ? "is-editing" : ""} ${isConfirming ? "is-confirming" : ""}`}
                   key={conversation.id}
                 >
                   {isEditing ? (
-                    <input
-                      className="history-rename-input"
-                      value={renamingTitle}
-                      autoFocus
-                      onChange={(event) => setRenamingTitle(event.target.value)}
-                      onKeyDown={(event) => {
-                        // While IME composition is active, Enter commits
-                        // the IME candidate — don't intercept it as Save.
-                        if (event.nativeEvent.isComposing || event.keyCode === 229) return
-                        if (event.key === "Enter") commitRename()
-                        if (event.key === "Escape") {
-                          // Consume so Esc-to-stop doesn't also abort the turn.
-                          event.preventDefault()
-                          setRenamingID(undefined)
-                        }
-                      }}
-                    />
+                    <>
+                      <input
+                        className="history-rename-input"
+                        value={renamingTitle}
+                        autoFocus
+                        onChange={(event) => setRenamingTitle(event.target.value)}
+                        onKeyDown={(event) => {
+                          // While IME composition is active, Enter commits
+                          // the IME candidate — don't intercept it as Save.
+                          if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                          if (event.key === "Enter") commitRename()
+                          if (event.key === "Escape") {
+                            // Consume so Esc-to-stop doesn't also abort the turn.
+                            event.preventDefault()
+                            setRenamingID(undefined)
+                          }
+                        }}
+                      />
+                      <button className="history-action" onClick={commitRename}>
+                        Save
+                      </button>
+                      <button className="history-action" onClick={() => setRenamingID(undefined)}>
+                        Cancel
+                      </button>
+                    </>
                   ) : (
                     <>
                       <button

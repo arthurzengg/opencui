@@ -714,6 +714,7 @@ button:focus-visible {
 }
 .history-item:hover .history-action,
 .history-item:focus-within .history-action,
+.history-item.is-editing .history-action,
 .history-item.is-confirming .history-action {
   opacity: 1;
 }
@@ -744,18 +745,13 @@ button:focus-visible {
   }
 }
 .history-rename-input {
-  /* Impersonate .history-open/.history-title so entering edit mode doesn't
-     reflow the row: same font metrics and vertical padding, no fixed height,
-     spanning the full row where title + date + actions were. The only visual
-     cue is the thin focus outline (drawn inward so it adds no size). */
-  grid-column: 1 / -1;
+  /* Editing must look like the title itself: same font metrics, no box,
+     no focus ring. The Save/Cancel buttons appearing is the edit cue. */
   min-width: 0;
   width: 100%;
   padding: 3px 0;
   border: 0;
-  border-radius: var(--radius-sm);
-  outline: 1px solid var(--vscode-focusBorder);
-  outline-offset: -1px;
+  outline: none;
   background: transparent;
   color: inherit;
   font-family: inherit;
