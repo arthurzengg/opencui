@@ -277,6 +277,61 @@ describe("StatusBar: history popover", () => {
     await user.type(input, "renamed{Enter}")
     expect(onRename).toHaveBeenCalledWith("c1", "renamed")
   })
+
+  it("rename mode renders only the input, no Save/Cancel buttons", async () => {
+    const user = userEvent.setup()
+    render(<StatusBar {...baseProps} conversations={conversations} />)
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    await user.click(screen.getAllByRole("button", { name: /^Rename$/ })[0]!)
+    expect(screen.getByDisplayValue("First chat")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^Save$/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^Cancel$/ })).not.toBeInTheDocument()
+  })
+
+  it("commits the rename when the input loses focus", async () => {
+    const user = userEvent.setup()
+    const onRename = vi.fn()
+    render(<StatusBar {...baseProps} conversations={conversations} onRenameConversation={onRename} />)
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    await user.click(screen.getAllByRole("button", { name: /^Rename$/ })[0]!)
+    const input = screen.getByDisplayValue("First chat")
+    await user.clear(input)
+    await user.type(input, "renamed by blur")
+    fireEvent.blur(input)
+    expect(onRename).toHaveBeenCalledWith("c1", "renamed by blur")
+    expect(screen.queryByDisplayValue("renamed by blur")).not.toBeInTheDocument()
+  })
+
+  it("cancels the rename on Escape without committing", async () => {
+    const user = userEvent.setup()
+    const onRename = vi.fn()
+    render(<StatusBar {...baseProps} conversations={conversations} onRenameConversation={onRename} />)
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    await user.click(screen.getAllByRole("button", { name: /^Rename$/ })[0]!)
+    const input = screen.getByDisplayValue("First chat")
+    await user.type(input, " edited")
+    await user.keyboard("{Escape}")
+    expect(onRename).not.toHaveBeenCalled()
+    expect(screen.queryByDisplayValue(/First chat/)).not.toBeInTheDocument()
+    // Reopen: the row is out of edit mode with the original title intact.
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    expect(screen.getByText("First chat")).toBeInTheDocument()
+  })
+
+  it("reverts to the previous title when the committed title is empty", async () => {
+    const user = userEvent.setup()
+    const onRename = vi.fn()
+    render(<StatusBar {...baseProps} conversations={conversations} onRenameConversation={onRename} />)
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    await user.click(screen.getAllByRole("button", { name: /^Rename$/ })[0]!)
+    const input = screen.getByDisplayValue("First chat")
+    await user.clear(input)
+    fireEvent.blur(input)
+    expect(onRename).not.toHaveBeenCalled()
+    // Edit mode is closed and the old title still renders (blur does not
+    // dismiss the popover, so the row itself must be visible again).
+    expect(screen.getByText("First chat")).toBeInTheDocument()
+  })
 })
 
 describe("AgentActivity", () => {
