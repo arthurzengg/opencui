@@ -288,7 +288,7 @@ describe("StatusBar: history popover", () => {
     expect(screen.queryByRole("button", { name: /^Cancel$/ })).not.toBeInTheDocument()
   })
 
-  it("commits the rename when the input loses focus", async () => {
+  it("does not commit or exit edit mode on blur; Enter is the commit", async () => {
     const user = userEvent.setup()
     const onRename = vi.fn()
     render(<StatusBar {...baseProps} conversations={conversations} onRenameConversation={onRename} />)
@@ -296,10 +296,10 @@ describe("StatusBar: history popover", () => {
     await user.click(screen.getAllByRole("button", { name: /^Rename$/ })[0]!)
     const input = screen.getByDisplayValue("First chat")
     await user.clear(input)
-    await user.type(input, "renamed by blur")
+    await user.type(input, "not committed yet")
     fireEvent.blur(input)
-    expect(onRename).toHaveBeenCalledWith("c1", "renamed by blur")
-    expect(screen.queryByDisplayValue("renamed by blur")).not.toBeInTheDocument()
+    expect(onRename).not.toHaveBeenCalled()
+    expect(screen.getByDisplayValue("not committed yet")).toBeInTheDocument()
   })
 
   it("cancels the rename on Escape without committing", async () => {
@@ -318,7 +318,7 @@ describe("StatusBar: history popover", () => {
     expect(screen.getByText("First chat")).toBeInTheDocument()
   })
 
-  it("reverts to the previous title when the committed title is empty", async () => {
+  it("stays in edit mode when Enter is pressed with an empty title", async () => {
     const user = userEvent.setup()
     const onRename = vi.fn()
     render(<StatusBar {...baseProps} conversations={conversations} onRenameConversation={onRename} />)
@@ -326,11 +326,9 @@ describe("StatusBar: history popover", () => {
     await user.click(screen.getAllByRole("button", { name: /^Rename$/ })[0]!)
     const input = screen.getByDisplayValue("First chat")
     await user.clear(input)
-    fireEvent.blur(input)
+    await user.keyboard("{Enter}")
     expect(onRename).not.toHaveBeenCalled()
-    // Edit mode is closed and the old title still renders (blur does not
-    // dismiss the popover, so the row itself must be visible again).
-    expect(screen.getByText("First chat")).toBeInTheDocument()
+    expect(input).toBeInTheDocument()
   })
 })
 

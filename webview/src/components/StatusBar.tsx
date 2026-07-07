@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
 import type { ConversationSummary, Selection } from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
@@ -140,7 +140,6 @@ function ChatHistoryMenu({
   const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
   const [renamingID, setRenamingID] = useState<string>()
   const [renamingTitle, setRenamingTitle] = useState("")
-  const renameCancelledRef = useRef(false)
   const [confirmDeleteID, setConfirmDeleteID] = useState<string>()
   const [query, setQuery] = useState("")
 
@@ -158,7 +157,6 @@ function ChatHistoryMenu({
   }, [confirmDeleteID])
 
   const startRename = (conversation: ConversationSummary) => {
-    renameCancelledRef.current = false
     setRenamingID(conversation.id)
     setRenamingTitle(conversation.title)
     setConfirmDeleteID(undefined)
@@ -167,17 +165,8 @@ function ChatHistoryMenu({
   const commitRename = () => {
     if (!renamingID) return
     const title = renamingTitle.replace(/\s+/g, " ").trim()
-    // Empty title reverts to the previous one rather than staying in edit
-    // mode — with commit-on-blur there is no way to "stay" once focus left.
-    if (title) onRename(renamingID, title.slice(0, 80))
-    setRenamingID(undefined)
-    setRenamingTitle("")
-  }
-
-  const cancelRename = () => {
-    // Set before clearing state: unmounting the input fires a trailing blur
-    // that must not re-commit the edit Escape just discarded.
-    renameCancelledRef.current = true
+    if (!title) return
+    onRename(renamingID, title.slice(0, 80))
     setRenamingID(undefined)
     setRenamingTitle("")
   }
@@ -250,13 +239,6 @@ function ChatHistoryMenu({
                       value={renamingTitle}
                       autoFocus
                       onChange={(event) => setRenamingTitle(event.target.value)}
-                      onBlur={() => {
-                        if (renameCancelledRef.current) {
-                          renameCancelledRef.current = false
-                          return
-                        }
-                        commitRename()
-                      }}
                       onKeyDown={(event) => {
                         // While IME composition is active, Enter commits
                         // the IME candidate — don't intercept it as Save.
@@ -265,7 +247,7 @@ function ChatHistoryMenu({
                         if (event.key === "Escape") {
                           // Consume so Esc-to-stop doesn't also abort the turn.
                           event.preventDefault()
-                          cancelRename()
+                          setRenamingID(undefined)
                         }
                       }}
                     />
