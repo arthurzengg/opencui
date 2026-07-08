@@ -133,6 +133,7 @@ vi.mock("vscode", () => {
       })),
       registerWebviewViewProvider: vi.fn(),
       onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidChangeTextEditorSelection: vi.fn(() => ({ dispose: vi.fn() })),
       onDidChangeVisibleTextEditors: vi.fn(() => ({ dispose: vi.fn() })),
       showWarningMessage: vi.fn(),
       showInformationMessage: vi.fn(),
