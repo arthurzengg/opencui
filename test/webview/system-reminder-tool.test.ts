@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   isSystemReminderTool,
   systemReminderContentFromTool,
-} from "../../webview/src/components/MessageView"
+} from "../../webview/src/process-text"
 
 describe("isSystemReminderTool", () => {
   it.each([

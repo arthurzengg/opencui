@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { stripInternalMarkers, splitWithReminders } from "../../webview/src/components/MessageView"
+import { stripInternalMarkers, splitWithReminders } from "../../webview/src/process-text"
 
 describe("stripInternalMarkers", () => {
   it("returns input unchanged when no markers present", () => {
