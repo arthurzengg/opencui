@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import * as vscode from "vscode"
-import { buildPrompt, readMentions } from "../../src/chat/prompt-builder"
+import {
+  buildPrompt,
+  readMentions,
+  formatConversationContext,
+  readConversationMentions,
+} from "../../src/chat/prompt-builder"
 import type { WorkspaceRoot } from "../../src/workspace-root"
+import type { ChatMessage, ToolUpdate } from "../../src/protocol"
 
 const FAKE_ROOT: WorkspaceRoot = {
   uri: { fsPath: "/repo", scheme: "file" } as unknown as vscode.Uri,
@@ -191,5 +197,193 @@ describe("readMentions: multi-root workspaces", () => {
     const out = await readMentions(["folderB/missing.ts"])
     expect(out.failed).toEqual(["folderB/missing.ts"])
     expect(out.block).toBeUndefined()
+  })
+})
+
+function msg(role: "user" | "assistant", text: string, id = "m"): ChatMessage {
+  return { id, role, blocks: [{ type: "text", text }] }
+}
+
+const bytesOf = (s: string) => Buffer.byteLength(s, "utf8")
+
+describe("formatConversationContext", () => {
+  it("includes every message fenced under the header when the budget allows", () => {
+    const out = formatConversationContext(
+      "Fix the picker",
+      [msg("user", "hello"), msg("assistant", "hi there"), msg("user", "thanks")],
+      100_000,
+    )!
+    expect(out.truncated).toBe(false)
+    const lines = out.text.split("\n")
+    expect(lines[0]).toBe('Past conversation "Fix the picker":')
+    expect(lines[1]).toBe("```")
+    expect(lines.at(-1)).toBe("```")
+    expect(out.text).toContain("User: hello")
+    expect(out.text).toContain("Assistant: hi there")
+    expect(out.text).toContain("User: thanks")
+    expect(out.text).not.toContain("omitted")
+    expect(bytesOf(out.text)).toBe(out.originalBytes)
+  })
+
+  it("keeps the first message plus a contiguous tail and marks the gap", () => {
+    const messages = [
+      msg("user", "the original intent message"),
+      ...Array.from({ length: 40 }, (_, i) => msg("assistant", `middle turn ${i} ${"x".repeat(200)}`)),
+      msg("assistant", "the final conclusion"),
+    ]
+    const budget = 2_000
+    const out = formatConversationContext("T", messages, budget)!
+    expect(out.truncated).toBe(true)
+    expect(bytesOf(out.text)).toBeLessThanOrEqual(budget)
+    expect(out.text).toContain("User: the original intent message")
+    expect(out.text).toContain("Assistant: the final conclusion")
+    const marker = out.text.match(/\[\.\.\. (\d+) messages omitted\]/)
+    expect(marker).not.toBeNull()
+    const omitted = Number(marker![1])
+    const note = out.text.match(/\(first message \+ last (\d+) of (\d+) total\)/)
+    expect(note).not.toBeNull()
+    expect(Number(note![2])).toBe(42)
+    // Anchor + omitted + tail accounts for every message exactly once.
+    expect(1 + omitted + Number(note![1])).toBe(42)
+    // The tail is the most recent turns — the gap sits in the middle.
+    expect(out.text).not.toContain("middle turn 0 ")
+  })
+
+  it("never exceeds the budget or splits characters on CJK content", () => {
+    const messages = Array.from({ length: 30 }, (_, i) =>
+      msg(i % 2 === 0 ? "user" : "assistant", `第${i}轮：${"这是一段很长的中文内容。".repeat(20)}`),
+    )
+    const budget = 3_000
+    const out = formatConversationContext("中文对话", messages, budget)!
+    expect(bytesOf(out.text)).toBeLessThanOrEqual(budget)
+    expect(out.text).not.toContain("�")
+    expect(out.truncated).toBe(true)
+  })
+
+  it("caps a single oversized message instead of letting it evict the rest", () => {
+    const messages = [
+      msg("user", "short question"),
+      msg("assistant", "line\n".repeat(12_000)),
+      msg("user", "follow-up"),
+      msg("assistant", "final answer"),
+    ]
+    const budget = 100_000
+    const out = formatConversationContext("T", messages, budget)!
+    expect(out.text).toContain("[message truncated]")
+    expect(out.text).toContain("User: short question")
+    expect(out.text).toContain("User: follow-up")
+    expect(out.text).toContain("Assistant: final answer")
+    expect(out.truncated).toBe(true)
+    // The giant message was held to ~25% of the budget.
+    expect(bytesOf(out.text)).toBeLessThan(30_000)
+  })
+
+  it("uses a fence longer than any backtick run in the transcript", () => {
+    const out = formatConversationContext(
+      "T",
+      [msg("assistant", "use this:\n```ts\nconst x = 1\n```")],
+      100_000,
+    )!
+    const lines = out.text.split("\n")
+    expect(lines[1]).toBe("````")
+    expect(lines.at(-1)).toBe("````")
+    expect(out.text).toContain("```ts")
+  })
+
+  it("flattens tool and patch blocks to one-line summaries", () => {
+    const update: ToolUpdate = { callID: "c1", tool: "bash", status: "completed", title: "npm test" }
+    const messages: ChatMessage[] = [
+      msg("user", "run the tests"),
+      {
+        id: "a1",
+        role: "assistant",
+        blocks: [
+          { type: "tool", update },
+          { type: "patch", files: ["src/a.ts", "src/b.ts"] },
+          { type: "text", text: "done" },
+        ],
+      },
+    ]
+    const out = formatConversationContext("T", messages, 100_000)!
+    expect(out.text).toContain("[bash: npm test]")
+    expect(out.text).toContain("[patched src/a.ts, src/b.ts]")
+    expect(out.text).toContain("done")
+  })
+
+  it("returns undefined when not even the first message fits", () => {
+    const out = formatConversationContext("T", [msg("user", "hello world")], 40)
+    expect(out).toBeUndefined()
+  })
+
+  it("returns a header-only block for a conversation with no renderable parts", () => {
+    const messages: ChatMessage[] = [{ id: "m1", role: "assistant", blocks: [] }]
+    const out = formatConversationContext("Empty", messages, 100_000)!
+    expect(out.text).toBe('Past conversation "Empty":')
+    expect(out.truncated).toBe(false)
+  })
+})
+
+describe("readConversationMentions", () => {
+  const conversations: Record<string, ChatMessage[]> = {
+    a: [msg("user", "first question"), msg("assistant", "first answer")],
+    b: [msg("user", "second question"), msg("assistant", "second answer")],
+  }
+  const getMessages = (id: string) => conversations[id]
+  const getTitle = (id: string) => (id === "a" ? "Chat A" : id === "b" ? "Chat B" : undefined)
+
+  it("returns empty state for no ids", () => {
+    const out = readConversationMentions(undefined, getMessages, getTitle)
+    expect(out.block).toBeUndefined()
+    expect(out.bytes).toEqual({})
+  })
+
+  it("joins conversations with a blank line and records exact byte accounting", () => {
+    const out = readConversationMentions(["a", "b"], getMessages, getTitle)
+    expect(out.block).toContain('Past conversation "Chat A"')
+    expect(out.block).toContain('Past conversation "Chat B"')
+    expect(out.block!.split("\n\n")).toHaveLength(2)
+    expect(out.bytes.a).toMatchObject({ truncated: false })
+    expect(out.bytes.a!.included).toBe(out.bytes.a!.original)
+    expect(out.capped).toEqual([])
+    expect(out.failed).toEqual([])
+  })
+
+  it("dedups ids and records unknown conversations as failed", () => {
+    const out = readConversationMentions(["a", "a", "missing"], getMessages, getTitle)
+    expect(out.block!.match(/Chat A/g)).toHaveLength(1)
+    expect(out.failed).toEqual(["missing"])
+  })
+
+  it("records a conversation as capped when the budget cannot fit its first message", () => {
+    const out = readConversationMentions(["a"], getMessages, getTitle, 30)
+    expect(out.capped).toEqual(["a"])
+    expect(out.bytes.a).toBeUndefined()
+    expect(out.block).toBeUndefined()
+  })
+
+  it("gives earlier mentions budget priority and never exceeds the total", () => {
+    const big: Record<string, ChatMessage[]> = {
+      one: Array.from({ length: 12 }, (_, i) => msg("user", `one turn ${i} ${"alpha ".repeat(20)}`)),
+      two: Array.from({ length: 12 }, (_, i) => msg("user", `two turn ${i} ${"beta ".repeat(20)}`)),
+    }
+    const budget = 900
+    const out = readConversationMentions(["one", "two"], (id) => big[id], (id) => id, budget)
+    expect(out.bytes.one).toBeDefined()
+    const included = Object.values(out.bytes).reduce((sum, b) => sum + b.included, 0)
+    expect(included).toBeLessThanOrEqual(budget)
+    // Every id lands in exactly one bucket.
+    expect(Object.keys(out.bytes).length + out.capped.length + out.failed.length).toBe(2)
+  })
+
+  it("stays within the total budget when the first conversation is truncated", () => {
+    const big: Record<string, ChatMessage[]> = {
+      long: Array.from({ length: 50 }, (_, i) => msg("user", `turn ${i} ${"content ".repeat(50)}`)),
+    }
+    const budget = 2_500
+    const out = readConversationMentions(["long"], (id) => big[id], () => "Long chat", budget)
+    expect(out.bytes.long).toBeDefined()
+    expect(out.bytes.long!.truncated).toBe(true)
+    expect(out.bytes.long!.included).toBeLessThanOrEqual(budget)
+    expect(out.bytes.long!.original).toBeGreaterThan(budget)
   })
 })

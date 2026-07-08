@@ -10,7 +10,12 @@ import { stripWorkspaceFolderPrefix } from "./paths"
 export const DEFAULT_MENTION_MAX_BYTES = 200_000
 export const DEFAULT_CONVERSATION_MAX_BYTES = 100_000
 const MENTION_MAX_FILES = 20
-const CONVERSATION_MAX_MESSAGES = 29
+/**
+ * One message may consume at most this fraction of a conversation mention's
+ * byte budget, so a single pasted log cannot evict every other turn.
+ */
+const CONVERSATION_MESSAGE_MAX_FRACTION = 0.25
+const MESSAGE_TRUNCATED_MARKER = "\n[message truncated]"
 
 export function buildPrompt(
   userText: string,
@@ -158,45 +163,153 @@ async function readFirstCandidate(
 
 export type ConversationMentionResult = {
   block?: string
-  bytes: Record<string, { included: number; original: number }>
+  bytes: Record<string, { included: number; original: number; truncated: boolean }>
   capped: string[]
   failed: string[]
 }
 
-export function formatConversationContext(title: string, messages: ChatMessage[]): string {
-  const total = messages.length
-  let selected: ChatMessage[]
-  let truncationNote = ""
-  if (total <= CONVERSATION_MAX_MESSAGES + 1) {
-    selected = messages
-  } else {
-    const first = messages[0]!
-    const tail = messages.slice(-(CONVERSATION_MAX_MESSAGES))
-    const tailStart = total - CONVERSATION_MAX_MESSAGES
-    selected = tailStart > 0 ? [first, ...tail] : messages
-    truncationNote = ` (first message + last ${CONVERSATION_MAX_MESSAGES} of ${total} total)`
-  }
-  const lines: string[] = [`Past conversation "${title}"${truncationNote}:`]
-  for (const msg of selected) {
-    const role = msg.role === "user" ? "User" : "Assistant"
-    const parts: string[] = []
-    for (const block of msg.blocks) {
-      if (block.type === "text" && block.text.trim()) {
-        parts.push(block.text.trim())
-      } else if (block.type === "tool") {
-        const name = block.update.tool
-        const label = block.update.title ?? block.update.input?.path ?? ""
-        parts.push(`[${name}${label ? `: ${label}` : ""}]`)
-      } else if (block.type === "patch") {
-        const files = block.files.join(", ")
-        parts.push(`[patched ${files}]`)
-      }
-    }
-    if (parts.length > 0) {
-      lines.push(`${role}: ${parts.join("\n")}`)
+export type ConversationContextResult = {
+  text: string
+  /** Byte size of the full, untruncated transcript block. */
+  originalBytes: number
+  /**
+   * True when any message was omitted or cut. The manifest must use this
+   * rather than comparing byte counts: the omission marker and header note
+   * can outweigh a tiny omitted message, making `included > original`.
+   */
+  truncated: boolean
+}
+
+function formatConversationMessage(msg: ChatMessage): string | undefined {
+  const role = msg.role === "user" ? "User" : "Assistant"
+  const parts: string[] = []
+  for (const block of msg.blocks) {
+    if (block.type === "text" && block.text.trim()) {
+      parts.push(block.text.trim())
+    } else if (block.type === "tool") {
+      const name = block.update.tool
+      const label = block.update.title ?? block.update.input?.path ?? ""
+      parts.push(`[${name}${label ? `: ${label}` : ""}]`)
+    } else if (block.type === "patch") {
+      const files = block.files.join(", ")
+      parts.push(`[patched ${files}]`)
     }
   }
-  return lines.join("\n")
+  if (parts.length === 0) return undefined
+  return `${role}: ${parts.join("\n")}`
+}
+
+/**
+ * Cut `text` to at most `maxBytes` UTF-8 bytes without splitting a character
+ * (a Buffer cut mid-character decodes to trailing U+FFFD, which we strip).
+ * Prefers ending at the last newline, then the last space, when one exists in
+ * the second half of the cut, so truncation lands on a natural boundary.
+ */
+function truncateUtf8(text: string, maxBytes: number): string {
+  if (maxBytes <= 0) return ""
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
+  const hard = Buffer.from(text, "utf8").subarray(0, maxBytes).toString("utf8").replace(/�+$/, "")
+  const newline = hard.lastIndexOf("\n")
+  if (newline > hard.length / 2) return hard.slice(0, newline)
+  const space = hard.lastIndexOf(" ")
+  if (space > hard.length / 2) return hard.slice(0, space)
+  return hard
+}
+
+function capMessage(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
+  const markerBytes = Buffer.byteLength(MESSAGE_TRUNCATED_MARKER, "utf8")
+  if (maxBytes <= markerBytes) return truncateUtf8(text, maxBytes)
+  return truncateUtf8(text, maxBytes - markerBytes) + MESSAGE_TRUNCATED_MARKER
+}
+
+/** A fence longer than any backtick run in `content`, so transcript code blocks cannot close it. */
+function fenceFor(content: string): string {
+  let longest = 0
+  for (const run of content.match(/`+/g) ?? []) longest = Math.max(longest, run.length)
+  return "`".repeat(Math.max(3, longest + 1))
+}
+
+/**
+ * Format a past conversation for the prompt within a hard byte budget.
+ * Selection and truncation are one mechanism: the first message is always
+ * kept (it anchors the conversation's intent), then whole messages are added
+ * walking backward from the end until the budget is spent, with an omission
+ * marker at the gap. Messages are never split mid-character or mid-turn, so
+ * the budget holds by construction regardless of content encoding. The
+ * transcript is fenced so its `User:` / `Assistant:` lines read as quoted
+ * reference material, not live turns.
+ *
+ * Returns undefined when not even the header plus the (capped) first message
+ * fits — the caller records the mention as capped.
+ */
+export function formatConversationContext(
+  title: string,
+  messages: ChatMessage[],
+  maxBytes: number,
+): ConversationContextResult | undefined {
+  if (maxBytes <= 0) return undefined
+  const header = (note: string) => `Past conversation "${title}"${note}:`
+  const formatted: string[] = []
+  for (const msg of messages) {
+    const text = formatConversationMessage(msg)
+    if (text !== undefined) formatted.push(text)
+  }
+  if (formatted.length === 0) {
+    const text = header("")
+    const bytes = Buffer.byteLength(text, "utf8")
+    return bytes <= maxBytes ? { text, originalBytes: bytes, truncated: false } : undefined
+  }
+
+  // Fence sized against the full transcript: capping only removes content
+  // (the appended markers contain no backticks), so a fence that clears the
+  // full text clears every capped variant too.
+  const fence = fenceFor(formatted.join("\n"))
+  const originalBytes = Buffer.byteLength([header(""), fence, ...formatted, fence].join("\n"), "utf8")
+
+  const perMessageMax = Math.max(1, Math.floor(maxBytes * CONVERSATION_MESSAGE_MAX_FRACTION))
+  const capped = formatted.map((m) => capMessage(m, perMessageMax))
+  const sizes = capped.map((m) => Buffer.byteLength(m, "utf8"))
+  const n = capped.length
+  // Neutral wording: the gap usually holds earlier turns, but when only the
+  // anchor fits the omitted messages are the later ones.
+  const omittedMarker = (k: number) => `[... ${k} messages omitted]`
+
+  // Reserve worst-case fixed overhead (header with note, both fence lines,
+  // omission marker, join newlines) up front. Actual overhead is never
+  // larger, so packing whole messages against the remainder cannot overshoot
+  // the budget — at worst it leaves a few dozen bytes unused.
+  const fixed =
+    Buffer.byteLength(header(` (first message + last ${n} of ${n} total)`), "utf8") +
+    fence.length * 2 +
+    Buffer.byteLength(omittedMarker(n), "utf8") +
+    4
+  const msgBudget = maxBytes - fixed
+  if (msgBudget < sizes[0]! + 1) return undefined
+
+  let used = sizes[0]! + 1
+  let tailStart = n
+  for (let i = n - 1; i >= 1; i--) {
+    const cost = sizes[i]! + 1
+    if (used + cost > msgBudget) break
+    used += cost
+    tailStart = i
+  }
+  const tail = capped.slice(Math.max(tailStart, 1))
+  const omitted = Math.max(tailStart, 1) - 1
+
+  const segments = [capped[0]!]
+  if (omitted > 0) segments.push(omittedMarker(omitted))
+  segments.push(...tail)
+  const note =
+    omitted === 0
+      ? ""
+      : tail.length > 0
+        ? ` (first message + last ${tail.length} of ${n} total)`
+        : ` (first message of ${n} total)`
+  const text = [header(note), fence, ...segments, fence].join("\n")
+  const anyMessageCapped = capped.some((m, i) => m !== formatted[i])
+  return { text, originalBytes, truncated: omitted > 0 || anyMessageCapped }
 }
 
 export function readConversationMentions(
@@ -210,7 +323,7 @@ export function readConversationMentions(
   }
   const seen = new Set<string>()
   const blocks: string[] = []
-  const bytes: Record<string, { included: number; original: number }> = {}
+  const bytes: Record<string, { included: number; original: number; truncated: boolean }> = {}
   const capped: string[] = []
   const failed: string[] = []
   let totalBytes = 0
@@ -223,19 +336,15 @@ export function readConversationMentions(
       failed.push(id)
       continue
     }
-    const formatted = formatConversationContext(title, messages)
-    const formattedBytes = Buffer.byteLength(formatted, "utf8")
-    const remaining = maxBytes - totalBytes
-    if (remaining <= 0) {
+    const result = formatConversationContext(title, messages, maxBytes - totalBytes)
+    if (!result) {
       capped.push(id)
       continue
     }
-    const truncated = formattedBytes > remaining
-    const content = truncated ? formatted.slice(0, remaining) : formatted
-    const includedBytes = Buffer.byteLength(content, "utf8")
-    blocks.push(content)
-    bytes[id] = { included: includedBytes, original: formattedBytes }
-    totalBytes += includedBytes
+    const included = Buffer.byteLength(result.text, "utf8")
+    blocks.push(result.text)
+    bytes[id] = { included, original: result.originalBytes, truncated: result.truncated }
+    totalBytes += included
   }
   const block = blocks.length > 0 ? blocks.join("\n\n") : undefined
   return { block, bytes, capped, failed }
