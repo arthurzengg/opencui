@@ -258,6 +258,19 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.view?.show?.(true)
   }
 
+  private webviewMounted = false
+
+  /**
+   * Test-facing snapshot exposed through the extension's `activate()` exports.
+   * `resolved` — VS Code called resolveWebviewView; `mounted` — the bundled
+   * React app booted inside the webview and completed the `mounted` handshake.
+   * The integration suite polls this to prove the real webview loads end to
+   * end (CSP, bundle, protocol) — something no unit test can observe.
+   */
+  webviewState(): { resolved: boolean; mounted: boolean } {
+    return { resolved: this.view !== undefined, mounted: this.webviewMounted }
+  }
+
   async newSession() {
     await this.createConversation()
   }
@@ -646,6 +659,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async onMessage(msg: Inbound) {
     switch (msg.type) {
       case "mounted": {
+        this.webviewMounted = true
         this.post({
           type: "ready",
           connected: false,
