@@ -77,6 +77,12 @@ export async function activate(context: vscode.ExtensionContext) {
       status.set("error", String(e))
       vscode.window.showErrorMessage(`OpenCode Panel: failed to start opencode backend: ${e.message}`)
     })
+
+  // Test-facing API (ext.exports). The integration suite polls this to verify
+  // the real webview bundle loads and completes the mounted handshake.
+  return {
+    chatWebviewState: () => chat.webviewState(),
+  }
 }
 
 export async function deactivate() {
