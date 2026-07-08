@@ -1117,12 +1117,12 @@ export class ChatView implements vscode.WebviewViewProvider {
         kind: "conversation",
         label: title,
         reason: "Past conversation attached via @-mention",
-        status: info.included < info.original ? "truncated" : "included",
+        status: info.truncated ? "truncated" : "included",
         bytes: info.included,
       })
       manifest.totals.includedItems += 1
       manifest.totals.includedBytes += info.included
-      if (info.included < info.original) manifest.totals.truncatedItems += 1
+      if (info.truncated) manifest.totals.truncatedItems += 1
     }
     for (const id of convResult.capped) {
       manifest.items.push({
