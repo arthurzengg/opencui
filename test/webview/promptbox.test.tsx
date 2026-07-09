@@ -382,6 +382,45 @@ describe("PromptBox @file autocomplete", () => {
     expect((textarea as HTMLTextAreaElement).value).toBe("@src/bar.ts ")
   })
 
+  it("scrolls the active row into view on arrow-key nav but not on hover", async () => {
+    const user = userEvent.setup()
+    const searchFiles = vi.fn().mockResolvedValue([
+      { path: "src/a.ts", name: "a.ts" },
+      { path: "src/b.ts", name: "b.ts" },
+      { path: "src/c.ts", name: "c.ts" },
+    ])
+    // jsdom has no scrollIntoView; install a recording stub so the effect's
+    // typeof guard passes and we can see which element it scrolled.
+    const proto = Element.prototype as { scrollIntoView?: (opts?: unknown) => void }
+    const original = proto.scrollIntoView
+    const scrolled: Array<{ el: Element; opts: unknown }> = []
+    proto.scrollIntoView = function (this: Element, opts?: unknown) {
+      scrolled.push({ el: this, opts })
+    }
+    try {
+      render(
+        <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
+      )
+      await user.type(screen.getByRole("textbox"), "@a")
+      await waitFor(() => expect(screen.getByText("b.ts")).toBeInTheDocument())
+      scrolled.length = 0
+      await user.keyboard("{ArrowDown}")
+      expect(scrolled).toHaveLength(1)
+      expect(scrolled[0]!.opts).toEqual({ block: "nearest" })
+      expect(scrolled[0]!.el.getAttribute("aria-selected")).toBe("true")
+      expect(scrolled[0]!.el.textContent).toContain("b.ts")
+
+      scrolled.length = 0
+      const lastRow = screen.getByText("c.ts").closest("li")!
+      fireEvent.mouseEnter(lastRow)
+      expect(lastRow.getAttribute("aria-selected")).toBe("true")
+      expect(scrolled).toHaveLength(0)
+    } finally {
+      if (original) proto.scrollIntoView = original
+      else delete proto.scrollIntoView
+    }
+  })
+
   it("Click on a hit inserts that path", async () => {
     const user = userEvent.setup()
     const searchFiles = vi.fn().mockResolvedValue([
