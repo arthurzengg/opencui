@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup, waitFor, within } from "@testing-library/react"
+import { render, screen, cleanup, fireEvent, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { PromptBox, detectMention, extractMentions, findMentionRanges, findChipAtCaret, makeAttachmentLabel } from "../../webview/src/components/PromptBox"
 
@@ -11,6 +11,27 @@ async function enterFilesCategory(user: ReturnType<typeof userEvent.setup>, targ
   await waitFor(() => expect(screen.getByText("Files")).toBeInTheDocument())
   await user.keyboard("{Enter}")
 }
+
+describe("PromptBox blur-dismiss timer", () => {
+  // The 120ms deferred picker dismissal must die with the component —
+  // a timer surviving unmount setStates into a torn-down tree (the flaky
+  // "window is not defined" CI failure once jsdom's realm is gone, #415).
+  it("cancels the deferred dismissal on unmount and never stacks timers", () => {
+    vi.useFakeTimers()
+    try {
+      const { unmount } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
+      const textarea = screen.getByRole("textbox")
+      const before = vi.getTimerCount()
+      fireEvent.blur(textarea)
+      fireEvent.blur(textarea)
+      expect(vi.getTimerCount()).toBe(before + 1)
+      unmount()
+      expect(vi.getTimerCount()).toBe(before)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
 
 describe("PromptBox", () => {
   it("renders a textarea with placeholder", () => {
