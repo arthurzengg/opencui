@@ -154,6 +154,11 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   // setStates into a torn-down tree — the flaky "window is not defined" CI
   // failure when the timer outlives jsdom's realm (#415).
   useEffect(() => () => clearTimeout(blurTimer.current), [])
+  const popoverHostRef = useRef<HTMLDivElement | null>(null)
+  // True only while an arrow key is moving a popover's active row. Hover also
+  // moves the index (onMouseEnter), but scrolling on hover would shift rows
+  // under the cursor — so the scroll-into-view effect only acts on key moves.
+  const keyboardNavRef = useRef(false)
   const {
     imageAttachments,
     addImages,
@@ -223,6 +228,20 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     drillInto,
     goUp,
   } = useFileBrowser({ listDir, active: showBrowse })
+
+  // Keep the active row visible when arrow keys move it past the popover's
+  // max-height fold — the chat list and folder browser overflow routinely.
+  // Keyed on every popover's index; whichever popover is open owns the single
+  // [aria-selected="true"] row. The typeof guard is for jsdom, which doesn't
+  // implement scrollIntoView.
+  useEffect(() => {
+    const byKeyboard = keyboardNavRef.current
+    keyboardNavRef.current = false
+    if (!byKeyboard) return
+    const active = popoverHostRef.current?.querySelector('.mention-popover [aria-selected="true"]')
+    if (active && typeof active.scrollIntoView === "function") active.scrollIntoView({ block: "nearest" })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commandIndex, menuIndex, activeIndex, browseIndex])
 
   const pastConversations = (conversations ?? []).filter((c) => c.id !== activeConversationID)
   const filteredConversations = showChatList
@@ -452,6 +471,9 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     // the IME. keyCode 229 is the legacy fallback for older Chromium builds
     // that don't surface isComposing reliably.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
+    if (e.key.startsWith("Arrow") && (command || showCategoryMenu || showChatList || showFileHits || showBrowse)) {
+      keyboardNavRef.current = true
+    }
     if (command) {
       // When nothing matches we only handle Escape — Enter must fall through to
       // submit so `/unknown` sends as a normal prompt.
@@ -686,7 +708,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
         onClose={() => setPreviewImage(null)}
       />
       <div className="promptbox-input">
-        <div className="promptbox-textarea-wrap">
+        <div ref={popoverHostRef} className="promptbox-textarea-wrap">
         <div ref={backdropRef} className="promptbox-backdrop" aria-hidden="true">
           {renderHighlightedText(text, allKnownLabels(), selectedChipStart)}
         </div>
