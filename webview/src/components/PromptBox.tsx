@@ -149,6 +149,11 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
   const [attaching, setAttaching] = useState(false)
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Cancel the deferred blur-dismiss on unmount: a timer surviving unmount
+  // setStates into a torn-down tree — the flaky "window is not defined" CI
+  // failure when the timer outlives jsdom's realm (#415).
+  useEffect(() => () => clearTimeout(blurTimer.current), [])
   const {
     imageAttachments,
     addImages,
@@ -699,7 +704,8 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
           }}
           onBlur={() => {
             // Defer so onMouseDown on a hit can fire first.
-            setTimeout(() => {
+            clearTimeout(blurTimer.current)
+            blurTimer.current = setTimeout(() => {
               closeMention()
               closeCommand()
             }, 120)
