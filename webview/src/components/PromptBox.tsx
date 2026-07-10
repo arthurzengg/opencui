@@ -159,6 +159,15 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   // moves the index (onMouseEnter), but scrolling on hover would shift rows
   // under the cursor — so the scroll-into-view effect only acts on key moves.
   const keyboardNavRef = useRef(false)
+  // Hover claims the index move by clearing the flag first. An arrow press
+  // that changed no index (ArrowRight on a file row, Left/Right where only
+  // Up/Down are handled, wrap on a single-row list, arrows over an empty
+  // popover) never reaches the effect that consumes the flag, and the next
+  // hover-driven index change would otherwise scroll the row under the cursor.
+  const hoverMove = (apply: () => void) => {
+    keyboardNavRef.current = false
+    apply()
+  }
   const {
     imageAttachments,
     addImages,
@@ -740,7 +749,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
               aria-selected={menuIndex === 0}
               className={"mention-hit mention-category" + (menuIndex === 0 ? " active" : "")}
               onMouseDown={(e) => { e.preventDefault(); setMentionCategory("files"); setMenuIndex(0) }}
-              onMouseEnter={() => setMenuIndex(0)}
+              onMouseEnter={() => hoverMove(() => setMenuIndex(0))}
             >
               <FolderIcon />
               <span className="mention-category-label">Files</span>
@@ -751,7 +760,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
               aria-selected={menuIndex === 1}
               className={"mention-hit mention-category" + (menuIndex === 1 ? " active" : "")}
               onMouseDown={(e) => { e.preventDefault(); setMentionCategory("chats"); setMenuIndex(0) }}
-              onMouseEnter={() => setMenuIndex(1)}
+              onMouseEnter={() => hoverMove(() => setMenuIndex(1))}
             >
               <ChatIcon />
               <span className="mention-category-label">Past Chats</span>
@@ -788,7 +797,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
                     if (entry.kind === "folder") drillInto(entry)
                     else insertMention(entry)
                   }}
-                  onMouseEnter={() => setBrowseIndex(i)}
+                  onMouseEnter={() => hoverMove(() => setBrowseIndex(i))}
                 >
                   {entry.kind === "folder"
                     ? <FolderIcon />
@@ -814,7 +823,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
                   e.preventDefault()
                   insertMention(hit)
                 }}
-                onMouseEnter={() => setActiveIndex(i)}
+                onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
               >
                 <span className={`codicon codicon-${fileTypeCodicon(hit.name)}`} aria-hidden="true" />
                 <span className="mention-name">{hit.name}</span>
@@ -841,7 +850,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
                       e.preventDefault()
                       insertConversationMention(conv)
                     }}
-                    onMouseEnter={() => setMenuIndex(i)}
+                    onMouseEnter={() => hoverMove(() => setMenuIndex(i))}
                   >
                     <ChatIcon />
                     <span className="mention-name">{conversationDisplayTitle(conv)}</span>
@@ -868,7 +877,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
                   e.preventDefault()
                   chooseCommand(cmd)
                 }}
-                onMouseEnter={() => setCommandIndex(i)}
+                onMouseEnter={() => hoverMove(() => setCommandIndex(i))}
               >
                 <span className="mention-name">/{cmd.name}</span>
                 <span className="mention-path">{cmd.description ?? (cmd.agent ? `agent: ${cmd.agent}` : "")}</span>
