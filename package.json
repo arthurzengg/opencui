@@ -3,7 +3,7 @@
   "name": "opencui",
   "displayName": "OpenCode Panel",
   "description": "OpenCode Panel: opencode-powered AI assistant with a modern React chat UI",
-  "version": "1.7.2",
+  "version": "1.8.0",
   "private": true,
   "publisher": "haoyangzeng",
   "license": "MIT",
