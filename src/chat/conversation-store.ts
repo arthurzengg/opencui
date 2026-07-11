@@ -1,5 +1,5 @@
 import * as vscode from "vscode"
-import type { ChatMessage, ConversationSummary, ReviewHunkState } from "../protocol"
+import type { ChatMessage, ConversationMention, ConversationSummary, ReviewHunkState } from "../protocol"
 
 export const CONVERSATIONS_KEY = "opencui.conversations"
 export const ACTIVE_CONVERSATION_KEY = "opencui.activeConversation"
@@ -10,6 +10,41 @@ export type SavedConversation = ConversationSummary & {
   sessionID?: string
   messages: ChatMessage[]
   reviewHunks?: Record<string, ReviewHunkState>
+}
+
+/**
+ * Messages persisted before conversation mentions carried their chip label
+ * stored a bare conversation-id array; the label was re-derived from the text
+ * by position at edit time — the exact inference the pair shape removes.
+ * Normalize a legacy array by zipping ids with the `@chat:` tokens in text
+ * order (the same pairing the old edit flow computed), so old data behaves as
+ * it always did while everything written from now on carries exact pairs.
+ * Ids beyond the labels found in the text are dropped: with no label they
+ * could never match a chip, so they contributed nothing before either.
+ */
+export function normalizeConversationMentions(message: ChatMessage): ChatMessage {
+  const raw = message.conversationMentions as unknown
+  if (!Array.isArray(raw) || raw.length === 0) return message
+  if (raw.every(isConversationMention)) return message
+  const ids = raw.filter((item): item is string => typeof item === "string")
+  const textBlock = message.blocks.find((b) => b.type === "text")
+  const text = textBlock && textBlock.type === "text" ? textBlock.text : ""
+  const labels = Array.from(text.matchAll(/@chat:\S+/g), (match) => match[0].slice(1))
+  const pairs: ConversationMention[] = []
+  for (const [index, id] of ids.entries()) {
+    const label = labels[index]
+    if (label) pairs.push({ label, id })
+  }
+  return { ...message, conversationMentions: pairs.length ? pairs : undefined }
+}
+
+function isConversationMention(value: unknown): value is ConversationMention {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { label?: unknown }).label === "string" &&
+    typeof (value as { id?: unknown }).id === "string"
+  )
 }
 
 /**

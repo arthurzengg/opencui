@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import type { Attachment, CommandInfo, ContextUsage, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
+import type { Attachment, CommandInfo, ContextUsage, ConversationMention, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
 import {
   extractMentions,
   findChipAtCaret,
@@ -47,14 +47,14 @@ type Props = {
    * one.
    */
   aborting?: boolean
-  onSend: (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
+  onSend: (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) => void
   /**
    * Queue the message for auto-send when the running turn finishes. When
    * provided (the primary send composers), Enter while busy/aborting queues
    * instead of being a no-op. Absent (edit composers), submit stays blocked
    * while busy — the old behavior.
    */
-  onQueue?: (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
+  onQueue?: (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) => void
   onAbort: () => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   listDir?: (path: string) => Promise<DirEntry[]>
@@ -65,7 +65,7 @@ type Props = {
    * left off — same picker, same chips, same paperclip — instead of a
    * stripped-down textarea.
    */
-  initial?: { text?: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: string[] }
+  initial?: { text?: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: ConversationMention[] }
   /**
    * "send" (default) renders the standard Send/Stop bottom row. "edit"
    * renders Cancel + Save & regenerate, plus a warning that subsequent
@@ -110,32 +110,19 @@ function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachm
   return map
 }
 
-function buildInitialConversations(
-  initial: Props["initial"],
-  conversations: ConversationSummary[] | undefined,
-): Map<string, string> {
+function buildInitialConversations(initial: Props["initial"]): Map<string, string> {
   const map = new Map<string, string>()
   if (!initial?.conversationMentions) return map
-  const existing = new Set<string>(initial.mentions ?? [])
-  const labelsInText = extractConversationLabels(initial.text)
-  for (const [index, id] of initial.conversationMentions.entries()) {
-    const conv = conversations?.find((c) => c.id === id)
-    const preservedLabel = labelsInText[index]
-    const label = preservedLabel && !existing.has(preservedLabel)
-      ? preservedLabel
-      : conv
-        ? makeConversationLabel(conversationDisplayTitle(conv), existing)
-        : preservedLabel
-    if (!label) continue
-    existing.add(label)
+  // A label already claimed by a file mention (or an earlier pair) keeps its
+  // first binding — same first-come rule the composer's collision suffixes
+  // enforce at insert time.
+  const taken = new Set<string>(initial.mentions ?? [])
+  for (const { label, id } of initial.conversationMentions) {
+    if (!label || !id || taken.has(label)) continue
+    taken.add(label)
     map.set(label, id)
   }
   return map
-}
-
-function extractConversationLabels(text: string | undefined): string[] {
-  if (!text) return []
-  return Array.from(text.matchAll(/@chat:\S+/g), (match) => match[0].slice(1))
 }
 
 export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage, commands = [], onRunCommand, inject }: Props) {
@@ -184,7 +171,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   if (!knownMentions.current) {
     knownMentions.current = new Set<string>(initial?.mentions ?? [])
     knownAttachments.current = buildInitialAttachments(initial)
-    knownConversations.current = buildInitialConversations(initial, conversations)
+    knownConversations.current = buildInitialConversations(initial)
     for (const label of knownConversations.current.keys()) knownMentions.current.add(label)
   }
   const { mention, hits, activeIndex, setActiveIndex, detectAtCaret, closeMention, insertMention } =
@@ -372,14 +359,15 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     if (!deliver) return
     const allMentions = extractMentions(text, knownMentions.current)
     const fileMentions = allMentions.filter((m) => !knownConversations.current.has(m))
-    const convIDs = allMentions
-      .map((m) => knownConversations.current.get(m))
-      .filter((id): id is string => !!id)
+    const convMentions = allMentions.flatMap((label) => {
+      const id = knownConversations.current.get(label)
+      return id ? [{ label, id }] : []
+    })
     deliver(
       trimmed,
       fileMentions.length ? fileMentions : undefined,
       activeAttachments.length ? activeAttachments : undefined,
-      convIDs.length ? convIDs : undefined,
+      convMentions.length ? convMentions : undefined,
     )
     clearComposer()
   }

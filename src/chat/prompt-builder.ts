@@ -1,7 +1,7 @@
 import * as vscode from "vscode"
 import * as path from "path"
 import type { getEditorContext } from "../context"
-import type { ChatMessage } from "../protocol"
+import type { ChatMessage, ConversationMention } from "../protocol"
 import type { WorkspaceRoot } from "../workspace-root"
 import type { PromptContextBlock } from "../workspace-context/types"
 import { log } from "../output"
@@ -159,6 +159,22 @@ async function readFirstCandidate(
     }
   }
   throw lastError ?? new Error(`no candidate for ${rel}`)
+}
+
+/**
+ * Conversation IDs to actually attach to a prompt, from the chips as written:
+ * each PAST conversation once. A self-mention (the active conversation) adds
+ * nothing the session doesn't already have, and duplicate chips for the same
+ * chat must not attach its transcript twice. The persisted message keeps
+ * every pair — filtering is a prompt-time concern only, so the edit flow
+ * always sees exactly what the user wrote.
+ */
+export function attachableConversationIDs(
+  mentions: ConversationMention[] | undefined,
+  activeConversationID: string,
+): string[] {
+  const ids = (mentions ?? []).map((m) => m.id)
+  return ids.filter((id, index) => !!id && id !== activeConversationID && ids.indexOf(id) === index)
 }
 
 export type ConversationMentionResult = {

@@ -107,10 +107,12 @@ export type ChatMessage = {
    */
   mentions?: string[]
   /**
-   * Past-conversation IDs the user attached via the @ picker. Persisted so
-   * the edit flow can restore them.
+   * Past-conversation chips the user attached via the @ picker, each with
+   * the label it renders as in `text`. Persisted so the edit flow can
+   * restore them. Messages persisted before the pair shape carried bare id
+   * arrays; the ConversationManager normalizes those to pairs at read time.
    */
-  conversationMentions?: string[]
+  conversationMentions?: ConversationMention[]
   /**
    * Manifest of context the host attached when this turn was sent. Persisted
    * so historical messages can show what was included. Always set for new
@@ -123,6 +125,18 @@ export type ConversationSummary = {
   id: string
   title: string
   updatedAt: number
+}
+
+/**
+ * A past-conversation @-mention: the chip label exactly as it appears in the
+ * message text, bound to the conversation it references. Carried as a pair
+ * end to end so the edit flow restores label→id bindings by lookup —
+ * reconstructing them from the text desyncs from insertion order (a chip can
+ * be inserted ahead of an existing one) and from any filtered id list.
+ */
+export type ConversationMention = {
+  label: string
+  id: string
 }
 
 export type Todo = {
@@ -383,7 +397,7 @@ export type Outbound =
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
   | { type: "workspace"; workspace?: WorkspaceInfo }
-  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[]; conversationMentions?: string[]; context?: PromptContextManifest }
+  | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[]; conversationMentions?: ConversationMention[]; context?: PromptContextManifest }
   | { type: "userMessageBackendID"; id: string; backendID: string }
   /**
    * Followup to `userMessage` after the host finishes reading mentions and
@@ -429,9 +443,9 @@ export type Outbound =
 /** Messages sent from the webview to the extension host. */
 export type Inbound =
   | { type: "mounted" }
-  | { type: "send"; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: string[] }
+  | { type: "send"; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: ConversationMention[] }
   | { type: "runCommand"; command: string; arguments: string }
-  | { type: "editMessage"; id: string; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: string[] }
+  | { type: "editMessage"; id: string; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: ConversationMention[] }
   | { type: "abort" }
   | { type: "newSession" }
   | { type: "createConversation" }

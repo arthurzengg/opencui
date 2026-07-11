@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
-import type { AgentsStatusInfo, Attachment, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
+import type { AgentsStatusInfo, Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
 import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
 import {
   answerStartIndex,
@@ -42,7 +42,7 @@ type MessageViewProps = {
   processOnly: boolean
   busy?: boolean
   onReviewFile?: (path: string) => void
-  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
+  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) => void
   onBeginEdit?: (id: string) => void
   onEndEdit?: (id: string) => void
   onRetry?: (assistantID: string) => void
@@ -186,7 +186,7 @@ function UserMessageView({
 }: {
   message: Message
   busy?: boolean
-  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => void
+  onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) => void
   onBeginEdit?: (id: string) => void
   onEndEdit?: (id: string) => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
@@ -258,7 +258,7 @@ function UserMessageView({
         ? "Saving your message — try again in a moment"
         : "Edit and regenerate"
 
-  const handleSubmit = (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) => {
+  const handleSubmit = (text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) => {
     const trimmed = text.trim()
     if (!trimmed && !attachments?.length) return
     const sameText = trimmed === originalText.trim()

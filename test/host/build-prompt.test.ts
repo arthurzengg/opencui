@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import * as vscode from "vscode"
 import {
+  attachableConversationIDs,
   buildPrompt,
   readMentions,
   formatConversationContext,
@@ -320,6 +321,27 @@ describe("formatConversationContext", () => {
     const out = formatConversationContext("Empty", messages, 100_000)!
     expect(out.text).toBe('Past conversation "Empty":')
     expect(out.truncated).toBe(false)
+  })
+})
+
+describe("attachableConversationIDs", () => {
+  it("keeps each past conversation once, in chip order", () => {
+    expect(
+      attachableConversationIDs(
+        [
+          { label: "chat:A", id: "a" },
+          { label: "chat:Self", id: "current" },
+          { label: "chat:A_2", id: "a" },
+          { label: "chat:B", id: "b" },
+        ],
+        "current",
+      ),
+    ).toEqual(["a", "b"])
+  })
+
+  it("returns empty for undefined and for self-only mentions", () => {
+    expect(attachableConversationIDs(undefined, "current")).toEqual([])
+    expect(attachableConversationIDs([{ label: "chat:Me", id: "current" }], "current")).toEqual([])
   })
 })
 

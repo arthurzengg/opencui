@@ -8,6 +8,7 @@ import type {
   ChatMessage,
   CommandInfo,
   ContextUsage,
+  ConversationMention,
   ConversationSummary,
   DirEntry,
   EditorContextRef,
@@ -36,7 +37,7 @@ export type QueuedMessage = {
   text: string
   mentions?: string[]
   attachments?: Attachment[]
-  conversationMentions?: string[]
+  conversationMentions?: ConversationMention[]
 }
 
 export type ChatState = {
@@ -476,10 +477,10 @@ export function useChatState() {
 
   return {
     state,
-    send(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+    send(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) {
       vscode.post({ type: "send", text, mentions, attachments, conversationMentions })
     },
-    queueMessage(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+    queueMessage(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) {
       dispatch({
         type: "queueMessage",
         message: { id: `q_${Date.now()}_${nextQueueID.current++}`, text, mentions, attachments, conversationMentions },
@@ -491,7 +492,7 @@ export function useChatState() {
     runCommand(command: string, args: string) {
       vscode.post({ type: "runCommand", command, arguments: args })
     },
-    editMessage(id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+    editMessage(id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) {
       vscode.post({ type: "editMessage", id, text, mentions, attachments, conversationMentions })
     },
     searchFiles(query: string): Promise<FileSearchHit[]> {
