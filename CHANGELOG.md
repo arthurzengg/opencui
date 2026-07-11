@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-11
+
+### Fixed
+- `@`-mentioning a past conversation now fills the prompt's byte budget with whole messages, walking backward from the newest turn and always keeping the first message as the intent anchor, with an omission marker at the gap. Previously the cap sliced UTF-16 code units, so a CJK transcript could inline roughly three times the budget and the cut could split a character or a sentence. A single oversized message (a pasted log) is capped to a quarter of the budget instead of evicting every other turn, and the transcript is wrapped in a code fence so its `User:` / `Assistant:` lines read as quoted reference material rather than live turns (#413, #414).
+- Arrow-key navigation in the prompt-box popovers (slash commands, `@` category menu, folder browser, file hits, past-chats list) now keeps the active row visible by scrolling it the minimum amount into view; previously the highlight could walk past the visible fold while the list stayed put. Hovering a row still moves the selection but never scrolls the list — including after an arrow press that changed nothing, which used to leave a stale flag that made the next hover yank the row under the cursor (#417, #418, #419, #420).
+- Editing a sent message that `@`-mentions past conversations now keeps every chip bound to the conversation it originally referenced. Previously the bindings were rebuilt from text order against an insertion-ordered id list, so inserting a chip ahead of an existing one (or deleting one chip of several) could attach the wrong conversation after an edit (#421, #422).
+- The prompt box's deferred picker-dismiss timer is cancelled when the composer unmounts (closing an in-place edit, switching conversations), so it can no longer fire into a torn-down component tree. This also fixes an intermittent CI-only crash after the test run had already passed (#415, #416).
+
 ## [1.7.2] - 2026-07-06
 
 ### Changed
