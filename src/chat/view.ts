@@ -21,6 +21,7 @@ import type {
   ChatBlock,
   ChatMessage,
   CommandInfo,
+  ConversationMention,
   Inbound,
   Outbound,
   ToolUpdate as WireToolUpdate,
@@ -41,7 +42,7 @@ import { relativeToCwd, samePath } from "./paths"
 import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
 import { extractChanges, reviewChanges } from "./review-changes"
 import { reviewAllForPath } from "./review-actions"
-import { buildPrompt, readMentions, readConversationMentions } from "./prompt-builder"
+import { attachableConversationIDs, buildPrompt, readMentions, readConversationMentions } from "./prompt-builder"
 import { buildManifest } from "../workspace-context/manifest"
 import { collectAutoContext } from "../workspace-context/collector"
 import { RecentEditsTracker } from "../workspace-context/recent-edits"
@@ -991,7 +992,7 @@ export class ChatView implements vscode.WebviewViewProvider {
    */
   private abortGen = 0
 
-  private async handleSend(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+  private async handleSend(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) {
     // A new turn supersedes any in-flight abort drain from a prior Stop so it
     // can't abort the session tree the new turn is about to (re)use.
     this.abortGen++
@@ -999,11 +1000,13 @@ export class ChatView implements vscode.WebviewViewProvider {
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
     const userMessageID = "u_" + Date.now()
-    const activeConversationID = this.manager.getActiveID()
-    const pastConversationMentions = conversationMentions?.filter(
-      (id, index, ids) => id !== activeConversationID && ids.indexOf(id) === index,
+    // The message persists every chip pair as written — the edit flow rebuilds
+    // label→id bindings from them. Self-mentions and duplicate chips are
+    // filtered out of what the PROMPT attaches, never out of the message.
+    const attachedConversationIDs = attachableConversationIDs(
+      conversationMentions,
+      this.manager.getActiveID(),
     )
-    const attachedConversationMentions = pastConversationMentions?.length ? pastConversationMentions : undefined
     this.pendingUserBackendID = userMessageID
     this.post({
       type: "userMessage",
@@ -1012,7 +1015,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       ref: { path: ctx.filePath, label },
       attachments,
       mentions,
-      conversationMentions: attachedConversationMentions,
+      conversationMentions: conversationMentions?.length ? conversationMentions : undefined,
     })
     this.updateTitleFromPrompt(text)
 
@@ -1105,7 +1108,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       manifest.totals.skippedItems += 1
     }
     const convResult = readConversationMentions(
-      attachedConversationMentions,
+      attachedConversationIDs,
       (id) => this.manager.getMessages(id),
       (id) => this.manager.getTitle(id),
     )
@@ -1370,7 +1373,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     await this.subagentDispatch.recordMainTaskStart(display)
   }
 
-  private async handleEdit(webviewID: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: string[]) {
+  private async handleEdit(webviewID: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) {
     const target = this.messages.find((m) => m.id === webviewID && m.role === "user")
     if (!target) {
       log("editMessage: user message not found", webviewID)

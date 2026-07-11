@@ -721,6 +721,37 @@ describe("PromptBox Past Chats grouping", () => {
     expect(screen.getByText("2h ago")).toBeInTheDocument()
   })
 
+  it("binds each restored conversation chip to its own id regardless of order", async () => {
+    const user = userEvent.setup()
+    const onSend = vi.fn()
+    render(
+      <PromptBox
+        busy={false}
+        onSend={onSend}
+        onAbort={vi.fn()}
+        searchFiles={vi.fn().mockResolvedValue([])}
+        initial={{
+          // Chip B was inserted first, chip A ahead of it in the text, and
+          // chip B was then removed during the edit — so the pair order
+          // (insertion) never matched the text order. Index pairing against
+          // the text used to bind chat:A to conv-b here.
+          text: "@chat:A keep this",
+          conversationMentions: [
+            { label: "chat:B", id: "conv-b" },
+            { label: "chat:A", id: "conv-a" },
+          ],
+        }}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "Send" }))
+    expect(onSend).toHaveBeenCalledWith(
+      "@chat:A keep this",
+      undefined,
+      undefined,
+      [{ label: "chat:A", id: "conv-a" }],
+    )
+  })
+
   it("keeps Enter from submitting while the empty Past Chats list is open", async () => {
     const user = userEvent.setup()
     const onSend = vi.fn()

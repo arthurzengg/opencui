@@ -3,6 +3,7 @@ import type { ChatMessage, ConversationSummary, ReviewHunkState } from "../proto
 import {
   ACTIVE_CONVERSATION_KEY,
   CONVERSATIONS_KEY,
+  normalizeConversationMentions,
   type SavedConversation,
 } from "./conversation-store"
 
@@ -105,7 +106,7 @@ export class ConversationManager {
   getMessages(id: string): ChatMessage[] | undefined {
     const conv = this.conversations.find((c) => c.id === id)
     if (!conv) return undefined
-    return conv.messages.map((m) => ({ ...m, pending: false }))
+    return conv.messages.map((m) => normalizeConversationMentions({ ...m, pending: false }))
   }
 
   getTitle(id: string): string | undefined {
@@ -141,7 +142,7 @@ export class ConversationManager {
     const c = this.active()
     return {
       sessionID: c.sessionID,
-      messages: c.messages.map((m) => ({ ...m, pending: false })),
+      messages: c.messages.map((m) => normalizeConversationMentions({ ...m, pending: false })),
       reviewHunks: c.reviewHunks ?? {},
     }
   }

@@ -82,7 +82,7 @@ describe("MessageView (user role)", () => {
   it("restores past-chat mention chips when editing a sent message", async () => {
     const user = userEvent.setup()
     const message = userMessage("@chat:Old_chat revisit", { backendID: "b1" })
-    message.conversationMentions = ["old"]
+    message.conversationMentions = [{ label: "chat:Old_chat", id: "old" }]
     const { container } = render(
       <MessageView
         message={message}
