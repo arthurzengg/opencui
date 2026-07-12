@@ -252,3 +252,77 @@ describe("ChatView harness: Stop mid-stream", () => {
     expect(assistant!.blocks).toEqual([{ type: "text", text: "Working" }])
   })
 })
+
+describe("ChatView harness: edit-in-place revert", () => {
+  const EDIT_FAILED_TOAST = "Failed to edit the message. The conversation is unchanged."
+
+  // One completed turn (user usr_1 + finished assistant, session idle) so
+  // there is history the edit must either replace or leave intact.
+  async function runTurn(): Promise<string> {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "original prompt" })
+    server.push({ type: "message.updated", info: { id: "usr_1", role: "user", sessionID: SESSION_ID } })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID } })
+    server.push({
+      type: "message.part.updated",
+      part: { id: "part_1", messageID: "msg_a", sessionID: SESSION_ID, type: "text", text: "answer" },
+    })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID, finish: "stop" } })
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+    const userMsg = harness.posted.find((m) => m.type === "userMessage")
+    return userMsg && "id" in userMsg ? userMsg.id : ""
+  }
+
+  async function persistedConversation(): Promise<SavedConversation> {
+    await harness.chatView.flushPersist()
+    return savedConversations()[0]!
+  }
+
+  it("truncates the turn and resends when the revert succeeds", async () => {
+    const userID = await runTurn()
+
+    await harness.send({ type: "editMessage", id: userID, text: "edited prompt" })
+
+    expect(server.reverts).toHaveLength(1)
+    expect(JSON.stringify(server.reverts[0]!.body)).toContain("usr_1")
+    expect(server.prompts).toHaveLength(2)
+    expect(JSON.stringify(server.prompts[1]!.body)).toContain("edited prompt")
+
+    const active = await persistedConversation()
+    expect(active.messages).toHaveLength(1)
+    expect(active.messages[0]!.blocks).toContainEqual({ type: "text", text: "edited prompt" })
+  })
+
+  it("aborts the edit when the revert reports an error: no truncation, no resend, a visible toast", async () => {
+    const userID = await runTurn()
+    server.setRevertStatus(500)
+
+    await harness.send({ type: "editMessage", id: userID, text: "edited prompt" })
+
+    expect(server.reverts).toHaveLength(1)
+    expect(server.prompts).toHaveLength(1)
+    expect(
+      harness.posted.some((m) => m.type === "userMessage" && "text" in m && m.text === "edited prompt"),
+    ).toBe(false)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(EDIT_FAILED_TOAST)
+
+    const active = await persistedConversation()
+    expect(active.messages).toHaveLength(2)
+    expect(active.messages[0]!.blocks).toContainEqual({ type: "text", text: "original prompt" })
+    expect(active.messages[1]!.blocks).toContainEqual({ type: "text", text: "answer" })
+  })
+
+  it("aborts the edit when the revert call throws (connection drop): same untouched state", async () => {
+    const userID = await runTurn()
+    server.setRevertStatus(0)
+
+    await harness.send({ type: "editMessage", id: userID, text: "edited prompt" })
+
+    expect(server.prompts).toHaveLength(1)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(EDIT_FAILED_TOAST)
+
+    const active = await persistedConversation()
+    expect(active.messages).toHaveLength(2)
+  })
+})

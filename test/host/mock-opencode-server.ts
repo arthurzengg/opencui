@@ -35,6 +35,11 @@ export type MockOpencodeServer = {
   prompts: Array<{ sessionID: string; body: unknown }>
   /** Records of every revert call. */
   reverts: Array<{ sessionID: string; body: unknown }>
+  /**
+   * HTTP status POST /session/{id}/revert replies with (default 200).
+   * 0 destroys the socket without replying, so the client-side call throws.
+   */
+  setRevertStatus: (status: number) => void
   /** Records of every unrevert (redo) call's sessionID. */
   unreverts: string[]
   /** Records of every fork call. */
@@ -73,6 +78,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const sseClients: ServerResponse[] = []
   const prompts: Array<{ sessionID: string; body: unknown }> = []
   const reverts: Array<{ sessionID: string; body: unknown }> = []
+  let revertStatus = 200
   const unreverts: string[] = []
   const forks: Array<{ sessionID: string; body: unknown }> = []
   const aborts: string[] = []
@@ -218,7 +224,12 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     if (revertMatch && req.method === "POST") {
       const body = await readBody(req)
       reverts.push({ sessionID: revertMatch[1]!, body })
-      reply(res, 200, { id: revertMatch[1] })
+      if (revertStatus === 0) {
+        req.socket.destroy()
+        return
+      }
+      if (revertStatus === 200) reply(res, 200, { id: revertMatch[1] })
+      else reply(res, revertStatus, { error: "scripted revert failure" })
       return
     }
 
@@ -346,6 +357,9 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     prompts,
     reverts,
+    setRevertStatus(status) {
+      revertStatus = status
+    },
     unreverts,
     forks,
     aborts,

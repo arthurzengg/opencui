@@ -1383,15 +1383,27 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (!trimmed) return
 
     if (target.backendID && this.sessionID) {
+      // A failed revert means the opencode session still holds the original
+      // turns; truncating and resending anyway would silently diverge the
+      // panel from the model's context, so the edit is abandoned instead.
+      let revertFailed = false
       try {
         const backend = await this.servers.ensure()
         const res = await backend.client.session.revert({
           path: { id: this.sessionID },
           body: { messageID: target.backendID },
         })
-        if (res.error) log("session.revert failed", res.error)
+        if (res.error) {
+          log("session.revert failed", res.error)
+          revertFailed = true
+        }
       } catch (e) {
         log("session.revert threw", e)
+        revertFailed = true
+      }
+      if (revertFailed) {
+        void vscode.window.showErrorMessage("Failed to edit the message. The conversation is unchanged.")
+        return
       }
     } else {
       log("editMessage: no backendID — truncating locally only", webviewID)
