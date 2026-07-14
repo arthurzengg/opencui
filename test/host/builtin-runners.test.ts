@@ -64,6 +64,7 @@ function makeHarness(opts: HarnessOpts = {}) {
     hasSubscription: vi.fn(() => opts.subscribed ?? true),
     attachSubscription: vi.fn().mockResolvedValue(undefined),
     beginBuiltinTurn: vi.fn().mockResolvedValue(undefined),
+    failTurn: vi.fn(),
     post: vi.fn((msg: Outbound) => {
       state.posted.push(msg)
     }),
@@ -136,6 +137,21 @@ describe("BuiltinRunners: /compact", () => {
     await runners.run("compact", makeBackend({ summarize }))
     expect(summarize).toHaveBeenCalledWith(expect.objectContaining({ body: undefined }))
   })
+
+  it("unbricks the turn when summarize reports an error", async () => {
+    const { runners, deps } = makeHarness()
+    const summarize = vi.fn().mockResolvedValue({ error: "boom" })
+    await runners.run("compact", makeBackend({ summarize }))
+    expect(deps.beginBuiltinTurn).toHaveBeenCalledWith("/compact")
+    expect(deps.failTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it("unbricks the turn with the thrown message when summarize throws", async () => {
+    const { runners, deps } = makeHarness()
+    const summarize = vi.fn().mockRejectedValue(new Error("socket hang up"))
+    await runners.run("compact", makeBackend({ summarize }))
+    expect(deps.failTurn).toHaveBeenCalledWith("socket hang up")
+  })
 })
 
 describe("BuiltinRunners: /init", () => {
@@ -166,13 +182,41 @@ describe("BuiltinRunners: /init", () => {
     expect(typeof body.messageID).toBe("string")
   })
 
-  it("aborts without running init when session.create fails", async () => {
+  it("shows an error and aborts without running init when session.create fails", async () => {
     const { runners, deps } = makeHarness({ sessionID: undefined })
     const create = vi.fn().mockResolvedValue({ error: "boom" })
     const init = vi.fn()
     await runners.run("init", makeBackend({ create, init }))
     expect(init).not.toHaveBeenCalled()
     expect(deps.beginBuiltinTurn).not.toHaveBeenCalled()
+    expect(win.showErrorMessage).toHaveBeenCalledWith("Failed to create a session for /init.")
+    expect(deps.failTurn).not.toHaveBeenCalled()
+  })
+
+  it("shows an error and aborts without running init when session.create throws", async () => {
+    const { runners, deps } = makeHarness({ sessionID: undefined })
+    const create = vi.fn().mockRejectedValue(new Error("socket hang up"))
+    const init = vi.fn()
+    await runners.run("init", makeBackend({ create, init }))
+    expect(init).not.toHaveBeenCalled()
+    expect(deps.beginBuiltinTurn).not.toHaveBeenCalled()
+    expect(win.showErrorMessage).toHaveBeenCalledWith("Failed to create a session for /init.")
+    expect(deps.failTurn).not.toHaveBeenCalled()
+  })
+
+  it("unbricks the turn when init reports an error", async () => {
+    const { runners, deps } = makeHarness()
+    const init = vi.fn().mockResolvedValue({ error: "boom" })
+    await runners.run("init", makeBackend({ init }))
+    expect(deps.beginBuiltinTurn).toHaveBeenCalledWith("/init")
+    expect(deps.failTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it("unbricks the turn with the thrown message when init throws", async () => {
+    const { runners, deps } = makeHarness()
+    const init = vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED"))
+    await runners.run("init", makeBackend({ init }))
+    expect(deps.failTurn).toHaveBeenCalledWith("connect ECONNREFUSED")
   })
 
   it("reuses the existing session and re-attaches when unsubscribed", async () => {

@@ -45,6 +45,11 @@ export type MockOpencodeServer = {
    * 0 destroys the socket without replying, so the client-side call throws.
    */
   setSessionCreateStatus: (status: number) => void
+  /**
+   * HTTP status POST /session/{id}/summarize replies with (default 200).
+   * 0 destroys the socket without replying, so the client-side call throws.
+   */
+  setSummarizeStatus: (status: number) => void
   /** Records of every unrevert (redo) call's sessionID. */
   unreverts: string[]
   /** Records of every fork call. */
@@ -85,6 +90,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const reverts: Array<{ sessionID: string; body: unknown }> = []
   let revertStatus = 200
   let sessionCreateStatus = 200
+  let summarizeStatus = 200
   const unreverts: string[] = []
   const forks: Array<{ sessionID: string; body: unknown }> = []
   const aborts: string[] = []
@@ -212,7 +218,12 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     // /share → share (POST) / unshare (DELETE).
     if (path.match(/^\/session\/[^/]+\/summarize$/) && req.method === "POST") {
       await readBody(req)
-      reply(res, 200, true)
+      if (summarizeStatus === 0) {
+        req.socket.destroy()
+        return
+      }
+      if (summarizeStatus === 200) reply(res, 200, true)
+      else reply(res, summarizeStatus, { error: "scripted summarize failure" })
       return
     }
     if (path.match(/^\/session\/[^/]+\/init$/) && req.method === "POST") {
@@ -373,6 +384,9 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     setSessionCreateStatus(status) {
       sessionCreateStatus = status
+    },
+    setSummarizeStatus(status) {
+      summarizeStatus = status
     },
     unreverts,
     forks,
