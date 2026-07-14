@@ -40,6 +40,11 @@ export type MockOpencodeServer = {
    * 0 destroys the socket without replying, so the client-side call throws.
    */
   setRevertStatus: (status: number) => void
+  /**
+   * HTTP status POST /session (create) replies with (default 200).
+   * 0 destroys the socket without replying, so the client-side call throws.
+   */
+  setSessionCreateStatus: (status: number) => void
   /** Records of every unrevert (redo) call's sessionID. */
   unreverts: string[]
   /** Records of every fork call. */
@@ -79,6 +84,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const prompts: Array<{ sessionID: string; body: unknown }> = []
   const reverts: Array<{ sessionID: string; body: unknown }> = []
   let revertStatus = 200
+  let sessionCreateStatus = 200
   const unreverts: string[] = []
   const forks: Array<{ sessionID: string; body: unknown }> = []
   const aborts: string[] = []
@@ -174,7 +180,12 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
 
     // Session create
     if (path === "/session" && req.method === "POST") {
-      reply(res, 200, { id: "ses_test", title: "Test Session" })
+      if (sessionCreateStatus === 0) {
+        req.socket.destroy()
+        return
+      }
+      if (sessionCreateStatus === 200) reply(res, 200, { id: "ses_test", title: "Test Session" })
+      else reply(res, sessionCreateStatus, { error: "scripted session.create failure" })
       return
     }
 
@@ -359,6 +370,9 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     reverts,
     setRevertStatus(status) {
       revertStatus = status
+    },
+    setSessionCreateStatus(status) {
+      sessionCreateStatus = status
     },
     unreverts,
     forks,
