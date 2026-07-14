@@ -22,6 +22,12 @@ export type BuiltinRunnerDeps = {
   attachSubscription: (backend: Backend, sessionID: string) => Promise<void>
   /** Post the typed-invocation bubble and key the Agents popover for the turn. */
   beginBuiltinTurn: (display: string) => Promise<void>
+  /**
+   * Settle a turn that failed after {@link beginBuiltinTurn}: a call that
+   * never started a server turn produces no SSE events, so nothing else
+   * would clear the webview's busy state or settle the popover's Main task.
+   */
+  failTurn: (message: string) => void
   post: (msg: Outbound) => void
   getMessages: () => ChatMessage[]
   setMessages: (messages: ChatMessage[]) => void
@@ -85,9 +91,13 @@ export class BuiltinRunners {
         query: { directory: backend.directory },
         body,
       })
-      if (res.error) log("compact failed", res.error)
+      if (res.error) {
+        log("compact failed", res.error)
+        this.deps.failTurn("opencode could not compact the session; see the output log for details.")
+      }
     } catch (e) {
       log("compact threw", e)
+      this.deps.failTurn((e as Error).message || "Could not reach the opencode server.")
     }
   }
 
@@ -99,9 +109,15 @@ export class BuiltinRunners {
     }
     let sessionID = this.deps.getSessionID()
     if (!sessionID) {
-      const created = await backend.client.session.create({ body: {} })
-      if (created.error || !created.data) {
-        log("session.create failed", created.error)
+      // No turn has begun yet (no bubble, no busy state), so a create failure
+      // needs direct feedback rather than the failTurn unbrick path.
+      const created = await backend.client.session.create({ body: {} }).catch((e: unknown) => {
+        log("init: session.create threw", e)
+        return undefined
+      })
+      if (!created || created.error || !created.data) {
+        if (created) log("init: session.create failed", created.error)
+        void vscode.window.showErrorMessage("Failed to create a session for /init.")
         return
       }
       sessionID = created.data.id
@@ -119,9 +135,13 @@ export class BuiltinRunners {
         query: { directory: backend.directory },
         body: { providerID: sel.modelProviderID, modelID: sel.modelID, messageID: generateMessageID() },
       })
-      if (res.error) log("init failed", res.error)
+      if (res.error) {
+        log("init failed", res.error)
+        this.deps.failTurn("opencode could not initialize the project; see the output log for details.")
+      }
     } catch (e) {
       log("init threw", e)
+      this.deps.failTurn((e as Error).message || "Could not reach the opencode server.")
     }
   }
 

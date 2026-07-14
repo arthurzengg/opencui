@@ -4,6 +4,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { ChatView } from "../../src/chat/view"
 import { CONVERSATIONS_KEY, type SavedConversation } from "../../src/chat/conversation-store"
+import { AgentTaskStore } from "../../src/agents/task-store"
 import type { Backend, ServerManager } from "../../src/server"
 import type { Preferences } from "../../src/preferences"
 import type { RecentEditsTracker } from "../../src/workspace-context/recent-edits"
@@ -90,6 +91,7 @@ let harness: {
   disposeView: () => void
   workspaceState: Memento
   servers: ServerManager
+  taskStore: AgentTaskStore
 }
 
 beforeEach(async () => {
@@ -115,16 +117,18 @@ beforeEach(async () => {
     subscriptions: [],
   } as unknown as vscode.ExtensionContext
 
+  const taskStore = new AgentTaskStore(makeMemento() as unknown as vscode.Memento)
   const chatView = new ChatView(
     context,
     servers,
     prefs,
     {} as RecentEditsTracker, // only consulted when backend.workspace is set
     indexManager,
+    taskStore,
   )
   const fake = makeFakeWebviewView()
   await chatView.resolveWebviewView(fake.view)
-  harness = { chatView, posted: fake.posted, send: fake.send, disposeView: fake.disposeView, workspaceState, servers }
+  harness = { chatView, posted: fake.posted, send: fake.send, disposeView: fake.disposeView, workspaceState, servers, taskStore }
 })
 
 afterEach(async () => {
@@ -376,5 +380,57 @@ describe("ChatView harness: pre-dispatch send failures", () => {
     expect(server.commandCalls).toHaveLength(0)
     expect(harness.posted.some((m) => m.type === "sessionIdle")).toBe(true)
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Send failed"))
+  })
+})
+
+describe("ChatView harness: builtin command failures", () => {
+  // beginBuiltinTurn has already posted the bubble (webview busy) and recorded
+  // a Main task by the time /compact's summarize call fails; failBuiltinTurn's
+  // sessionIdle + settle is the only thing that recovers either, because a
+  // turn that never started produces no SSE events.
+
+  beforeEach(() => {
+    vi.mocked(vscode.window.showErrorMessage).mockClear()
+  })
+
+  // One settled turn so /compact has a session to run against.
+  async function completeTurn(): Promise<void> {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "original prompt" })
+    server.push({ type: "message.updated", info: { id: "usr_1", role: "user", sessionID: SESSION_ID } })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID } })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID, finish: "stop" } })
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+  }
+
+  function idleCount(): number {
+    return harness.posted.filter((m) => m.type === "sessionIdle").length
+  }
+
+  it("unbricks the composer and settles the Main task when /compact's summarize reports an error", async () => {
+    await completeTurn()
+    server.setSummarizeStatus(500)
+    const before = idleCount()
+
+    await harness.send({ type: "runCommand", command: "compact", arguments: "" })
+
+    expect(idleCount()).toBe(before + 1)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Command failed"))
+    await until(() => {
+      const mains = harness.taskStore.list().filter((t) => t.kind === "main")
+      return mains.some((t) => t.status === "error") && mains.every((t) => t.status !== "running")
+    })
+  })
+
+  it("unbricks the composer when the summarize call throws (connection drop)", async () => {
+    await completeTurn()
+    server.setSummarizeStatus(0)
+    const before = idleCount()
+
+    await harness.send({ type: "runCommand", command: "compact", arguments: "" })
+
+    expect(idleCount()).toBe(before + 1)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Command failed"))
   })
 })

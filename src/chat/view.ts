@@ -167,6 +167,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       hasSubscription: () => this.subscription !== undefined,
       attachSubscription: (backend, sessionID) => this.attachSubscription(backend, sessionID),
       beginBuiltinTurn: (display) => this.beginBuiltinTurn(display),
+      failTurn: (message) => this.failBuiltinTurn(message),
       post: (msg) => this.post(msg),
       getMessages: () => this.messages,
       setMessages: (messages) => {
@@ -1225,6 +1226,22 @@ export class ChatView implements vscode.WebviewViewProvider {
   private failSend(message: string) {
     this.post({ type: "sessionIdle" })
     this.surfaceToast({ variant: "error", title: "Send failed", message })
+  }
+
+  /**
+   * failSend for builtin turns: by the time /compact or /init fails,
+   * beginBuiltinTurn has already recorded a popover Main task, so that row
+   * must settle too — before anything else, so the terminal-state guard
+   * protects the status from a later idle sweep. classifyTerminal keeps an
+   * "Aborted" outcome quiet (no toast), mirroring onSessionError.
+   */
+  private failBuiltinTurn(message: string) {
+    const classified = classifyTerminal(message)
+    void this.subagentDispatch.recordMainTaskFinish(classified.status, classified.error)
+    this.post({ type: "sessionIdle" })
+    if (classified.status === "error") {
+      this.surfaceToast({ variant: "error", title: "Command failed", message })
+    }
   }
 
   /**
