@@ -89,6 +89,7 @@ let harness: {
   send: (msg: Inbound) => Promise<unknown>
   disposeView: () => void
   workspaceState: Memento
+  servers: ServerManager
 }
 
 beforeEach(async () => {
@@ -123,7 +124,7 @@ beforeEach(async () => {
   )
   const fake = makeFakeWebviewView()
   await chatView.resolveWebviewView(fake.view)
-  harness = { chatView, posted: fake.posted, send: fake.send, disposeView: fake.disposeView, workspaceState }
+  harness = { chatView, posted: fake.posted, send: fake.send, disposeView: fake.disposeView, workspaceState, servers }
 })
 
 afterEach(async () => {
@@ -324,5 +325,56 @@ describe("ChatView harness: edit-in-place revert", () => {
 
     const active = await persistedConversation()
     expect(active.messages).toHaveLength(2)
+  })
+})
+
+describe("ChatView harness: pre-dispatch send failures", () => {
+  // The user bubble is already posted and the webview is busy by the time
+  // these paths fail; failSend's sessionIdle is the only thing that re-enables
+  // the composer, because a send that never dispatched produces no SSE events.
+
+  it("posts sessionIdle and a toast when session.create reports an error", async () => {
+    await harness.send({ type: "mounted" })
+    server.setSessionCreateStatus(500)
+
+    await harness.send({ type: "send", text: "doomed prompt" })
+
+    expect(server.prompts).toHaveLength(0)
+    expect(harness.posted.some((m) => m.type === "sessionIdle")).toBe(true)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Send failed"))
+  })
+
+  it("posts sessionIdle and a toast when session.create throws (connection drop)", async () => {
+    await harness.send({ type: "mounted" })
+    server.setSessionCreateStatus(0)
+
+    await harness.send({ type: "send", text: "doomed prompt" })
+
+    expect(server.prompts).toHaveLength(0)
+    expect(harness.posted.some((m) => m.type === "sessionIdle")).toBe(true)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Send failed"))
+  })
+
+  it("posts sessionIdle alongside the disconnected banner when the backend cannot start", async () => {
+    await harness.send({ type: "mounted" })
+    vi.mocked(harness.servers.ensure).mockRejectedValue(new Error("spawn opencode ENOENT"))
+
+    await harness.send({ type: "send", text: "doomed prompt" })
+
+    expect(server.prompts).toHaveLength(0)
+    expect(harness.posted.some((m) => m.type === "connected" && m.connected === false)).toBe(true)
+    expect(harness.posted.some((m) => m.type === "sessionIdle")).toBe(true)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Send failed"))
+  })
+
+  it("posts sessionIdle and a toast when a custom command's session.create fails", async () => {
+    await harness.send({ type: "mounted" })
+    server.setSessionCreateStatus(500)
+
+    await harness.send({ type: "runCommand", command: "definitely-custom", arguments: "" })
+
+    expect(server.commandCalls).toHaveLength(0)
+    expect(harness.posted.some((m) => m.type === "sessionIdle")).toBe(true)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Send failed"))
   })
 })

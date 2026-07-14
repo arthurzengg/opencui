@@ -1024,16 +1024,14 @@ export class ChatView implements vscode.WebviewViewProvider {
       backend = await this.servers.ensure()
     } catch (e) {
       this.post({ type: "connected", connected: false, error: (e as Error).message })
+      this.failSend((e as Error).message || "Could not start the opencode server.")
       return
     }
 
     if (!this.sessionID) {
-      const created = await backend.client.session.create({ body: {} })
-      if (created.error || !created.data) {
-        log("session.create failed", created.error)
-        return
-      }
-      this.sessionID = created.data.id
+      const sessionID = await this.createSessionForSend(backend)
+      if (!sessionID) return
+      this.sessionID = sessionID
       this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
       await this.manager.flushPersist()
       log("created session", this.sessionID)
@@ -1230,6 +1228,27 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Create the opencode session for a first send. Returns undefined after
+   * routing the failure through failSend — a session that was never created
+   * produces no SSE events, so the caller must stop instead of dispatching.
+   */
+  private async createSessionForSend(backend: Backend): Promise<string | undefined> {
+    try {
+      const created = await backend.client.session.create({ body: {} })
+      if (created.error || !created.data) {
+        log("session.create failed", created.error)
+        this.failSend("opencode could not create a session; see the output log for details.")
+        return undefined
+      }
+      return created.data.id
+    } catch (e) {
+      log("session.create threw", e)
+      this.failSend((e as Error).message || "Could not reach the opencode server.")
+      return undefined
+    }
+  }
+
+  /**
    * Run an opencode custom command. Unlike handleSend this skips the entire
    * auto-context/manifest pipeline: `session.command` takes no `parts`, so the
    * server expands the command's own template (including its `!shell` / `@file`
@@ -1263,16 +1282,14 @@ export class ChatView implements vscode.WebviewViewProvider {
       backend = await this.servers.ensure()
     } catch (e) {
       this.post({ type: "connected", connected: false, error: (e as Error).message })
+      this.failSend((e as Error).message || "Could not start the opencode server.")
       return
     }
 
     if (!this.sessionID) {
-      const created = await backend.client.session.create({ body: {} })
-      if (created.error || !created.data) {
-        log("session.create failed", created.error)
-        return
-      }
-      this.sessionID = created.data.id
+      const sessionID = await this.createSessionForSend(backend)
+      if (!sessionID) return
+      this.sessionID = sessionID
       this.manager.updateActive((conversation) => ({ ...conversation, sessionID: this.sessionID }))
       await this.manager.flushPersist()
       log("created session", this.sessionID)
