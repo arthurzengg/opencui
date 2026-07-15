@@ -110,6 +110,25 @@ function MessageViewComponent({
       />
     )
   }
+  // opencode's compaction turn (AssistantMessage.summary): the raw summary
+  // text is internal bookkeeping, so it collapses to a marker instead of
+  // rendering as a normal reply. Stopped/errored compactions fall through to
+  // the regular bubble — an interrupted compaction is not a completed one.
+  if (message.summary && !message.error && !message.stopped) {
+    return (
+      <details className="compaction-marker">
+        <summary className="compaction-marker-summary">
+          <span className="compaction-chevron" aria-hidden>▸</span>
+          <span className="compaction-label">
+            {message.pending ? "Compacting conversation…" : "Conversation compacted"}
+          </span>
+        </summary>
+        <div className="compaction-body">
+          {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
+        </div>
+      </details>
+    )
+  }
   return (
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}

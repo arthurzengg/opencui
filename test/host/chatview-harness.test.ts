@@ -434,3 +434,29 @@ describe("ChatView harness: builtin command failures", () => {
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Command failed"))
   })
 })
+
+describe("ChatView harness: compaction summary turns", () => {
+  it("forwards opencode's summary flag to the webview and persists it", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "please compact" })
+
+    server.push({ type: "message.updated", info: { id: "usr_1", role: "user", sessionID: SESSION_ID } })
+    server.push({ type: "message.updated", info: { id: "msg_s", role: "assistant", sessionID: SESSION_ID, summary: true } })
+    server.push({
+      type: "message.part.updated",
+      part: { id: "part_1", messageID: "msg_s", sessionID: SESSION_ID, type: "text", text: "anchored summary" },
+    })
+    server.push({ type: "message.updated", info: { id: "msg_s", role: "assistant", sessionID: SESSION_ID, summary: true, finish: "stop" } })
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+
+    expect(harness.posted.some((m) => m.type === "assistantSummary" && m.id === "a_msg_s")).toBe(true)
+
+    await harness.chatView.flushPersist()
+    const [active] = savedConversations()
+    const assistant = active!.messages[1]!
+    expect(assistant.role).toBe("assistant")
+    expect(assistant.summary).toBe(true)
+    expect(assistant.pending).toBe(false)
+  })
+})

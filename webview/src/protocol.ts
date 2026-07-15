@@ -100,6 +100,12 @@ export type ChatMessage = {
    */
   stopped?: boolean
   /**
+   * True when this assistant message is opencode's compaction summary turn
+   * (`AssistantMessage.summary` in the SDK). Rendered as a collapsed
+   * "Conversation compacted" marker instead of a normal reply bubble.
+   */
+  summary?: boolean
+  /**
    * @-mention paths the user originally selected when this message was sent.
    * Persisted on the message so the edit flow can preserve them — when the
    * user clicks an old user message to revise it, we know which `@path`
@@ -407,6 +413,7 @@ export type Outbound =
    */
   | { type: "userMessageContext"; id: string; context: PromptContextManifest }
   | { type: "assistantStart"; id: string }
+  | { type: "assistantSummary"; id: string }
   | { type: "textDelta"; id: string; delta: string }
   | { type: "reasoningDelta"; id: string; delta: string }
   | { type: "tool"; id: string; update: ToolUpdate; actor?: ReviewChangeActor }
