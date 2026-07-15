@@ -506,6 +506,10 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.messages = [...this.messages, { id: msg.id, role: "assistant", blocks: [], pending: true }]
         this.saveActive()
         return
+      case "assistantSummary":
+        this.messages = this.messages.map((m) => (m.id === msg.id ? { ...m, summary: true } : m))
+        this.saveActive()
+        return
       case "textDelta":
         this.messages = appendText(this.messages, msg.id, "text", msg.delta)
         this.saveActive()
@@ -1498,6 +1502,13 @@ export class ChatView implements vscode.WebviewViewProvider {
         const webviewID = "a_" + mid
         this.messageMap.set(mid, webviewID)
         this.post({ type: "assistantStart", id: webviewID })
+      },
+      onAssistantSummary: (mid) => {
+        // Presentation-only flag; same ignore-while-aborting gate as the
+        // other non-terminal events.
+        if (this.aborting) return
+        const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
+        this.post({ type: "assistantSummary", id: webviewID })
       },
       onAssistantEnd: (mid, payload) => {
         const webviewID = this.messageMap.get(mid)

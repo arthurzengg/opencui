@@ -63,6 +63,8 @@ export type StreamHandlers = {
   onUserMessage?: (messageID: string) => void
   /** Fired when a new assistant message appears for this session. */
   onAssistantStart?: (messageID: string) => void
+  /** Fired once when an assistant message is flagged as opencode's compaction summary. */
+  onAssistantSummary?: (messageID: string) => void
   /** Fired once when an assistant message is marked finished or errored. */
   onAssistantEnd?: (messageID: string, payload: { usage?: MessageUsage; finish?: string; error?: string }) => void
   /** Text-field deltas for a specific assistant message. */
@@ -220,6 +222,7 @@ export function subscribeSession(
 
   const seenLen = new Map<string, number>()
   const seenAssistantMessages = new Set<string>()
+  const summaryFlagged = new Set<string>()
   const seenUserMessages = new Set<string>()
   const assistantFinished = new Set<string>()
   const toolStatus = new Map<string, string>()
@@ -568,6 +571,13 @@ export function subscribeSession(
     if (!seenAssistantMessages.has(mid)) {
       seenAssistantMessages.add(mid)
       handlers.onAssistantStart?.(mid)
+    }
+    // Checked on every update (not just the first): opencode sets the flag
+    // when it creates the summarization message, but nothing guarantees the
+    // first event we observe carries it.
+    if (info.summary === true && !summaryFlagged.has(mid)) {
+      summaryFlagged.add(mid)
+      handlers.onAssistantSummary?.(mid)
     }
     if (info.error && !assistantFinished.has(mid)) {
       assistantFinished.add(mid)

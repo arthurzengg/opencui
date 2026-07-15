@@ -279,6 +279,11 @@ export function reducer(state: ChatState, action: Action): ChatState {
         busy: true,
         messages: [...state.messages, { id: action.id, role: "assistant", blocks: [], pending: true }],
       }
+    case "assistantSummary":
+      // Presentation-only flag on an existing bubble; same ignore-while-
+      // aborting gate as the other non-terminal stream events.
+      if (state.aborting) return state
+      return { ...state, messages: upsertMessage(state.messages, action.id, { summary: true }) }
     case "textDelta":
       // Drop deltas that race in after Stop — the message is already marked
       // `stopped: true` and opencode is still draining its in-flight response.
