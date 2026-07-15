@@ -2497,52 +2497,6 @@ button:focus-visible {
 .system-reminder-body p:first-child { margin-top: 0; }
 .system-reminder-body p:last-child { margin-bottom: 0; }
 
-/* ===== Compaction marker (opencode summary turns) ===== */
-.compaction-marker {
-  margin: 8px 0;
-  padding: 0;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: var(--radius-sm);
-  background: var(--vscode-editorWidget-background);
-  font-size: 12px;
-  overflow: hidden;
-}
-.compaction-marker-summary {
-  list-style: none;
-  cursor: pointer;
-  padding: 6px 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  color: var(--vscode-descriptionForeground);
-  user-select: none;
-}
-.compaction-marker-summary::-webkit-details-marker { display: none; }
-.compaction-marker-summary::marker { display: none; content: ""; }
-.compaction-chevron {
-  flex: 0 0 10px;
-  font-size: 10px;
-  line-height: 1;
-  /* 0.16s matches .process-caret / .review-caret — every disclosure chevron
-     rotates at the same speed. */
-  transition: transform 0.16s ease;
-  transform-origin: 50% 55%;
-}
-.compaction-marker[open] > .compaction-marker-summary .compaction-chevron {
-  transform: rotate(90deg);
-}
-.compaction-label {
-  font-weight: 600;
-  flex: 0 0 auto;
-}
-.compaction-body {
-  padding: 4px 12px 10px;
-  border-top: 1px solid var(--vscode-panel-border);
-  color: var(--vscode-foreground);
-  opacity: 0.9;
-}
-
 /* ===== Attachments (read-only thumbnails in user-message bubbles) ===== */
 .attachment-tile {
   display: inline-flex;

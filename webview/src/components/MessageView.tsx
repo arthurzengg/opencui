@@ -115,19 +115,7 @@ function MessageViewComponent({
   // rendering as a normal reply. Stopped/errored compactions fall through to
   // the regular bubble — an interrupted compaction is not a completed one.
   if (message.summary && !message.error && !message.stopped) {
-    return (
-      <details className="compaction-marker">
-        <summary className="compaction-marker-summary">
-          <span className="compaction-chevron" aria-hidden>▸</span>
-          <span className="compaction-label">
-            {message.pending ? "Compacting conversation…" : "Conversation compacted"}
-          </span>
-        </summary>
-        <div className="compaction-body">
-          {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
-        </div>
-      </details>
-    )
+    return <CompactionMarker message={message} onReviewFile={onReviewFile} />
   }
   return (
     <div className={`msg role-${message.role}`}>
@@ -503,6 +491,29 @@ function ProcessPanel({
           expand/collapse animates height instead of snapping. */}
       <div className="process-body-clip">
         <div className="process-body">{renderBlocks(blocks, true, onReviewFile)}</div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The compaction summary rendered in the same visual idiom as tool traces
+ * and the process panel (shared `process-*` classes), so it reads as one of
+ * the turn's collapsible work rows rather than a callout box. Unlike
+ * ProcessPanel there is no openKey/defaultOpen churn: it starts collapsed
+ * and stays wherever the user toggled it.
+ */
+function CompactionMarker({ message, onReviewFile }: { message: Message; onReviewFile?: (path: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const label = message.pending ? "Compacting conversation…" : "Conversation compacted"
+  return (
+    <div className={`process compaction-marker ${open ? "is-open" : ""}`}>
+      <button className="process-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="process-title">{label}</span>
+        <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
+      </button>
+      <div className="process-body-clip">
+        <div className="process-body">{renderBlocks(message.blocks, true, onReviewFile)}</div>
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest"
-import { render, screen, cleanup } from "@testing-library/react"
+import { render, screen, cleanup, fireEvent } from "@testing-library/react"
 import { MessageView } from "../../webview/src/components/MessageView"
 import { reducer, initialChatState, type Message } from "../../webview/src/hooks/useChatState"
 
@@ -32,17 +32,33 @@ describe("reducer: assistantSummary", () => {
 })
 
 describe("MessageView: compaction marker", () => {
-  it("renders a settled summary turn as a collapsed marker instead of a bubble", () => {
+  it("renders a settled summary turn as a collapsed process-style row instead of a bubble", () => {
     const { container } = render(
       <MessageView message={summaryMessage("anchored summary body")} processOpen={false} processOnly={false} />,
     )
     expect(screen.getByText("Conversation compacted")).toBeInTheDocument()
-    const marker = container.querySelector("details.compaction-marker")
+    // Same visual idiom as tool traces / the process panel: the shared
+    // process-* classes, collapsed by default.
+    const marker = container.querySelector(".compaction-marker")
     expect(marker).not.toBeNull()
-    expect(marker!.hasAttribute("open")).toBe(false)
+    expect(marker!.classList.contains("process")).toBe(true)
+    expect(marker!.classList.contains("is-open")).toBe(false)
+    expect(marker!.querySelector(".process-head")).not.toBeNull()
     // The summary content stays available behind the disclosure.
     expect(screen.getByText("anchored summary body")).toBeInTheDocument()
     expect(container.querySelector(".msg.role-assistant")).toBeNull()
+  })
+
+  it("toggles open on click like the other process rows", () => {
+    const { container } = render(
+      <MessageView message={summaryMessage("anchored summary body")} processOpen={false} processOnly={false} />,
+    )
+    const head = container.querySelector<HTMLButtonElement>(".compaction-marker .process-head")!
+    fireEvent.click(head)
+    expect(container.querySelector(".compaction-marker")!.classList.contains("is-open")).toBe(true)
+    expect(head.getAttribute("aria-expanded")).toBe("true")
+    fireEvent.click(head)
+    expect(container.querySelector(".compaction-marker")!.classList.contains("is-open")).toBe(false)
   })
 
   it("labels a still-streaming summary turn as compacting", () => {
