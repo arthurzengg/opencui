@@ -141,6 +141,7 @@ export default function App() {
             filename: b.filename,
             dataUrl: b.dataUrl,
             bytes: b.bytes,
+            storageID: b.storageID,
           })
         }
       }

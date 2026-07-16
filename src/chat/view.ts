@@ -12,7 +12,8 @@ import {
 } from "./stream"
 import { getEditorContext, formatContextHeader } from "../context"
 import { searchWorkspaceFiles, listWorkspaceDir } from "../file-search"
-import { pickAttachments } from "../attachments"
+import { pickAttachments, bytesToDataUrl } from "../attachments"
+import { AttachmentStore, dataUrlToBytes } from "./attachment-store"
 import { log } from "../output"
 import { getWorkspaceRoots, primaryWorkspaceRoot } from "../workspace-root"
 import type { WorkspaceInfo } from "../protocol"
@@ -33,7 +34,7 @@ import type {
 import { BUILTIN_COMMAND_NAMES, withBuiltinCommands } from "./builtin-commands"
 import { BuiltinRunners } from "./builtin-runners"
 import { readContextUsage } from "./context-usage"
-import { migrateConversationsToWorkspace } from "./conversation-store"
+import { adoptStorageIDs, migrateConversationsToWorkspace } from "./conversation-store"
 import { ConversationManager } from "./conversation-manager"
 import { ContinuationState, isContinuationToast } from "./continuation-state"
 import { sweepAbortTree, drainAbortTree } from "./abort-tree"
@@ -131,6 +132,8 @@ export class ChatView implements vscode.WebviewViewProvider {
    * on — both don't exist until we have a session to subscribe to.
    */
   private subagentTracker?: SubagentTracker
+  /** Disk home for attachment bytes; conversation state keeps references only. */
+  private attachmentStore: AttachmentStore
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -146,6 +149,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     // logged (and the migration-done flag stays unset, retrying next launch).
     void migrateConversationsToWorkspace(context).catch((e) => log("migrateConversations failed", e))
     this.manager = new ConversationManager(context)
+    this.attachmentStore = new AttachmentStore(context.storageUri ?? context.globalStorageUri)
     this.subagentDispatch = new SubagentDispatch({
       taskStore: this.taskStore,
       getSessionID: () => this.sessionID,
@@ -398,6 +402,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.resetSessionState()
     this.manager.setActiveID(id)
     this.applyActiveSnapshot()
+    await this.inflateActiveAttachments()
     await this.manager.flushPersist()
     this.sendConversationState()
     this.post({ type: "contextUsage", usage: undefined })
@@ -413,6 +418,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async deleteConversation(id: string) {
     const wasActive = this.manager.getActiveID() === id
+    const removedStorageIDs = this.manager.storageIDs(id)
     this.manager.remove(id)
     // Drop the deleted conversation's task history so the popover
     // doesn't carry forward rows the user can no longer trace back to
@@ -420,10 +426,19 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (this.taskStore) {
       void this.taskStore.clearForConversation(id)
     }
+    // GC attachment bytes nothing references anymore. Best-effort: a file
+    // that survives a failed delete is orphaned disk, not broken state.
+    if (removedStorageIDs.length) {
+      const remaining = this.manager.allStorageIDs()
+      for (const storageID of removedStorageIDs) {
+        if (!remaining.has(storageID)) void this.attachmentStore.delete(storageID)
+      }
+    }
     if (wasActive) {
       this.resetSessionState()
       this.manager.setActiveID(this.manager.summaries()[0]!.id)
       this.applyActiveSnapshot()
+      await this.inflateActiveAttachments()
       await this.manager.flushPersist()
       this.sendConversationState()
       this.post({ type: "contextUsage", usage: undefined })
@@ -441,6 +456,110 @@ export class ChatView implements vscode.WebviewViewProvider {
       reviewHunks: this.reviewHunks,
     })
     this.manager.schedulePersist()
+  }
+
+  /**
+   * One-shot per mount: move legacy inline-base64 attachments into the
+   * attachment store (so `persist()` can strip them) and re-inflate image
+   * previews for storage-backed blocks. Runs before the restore post so the
+   * webview's first paint has its thumbnails. Idempotent — after the first
+   * migration there are no legacy blocks left, and inflation skips blocks
+   * that already carry a dataUrl.
+   */
+  private async prepareStoredAttachments() {
+    try {
+      const migrated = await this.manager.migrateAttachments((bytes) => this.attachmentStore.save(bytes))
+      if (migrated) {
+        const active = this.manager.getMessages(this.manager.getActiveID()) ?? []
+        this.messages = adoptStorageIDs(this.messages, active)
+        this.saveActive()
+      }
+      await this.inflateActiveAttachments()
+    } catch (e) {
+      log("attachment migration/inflation failed", e)
+    }
+  }
+
+  /**
+   * Storage-backed image blocks persist without their base64 copy; the
+   * webview's `<img>` previews need it back after a restore. Non-images
+   * render as filename chips and never need bytes, so only image/* blocks
+   * are read. Missing/empty files leave the block as-is (the thumbnail
+   * falls back to a file icon).
+   */
+  private async inflateActiveAttachments() {
+    const needsInflate = (b: ChatBlock) =>
+      b.type === "attachment" && Boolean(b.storageID) && !b.dataUrl && b.mime.startsWith("image/")
+    let changed = false
+    const messages = await Promise.all(
+      this.messages.map(async (m) => {
+        if (!m.blocks.some(needsInflate)) return m
+        const blocks = await Promise.all(
+          m.blocks.map(async (b) => {
+            if (!needsInflate(b) || b.type !== "attachment") return b
+            const bytes = await this.attachmentStore.read(b.storageID!)
+            if (!bytes || bytes.byteLength === 0) return b
+            changed = true
+            return { ...b, dataUrl: bytesToDataUrl(b.mime, bytes) }
+          }),
+        )
+        return { ...m, blocks }
+      }),
+    )
+    if (changed) this.messages = messages
+  }
+
+  /**
+   * Write new attachment bytes into the attachment store and patch the
+   * just-posted user message's blocks with the resulting storageIDs so the
+   * persist layer can strip the inline base64. Attachments already carrying
+   * a storageID (edit/retry resends) are reused without rewriting; a failed
+   * save falls back to legacy inline persistence for that attachment.
+   */
+  private async stashAttachments(
+    messageID: string,
+    attachments?: Attachment[],
+  ): Promise<Attachment[] | undefined> {
+    if (!attachments?.length) return attachments
+    const stored = await Promise.all(
+      attachments.map(async (a) => {
+        if (a.storageID || !a.dataUrl) return a
+        const bytes = dataUrlToBytes(a.dataUrl)
+        if (!bytes) return a
+        const storageID = await this.attachmentStore.save(bytes)
+        return storageID ? { ...a, storageID } : a
+      }),
+    )
+    if (stored.some((a, i) => a !== attachments[i])) {
+      this.messages = this.messages.map((m) => {
+        if (m.id !== messageID) return m
+        // applyLocal built the attachment blocks in `attachments` order
+        // (before the text block), so a running index maps block -> source.
+        let idx = 0
+        return {
+          ...m,
+          blocks: m.blocks.map((b) =>
+            b.type === "attachment" ? { ...b, storageID: stored[idx++]?.storageID ?? b.storageID } : b,
+          ),
+        }
+      })
+      this.saveActive()
+    }
+    return stored
+  }
+
+  /**
+   * Resolve the URL opencode receives for an attachment file part:
+   * the original on-disk file when we still know it, else our stored copy,
+   * else the inline data URL (legacy conversations only).
+   */
+  private attachmentPartUrl(a: Attachment): string | undefined {
+    if (a.sourcePath) return vscode.Uri.file(a.sourcePath).toString()
+    if (a.storageID) {
+      const uri = this.attachmentStore.uriFor(a.storageID)
+      if (uri) return uri.toString()
+    }
+    return a.dataUrl
   }
 
   private updateTitleFromPrompt(text: string) {
@@ -471,6 +590,7 @@ export class ChatView implements vscode.WebviewViewProvider {
               filename: a.filename,
               dataUrl: a.dataUrl,
               bytes: a.bytes,
+              storageID: a.storageID,
             })
           }
         }
@@ -671,6 +791,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           connected: false,
           selection: this.buildSelection(),
         })
+        await this.prepareStoredAttachments()
         this.sendConversationState()
         this.pushContext()
         this.pushWorkspace()
@@ -1023,6 +1144,10 @@ export class ChatView implements vscode.WebviewViewProvider {
       conversationMentions: conversationMentions?.length ? conversationMentions : undefined,
     })
     this.updateTitleFromPrompt(text)
+    // After the optimistic bubble post (attachment writes must not delay the
+    // user's message appearing) but before the prompt parts are built, which
+    // prefer the stored copy over inline base64.
+    const storedAttachments = await this.stashAttachments(userMessageID, attachments)
 
     let backend: Backend
     try {
@@ -1157,13 +1282,13 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.post({ type: "userMessageContext", id: userMessageID, context: manifest })
     }
     const parts: Array<Record<string, unknown>> = []
-    if (attachments) {
-      for (const a of attachments) {
-        // Prefer the file:// URL of the actual file on disk so opencode can
-        // read it directly (works regardless of whether the file lives in the
-        // workspace). Falls back to the inline data URL for restored
-        // attachments where the source path is no longer available.
-        const url = a.sourcePath ? vscode.Uri.file(a.sourcePath).toString() : a.dataUrl
+    if (storedAttachments) {
+      for (const a of storedAttachments) {
+        const url = this.attachmentPartUrl(a)
+        if (!url) {
+          log("attachment has no resolvable source, skipping part", a.filename)
+          continue
+        }
         parts.push({
           type: "file",
           mime: a.mime,

@@ -3,9 +3,12 @@ import type { ChatMessage, ConversationSummary, ReviewHunkState } from "../proto
 import {
   ACTIVE_CONVERSATION_KEY,
   CONVERSATIONS_KEY,
+  attachmentStorageIDs,
   normalizeConversationMentions,
+  stripAttachmentDataForPersist,
   type SavedConversation,
 } from "./conversation-store"
+import { dataUrlToBytes } from "./attachment-store"
 
 /**
  * The slice of ChatView state that gets stamped onto the active
@@ -200,8 +203,65 @@ export class ConversationManager {
   }
 
   async persist(): Promise<void> {
-    await this.context.workspaceState.update(CONVERSATIONS_KEY, this.conversations)
+    // Store-backed attachments persist as a storageID reference only; the
+    // inline base64 stays in memory for previews but never reaches
+    // workspaceState (it's what made streaming persists cost ~100 ms+).
+    await this.context.workspaceState.update(
+      CONVERSATIONS_KEY,
+      stripAttachmentDataForPersist(this.conversations),
+    )
     await this.context.workspaceState.update(ACTIVE_CONVERSATION_KEY, this.activeID)
+  }
+
+  /**
+   * One-shot legacy migration: move inline base64 attachments (persisted
+   * before the attachment store existed) onto disk via `save`, stamping the
+   * resulting storageID onto each block. The dataUrl is kept in memory —
+   * `persist()` strips it now that a storageID exists. Blocks whose save
+   * fails are left untouched and keep working the legacy way.
+   */
+  async migrateAttachments(save: (bytes: Uint8Array) => Promise<string | undefined>): Promise<boolean> {
+    let changed = false
+    const next: SavedConversation[] = []
+    for (const conversation of this.conversations) {
+      let conversationChanged = false
+      const messages: SavedConversation["messages"] = []
+      for (const message of conversation.messages) {
+        let messageChanged = false
+        const blocks = [...message.blocks]
+        for (let i = 0; i < blocks.length; i++) {
+          const block = blocks[i]!
+          if (block.type !== "attachment" || block.storageID || !block.dataUrl) continue
+          const bytes = dataUrlToBytes(block.dataUrl)
+          if (!bytes) continue
+          const storageID = await save(bytes)
+          if (!storageID) continue
+          blocks[i] = { ...block, storageID }
+          messageChanged = true
+        }
+        messages.push(messageChanged ? { ...message, blocks } : message)
+        if (messageChanged) conversationChanged = true
+      }
+      next.push(conversationChanged ? { ...conversation, messages } : conversation)
+      if (conversationChanged) changed = true
+    }
+    if (changed) this.conversations = next
+    return changed
+  }
+
+  /** Attachment-store references held by one conversation (delete-time GC). */
+  storageIDs(id: string): string[] {
+    const conversation = this.conversations.find((c) => c.id === id)
+    return conversation ? attachmentStorageIDs(conversation.messages) : []
+  }
+
+  /** Attachment-store references held by every remaining conversation. */
+  allStorageIDs(): Set<string> {
+    const ids = new Set<string>()
+    for (const conversation of this.conversations) {
+      for (const id of attachmentStorageIDs(conversation.messages)) ids.add(id)
+    }
+    return ids
   }
 
   /**

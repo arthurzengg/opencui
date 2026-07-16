@@ -48,6 +48,67 @@ function isConversationMention(value: unknown): value is ConversationMention {
 }
 
 /**
+ * Persistence-boundary strip: attachment blocks whose bytes live in the
+ * attachment store (they carry a `storageID`) lose their inline base64
+ * `dataUrl` copy before hitting workspaceState. In-memory and wire
+ * representations keep the dataUrl for previews; this only shapes what the
+ * 300 ms persist loop serializes. Legacy blocks without a storageID are left
+ * untouched — stripping them would lose the only copy of the bytes.
+ */
+export function stripAttachmentDataForPersist(conversations: SavedConversation[]): SavedConversation[] {
+  const stripBlock = (b: ChatMessage["blocks"][number]) =>
+    b.type === "attachment" && b.storageID && b.dataUrl ? { ...b, dataUrl: undefined } : b
+  const needsStrip = (m: ChatMessage) =>
+    m.blocks.some((b) => b.type === "attachment" && b.storageID && b.dataUrl)
+  return conversations.map((c) => {
+    if (!c.messages.some(needsStrip)) return c
+    return {
+      ...c,
+      messages: c.messages.map((m) => (needsStrip(m) ? { ...m, blocks: m.blocks.map(stripBlock) } : m)),
+    }
+  })
+}
+
+/** All attachment-store references inside a message list (GC bookkeeping). */
+export function attachmentStorageIDs(messages: ChatMessage[]): string[] {
+  const ids: string[] = []
+  for (const m of messages) {
+    for (const b of m.blocks) {
+      if (b.type === "attachment" && b.storageID) ids.push(b.storageID)
+    }
+  }
+  return ids
+}
+
+/**
+ * Copy freshly-minted storageIDs from a migrated copy of the active
+ * conversation onto the live message array, matching by message id + block
+ * position. Keeps ChatView's in-memory state in step with the manager after
+ * a legacy-attachment migration WITHOUT re-hydrating (which would clobber
+ * in-flight message state) and without writing the bytes a second time.
+ */
+export function adoptStorageIDs(live: ChatMessage[], migrated: ChatMessage[]): ChatMessage[] {
+  const byID = new Map(migrated.map((m) => [m.id, m]))
+  return live.map((m) => {
+    const source = byID.get(m.id)
+    if (!source) return m
+    let changed = false
+    const blocks = m.blocks.map((b, i) => {
+      const s = source.blocks[i]
+      if (
+        b.type === "attachment" && !b.storageID &&
+        s?.type === "attachment" && s.storageID
+      ) {
+        changed = true
+        return { ...b, storageID: s.storageID }
+      }
+      return b
+    })
+    return changed ? { ...m, blocks } : m
+  })
+}
+
+/**
  * One-shot copy of conversation data from the legacy global storage into the
  * current workspace's state. Runs once per workspace; subsequent activations
  * see the migrated data already in workspaceState and skip the copy.

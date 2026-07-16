@@ -231,6 +231,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
             filename: a.filename,
             dataUrl: a.dataUrl,
             bytes: a.bytes,
+            storageID: a.storageID,
           })
         }
       }

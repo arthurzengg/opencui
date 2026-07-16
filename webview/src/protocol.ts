@@ -82,7 +82,13 @@ export type ChatBlock =
    */
   | { type: "tool"; update: ToolUpdate; actor?: ReviewChangeActor }
   | { type: "patch"; files: string[]; diff?: string; actor?: ReviewChangeActor }
-  | { type: "attachment"; mime: string; filename: string; dataUrl: string; bytes: number }
+  /**
+   * `dataUrl` is transient display data (image `<img>` previews): present on
+   * the wire and in memory, stripped from persistence whenever `storageID`
+   * points at the bytes in the host-side attachment store. Blocks persisted
+   * before the store existed carry `dataUrl` and no `storageID`.
+   */
+  | { type: "attachment"; mime: string; filename: string; dataUrl?: string; bytes: number; storageID?: string }
 
 export type ChatMessage = {
   id: string
@@ -379,8 +385,12 @@ export type Attachment = {
   id: string
   mime: string
   filename: string
-  /** `data:<mime>;base64,...` — used for `<img src>` previews in the bubble. */
-  dataUrl: string
+  /**
+   * `data:<mime>;base64,...` — used for `<img src>` previews. Optional: an
+   * attachment rebuilt from a restored non-image block carries only its
+   * `storageID`; the host resolves the bytes from the attachment store.
+   */
+  dataUrl?: string
   /** Bytes of the underlying file (for size display + cap enforcement). */
   bytes: number
   /**
@@ -390,6 +400,8 @@ export type Attachment = {
    * conversations may not have it.
    */
   sourcePath?: string
+  /** Reference into the host-side attachment store (see the block doc above). */
+  storageID?: string
 }
 
 /** Messages sent from the extension host to the webview. */

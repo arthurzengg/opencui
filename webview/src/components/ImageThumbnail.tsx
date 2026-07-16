@@ -39,7 +39,14 @@ export function ImageThumbnail({ attachment, onPreview, onRemove }: Props) {
           onPreview(attachment)
         }}
       >
-        <img src={attachment.dataUrl} alt="" />
+        {/* No dataUrl = storage-backed block whose bytes could not be
+            re-inflated (file missing). Show a generic media icon instead
+            of a broken <img>. */}
+        {attachment.dataUrl ? (
+          <img src={attachment.dataUrl} alt="" />
+        ) : (
+          <span className="codicon codicon-file-media" aria-hidden="true" />
+        )}
       </button>
       {onRemove && attachment.id && (
         <button
