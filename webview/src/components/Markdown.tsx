@@ -6,8 +6,16 @@ import remarkMath from "remark-math"
 import rehypeKatex from "rehype-katex"
 import "katex/dist/katex.min.css"
 import { CodeBlock } from "./CodeBlock"
+import { useThrottledValue } from "../hooks/useThrottledValue"
 
-type Props = { text: string }
+/**
+ * `streaming` marks text that is still growing (a pending message). The
+ * remark/rehype parse then samples the text at ~20 fps instead of re-running
+ * on every coalesced frame; settled messages stay pass-through.
+ */
+type Props = { text: string; streaming?: boolean }
+
+const STREAM_PARSE_MS = 50
 
 // Private Use Area code points — won't appear in normal text or LaTeX
 // source, so we use them as sentinels for the three-step rewrite below.
@@ -187,12 +195,13 @@ const katexOptions = { strict: "ignore", throwOnError: false } as const
 // the pipeline then escapes it correctly, exactly as before.
 const MATH_HINT = /\$|\\\(|\\\[/
 
-function MarkdownImpl({ text }: Props) {
+function MarkdownImpl({ text, streaming = false }: Props) {
+  const sampled = useThrottledValue(text, streaming ? STREAM_PARSE_MS : 0)
   const { source, hasMath } = useMemo(() => {
-    const enveloped = normalizeAgentEnvelopes(text)
+    const enveloped = normalizeAgentEnvelopes(sampled)
     const math = MATH_HINT.test(enveloped)
     return { source: math ? normalizeMath(enveloped) : enveloped, hasMath: math }
-  }, [text])
+  }, [sampled])
   return (
     <div className="md">
       <ReactMarkdown
