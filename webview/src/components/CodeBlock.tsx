@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState } from "react"
-import { codeToHtml, type BundledLanguage } from "shiki/bundle/web"
+import { createHighlighterCore, type HighlighterCore } from "shiki/core"
+import { createJavaScriptRegexEngine } from "shiki/engine/javascript"
 import { vscode } from "../vscode"
 
 type Props = { code: string; language?: string }
@@ -10,6 +11,57 @@ const SUPPORTED = new Set<string>([
   "sql", "c", "cpp", "csharp", "ruby", "php", "swift", "kotlin", "toml",
   "xml", "docker", "dockerfile", "ini", "diff",
 ])
+
+/**
+ * Fine-grained shiki: only the SUPPORTED grammars and the two GitHub themes
+ * get bundled — `shiki/bundle/web` shipped every web language, every theme,
+ * and the oniguruma wasm (~5.3 MB of bundle input). The JavaScript regex
+ * engine replaces the wasm; `forgiving` skips grammar patterns it cannot
+ * compile instead of failing the whole highlight. Constructed lazily on the
+ * first fenced code block; aliases (bash/shell/md/docker/…) ride along on
+ * their canonical grammar registrations, and `text` is shiki's built-in
+ * plaintext passthrough.
+ */
+let highlighterPromise: Promise<HighlighterCore> | undefined
+function getHighlighter(): Promise<HighlighterCore> {
+  highlighterPromise ??= createHighlighterCore({
+    themes: [
+      import("@shikijs/themes/github-dark-default"),
+      import("@shikijs/themes/github-light-default"),
+    ],
+    langs: [
+      import("@shikijs/langs/typescript"),
+      import("@shikijs/langs/tsx"),
+      import("@shikijs/langs/javascript"),
+      import("@shikijs/langs/jsx"),
+      import("@shikijs/langs/python"),
+      import("@shikijs/langs/shellscript"),
+      import("@shikijs/langs/json"),
+      import("@shikijs/langs/html"),
+      import("@shikijs/langs/css"),
+      import("@shikijs/langs/yaml"),
+      import("@shikijs/langs/markdown"),
+      import("@shikijs/langs/go"),
+      import("@shikijs/langs/rust"),
+      import("@shikijs/langs/java"),
+      import("@shikijs/langs/sql"),
+      import("@shikijs/langs/c"),
+      import("@shikijs/langs/cpp"),
+      import("@shikijs/langs/csharp"),
+      import("@shikijs/langs/ruby"),
+      import("@shikijs/langs/php"),
+      import("@shikijs/langs/swift"),
+      import("@shikijs/langs/kotlin"),
+      import("@shikijs/langs/toml"),
+      import("@shikijs/langs/xml"),
+      import("@shikijs/langs/dockerfile"),
+      import("@shikijs/langs/ini"),
+      import("@shikijs/langs/diff"),
+    ],
+    engine: createJavaScriptRegexEngine({ forgiving: true }),
+  })
+  return highlighterPromise
+}
 
 // While a fenced block streams in, `code` grows on every delta. Debounce the
 // shiki tokenization so it runs once the content settles instead of
@@ -29,7 +81,8 @@ function CodeBlockImpl({ code, language }: Props) {
     let cancelled = false
     const lang = normaliseLang(language)
     const timer = setTimeout(() => {
-      codeToHtml(code, { lang: lang as BundledLanguage, theme })
+      getHighlighter()
+        .then((highlighter) => highlighter.codeToHtml(code, { lang, theme }))
         .then((h) => {
           if (!cancelled) setHtml(h)
         })

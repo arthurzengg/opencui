@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
-import { render, screen, cleanup } from "@testing-library/react"
+import { render, screen, cleanup, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { CodeBlock } from "../../webview/src/components/CodeBlock"
 import { vscode } from "../../webview/src/vscode"
@@ -19,6 +19,16 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe("CodeBlock", () => {
+  it("highlights alias languages through the fine-grained grammar set", async () => {
+    // "bash" resolves via the shellscript grammar's aliases — if that grammar
+    // ever drops out of the curated list, codeToHtml throws and this renders
+    // the plain fallback <pre> without the .shiki wrapper.
+    const { container } = render(<CodeBlock code="ls -la" language="bash" />)
+    await waitFor(() => expect(container.querySelector(".codeblock-body .shiki")).not.toBeNull(), {
+      timeout: 5000,
+    })
+  })
+
   it("shows 'Apply' button label for non-shell languages", async () => {
     render(<CodeBlock code="const x = 1" language="typescript" />)
     expect(await screen.findByRole("button", { name: /^Apply$/ })).toBeInTheDocument()
