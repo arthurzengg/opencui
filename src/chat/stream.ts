@@ -280,7 +280,9 @@ export function subscribeSession(
   })()
 
   function route(type: string, props: any) {
-    log(`[sse] ${type}`)
+    // Token deltas arrive per-token; logging each one puts an appendLine on
+    // the hottest path in the extension. Every other event type stays logged.
+    if (type !== "message.part.delta") log(`[sse] ${type}`)
     // First, fan child-session events off to the subagent tracker (if
     // any registered). We do this BEFORE the parent-session switch so
     // events for sessions in both sets (unlikely, but possible) are
