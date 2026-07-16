@@ -23,6 +23,7 @@ bun.lock
 tsconfig*.json
 webview/vite.config.ts
 webview/tsconfig*.json
+out/**
 
 # Editor / VCS / OS / AI-assistant metadata
 .vscode/**
@@ -35,6 +36,12 @@ webview/tsconfig*.json
 .DS_Store
 .npmrc
 .claude/**
+# Untracked local AI session artifacts — never in git, but present on dev
+# machines, so a locally built .vsix would ship them without these lines.
+.omo/**
+.sisyphus/**
+.codegraph
+.codegraph/**
 
 # Repo-meta docs (Marketplace renders README; CLAUDE.md is internal guidance)
 CLAUDE.md
