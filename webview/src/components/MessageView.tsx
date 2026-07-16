@@ -448,15 +448,15 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
 
   if (!answerHasText) {
     // Ends on activity/reasoning (or is empty) — no distinct answer to surface.
-    if (!hasProcessBlocks(message.blocks)) return renderBlocks(message.blocks, false, onReviewFile)
+    if (!hasProcessBlocks(message.blocks)) return renderBlocks(message.blocks, false, onReviewFile, pending)
     return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
-  if (!hasProcessBlocks(process)) return renderBlocks(answer, false, onReviewFile)
+  if (!hasProcessBlocks(process)) return renderBlocks(answer, false, onReviewFile, pending)
   return (
     <>
       <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}-${start}`} defaultOpen={false} onReviewFile={onReviewFile} />
-      {renderBlocks(answer, false, onReviewFile)}
+      {renderBlocks(answer, false, onReviewFile, pending)}
     </>
   )
 }
@@ -475,23 +475,34 @@ function ProcessPanel({
   onReviewFile?: (path: string) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
+  // Lazy mount: nothing renders inside a never-opened body — a long
+  // transcript's collapsed tool traces and process text would otherwise all
+  // render invisibly. Once opened it stays mounted so the 0fr fold
+  // animation has content during collapse.
+  const [everOpened, setEverOpened] = useState(defaultOpen)
 
   useEffect(() => {
     setOpen(defaultOpen)
+    if (defaultOpen) setEverOpened(true)
   }, [defaultOpen, openKey])
+
+  const toggle = () => {
+    if (!open) setEverOpened(true)
+    setOpen(!open)
+  }
 
   const title = pending ? processTitle(blocks) : processSummary(blocks) ?? processTitle(blocks)
 
   return (
     <div className={`process ${open ? "is-open" : ""}`}>
-      <button className="process-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button className="process-head" onClick={toggle} aria-expanded={open}>
         <span className="process-title">{title}</span>
         <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
       </button>
-      {/* Body stays mounted; the grid wrapper clips it to 0fr when collapsed so
-          expand/collapse animates height instead of snapping. */}
+      {/* The clip wrapper stays mounted; the grid clips it to 0fr when
+          collapsed so expand/collapse animates height instead of snapping. */}
       <div className="process-body-clip">
-        <div className="process-body">{renderBlocks(blocks, true, onReviewFile)}</div>
+        <div className="process-body">{everOpened ? renderBlocks(blocks, true, onReviewFile, pending) : null}</div>
       </div>
     </div>
   )
@@ -506,21 +517,30 @@ function ProcessPanel({
  */
 function CompactionMarker({ message, onReviewFile }: { message: Message; onReviewFile?: (path: string) => void }) {
   const [open, setOpen] = useState(false)
+  // Same lazy-mount latch as ProcessPanel: the summary body only renders
+  // once the user first expands the marker.
+  const [everOpened, setEverOpened] = useState(false)
+  const toggle = () => {
+    if (!open) setEverOpened(true)
+    setOpen(!open)
+  }
   const label = message.pending ? "Compacting conversation…" : "Conversation compacted"
   return (
     <div className={`process compaction-marker ${open ? "is-open" : ""}`}>
-      <button className="process-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button className="process-head" onClick={toggle} aria-expanded={open}>
         <span className="process-title">{label}</span>
         <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
       </button>
       <div className="process-body-clip">
-        <div className="process-body">{renderBlocks(message.blocks, true, onReviewFile)}</div>
+        <div className="process-body">
+          {everOpened ? renderBlocks(message.blocks, true, onReviewFile, Boolean(message.pending)) : null}
+        </div>
       </div>
     </div>
   )
 }
 
-function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path: string) => void) {
+function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path: string) => void, streaming = false) {
   const nodes: ReactNode[] = []
   let tools: Extract<Block, { type: "tool" }>[] = []
   let patches: Extract<Block, { type: "patch" }>[] = []
@@ -569,7 +589,7 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
       // rendering, surface them as collapsible callouts.
       if (processMode) {
         const cleaned = stripInternalMarkers(b.text)
-        if (cleaned.trim()) nodes.push(<ProcessText key={i} text={cleaned} />)
+        if (cleaned.trim()) nodes.push(<ProcessText key={i} text={cleaned} streaming={streaming} />)
       } else {
         const segments = splitWithReminders(b.text)
         segments.forEach((seg, j) => {
@@ -577,7 +597,7 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
           if (seg.type === "reminder") {
             nodes.push(<SystemReminderCallout key={key} text={seg.content} />)
           } else {
-            nodes.push(<Markdown key={key} text={seg.content} />)
+            nodes.push(<Markdown key={key} text={seg.content} streaming={streaming} />)
           }
         })
       }
@@ -585,22 +605,22 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
     if (b.type === "reasoning") {
       const cleaned = stripInternalMarkers(b.text)
       if (!cleaned.trim()) return
-      nodes.push(<ProcessText key={i} text={cleaned} />)
+      nodes.push(<ProcessText key={i} text={cleaned} streaming={streaming} />)
     }
   })
   flushTrace()
   return nodes
 }
 
-function ProcessText({ text }: { text: string }) {
+function ProcessText({ text, streaming = false }: { text: string; streaming?: boolean }) {
   if (!text.trim()) return null
   const title = textTitle(text)
-  if (!title) return <div className="process-text"><Markdown text={text} /></div>
+  if (!title) return <div className="process-text"><Markdown text={text} streaming={streaming} /></div>
   const body = stripDuplicateTitle(text, title)
   return (
     <div className="process-text">
       <div className="process-text-title">{title}</div>
-      {body && <Markdown text={body} />}
+      {body && <Markdown text={body} streaming={streaming} />}
     </div>
   )
 }

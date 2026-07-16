@@ -44,7 +44,10 @@ describe("MessageView: compaction marker", () => {
     expect(marker!.classList.contains("process")).toBe(true)
     expect(marker!.classList.contains("is-open")).toBe(false)
     expect(marker!.querySelector(".process-head")).not.toBeNull()
-    // The summary content stays available behind the disclosure.
+    // The body mounts lazily: nothing renders until the disclosure is
+    // first expanded, then the summary content is available.
+    expect(screen.queryByText("anchored summary body")).toBeNull()
+    fireEvent.click(marker!.querySelector<HTMLButtonElement>(".process-head")!)
     expect(screen.getByText("anchored summary body")).toBeInTheDocument()
     expect(container.querySelector(".msg.role-assistant")).toBeNull()
   })

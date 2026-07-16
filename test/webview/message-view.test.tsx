@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup, waitFor } from "@testing-library/react"
+import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageView } from "../../webview/src/components/MessageView"
 import type { Message } from "../../webview/src/hooks/useChatState"
@@ -338,7 +338,9 @@ describe("MessageView (assistant role)", () => {
     const { container } = render(<MessageView message={msg} processOpen={false} processOnly={false} />)
     const panel = container.querySelector(".process")
     expect(panel).not.toBeNull()
-    // The narration is folded into the panel (as its title/body), not promoted.
+    // The narration is folded into the panel (lazy body — expand to see it),
+    // not promoted to an answer.
+    fireEvent.click(panel!.querySelector<HTMLButtonElement>(".process-head")!)
     expect(panel?.textContent).toContain("Let me check the file")
     // No answer markdown is rendered as a sibling outside the panel.
     expect(container.querySelector(".msg.role-assistant > .md")).toBeNull()
