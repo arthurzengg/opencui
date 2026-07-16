@@ -207,7 +207,7 @@
   },
   "scripts": {
     "compile": "bun run build:webview && node esbuild.js",
-    "watch": "bun run build:webview && node esbuild.js --watch",
+    "watch": "node scripts/watch.mjs",
     "package": "bun run build:webview && node esbuild.js --production",
     "build:webview": "cd webview && bun install --frozen-lockfile --silent && bun run build",
     "check-types": "tsc --noEmit",
