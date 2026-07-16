@@ -292,7 +292,6 @@ async function undoHunk(
 ): Promise<ReviewHunkOutcome> {
   if (!hunk.reversible) {
     return reportUnsupported(
-      change.path,
       `Cannot undo ${change.path}: the diff did not provide a parseable hunk header.`,
       silent,
     )
@@ -339,7 +338,6 @@ async function undoDelete(
 ): Promise<ReviewHunkOutcome> {
   if (!hunk.oldText && !hunk.newText) {
     return reportUnsupported(
-      change.path,
       `Cannot restore ${change.path}: original content is not available in the diff.`,
       silent,
     )
@@ -376,7 +374,6 @@ async function undoMove(
 ): Promise<ReviewHunkOutcome> {
   if (!change.oldPath) {
     return reportUnsupported(
-      change.path,
       `Cannot undo move of ${change.path}: original path not recorded.`,
       silent,
     )
@@ -477,7 +474,7 @@ function reportMissing(p: string, reason: string, silent: boolean, tried?: strin
   return { status: "missing", reason }
 }
 
-function reportUnsupported(p: string, reason: string, silent: boolean): ReviewHunkOutcome {
+function reportUnsupported(reason: string, silent: boolean): ReviewHunkOutcome {
   if (!silent) vscode.window.showWarningMessage(`OpenCode Panel: ${reason}`)
   return { status: "unsupported", reason }
 }

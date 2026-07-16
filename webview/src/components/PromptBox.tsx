@@ -75,7 +75,6 @@ type Props = {
   position?: "top" | "bottom"
   conversations?: ConversationSummary[]
   activeConversationID?: string
-  onOpenConversation?: (id: string) => void
   contextUsage?: ContextUsage
   /** Workspace opencode commands for the `/` picker. Empty disables it. */
   commands?: CommandInfo[]
@@ -125,7 +124,7 @@ function buildInitialConversations(initial: Props["initial"]): Map<string, strin
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, onOpenConversation, contextUsage, commands = [], onRunCommand, inject }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   // The Send button renders a disabled "Stopping…" while aborting, but Enter
   // routes through submit() — both must honor the same block, or a prompt

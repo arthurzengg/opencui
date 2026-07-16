@@ -34,6 +34,11 @@ jobs:
       - name: Type-check (host)
         run: bun run check-types
 
+      # The webview tree has its own tsconfig + node_modules; the root
+      # check-types never sees it, so type-check it explicitly.
+      - name: Type-check (webview)
+        run: cd webview && bun install --frozen-lockfile --silent && bunx tsc --noEmit
+
       - name: Build (host esbuild + webview vite)
         run: bun run compile
 
