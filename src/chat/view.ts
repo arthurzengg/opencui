@@ -322,6 +322,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription?.abort()
     this.subscription = undefined
     this.aborting = false
+    this.clearPendingDeltas()
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
     // Write any debounced tail before the view (and its context) goes away,
@@ -341,8 +342,54 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private post(msg: Outbound) {
+    // Any non-delta message flushes buffered deltas first so nothing (tool
+    // closures, sessionIdle, aborted…) can overtake text that arrived
+    // before it. flushDeltas() itself posts delta-typed messages, so this
+    // guard is also the recursion stop.
+    if (msg.type !== "textDelta" && msg.type !== "reasoningDelta") this.flushDeltas()
     this.applyLocal(msg)
     this.view?.webview.postMessage(msg)
+  }
+
+  /**
+   * Host-side token coalescing: streamed text/reasoning deltas buffer here
+   * for up to DELTA_FLUSH_MS and go out as one post per (kind, message)
+   * pair. Every delta used to cost its own webview IPC message plus an
+   * applyLocal pass (message-array rebuild + conversation snapshot); at fast
+   * token rates that work now happens ~40×/s instead of per token. The
+   * webview's own per-frame coalescer sits downstream, unchanged.
+   */
+  private pendingDeltas = new Map<string, { type: "textDelta" | "reasoningDelta"; id: string; delta: string }>()
+  private deltaFlushTimer?: ReturnType<typeof setTimeout>
+  private static readonly DELTA_FLUSH_MS = 25
+
+  private queueDelta(type: "textDelta" | "reasoningDelta", id: string, delta: string) {
+    const key = `${type}:${id}`
+    const pending = this.pendingDeltas.get(key)
+    if (pending) pending.delta += delta
+    else this.pendingDeltas.set(key, { type, id, delta })
+    this.deltaFlushTimer ??= setTimeout(() => this.flushDeltas(), ChatView.DELTA_FLUSH_MS)
+  }
+
+  private flushDeltas() {
+    if (this.deltaFlushTimer) {
+      clearTimeout(this.deltaFlushTimer)
+      this.deltaFlushTimer = undefined
+    }
+    if (!this.pendingDeltas.size) return
+    const batch = [...this.pendingDeltas.values()]
+    this.pendingDeltas.clear()
+    for (const d of batch) this.post({ type: d.type, id: d.id, delta: d.delta })
+  }
+
+  /** Drop (not flush) buffered deltas — for teardown paths where posting
+   *  them would leak stream content into a switched/disposed view. */
+  private clearPendingDeltas() {
+    if (this.deltaFlushTimer) {
+      clearTimeout(this.deltaFlushTimer)
+      this.deltaFlushTimer = undefined
+    }
+    this.pendingDeltas.clear()
   }
 
   private sendConversationState() {
@@ -391,6 +438,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription = undefined
     this.aborting = false
     this.sessionID = undefined
+    this.clearPendingDeltas()
     this.messageMap.clear()
     this.redoStack = []
     this.activePermissions.clear()
@@ -1657,12 +1705,12 @@ export class ChatView implements vscode.WebviewViewProvider {
       onTextDelta: (mid, delta) => {
         if (this.aborting) return
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
-        this.post({ type: "textDelta", id: webviewID, delta })
+        this.queueDelta("textDelta", webviewID, delta)
       },
       onReasoningDelta: (mid, delta) => {
         if (this.aborting) return
         const webviewID = this.messageMap.get(mid) ?? this.ensureWebviewID(mid)
-        this.post({ type: "reasoningDelta", id: webviewID, delta })
+        this.queueDelta("reasoningDelta", webviewID, delta)
       },
       onTool: (mid, update) => {
         // While aborting, drop in-flight churn but let TERMINAL closures

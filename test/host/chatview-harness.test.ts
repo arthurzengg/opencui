@@ -8,6 +8,7 @@ import {
   CONVERSATIONS_KEY,
   type SavedConversation,
 } from "../../src/chat/conversation-store"
+import { getOutputChannel } from "../../src/output"
 import { AgentTaskStore } from "../../src/agents/task-store"
 import type { Backend, ServerManager } from "../../src/server"
 import type { Preferences } from "../../src/preferences"
@@ -621,5 +622,51 @@ describe("ChatView harness: attachment storage", () => {
     const activeID = harness.workspaceState.get(ACTIVE_CONVERSATION_KEY) as string
     await harness.send({ type: "deleteConversation", id: activeID })
     await until(() => !fsFiles.has(storedKey!))
+  })
+})
+
+describe("ChatView harness: host-side delta coalescing", () => {
+  it("batches token deltas into fewer posts, flushes before sessionIdle, and persists the full text", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "stream fast" })
+    server.push({ type: "message.updated", info: { id: "usr_1", role: "user", sessionID: SESSION_ID } })
+    for (const ch of ["a", "b", "c", "d", "e"]) {
+      server.push({ type: "message.part.delta", sessionID: SESSION_ID, messageID: "msg_a", partID: "p1", field: "text", delta: ch })
+    }
+    server.push({ type: "message.part.delta", sessionID: SESSION_ID, messageID: "msg_a", partID: "p2", field: "reasoning", delta: "R" })
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+
+    const textDeltas = harness.posted.filter((m) => m.type === "textDelta")
+    expect(textDeltas.map((d) => ("delta" in d ? d.delta : "")).join("")).toBe("abcde")
+    // Five tokens arrive inside one 25 ms window; the invariant that matters
+    // is "fewer posts than tokens", not an exact batch count.
+    expect(textDeltas.length).toBeLessThan(5)
+    const reasoningDeltas = harness.posted.filter((m) => m.type === "reasoningDelta")
+    expect(reasoningDeltas.map((d) => ("delta" in d ? d.delta : "")).join("")).toBe("R")
+
+    // sessionIdle flushed the buffer before itself — buffered text can never
+    // be overtaken by a later event.
+    const types = harness.posted.map((m) => m.type)
+    expect(types.lastIndexOf("textDelta")).toBeLessThan(types.indexOf("sessionIdle"))
+
+    await harness.chatView.flushPersist()
+    const [active] = savedConversations()
+    const assistant = active!.messages[1]!
+    expect(assistant.blocks).toContainEqual({ type: "text", text: "abcde" })
+  })
+
+  it("no longer logs a line per token delta", async () => {
+    const appendLine = getOutputChannel().appendLine as unknown as ReturnType<typeof vi.fn>
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "quiet stream" })
+    appendLine.mockClear()
+    server.push({ type: "message.part.delta", sessionID: SESSION_ID, messageID: "msg_a", partID: "p1", field: "text", delta: "x" })
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+
+    const lines = appendLine.mock.calls.map((c) => String(c[0]))
+    expect(lines.some((l) => l.includes("[sse] message.part.delta"))).toBe(false)
+    expect(lines.some((l) => l.includes("[sse] session.idle"))).toBe(true)
   })
 })
