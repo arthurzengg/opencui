@@ -700,7 +700,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
         </ul>
       )}
       <ImagePreviewModal
-        src={previewImage ? { dataUrl: previewImage.dataUrl, filename: previewImage.filename } : null}
+        src={previewImage?.dataUrl ? { dataUrl: previewImage.dataUrl, filename: previewImage.filename } : null}
         onClose={() => setPreviewImage(null)}
       />
       <div className="promptbox-input">

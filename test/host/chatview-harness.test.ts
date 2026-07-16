@@ -3,7 +3,11 @@ import * as vscode from "vscode"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { ChatView } from "../../src/chat/view"
-import { CONVERSATIONS_KEY, type SavedConversation } from "../../src/chat/conversation-store"
+import {
+  ACTIVE_CONVERSATION_KEY,
+  CONVERSATIONS_KEY,
+  type SavedConversation,
+} from "../../src/chat/conversation-store"
 import { AgentTaskStore } from "../../src/agents/task-store"
 import type { Backend, ServerManager } from "../../src/server"
 import type { Preferences } from "../../src/preferences"
@@ -114,6 +118,7 @@ beforeEach(async () => {
     workspaceState,
     globalState: makeMemento(),
     extensionUri: vscode.Uri.file("/ext"),
+    storageUri: vscode.Uri.file("/storage"),
     subscriptions: [],
   } as unknown as vscode.ExtensionContext
 
@@ -458,5 +463,163 @@ describe("ChatView harness: compaction summary turns", () => {
     expect(assistant.role).toBe("assistant")
     expect(assistant.summary).toBe(true)
     expect(assistant.pending).toBe(false)
+  })
+})
+
+describe("ChatView harness: attachment storage", () => {
+  const fsFiles = (vscode as unknown as { __fsFiles: Map<string, Uint8Array> }).__fsFiles
+  const PNG_BYTES = new Uint8Array([137, 80, 78, 71])
+  const PNG_B64 = Buffer.from(PNG_BYTES).toString("base64")
+
+  /**
+   * A ChatView over a pre-seeded workspaceState — the beforeEach harness
+   * constructs before a test can seed, so restore/migration flows need
+   * their own instance. Uses a per-test storage root to keep the shared
+   * fs map from cross-contaminating tests.
+   */
+  async function freshChatView(seed: SavedConversation[], storageBase: string) {
+    const workspaceState = makeMemento()
+    await workspaceState.update(CONVERSATIONS_KEY, seed)
+    await workspaceState.update(ACTIVE_CONVERSATION_KEY, seed[0]!.id)
+    const context = {
+      workspaceState,
+      globalState: makeMemento(),
+      extensionUri: vscode.Uri.file("/ext"),
+      storageUri: vscode.Uri.file(storageBase),
+      subscriptions: [],
+    } as unknown as vscode.ExtensionContext
+    const prefs = { get: () => ({}), onChange: vi.fn(() => ({ dispose: vi.fn() })) } as unknown as Preferences
+    const indexManager = {
+      onStatusChange: vi.fn(() => ({ dispose: vi.fn() })),
+      currentStatus: vi.fn(() => ({ state: "disabled" })),
+      start: vi.fn(),
+      stop: vi.fn(),
+    } as unknown as IndexManager
+    const chatView = new ChatView(
+      context,
+      harness.servers,
+      prefs,
+      {} as RecentEditsTracker,
+      indexManager,
+      new AgentTaskStore(makeMemento() as unknown as vscode.Memento),
+    )
+    const fake = makeFakeWebviewView()
+    await chatView.resolveWebviewView(fake.view)
+    return { chatView, posted: fake.posted, send: fake.send, disposeView: fake.disposeView, workspaceState }
+  }
+
+  function seededConversation(blocks: SavedConversation["messages"][number]["blocks"]): SavedConversation {
+    return {
+      id: "conv_seed",
+      title: "seeded",
+      createdAt: 1,
+      updatedAt: 1,
+      messages: [{ id: "u_seed", role: "user", blocks }],
+    }
+  }
+
+  it("stores sent attachment bytes on disk, strips them from workspaceState, and points the prompt at the file", async () => {
+    // fsFiles is shared across the file's tests; diff keys instead of
+    // grabbing the first match so leftovers from other tests can't leak in.
+    const preexisting = new Set(fsFiles.keys())
+    await harness.send({ type: "mounted" })
+    await harness.send({
+      type: "send",
+      text: "look at this screenshot",
+      attachments: [
+        // No sourcePath — the pasted-image case that used to ride as base64.
+        { id: "att_1", mime: "image/png", filename: "shot.png", dataUrl: `data:image/png;base64,${PNG_B64}`, bytes: PNG_BYTES.byteLength },
+      ],
+    })
+    await until(() => server.prompts.length === 1)
+
+    // The prompt part references the stored file, not an inline data URL.
+    const body = server.prompts[0]!.body as { parts: Array<{ type: string; url?: string }> }
+    const filePart = body.parts.find((p) => p.type === "file")!
+    expect(filePart.url).toMatch(/^file:\/\/\/storage\/attachments\/att_/)
+
+    // The bytes landed in the store exactly once.
+    const storedKey = [...fsFiles.keys()].find(
+      (k) => !preexisting.has(k) && k.startsWith("file:///storage/attachments/"),
+    )!
+    expect(fsFiles.get(storedKey)).toEqual(PNG_BYTES)
+
+    // The webview still received the preview data URL on the wire.
+    const posted = harness.posted.find((m) => m.type === "userMessage")!
+    expect("attachments" in posted && posted.attachments?.[0]?.dataUrl).toContain("base64")
+
+    // Persistence carries the reference, never the base64.
+    await harness.chatView.flushPersist()
+    const active = savedConversations().find((c) => c.messages.length > 0)!
+    const block = active.messages[0]!.blocks[0]!
+    expect(block).toMatchObject({ type: "attachment", storageID: expect.stringMatching(/^att_/) })
+    expect((block as { dataUrl?: string }).dataUrl).toBeUndefined()
+  })
+
+  it("re-inflates image previews from the store when restoring a conversation", async () => {
+    fsFiles.set("file:///storeB/attachments/attseed1", PNG_BYTES)
+    const fresh = await freshChatView(
+      [seededConversation([
+        { type: "attachment", mime: "image/png", filename: "pic.png", bytes: PNG_BYTES.byteLength, storageID: "attseed1" },
+        { type: "text", text: "restored" },
+      ])],
+      "/storeB",
+    )
+    await fresh.send({ type: "mounted" })
+    const restore = fresh.posted.find((m) => m.type === "restore")!
+    const block = ("messages" in restore ? restore.messages : [])[0]!.blocks[0]!
+    expect(block).toMatchObject({ type: "attachment", dataUrl: `data:image/png;base64,${PNG_B64}` })
+    fresh.disposeView()
+  })
+
+  it("migrates legacy inline attachments to the store on mount", async () => {
+    const fresh = await freshChatView(
+      [seededConversation([
+        { type: "attachment", mime: "application/pdf", filename: "doc.pdf", bytes: PNG_BYTES.byteLength, dataUrl: `data:application/pdf;base64,${PNG_B64}` },
+        { type: "text", text: "legacy" },
+      ])],
+      "/storeC",
+    )
+    await fresh.send({ type: "mounted" })
+
+    // In-memory (and the restore post) keeps the dataUrl for this session,
+    // but gains the storage reference.
+    const restore = fresh.posted.find((m) => m.type === "restore")!
+    const restored = ("messages" in restore ? restore.messages : [])[0]!.blocks[0]! as {
+      storageID?: string
+      dataUrl?: string
+    }
+    expect(restored.storageID).toMatch(/^att_/)
+    expect(restored.dataUrl).toContain("base64")
+
+    // Persisted state is stripped, and the bytes are on disk.
+    await fresh.chatView.flushPersist()
+    const persisted = (fresh.workspaceState.get(CONVERSATIONS_KEY) as SavedConversation[])[0]!
+    const block = persisted.messages[0]!.blocks[0]! as { storageID?: string; dataUrl?: string }
+    expect(block.storageID).toBe(restored.storageID)
+    expect(block.dataUrl).toBeUndefined()
+    expect(fsFiles.get(`file:///storeC/attachments/${restored.storageID}`)).toEqual(PNG_BYTES)
+    fresh.disposeView()
+  })
+
+  it("deletes now-unreferenced stored bytes when a conversation is deleted", async () => {
+    const preexisting = new Set(fsFiles.keys())
+    await harness.send({ type: "mounted" })
+    await harness.send({
+      type: "send",
+      text: "attach then delete",
+      attachments: [
+        { id: "att_1", mime: "image/png", filename: "shot.png", dataUrl: `data:image/png;base64,${PNG_B64}`, bytes: PNG_BYTES.byteLength },
+      ],
+    })
+    await until(() => server.prompts.length === 1)
+    const storedKey = [...fsFiles.keys()].find(
+      (k) => !preexisting.has(k) && k.startsWith("file:///storage/attachments/"),
+    )
+    expect(storedKey).toBeDefined()
+
+    const activeID = harness.workspaceState.get(ACTIVE_CONVERSATION_KEY) as string
+    await harness.send({ type: "deleteConversation", id: activeID })
+    await until(() => !fsFiles.has(storedKey!))
   })
 })

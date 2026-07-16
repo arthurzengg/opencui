@@ -5,6 +5,9 @@ import { vi } from "vitest"
 // helpers we test never call into the API surface — class field initializers
 // in ChatView do, but those only run on construction (not on import).
 vi.mock("vscode", () => {
+  // In-memory backing for workspace.fs so write/read/delete round-trip.
+  // Exposed on the stub as __fsFiles for test assertions/seeding.
+  const fsFiles = new Map<string, Uint8Array>()
   class Position {
     constructor(public line: number, public character: number) {}
   }
@@ -104,7 +107,17 @@ vi.mock("vscode", () => {
       }),
       fs: {
         stat: vi.fn().mockResolvedValue({}),
-        readFile: vi.fn().mockResolvedValue(new Uint8Array()),
+        // Map-backed so writeFile/readFile round-trip (attachment-store
+        // tests). Unknown paths keep the legacy empty-buffer default;
+        // per-test mockResolvedValueOnce overrides still win.
+        readFile: vi.fn(async (uri: Uri) => fsFiles.get(uri.toString()) ?? new Uint8Array()),
+        writeFile: vi.fn(async (uri: Uri, content: Uint8Array) => {
+          fsFiles.set(uri.toString(), content)
+        }),
+        createDirectory: vi.fn(async () => {}),
+        delete: vi.fn(async (uri: Uri) => {
+          fsFiles.delete(uri.toString())
+        }),
       },
       onDidChangeTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
       onDidSaveTextDocument: vi.fn(() => ({ dispose: vi.fn() })),
@@ -176,6 +189,7 @@ vi.mock("vscode", () => {
       registerCodeLensProvider: vi.fn(() => ({ dispose: vi.fn() })),
       getDiagnostics: vi.fn(() => [] as Array<[Uri, unknown[]]>),
     },
+    __fsFiles: fsFiles,
     DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
     SymbolKind: {
       File: 0, Module: 1, Namespace: 2, Package: 3, Class: 4, Method: 5,

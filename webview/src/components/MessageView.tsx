@@ -238,13 +238,14 @@ function UserMessageView({
   // Re-derive attachment labels (same algorithm PromptBox originally used) and
   // wrap each attachment block into the Attachment shape, including a synthetic
   // id and an undefined sourcePath (the original file path is lost after the
-  // first send — host falls back to the dataUrl for restored attachments).
+  // first send — host resolves restored attachments via storageID / dataUrl).
   const initialAttachments: Attachment[] = attachmentBlocks.map((block, i) => ({
     id: `att_${message.id}_${i}`,
     mime: block.mime,
     filename: block.filename,
     dataUrl: block.dataUrl,
     bytes: block.bytes,
+    storageID: block.storageID,
   }))
   const knownLabels: Set<string> = (() => {
     const existing = new Set<string>(message.mentions ?? [])
@@ -373,7 +374,7 @@ function UserMessageView({
         </>
       )}
       <ImagePreviewModal
-        src={previewImage ? { dataUrl: previewImage.dataUrl, filename: previewImage.filename } : null}
+        src={previewImage?.dataUrl ? { dataUrl: previewImage.dataUrl, filename: previewImage.filename } : null}
         onClose={() => setPreviewImage(null)}
       />
     </div>
