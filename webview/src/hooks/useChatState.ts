@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef } from "react"
+import { useEffect, useMemo, useReducer, useRef } from "react"
 import { vscode } from "../vscode"
 import { createDeltaCoalescer } from "../delta-coalescer"
 import type {
@@ -480,8 +480,14 @@ export function useChatState() {
     return off
   }, [])
 
-  return {
-    state,
+  // Identity-stable API: everything captured below is render-stable (the
+  // vscode shim is a module singleton, dispatch never changes identity, the
+  // request/queue counters are refs). Without the memo, every state update —
+  // including every streaming frame — handed consumers fresh callbacks, and
+  // the ones sitting in effect deps (searchFiles in useMentionPicker, listDir
+  // in useFileBrowser) re-fired a host round-trip per render while open.
+  const api = useMemo(
+    () => ({
     send(text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) {
       vscode.post({ type: "send", text, mentions, attachments, conversationMentions })
     },
@@ -585,5 +591,8 @@ export function useChatState() {
     stopIndex() {
       vscode.post({ type: "stopIndex" })
     },
-  }
+    }),
+    [],
+  )
+  return { state, ...api }
 }
