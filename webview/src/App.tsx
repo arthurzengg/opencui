@@ -271,7 +271,6 @@ export default function App() {
           position="top"
           conversations={state.conversations}
           activeConversationID={state.conversationID}
-          onOpenConversation={openConversation}
           contextUsage={state.contextUsage}
           commands={state.commands}
           onRunCommand={runCommandAndPinTop}
@@ -390,7 +389,6 @@ export default function App() {
               attachFile={attachFile}
               conversations={state.conversations}
               activeConversationID={state.conversationID}
-              onOpenConversation={openConversation}
               contextUsage={state.contextUsage}
               commands={state.commands}
               onRunCommand={runCommandAndPinTop}

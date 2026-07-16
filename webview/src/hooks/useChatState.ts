@@ -21,7 +21,6 @@ import type {
   ReviewHunkState,
   Selection,
   ToolUpdate,
-  UsageDelta,
 } from "../protocol"
 
 export type Block = ChatBlock

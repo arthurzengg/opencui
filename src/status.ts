@@ -7,7 +7,7 @@ export class StatusBar {
   private health: vscode.StatusBarItem
   private agent: vscode.StatusBarItem
 
-  constructor(context: vscode.ExtensionContext, private prefs: Preferences) {
+  constructor(context: vscode.ExtensionContext, prefs: Preferences) {
     this.health = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
     this.health.command = "opencui.chat.focus"
     this.health.show()

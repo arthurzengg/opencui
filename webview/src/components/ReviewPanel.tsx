@@ -4,7 +4,6 @@ import type { ReviewChange, ReviewChangeActor, ReviewHunkState } from "../protoc
 import {
   basename,
   isTextReviewChange,
-  normalizePath,
   reviewKey,
   samePath,
   turnChanges,

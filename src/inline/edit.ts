@@ -89,8 +89,8 @@ async function previewAndApply(
   const leftUri = vscode.Uri.parse(`untitled:OpenCode Panel-original.${ext(language)}`)
   const rightUri = vscode.Uri.parse(`untitled:OpenCode Panel-proposed.${ext(language)}`)
 
-  const left = await vscode.workspace.openTextDocument(leftUri)
-  const right = await vscode.workspace.openTextDocument(rightUri)
+  await vscode.workspace.openTextDocument(leftUri)
+  await vscode.workspace.openTextDocument(rightUri)
   const leftEdit = new vscode.WorkspaceEdit()
   leftEdit.insert(leftUri, new vscode.Position(0, 0), original)
   await vscode.workspace.applyEdit(leftEdit)
