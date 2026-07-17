@@ -67,6 +67,11 @@ export type MockOpencodeServer = {
    * the entry. Tests use this to drive the watchdog's recovery path.
    */
   setSessionStatus: (sessionID: string, status: { type: "idle" | "busy" | "retry" } | undefined) => void
+  /**
+   * Delay GET /session/status responses by `ms` (0 = immediate). Tests use
+   * this to race stream events against an in-flight watchdog poll.
+   */
+  setStatusDelay: (ms: number) => void
   /** Number of times GET /session/status has been called. */
   statusPollCount: () => number
   /** Records of every mcp.add body, and the server name for each lifecycle/auth call. */
@@ -98,6 +103,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const commandCalls: Array<{ sessionID: string; body: unknown }> = []
   let commands: Array<Record<string, unknown>> = []
   const sessionStatuses = new Map<string, { type: "idle" | "busy" | "retry" }>()
+  let statusDelayMs = 0
   let statusPolls = 0
   let mcpStatus: Record<string, { status: string; error?: string }> = {}
   const mcpAddCalls: Array<{ body: unknown }> = []
@@ -293,6 +299,10 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       statusPolls++
       const body: Record<string, { type: string }> = {}
       for (const [sid, status] of sessionStatuses) body[sid] = status
+      if (statusDelayMs > 0) {
+        setTimeout(() => reply(res, 200, body), statusDelayMs)
+        return
+      }
       reply(res, 200, body)
       return
     }
@@ -401,6 +411,9 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     setSessionStatus(sessionID, status) {
       if (status) sessionStatuses.set(sessionID, status)
       else sessionStatuses.delete(sessionID)
+    },
+    setStatusDelay(ms) {
+      statusDelayMs = ms
     },
     statusPollCount() {
       return statusPolls

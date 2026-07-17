@@ -306,7 +306,16 @@ export function subscribeSession(
     switch (type) {
       case "message.updated":
         onMessageUpdated(props?.info)
-        markActivity(props?.info?.sessionID)
+        // Only an in-flight assistant message implies live work. opencode
+        // sends trailing message.updated bookkeeping (finished assistant
+        // rows, user-row rewrites) AFTER session.idle; letting those re-arm
+        // the watchdog scheduled a spurious status poll + duplicate
+        // onSessionIdle 30s after every settled turn. Turn-start arming is
+        // covered by the busy session.status and part events that follow
+        // within moments of a dispatch.
+        if (props?.info?.role === "assistant" && !props?.info?.finish) {
+          markActivity(props?.info?.sessionID)
+        }
         return
       case "message.part.updated":
         onPartUpdated(props?.part)
@@ -331,8 +340,9 @@ export function subscribeSession(
         markActivity(props?.sessionID)
         return
       case "message.removed":
+        // Revert bookkeeping, not live work — the send that follows a
+        // revert arms the watchdog through its own busy/part events.
         onMessageRemoved(props)
-        markActivity(props?.sessionID)
         return
       case "tui.toast.show":
         return onToast(props)
@@ -508,8 +518,17 @@ export function subscribeSession(
     return props?.sessionID
   }
 
+  /**
+   * Monotonic count of busy-implying events. `runWatchdog` snapshots it
+   * before its status poll and discards the answer if it moved — a poll
+   * already in flight when a new turn starts must not deliver a stale
+   * "idle" into the running turn.
+   */
+  let activityGen = 0
+
   function markActivity(eventSessionID: string | undefined) {
     if (eventSessionID !== sessionID) return
+    activityGen++
     busyTracked = true
     armWatchdog()
   }
@@ -536,12 +555,21 @@ export function subscribeSession(
   async function runWatchdog() {
     watchdogTimer = null
     if (stopped || !busyTracked) return
+    const genAtPoll = activityGen
     log(`[watchdog] no SSE events for ${watchdogMs}ms, polling /session/status`)
     try {
       const result = await backend.client.session.status({
         query: { directory: backend.directory },
       })
-      if (stopped) return
+      // The poll's answer describes the moment it was asked. If the session
+      // showed life while it was in flight (a new turn's events, or a real
+      // session.idle already handled by markIdle), the stale answer must not
+      // emit a bogus idle into the running turn — trust the live stream.
+      if (stopped || !busyTracked) return
+      if (activityGen !== genAtPoll) {
+        armWatchdog()
+        return
+      }
       const statuses = (result?.data ?? {}) as Record<string, { type?: string } | undefined>
       const status = statuses[sessionID]
       if (!status || status.type === "idle") {

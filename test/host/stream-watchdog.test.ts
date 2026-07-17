@@ -316,3 +316,143 @@ describe("subscribeSession terminal-finish gating", () => {
     expect(ends).toHaveLength(0)
   })
 })
+
+describe("subscribeSession watchdog: post-idle bookkeeping and stale polls", () => {
+  it("post-idle bookkeeping events do not re-arm the watchdog", async () => {
+    let idleCount = 0
+    const backend = makeBackend()
+    server.setSessionStatus("ses_test", { type: "idle" })
+
+    const subscription = subscribeSession(
+      backend,
+      "ses_test",
+      { onSessionIdle: () => idleCount++, onTextDelta: () => {} },
+      { watchdogMs: 50 },
+    )
+    await subscription.ready
+    await server.awaitClient()
+
+    server.push({
+      type: "message.part.updated",
+      part: { messageID: "msg_a", sessionID: "ses_test", id: "p1", type: "text", text: "hi" },
+    })
+    await wait(10)
+    server.push({ type: "session.idle", sessionID: "ses_test" })
+    await wait(20)
+    expect(idleCount).toBe(1)
+
+    // The trailing bookkeeping opencode sends AFTER idle (observed live):
+    // an update for the finished assistant message, a user-row rewrite,
+    // and a revert-style removal. None of these mean live work.
+    server.push({
+      type: "message.updated",
+      info: { id: "msg_a", role: "assistant", sessionID: "ses_test", finish: "stop" },
+    })
+    server.push({ type: "message.updated", info: { id: "usr_1", role: "user", sessionID: "ses_test" } })
+    server.push({ type: "message.removed", sessionID: "ses_test", messageID: "msg_gone" })
+
+    // Several watchdog windows of silence: no poll, no duplicate idle.
+    await wait(220)
+    subscription.abort()
+    expect(idleCount).toBe(1)
+    expect(server.statusPollCount()).toBe(0)
+  })
+
+  it("an in-flight assistant message.updated still arms the watchdog", async () => {
+    let idleCount = 0
+    const backend = makeBackend()
+    server.setSessionStatus("ses_test", { type: "idle" })
+
+    const subscription = subscribeSession(
+      backend,
+      "ses_test",
+      { onSessionIdle: () => idleCount++, onTextDelta: () => {} },
+      { watchdogMs: 50 },
+    )
+    await subscription.ready
+    await server.awaitClient()
+
+    // A stream that dies right after the assistant message appears (no
+    // parts yet, no finish) must still be recoverable.
+    server.push({
+      type: "message.updated",
+      info: { id: "msg_a", role: "assistant", sessionID: "ses_test" },
+    })
+    await wait(200)
+    subscription.abort()
+    expect(idleCount).toBe(1)
+    expect(server.statusPollCount()).toBeGreaterThanOrEqual(1)
+  })
+
+  it("a new turn's part events resume watchdog tracking after idle", async () => {
+    let idleCount = 0
+    const backend = makeBackend()
+    server.setSessionStatus("ses_test", { type: "idle" })
+
+    const subscription = subscribeSession(
+      backend,
+      "ses_test",
+      { onSessionIdle: () => idleCount++, onTextDelta: () => {} },
+      { watchdogMs: 50 },
+    )
+    await subscription.ready
+    await server.awaitClient()
+
+    server.push({
+      type: "message.part.updated",
+      part: { messageID: "msg_a", sessionID: "ses_test", id: "p1", type: "text", text: "hi" },
+    })
+    await wait(10)
+    server.push({ type: "session.idle", sessionID: "ses_test" })
+    await wait(20)
+    expect(idleCount).toBe(1)
+
+    // Next turn streams, then the connection goes quiet — recovery must
+    // still work after an idle latch.
+    server.push({
+      type: "message.part.updated",
+      part: { messageID: "msg_b", sessionID: "ses_test", id: "p2", type: "text", text: "again" },
+    })
+    await wait(200)
+    subscription.abort()
+    expect(idleCount).toBe(2)
+    expect(server.statusPollCount()).toBeGreaterThanOrEqual(1)
+  })
+
+  it("discards a stale status poll answered after new activity", async () => {
+    let idleCount = 0
+    const backend = makeBackend()
+    server.setSessionStatus("ses_test", { type: "idle" })
+    server.setStatusDelay(120)
+
+    const subscription = subscribeSession(
+      backend,
+      "ses_test",
+      { onSessionIdle: () => idleCount++, onTextDelta: () => {} },
+      { watchdogMs: 50 },
+    )
+    await subscription.ready
+    await server.awaitClient()
+
+    server.push({
+      type: "message.part.updated",
+      part: { messageID: "msg_a", sessionID: "ses_test", id: "p1", type: "text", text: "hi" },
+    })
+    // Let the watchdog fire; its poll is now in flight (delayed 120 ms).
+    await wait(70)
+    expect(server.statusPollCount()).toBeGreaterThanOrEqual(1)
+
+    // A new turn's events arrive while the poll is airborne. Keep the
+    // stream visibly alive past the poll's resolution — the stale "idle"
+    // answer must be discarded, not emitted into the running turn.
+    for (let i = 0; i < 8; i++) {
+      server.push({
+        type: "message.part.updated",
+        part: { messageID: "msg_b", sessionID: "ses_test", id: `q${i}`, type: "text", text: `x${i}` },
+      })
+      await wait(30)
+    }
+    subscription.abort()
+    expect(idleCount).toBe(0)
+  })
+})
