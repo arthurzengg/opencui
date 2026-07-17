@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-17
+
+### Added
+- Compaction turns (manual `/compact` or opencode's automatic compaction) now render as a collapsed "Conversation compacted" row that looks and behaves exactly like a tool-trace or process row — muted head, trailing caret, animated fold — instead of a boxed callout, with the full summary available on expand (#431, #432, #433, #434).
+
+### Changed
+- Pasted or attached images are now written to disk once instead of being stored inline as base64 in workspace state; conversations reference the file instead of embedding its bytes, so persisted conversation size and memory use drop substantially for image-heavy chats, and pasted images now reach opencode as a file URL instead of inline base64 (#441, #442).
+- Streaming responses coalesce token deltas host-side into one batched update roughly every 25ms instead of one round-trip per token, and the per-token SSE debug log line was removed from the hottest path — both cut host-side CPU work during fast streaming (#443, #444).
+- Streaming markdown is now sampled at ~20fps during an in-progress turn instead of being fully re-parsed on every coalesced frame, and collapsed tool-trace / process rows no longer render their body content until first expanded — both reduce rendering work in long or tool-heavy turns (#447, #448).
+- Code blocks now use a fine-grained syntax highlighter bundled with only the languages and themes actually supported, and KaTeX math fonts are inlined as woff2 only — together cutting the webview bundle roughly in half (7.5MB → 3.7MB raw, 2.1MB → 874KB gzipped) (#449, #450).
+- Internal: `useChatState`'s returned API is now identity-stable across renders, fixing an issue where the `@` mention picker and folder browser re-fired their search/list effects on every unrelated state update while open (#445, #446).
+- Internal: `bun run watch` now rebuilds the webview on file changes instead of only building it once at startup; CI now type-checks the webview tree and both `tsconfig.json`s enforce unused-code checks; the packaged VSIX no longer leaks local `.omo`/`.sisyphus`/`out`/`.codegraph` artifacts from a dev machine (#435, #436, #437, #438, #439, #440).
+
+### Fixed
+- Editing a message now aborts cleanly if the underlying `session.revert` fails or the connection drops, instead of silently resending the edited prompt on top of the un-reverted original turn — the conversation is left unchanged and a toast reports the failure (#425, #426).
+- Sending a message or running a builtin command (`/compact`, `/init`) that fails before dispatch (backend unavailable, session-create error) no longer leaves the composer stuck on "Working…" forever; the composer re-enables and an error toast reports the failure (#427, #428, #429, #430).
+- A Main task that ends in error (for example, an unsupported model) no longer stays visible in the Agents popover indefinitely — it now clears as soon as the next turn starts (#451, #452).
+- The SSE watchdog no longer mistakes trailing post-idle bookkeeping for live activity, which was producing a spurious extra idle notification roughly 30 seconds after every turn had actually finished (#453, #454).
+
 ## [1.8.0] - 2026-07-11
 
 ### Fixed
