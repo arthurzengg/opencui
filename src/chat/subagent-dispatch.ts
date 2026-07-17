@@ -93,6 +93,9 @@ export class SubagentDispatch {
       return
     }
     const conversationID = this.deps.getActiveConversationID()
+    // A failed prior turn stays visible in the popover only until the next
+    // turn starts — clear it now, or the terminal error row lingers forever.
+    await this.deps.taskStore.clearErrored(conversationID)
     const turnID = crypto.randomUUID()
     const id = mainTaskID(conversationID, sessionID, turnID)
     const now = Date.now()
