@@ -670,3 +670,23 @@ describe("ChatView harness: host-side delta coalescing", () => {
     expect(lines.some((l) => l.includes("[sse] session.idle"))).toBe(true)
   })
 })
+
+describe("ChatView harness: errored Main task clears on next turn", () => {
+  it("keeps the error row visible until the next send, then drops it", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "first try" })
+    // A parent session.error (e.g. unsupported model) settles the Main row
+    // to error; the trailing idle's sweep must not resurrect or clear it.
+    server.push({ type: "session.error", sessionID: SESSION_ID, error: { data: { message: "rate limit exceeded" } } })
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.taskStore.list().some((t) => t.status === "error"))
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+
+    await harness.send({ type: "send", text: "second try" })
+    await until(() => harness.taskStore.list().every((t) => t.status !== "error"))
+    const mains = harness.taskStore.list().filter((t) => t.kind === "main")
+    expect(mains).toHaveLength(1)
+    expect(mains[0]!.status).toBe("running")
+    expect(mains[0]!.title).toContain("second try")
+  })
+})

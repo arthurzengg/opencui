@@ -48,6 +48,7 @@ function fakeTaskStore() {
     upsert: vi.fn(async () => {}),
     update: vi.fn(async () => {}),
     cancelSessionTasks: vi.fn(async () => {}),
+    clearErrored: vi.fn(async () => {}),
     activeSubagentsForSession: () => [],
     onDidChange: () => ({ dispose() {} }),
   }

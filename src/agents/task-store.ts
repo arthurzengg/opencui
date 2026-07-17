@@ -300,6 +300,23 @@ export class AgentTaskStore {
   }
 
   /**
+   * Drop a conversation's errored rows. The popover keeps a failed task
+   * visible (see ATTENTION_STATUSES) only "until the user starts the next
+   * turn" — this is that clearing half, called from recordMainTaskStart.
+   * Removal rather than a status transition: `error` is terminal, so the
+   * terminal-state guard (correctly) refuses to rewrite it, and without
+   * removal the red row haunts the conversation forever.
+   */
+  async clearErrored(conversationID: string): Promise<void> {
+    const next = this.tasks.filter(
+      (task) => !(task.conversationID === conversationID && task.status === "error"),
+    )
+    if (next.length === this.tasks.length) return
+    this.tasks = next
+    await this.persistAndEmit()
+  }
+
+  /**
    * Mark every still-running/waiting *main* task for a session as completed.
    * Subagent tasks are NOT touched: their lifecycle is owned by the child
    * session's own SSE events (via SubagentTracker) — completing them here

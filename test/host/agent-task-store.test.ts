@@ -413,3 +413,34 @@ describe("classifyTerminal", () => {
     expect(classifyTerminal(undefined)).toEqual({ status: "error", error: undefined })
   })
 })
+
+describe("AgentTaskStore.clearErrored", () => {
+  let memento: FakeMemento
+  beforeEach(() => {
+    memento = new FakeMemento()
+  })
+
+  it("removes only the conversation's errored rows, any kind", async () => {
+    const store = new AgentTaskStore(memento)
+    await store.upsert(fixedTask({ id: "m1", status: "error", error: "boom" }))
+    await store.upsert(fixedTask({ id: "s1", kind: "subagent", status: "error", error: "boom" }))
+    await store.upsert(fixedTask({ id: "m2", status: "running" }))
+    await store.upsert(fixedTask({ id: "m3", status: "completed" }))
+    await store.upsert(fixedTask({ id: "other", conversationID: "conv2", status: "error", error: "x" }))
+
+    await store.clearErrored("conv")
+
+    const ids = store.list().map((t) => t.id).sort()
+    expect(ids).toEqual(["m2", "m3", "other"])
+  })
+
+  it("is a no-op (no persist, no emit) when nothing is errored", async () => {
+    const store = new AgentTaskStore(memento)
+    await store.upsert(fixedTask({ id: "m2", status: "running" }))
+    let fires = 0
+    store.onDidChange(() => (fires += 1))
+    await store.clearErrored("conv")
+    expect(fires).toBe(0)
+    expect(store.list()).toHaveLength(1)
+  })
+})
