@@ -7,11 +7,18 @@ const MAX_HITS = 30
 
 let cache: FileSearchHit[] | undefined
 let cacheLoadedAt = 0
+let inFlight: Promise<FileSearchHit[]> | undefined
+let scanGeneration = 0
 const CACHE_TTL_MS = 30_000
 
 function invalidateCache(): void {
   cache = undefined
   cacheLoadedAt = 0
+  // Also detach any scan currently running: its listing predates the change
+  // that fired the invalidation, so it must not publish into the cache. The
+  // generation bump makes the detached scan's guards miss.
+  inFlight = undefined
+  scanGeneration++
 }
 
 /**
@@ -31,16 +38,32 @@ export function initFileSearch(context: vscode.ExtensionContext): void {
   )
 }
 
-async function loadFiles(): Promise<FileSearchHit[]> {
-  const now = Date.now()
-  if (cache && now - cacheLoadedAt < CACHE_TTL_MS) return cache
-  const uris = await vscode.workspace.findFiles("**/*", "**/{node_modules,.git,dist,build,out,coverage,.next,.turbo,.cache}/**", MAX_FILES)
-  cache = uris.map((uri) => ({
-    path: vscode.workspace.asRelativePath(uri),
-    name: path.basename(uri.fsPath),
-  }))
-  cacheLoadedAt = now
-  return cache
+function loadFiles(): Promise<FileSearchHit[]> {
+  if (cache && Date.now() - cacheLoadedAt < CACHE_TTL_MS) return Promise.resolve(cache)
+  // Share one scan across concurrent cold-cache callers — the picker fires a
+  // request per keystroke, and without this each one starts its own full
+  // findFiles enumeration of the workspace.
+  if (inFlight) return inFlight
+  const generation = scanGeneration
+  inFlight = (async () => {
+    try {
+      const uris = await vscode.workspace.findFiles("**/*", "**/{node_modules,.git,dist,build,out,coverage,.next,.turbo,.cache}/**", MAX_FILES)
+      const hits = uris.map((uri) => ({
+        path: vscode.workspace.asRelativePath(uri),
+        name: path.basename(uri.fsPath),
+      }))
+      // invalidateCache() mid-scan bumps the generation; publishing anyway
+      // would resurrect a listing that predates the invalidating change.
+      if (generation === scanGeneration) {
+        cache = hits
+        cacheLoadedAt = Date.now()
+      }
+      return hits
+    } finally {
+      if (generation === scanGeneration) inFlight = undefined
+    }
+  })()
+  return inFlight
 }
 
 export async function searchWorkspaceFiles(query: string): Promise<FileSearchHit[]> {

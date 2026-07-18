@@ -349,6 +349,21 @@ describe("PromptBox @file autocomplete", () => {
     expect(screen.getByText("bar.ts")).toBeInTheDocument()
   })
 
+  it("debounces rapid keystrokes into one search for the settled query", async () => {
+    const searchFiles = vi.fn().mockResolvedValue([{ path: "src/bar.ts", name: "bar.ts" }])
+    render(
+      <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
+    )
+    const textarea = screen.getByRole("textbox")
+    // Three changes inside the debounce window — only the settled query fires.
+    fireEvent.change(textarea, { target: { value: "@b" } })
+    fireEvent.change(textarea, { target: { value: "@ba" } })
+    fireEvent.change(textarea, { target: { value: "@bar" } })
+    await waitFor(() => expect(searchFiles).toHaveBeenCalledWith("bar"))
+    expect(searchFiles).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.getByText("bar.ts")).toBeInTheDocument())
+  })
+
   it("Enter inside the picker inserts the selected path and closes the picker", async () => {
     const user = userEvent.setup()
     const searchFiles = vi.fn().mockResolvedValue([

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import * as vscode from "vscode"
-import { rankHits, dirEntriesFrom, initFileSearch, searchWorkspaceFiles } from "../../src/file-search"
+import { rankHits, dirEntriesFrom, initFileSearch, searchWorkspaceFiles, listWorkspaceDir } from "../../src/file-search"
 
 const fixtures = [
   { path: "src/foo.ts", name: "foo.ts" },
@@ -144,6 +144,89 @@ describe("cache invalidation", () => {
     deleted.forEach((cb) => cb())
     const fresh = await searchWorkspaceFiles("")
     expect(fresh.map((h) => h.path)).toEqual(["a.ts", "b.ts"])
+    expect(findFiles).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe("in-flight scan sharing", () => {
+  function uri(p: string) {
+    return vscode.Uri.file(`/workspace/${p}`)
+  }
+
+  /** Install a watcher mock, register it, and return a fn that fires cache
+   *  invalidation — used to force a cold cache since the index is module state. */
+  function installInvalidator(): () => void {
+    const callbacks: Array<() => void> = []
+    vi.spyOn(vscode.workspace, "createFileSystemWatcher").mockReturnValue({
+      onDidCreate: (cb: () => void) => (callbacks.push(cb), { dispose: vi.fn() }),
+      onDidDelete: (cb: () => void) => (callbacks.push(cb), { dispose: vi.fn() }),
+      onDidChange: () => ({ dispose: vi.fn() }),
+      dispose: vi.fn(),
+    } as unknown as vscode.FileSystemWatcher)
+    initFileSearch({ subscriptions: [] } as unknown as vscode.ExtensionContext)
+    return () => callbacks.forEach((cb) => cb())
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it("concurrent cold-cache callers share one findFiles scan", async () => {
+    const invalidate = installInvalidator()
+    invalidate()
+    const findFiles = vi.spyOn(vscode.workspace, "findFiles").mockClear()
+    let resolveScan!: (uris: vscode.Uri[]) => void
+    findFiles.mockReturnValue(new Promise((r) => (resolveScan = r)) as never)
+
+    const p1 = searchWorkspaceFiles("a")
+    const p2 = searchWorkspaceFiles("")
+    const p3 = listWorkspaceDir("")
+    expect(findFiles).toHaveBeenCalledTimes(1)
+
+    resolveScan([uri("a.ts"), uri("b/c.ts")])
+    const [r1, r2, r3] = await Promise.all([p1, p2, p3])
+    expect(r1.map((h) => h.path)).toEqual(["a.ts"])
+    expect(r2.map((h) => h.path)).toEqual(["a.ts", "b/c.ts"])
+    expect(r3).toEqual([
+      { name: "b", path: "b", kind: "folder" },
+      { name: "a.ts", path: "a.ts", kind: "file" },
+    ])
+
+    // The shared scan populated the cache — a follow-up call doesn't rescan.
+    await searchWorkspaceFiles("")
+    expect(findFiles).toHaveBeenCalledTimes(1)
+  })
+
+  it("a scan invalidated mid-flight does not publish into the cache", async () => {
+    const invalidate = installInvalidator()
+    invalidate()
+    const findFiles = vi.spyOn(vscode.workspace, "findFiles").mockClear()
+    let resolveScan!: (uris: vscode.Uri[]) => void
+    findFiles.mockReturnValueOnce(new Promise((r) => (resolveScan = r)) as never)
+
+    const stale = searchWorkspaceFiles("")
+    invalidate()
+    resolveScan([uri("stale.ts")])
+    // The caller that started the scan still gets its listing...
+    expect((await stale).map((h) => h.path)).toEqual(["stale.ts"])
+
+    // ...but the cache stayed cold: the next call runs a fresh scan.
+    findFiles.mockResolvedValue([uri("fresh.ts")] as never)
+    const fresh = await searchWorkspaceFiles("")
+    expect(fresh.map((h) => h.path)).toEqual(["fresh.ts"])
+    expect(findFiles).toHaveBeenCalledTimes(2)
+  })
+
+  it("a failed scan clears the in-flight slot so the next call retries", async () => {
+    const invalidate = installInvalidator()
+    invalidate()
+    const findFiles = vi.spyOn(vscode.workspace, "findFiles").mockClear()
+    findFiles.mockRejectedValueOnce(new Error("boom") as never)
+    await expect(searchWorkspaceFiles("")).rejects.toThrow("boom")
+
+    findFiles.mockResolvedValue([uri("a.ts")] as never)
+    const out = await searchWorkspaceFiles("")
+    expect(out.map((h) => h.path)).toEqual(["a.ts"])
     expect(findFiles).toHaveBeenCalledTimes(2)
   })
 })

@@ -3,6 +3,7 @@ import type { FileSearchHit } from "../protocol"
 import { detectMention, type MentionState } from "../mention-tokens"
 
 const MAX_VISIBLE_HITS = 8
+const SEARCH_DEBOUNCE_MS = 100
 
 /**
  * Owns the `@`-mention picker state: detection (does the caret sit
@@ -39,15 +40,20 @@ export function useMentionPicker(opts: {
     }
     queryRef.current = mention.query
     let cancelled = false
-    void searchFiles(mention.query).then((results) => {
-      if (cancelled) return
-      // Drop stale results — the user may have kept typing while we awaited.
-      if (queryRef.current !== mention.query) return
-      setHits(results.slice(0, MAX_VISIBLE_HITS))
-      setActiveIndex(0)
-    })
+    // Each keystroke re-runs this effect; the cleanup cancels the previous
+    // timer, so only the query the user settles on costs a host round-trip.
+    const timer = setTimeout(() => {
+      void searchFiles(mention.query).then((results) => {
+        if (cancelled) return
+        // Drop stale results — the user may have kept typing while we awaited.
+        if (queryRef.current !== mention.query) return
+        setHits(results.slice(0, MAX_VISIBLE_HITS))
+        setActiveIndex(0)
+      })
+    }, SEARCH_DEBOUNCE_MS)
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
   }, [mention, searchFiles])
 
