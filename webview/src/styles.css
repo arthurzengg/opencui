@@ -2588,6 +2588,12 @@ button:focus-visible {
   color: var(--color-error);
   margin-bottom: 4px;
 }
+/* Not an error — the command was understood, it just can't run mid-turn. */
+.promptbox-busy-hint {
+  font-size: 11px;
+  color: var(--color-fg-muted);
+  margin-bottom: 4px;
+}
 /* Pasted-image thumbnail strip above the prompt textarea. Synthesised
    paste names ("pasted-image.png") carry no signal, so the strip is
    name-less by design — the screenshot itself is the affordance, with

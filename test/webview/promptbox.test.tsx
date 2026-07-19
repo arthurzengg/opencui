@@ -1509,6 +1509,7 @@ describe("PromptBox / command picker", () => {
     { name: "deploy", description: "Ship it", takesArguments: true },
     { name: "compact", description: "Compact the session", takesArguments: false },
     { name: "review", description: "Review changes", takesArguments: true },
+    { name: "new", description: "Start a new chat", takesArguments: false, allowedWhileBusy: true },
   ]
 
   it("opens the command picker listing all commands when you type /", async () => {
@@ -1600,7 +1601,7 @@ describe("PromptBox / command picker", () => {
     expect(onRunCommand).not.toHaveBeenCalled()
   })
 
-  it("does not run a command while busy", async () => {
+  it("does not run a turn-bound command while busy and shows a hint instead", async () => {
     const user = userEvent.setup()
     const onRunCommand = vi.fn()
     render(<PromptBox busy={true} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />)
@@ -1609,6 +1610,52 @@ describe("PromptBox / command picker", () => {
     await screen.findByRole("listbox", { name: /Commands/i })
     await user.keyboard("{Enter}")
     expect(onRunCommand).not.toHaveBeenCalled()
+    expect(screen.getByText(/\/compact can't run while a turn is in progress/)).toBeInTheDocument()
+    // The typed command stays put — nothing ran, nothing was queued.
+    expect(textarea.value).toBe("/compact")
+  })
+
+  it("runs an allowedWhileBusy command while busy", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    render(<PromptBox busy={true} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "/new")
+    await screen.findByRole("listbox", { name: /Commands/i })
+    await user.keyboard("{Enter}")
+    expect(onRunCommand).toHaveBeenCalledWith("new", "")
+    expect(textarea.value).toBe("")
+    expect(screen.queryByText(/can't run while a turn is in progress/)).toBeNull()
+  })
+
+  it("clears the busy hint when the turn ends", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    const { rerender } = render(
+      <PromptBox busy={true} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />,
+    )
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "/compact")
+    await screen.findByRole("listbox", { name: /Commands/i })
+    await user.keyboard("{Enter}")
+    expect(screen.getByText(/can't run while a turn is in progress/)).toBeInTheDocument()
+    rerender(
+      <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />,
+    )
+    expect(screen.queryByText(/can't run while a turn is in progress/)).toBeNull()
+  })
+
+  it("clears the busy hint when the user edits the text", async () => {
+    const user = userEvent.setup()
+    const onRunCommand = vi.fn()
+    render(<PromptBox busy={true} onSend={vi.fn()} onAbort={vi.fn()} commands={COMMANDS} onRunCommand={onRunCommand} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "/compact")
+    await screen.findByRole("listbox", { name: /Commands/i })
+    await user.keyboard("{Enter}")
+    expect(screen.getByText(/can't run while a turn is in progress/)).toBeInTheDocument()
+    await user.type(textarea, "x")
+    expect(screen.queryByText(/can't run while a turn is in progress/)).toBeNull()
   })
 })
 

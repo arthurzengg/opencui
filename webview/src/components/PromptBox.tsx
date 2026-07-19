@@ -134,7 +134,16 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   const canQueue = sendBlocked && variant === "send" && Boolean(onQueue)
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
+  // Feedback for a turn-bound command submitted while busy: it neither runs
+  // nor queues (queueing would send the literal "/compact" as prose), and
+  // without a hint the Enter press looks dead.
+  const [busyHint, setBusyHint] = useState<string | undefined>(undefined)
   const [attaching, setAttaching] = useState(false)
+  // The hint's claim ("can't run while a turn is in progress") stops being
+  // true the moment the turn ends, so it must not outlive the busy state.
+  useEffect(() => {
+    if (!sendBlocked) setBusyHint(undefined)
+  }, [sendBlocked])
   const blurTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // Cancel the deferred blur-dismiss on unmount: a timer surviving unmount
   // setStates into a torn-down tree — the flaky "window is not defined" CI
@@ -287,6 +296,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   const updateText = (next: string, caret: number) => {
     setText(next)
     setSelectedChipStart(undefined)
+    setBusyHint(undefined)
     // The `/` and `@` pickers are mutually exclusive: a leading slash command
     // wins, and we close the mention picker so they never render together.
     if (detectCommandAtCaret(next, caret)) {
@@ -305,13 +315,20 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     clearImageAttachments()
     setSelectedChipStart(undefined)
     setAttachError(undefined)
+    setBusyHint(undefined)
     closeMention()
     closeCommand()
   }
 
   const runCommandAndClear = (command: string, args: string) => {
-    // Respect busy/aborting on the picker-run path too (submit guards both).
-    if (sendBlocked || !onRunCommand) return
+    if (!onRunCommand) return
+    // Turn-bound commands are blocked while busy/aborting (they must not race
+    // the running turn, and queueing would send the literal "/name" as prose).
+    // Commands flagged allowedWhileBusy never touch the turn and pass through.
+    if (sendBlocked && !commands.find((c) => c.name === command)?.allowedWhileBusy) {
+      setBusyHint(`/${command} can't run while a turn is in progress — wait for it to finish or press Stop.`)
+      return
+    }
     onRunCommand(command, args)
     clearComposer()
   }
@@ -331,13 +348,12 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     // Route a typed `/name args` to the command path when the name matches a
     // known command. Unknown slashes (and prose like `/etc/hosts`) fall through
     // to a normal prompt send. Edit composers never route (no onRunCommand).
-    // While a turn runs, a known command neither runs NOR queues — commands
-    // are immediate session operations, not prompts; queueing one as prose
-    // would send the literal "/compact" text to the model.
+    // runCommandAndClear owns the busy gate: turn-bound commands show a hint
+    // instead of running or queueing; allowedWhileBusy ones run immediately.
     if (variant === "send" && onRunCommand) {
       const parsed = parseCommandInput(trimmed)
       if (parsed && commands.some((c) => c.name === parsed.name)) {
-        if (!sendBlocked) runCommandAndClear(parsed.name, parsed.args)
+        runCommandAndClear(parsed.name, parsed.args)
         return
       }
     }
@@ -687,6 +703,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   return (
     <div className={classes}>
       {attachError && <div className="attachment-error">{attachError}</div>}
+      {busyHint && <div className="promptbox-busy-hint">{busyHint}</div>}
       {imageAttachments.length > 0 && (
         <ul className="promptbox-thumbs" aria-label="Image attachments">
           {imageAttachments.map((a) => (
