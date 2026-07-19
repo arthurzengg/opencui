@@ -21,12 +21,16 @@ export const BUILTIN_COMMANDS: ReadonlyArray<CommandInfo> = [
   { name: "init", description: "Analyze the codebase and write AGENTS.md", takesArguments: false },
   { name: "share", description: "Create a shareable link for this session", takesArguments: false },
   { name: "unshare", description: "Disable sharing for this session", takesArguments: false },
-  { name: "mcp", description: "Manage MCP servers", takesArguments: false },
-  { name: "provider", description: "Manage AI providers", takesArguments: false },
+  // allowedWhileBusy: /mcp and /provider only open native pickers, and /new
+  // takes the same path as the + New chat button (not busy-gated) — none of
+  // them touch the running session turn, so the composer's busy block that
+  // swallows turn-bound commands must not apply to them.
+  { name: "mcp", description: "Manage MCP servers", takesArguments: false, allowedWhileBusy: true },
+  { name: "provider", description: "Manage AI providers", takesArguments: false, allowedWhileBusy: true },
   { name: "undo", description: "Revert the last turn", takesArguments: false },
   { name: "redo", description: "Re-apply the last reverted turn", takesArguments: false },
   { name: "fork", description: "Duplicate this conversation", takesArguments: false },
-  { name: "new", description: "Start a new chat", takesArguments: false },
+  { name: "new", description: "Start a new chat", takesArguments: false, allowedWhileBusy: true },
 ]
 
 export const BUILTIN_COMMAND_NAMES: ReadonlySet<string> = new Set(BUILTIN_COMMANDS.map((c) => c.name))

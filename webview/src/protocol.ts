@@ -232,8 +232,11 @@ export type DirEntry = { name: string; path: string; kind: "file" | "folder" }
  * template containing `$ARGUMENTS` waits for the user to type args, otherwise
  * the command runs the moment it is selected. `agent` is a display-only hint;
  * the agent/model actually used are read host-side from prefs at run time.
+ * `allowedWhileBusy` marks commands that never touch the running session turn
+ * (they open native pickers or switch conversations), so the composer lets
+ * them through the busy block that swallows turn-bound commands.
  */
-export type CommandInfo = { name: string; description?: string; agent?: string; takesArguments: boolean }
+export type CommandInfo = { name: string; description?: string; agent?: string; takesArguments: boolean; allowedWhileBusy?: boolean }
 
 /**
  * Status snapshot of the optional semantic index — Phase 6 of the

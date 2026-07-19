@@ -40,6 +40,11 @@ describe("withBuiltinCommands", () => {
       expect(BUILTIN_COMMAND_NAMES.has(name)).toBe(true)
     }
   })
+
+  it("flags exactly the session-neutral built-ins as allowedWhileBusy", () => {
+    const allowed = BUILTIN_COMMANDS.filter((c) => c.allowedWhileBusy).map((c) => c.name)
+    expect(allowed.sort()).toEqual(["mcp", "new", "provider"])
+  })
 })
 
 describe("generateMessageID", () => {
