@@ -50,6 +50,19 @@ export type MockOpencodeServer = {
    * 0 destroys the socket without replying, so the client-side call throws.
    */
   setSummarizeStatus: (status: number) => void
+  /**
+   * HTTP status POST /session/{id}/prompt_async replies with (default 204).
+   * A 4xx/5xx makes the SDK surface `res.error`; 0 destroys the socket so the
+   * call throws. Both drive the post-dispatch failSend path (session already
+   * created, Main task already recorded).
+   */
+  setPromptStatus: (status: number) => void
+  /**
+   * HTTP status POST /session/{id}/command replies with (default 200).
+   * A 4xx/5xx makes the SDK surface `res.error`; 0 destroys the socket so the
+   * call throws. Both drive the post-dispatch custom-command failSend path.
+   */
+  setCommandStatus: (status: number) => void
   /** Records of every unrevert (redo) call's sessionID. */
   unreverts: string[]
   /** Records of every fork call. */
@@ -96,6 +109,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   let revertStatus = 200
   let sessionCreateStatus = 200
   let summarizeStatus = 200
+  let promptStatus = 204
+  let commandStatus = 200
   const unreverts: string[] = []
   const forks: Array<{ sessionID: string; body: unknown }> = []
   const aborts: string[] = []
@@ -206,8 +221,16 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     if (promptMatch && req.method === "POST") {
       const body = await readBody(req)
       prompts.push({ sessionID: promptMatch[1]!, body })
-      res.statusCode = 204
-      res.end()
+      if (promptStatus === 0) {
+        req.socket.destroy()
+        return
+      }
+      if (promptStatus === 204) {
+        res.statusCode = 204
+        res.end()
+      } else {
+        reply(res, promptStatus, { error: "scripted prompt failure" })
+      }
       return
     }
 
@@ -216,7 +239,15 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     if (commandMatch && req.method === "POST") {
       const body = await readBody(req)
       commandCalls.push({ sessionID: commandMatch[1]!, body })
-      reply(res, 200, { info: { id: "msg_cmd", role: "assistant", sessionID: commandMatch[1] }, parts: [] })
+      if (commandStatus === 0) {
+        req.socket.destroy()
+        return
+      }
+      if (commandStatus === 200) {
+        reply(res, 200, { info: { id: "msg_cmd", role: "assistant", sessionID: commandMatch[1] }, parts: [] })
+      } else {
+        reply(res, commandStatus, { error: "scripted command failure" })
+      }
       return
     }
 
@@ -397,6 +428,12 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     setSummarizeStatus(status) {
       summarizeStatus = status
+    },
+    setPromptStatus(status) {
+      promptStatus = status
+    },
+    setCommandStatus(status) {
+      commandStatus = status
     },
     unreverts,
     forks,
