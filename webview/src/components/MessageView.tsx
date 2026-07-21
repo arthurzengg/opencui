@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import type { Block, Message } from "../hooks/useChatState"
 import type { AgentsStatusInfo, Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
-import { findMentionRanges, makeAttachmentLabel } from "../mention-tokens"
+import { findTokenRanges, makeAttachmentLabel } from "../mention-tokens"
 import {
   answerStartIndex,
   hasProcessBlocks,
@@ -361,7 +361,7 @@ function UserMessageView({
             </ul>
           )}
           {originalText && (
-            <div className="user-text">{renderMentionedText(originalText, knownLabels)}</div>
+            <div className="user-text">{renderUserText(originalText, knownLabels)}</div>
           )}
           {canEdit && (
             <span className="user-edit-hint" aria-hidden="true">
@@ -406,22 +406,40 @@ function badgeForFilename(filename: string): string {
 
 /**
  * Wrap @path tokens (whose target is in `knownLabels`) in `.mention-chip`
- * spans, mirroring the in-editor chip styling so the rendered user bubble
- * reads as the same content the user composed.
+ * spans and http(s) URLs in real anchors, mirroring the in-editor styling so
+ * the rendered user bubble reads as the same content the user composed.
+ * target="_blank" for the same reason as Markdown.tsx's anchor override: the
+ * webview swallows same-tab navigations, so a plain href would look dead.
  */
-export function renderMentionedText(text: string, knownLabels: Set<string>): ReactNode[] {
-  if (knownLabels.size === 0) return [text]
-  const ranges = findMentionRanges(text, knownLabels)
+export function renderUserText(text: string, knownLabels: Set<string>): ReactNode[] {
+  const ranges = findTokenRanges(text, knownLabels)
   if (ranges.length === 0) return [text]
   const out: ReactNode[] = []
   let cursor = 0
   for (const r of ranges) {
     if (r.start > cursor) out.push(text.slice(cursor, r.start))
-    out.push(
-      <span key={r.start} className="mention-chip">
-        {text.slice(r.start, r.end)}
-      </span>,
-    )
+    if (r.kind === "link") {
+      out.push(
+        <a
+          key={r.start}
+          className="user-link"
+          href={r.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          // The surrounding .msg.role-user listens for click-to-edit; without
+          // this, opening a link also flips the bubble into edit mode.
+          onClick={(e) => e.stopPropagation()}
+        >
+          {text.slice(r.start, r.end)}
+        </a>,
+      )
+    } else {
+      out.push(
+        <span key={r.start} className="mention-chip">
+          {text.slice(r.start, r.end)}
+        </span>,
+      )
+    }
     cursor = r.end
   }
   if (cursor < text.length) out.push(text.slice(cursor))

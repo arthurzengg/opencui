@@ -4,6 +4,7 @@ import {
   extractMentions,
   findChipAtCaret,
   findMentionRanges,
+  findTokenRanges,
   makeAttachmentLabel,
   makeConversationLabel,
 } from "../mention-tokens"
@@ -1080,33 +1081,41 @@ function ChevronIcon() {
 /**
  * Render `text` for the backdrop layer: known @path tokens are wrapped in a
  * `.mention-chip` span so they get a colored background through the
- * transparent textarea above. The rendered text width must remain
- * character-for-character identical to the textarea, so the chip is purely
- * a colored background — no padding/border that would shift glyph positions.
+ * transparent textarea above, and http(s) URLs in a `.link-token` span for a
+ * link-colored underline. The rendered text width must remain
+ * character-for-character identical to the textarea, so both are purely
+ * paint — no padding/border that would shift glyph positions.
  */
 export function renderHighlightedText(
   text: string,
   known: Set<string>,
   selectedChipStart?: number,
 ): ReactNode[] {
-  const ranges = findMentionRanges(text, known)
+  const ranges = findTokenRanges(text, known)
   if (ranges.length === 0) {
     return [text + "\n"]
   }
   const out: ReactNode[] = []
   let cursor = 0
-  for (let i = 0; i < ranges.length; i++) {
-    const r = ranges[i]!
+  for (const r of ranges) {
     if (r.start > cursor) out.push(text.slice(cursor, r.start))
-    const selected = selectedChipStart === r.start
-    out.push(
-      <span
-        key={r.start}
-        className={"mention-chip" + (selected ? " mention-chip-selected" : "")}
-      >
-        {text.slice(r.start, r.end)}
-      </span>,
-    )
+    if (r.kind === "link") {
+      out.push(
+        <span key={r.start} className="link-token">
+          {text.slice(r.start, r.end)}
+        </span>,
+      )
+    } else {
+      const selected = selectedChipStart === r.start
+      out.push(
+        <span
+          key={r.start}
+          className={"mention-chip" + (selected ? " mention-chip-selected" : "")}
+        >
+          {text.slice(r.start, r.end)}
+        </span>,
+      )
+    }
     cursor = r.end
   }
   if (cursor < text.length) out.push(text.slice(cursor))
