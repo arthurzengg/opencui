@@ -171,7 +171,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       hasSubscription: () => this.subscription !== undefined,
       attachSubscription: (backend, sessionID) => this.attachSubscription(backend, sessionID),
       beginBuiltinTurn: (display) => this.beginBuiltinTurn(display),
-      failTurn: (message) => this.failBuiltinTurn(message),
+      failTurn: (message) => this.failTurnUnstick(message, "Command failed"),
       post: (msg) => this.post(msg),
       getMessages: () => this.messages,
       setMessages: (messages) => {
@@ -1396,29 +1396,28 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   /**
-   * A send that never reached opencode produces no SSE events, so nothing
-   * would ever clear the webview's `busy` — unstick it explicitly and tell
-   * the user instead of failing silently into a permanent "Working…".
+   * Unstick a turn that failed without producing SSE events. A send that
+   * never reached opencode emits no session.idle, so two things would
+   * otherwise hang: the webview's `busy` never clears (permanent "Working…"),
+   * and — if `recordMainTaskStart` already ran — the popover Main row stays
+   * "running" forever. Settle that row FIRST so the terminal-state guard
+   * freezes its status against any later idle sweep, then post idle + toast.
+   * `recordMainTaskFinish` is a no-op when no Main task was recorded (the
+   * pre-dispatch failure sites: server-ensure / session-create), so this is
+   * safe from every failure path. classifyTerminal keeps an "Aborted" outcome
+   * quiet (no toast), mirroring onSessionError.
    */
-  private failSend(message: string) {
-    this.post({ type: "sessionIdle" })
-    this.surfaceToast({ variant: "error", title: "Send failed", message })
-  }
-
-  /**
-   * failSend for builtin turns: by the time /compact or /init fails,
-   * beginBuiltinTurn has already recorded a popover Main task, so that row
-   * must settle too — before anything else, so the terminal-state guard
-   * protects the status from a later idle sweep. classifyTerminal keeps an
-   * "Aborted" outcome quiet (no toast), mirroring onSessionError.
-   */
-  private failBuiltinTurn(message: string) {
+  private failTurnUnstick(message: string, toastTitle: string) {
     const classified = classifyTerminal(message)
     void this.subagentDispatch.recordMainTaskFinish(classified.status, classified.error)
     this.post({ type: "sessionIdle" })
     if (classified.status === "error") {
-      this.surfaceToast({ variant: "error", title: "Command failed", message })
+      this.surfaceToast({ variant: "error", title: toastTitle, message })
     }
+  }
+
+  private failSend(message: string) {
+    this.failTurnUnstick(message, "Send failed")
   }
 
   /**

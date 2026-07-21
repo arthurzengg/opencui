@@ -389,6 +389,66 @@ describe("ChatView harness: pre-dispatch send failures", () => {
   })
 })
 
+describe("ChatView harness: post-dispatch send failures", () => {
+  // Unlike the pre-dispatch failures above, the session already exists here, so
+  // recordMainTaskStart has recorded a "running" Main row by the time the
+  // dispatch fails. Nothing else would ever settle it — a turn that never
+  // started produces no session.idle — so the unstick path must, or the Agents
+  // popover shows a phantom running agent forever.
+
+  beforeEach(() => {
+    vi.mocked(vscode.window.showErrorMessage).mockClear()
+  })
+
+  function mainTasks() {
+    return harness.taskStore.list().filter((t) => t.kind === "main")
+  }
+
+  async function expectMainSettledAsError(): Promise<void> {
+    await until(() => {
+      const mains = mainTasks()
+      return mains.length > 0 && mains.every((t) => t.status !== "running")
+    })
+    expect(mainTasks().some((t) => t.status === "error")).toBe(true)
+  }
+
+  it("settles the Main task when prompt_async reports an error", async () => {
+    await harness.send({ type: "mounted" })
+    server.setPromptStatus(500)
+
+    await harness.send({ type: "send", text: "doomed prompt" })
+
+    // The dispatch reached a real session — this is the post-recordMainTaskStart
+    // path, not one of the pre-dispatch bails above.
+    expect(server.prompts).toHaveLength(1)
+    expect(harness.posted.some((m) => m.type === "sessionIdle")).toBe(true)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Send failed"))
+    await expectMainSettledAsError()
+  })
+
+  it("settles the Main task when the prompt call throws (connection drop)", async () => {
+    await harness.send({ type: "mounted" })
+    server.setPromptStatus(0)
+
+    await harness.send({ type: "send", text: "doomed prompt" })
+
+    expect(harness.posted.some((m) => m.type === "sessionIdle")).toBe(true)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Send failed"))
+    await expectMainSettledAsError()
+  })
+
+  it("settles the Main task when a custom command's dispatch reports an error", async () => {
+    await harness.send({ type: "mounted" })
+    server.setCommandStatus(500)
+
+    await harness.send({ type: "runCommand", command: "definitely-custom", arguments: "" })
+
+    expect(server.commandCalls).toHaveLength(1)
+    expect(harness.posted.some((m) => m.type === "sessionIdle")).toBe(true)
+    await expectMainSettledAsError()
+  })
+})
+
 describe("ChatView harness: builtin command failures", () => {
   // beginBuiltinTurn has already posted the bubble (webview busy) and recorded
   // a Main task by the time /compact's summarize call fails; failBuiltinTurn's
