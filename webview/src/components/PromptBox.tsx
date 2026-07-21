@@ -154,12 +154,29 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   // moves the index (onMouseEnter), but scrolling on hover would shift rows
   // under the cursor — so the scroll-into-view effect only acts on key moves.
   const keyboardNavRef = useRef(false)
+  // Arrow keys suppress hover until the pointer physically moves again. The
+  // popovers scroll (max-height 220px), so scrollIntoView slides rows under a
+  // resting cursor; the browser then re-evaluates hover and fires mouseenter on
+  // whichever row landed there, which would drag the active index back and make
+  // Up/Down feel stuck wherever the mouse happens to rest.
+  const hoverEnabledRef = useRef(true)
+  const lastPointerRef = useRef<{ x: number; y: number } | undefined>(undefined)
+  // Blink dispatches a synthetic mousemove after a scroll to refresh hover
+  // state, so "a mousemove arrived" is not proof the user moved — that fake
+  // event carries the last real coordinates. Only changed coordinates count.
+  const onPopoverMouseMove = (e: React.MouseEvent) => {
+    const last = lastPointerRef.current
+    if (last && last.x === e.clientX && last.y === e.clientY) return
+    lastPointerRef.current = { x: e.clientX, y: e.clientY }
+    hoverEnabledRef.current = true
+  }
   // Hover claims the index move by clearing the flag first. An arrow press
   // that changed no index (ArrowRight on a file row, Left/Right where only
   // Up/Down are handled, wrap on a single-row list, arrows over an empty
   // popover) never reaches the effect that consumes the flag, and the next
   // hover-driven index change would otherwise scroll the row under the cursor.
   const hoverMove = (apply: () => void) => {
+    if (!hoverEnabledRef.current) return
     keyboardNavRef.current = false
     apply()
   }
@@ -485,6 +502,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
     if (e.key.startsWith("Arrow") && (command || showCategoryMenu || showChatList || showFileHits || showBrowse)) {
       keyboardNavRef.current = true
+      hoverEnabledRef.current = false
     }
     if (command) {
       // When nothing matches we only handle Escape — Enter must fall through to
@@ -721,7 +739,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
         onClose={() => setPreviewImage(null)}
       />
       <div className="promptbox-input">
-        <div ref={popoverHostRef} className="promptbox-textarea-wrap">
+        <div ref={popoverHostRef} className="promptbox-textarea-wrap" onMouseMove={onPopoverMouseMove}>
         <div ref={backdropRef} className="promptbox-backdrop" aria-hidden="true">
           {renderHighlightedText(text, allKnownLabels(), selectedChipStart)}
         </div>

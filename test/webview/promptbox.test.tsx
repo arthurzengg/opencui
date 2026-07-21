@@ -427,6 +427,9 @@ describe("PromptBox @file autocomplete", () => {
 
       scrolled.length = 0
       const lastRow = screen.getByText("c.ts").closest("li")!
+      // mouseMove first: arrow keys suppress hover until the pointer really
+      // moves, so a bare mouseEnter is the scroll-synthesized kind we ignore.
+      fireEvent.mouseMove(lastRow, { clientX: 10, clientY: 90 })
       fireEvent.mouseEnter(lastRow)
       expect(lastRow.getAttribute("aria-selected")).toBe("true")
       expect(scrolled).toHaveLength(0)
@@ -462,6 +465,7 @@ describe("PromptBox @file autocomplete", () => {
       await user.keyboard("{ArrowRight}")
       expect(scrolled).toHaveLength(0)
       const lastRow = screen.getByText("c.ts").closest("li")!
+      fireEvent.mouseMove(lastRow, { clientX: 10, clientY: 90 })
       fireEvent.mouseEnter(lastRow)
       expect(lastRow.getAttribute("aria-selected")).toBe("true")
       expect(scrolled).toHaveLength(0)
@@ -469,6 +473,44 @@ describe("PromptBox @file autocomplete", () => {
       if (original) proto.scrollIntoView = original
       else delete proto.scrollIntoView
     }
+  })
+
+  it("ignores the mouseenter a scroll fires under a resting cursor", async () => {
+    const user = userEvent.setup()
+    const searchFiles = vi.fn().mockResolvedValue([
+      { path: "src/a.ts", name: "a.ts" },
+      { path: "src/b.ts", name: "b.ts" },
+      { path: "src/c.ts", name: "c.ts" },
+    ])
+    render(
+      <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />,
+    )
+    await user.type(screen.getByRole("textbox"), "@a")
+    await waitFor(() => expect(screen.getByText("b.ts")).toBeInTheDocument())
+
+    // Park the cursor on the last row, then drive selection with the keyboard.
+    const lastRow = screen.getByText("c.ts").closest("li")!
+    fireEvent.mouseMove(lastRow, { clientX: 10, clientY: 90 })
+    fireEvent.mouseEnter(lastRow)
+    expect(lastRow.getAttribute("aria-selected")).toBe("true")
+
+    await user.keyboard("{ArrowDown}")
+    const firstRow = screen.getByText("a.ts").closest("li")!
+    expect(firstRow.getAttribute("aria-selected")).toBe("true")
+
+    // scrollIntoView slid a different row under the stationary pointer: the
+    // browser re-fires mouseenter, and Blink's post-scroll synthetic mousemove
+    // repeats the last real coordinates. Neither is user intent, so the
+    // keyboard's selection must survive both.
+    fireEvent.mouseMove(lastRow, { clientX: 10, clientY: 90 })
+    fireEvent.mouseEnter(lastRow)
+    expect(firstRow.getAttribute("aria-selected")).toBe("true")
+    expect(lastRow.getAttribute("aria-selected")).toBe("false")
+
+    // A real pointer move hands control back to the mouse.
+    fireEvent.mouseMove(lastRow, { clientX: 10, clientY: 91 })
+    fireEvent.mouseEnter(lastRow)
+    expect(lastRow.getAttribute("aria-selected")).toBe("true")
   })
 
   it("Click on a hit inserts that path", async () => {
