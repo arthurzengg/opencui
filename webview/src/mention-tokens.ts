@@ -1,7 +1,9 @@
 /**
- * Pure helpers for the @-mention / attachment-chip system. Kept separate from
- * PromptBox.tsx so the component file is just JSX + state, and so these
- * functions can be tested without rendering anything.
+ * Pure helpers for the inline-token system (@-mention / attachment chips and
+ * web links). Kept separate from PromptBox.tsx so the component file is just
+ * JSX + state, and so these functions can be tested without rendering
+ * anything. PromptBox (composer backdrop) and MessageView (rendered bubble)
+ * both consume findTokenRanges so the two surfaces highlight identically.
  */
 
 export type MentionState = {
@@ -109,6 +111,78 @@ export function findMentionRanges(text: string, known: Set<string>): Array<{ sta
   const out: Array<{ start: number; end: number }> = []
   let prevEnd = -1
   for (const r of ranges) {
+    if (r.start >= prevEnd) {
+      out.push(r)
+      prevEnd = r.end
+    }
+  }
+  return out
+}
+
+export type LinkRange = { start: number; end: number; url: string }
+
+const CLOSERS: Record<string, string> = { ")": "(", "]": "[", "}": "{" }
+
+/**
+ * Locate http(s) URLs in prose. The regex takes everything up to whitespace,
+ * then trailing punctuation that reads as sentence structure is trimmed off —
+ * `see https://example.com.` must not link the final dot. Closing brackets are
+ * only trimmed when unbalanced within the match, so a Wikipedia-style
+ * `/wiki/Foo_(bar)` keeps its paren while `(see https://example.com)` drops
+ * it. http(s)-only by construction: no scheme like `javascript:` can ever
+ * reach an href through this.
+ */
+export function findLinkRanges(text: string): LinkRange[] {
+  const out: LinkRange[] = []
+  const re = /https?:\/\/\S+/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) {
+    let url = m[0]
+    while (url.length > 0) {
+      const last = url[url.length - 1]!
+      if (/[.,;:!?'"`<>]/.test(last)) {
+        url = url.slice(0, -1)
+        continue
+      }
+      const opener = CLOSERS[last]
+      if (opener) {
+        let balance = 0
+        for (const ch of url) {
+          if (ch === opener) balance++
+          else if (ch === last) balance--
+        }
+        if (balance < 0) {
+          url = url.slice(0, -1)
+          continue
+        }
+      }
+      break
+    }
+    if (url.replace(/^https?:\/\//i, "").length === 0) continue
+    out.push({ start: m.index, end: m.index + url.length, url })
+  }
+  return out
+}
+
+export type TokenRange =
+  | { start: number; end: number; kind: "mention" }
+  | { start: number; end: number; kind: "link"; url: string }
+
+/**
+ * Merge mention and link ranges into one non-overlapping, sorted token list.
+ * On overlap the earlier start wins: a URL containing `/@known/path` stays one
+ * link (the mention inside it is incidental), while a chat chip whose label is
+ * itself a URL (`@chat:https://…`) stays a chip (the user inserted it from
+ * the picker; the URL inside is incidental).
+ */
+export function findTokenRanges(text: string, known: Set<string>): TokenRange[] {
+  const merged: TokenRange[] = [
+    ...findLinkRanges(text).map((r) => ({ ...r, kind: "link" as const })),
+    ...findMentionRanges(text, known).map((r) => ({ ...r, kind: "mention" as const })),
+  ].sort((a, b) => a.start - b.start)
+  const out: TokenRange[] = []
+  let prevEnd = -1
+  for (const r of merged) {
     if (r.start >= prevEnd) {
       out.push(r)
       prevEnd = r.end

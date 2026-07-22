@@ -79,6 +79,47 @@ describe("MessageView (user role)", () => {
     expect(screen.getByRole("button", { name: "Save & regenerate" })).toBeInTheDocument()
   })
 
+  it("renders a pasted URL as a real link, excluding trailing punctuation", () => {
+    const { container } = render(
+      <MessageView
+        message={userMessage("check https://example.com/docs, thanks")}
+        processOpen={false}
+        processOnly={false}
+      />,
+    )
+    const link = container.querySelector(".user-text a.user-link") as HTMLAnchorElement
+    expect(link).not.toBeNull()
+    expect(link.getAttribute("href")).toBe("https://example.com/docs")
+    expect(link.textContent).toBe("https://example.com/docs")
+    // Same anchor shape as Markdown.tsx: the webview swallows same-tab
+    // navigations, so _blank is what makes the click actually open.
+    expect(link.getAttribute("target")).toBe("_blank")
+    expect(link.getAttribute("rel")).toBe("noreferrer noopener")
+  })
+
+  it("clicking a link does not flip the bubble into edit mode", async () => {
+    const user = userEvent.setup()
+    const { container } = render(
+      <MessageView
+        message={userMessage("see https://example.com", { backendID: "b1" })}
+        processOpen={false}
+        processOnly={false}
+        onEditMessage={vi.fn()}
+      />,
+    )
+    const link = container.querySelector("a.user-link") as HTMLAnchorElement
+    // jsdom can't navigate; block the default action but let propagation run
+    // so the click still reaches the bubble's click-to-edit handler if the
+    // anchor fails to stopPropagation.
+    link.addEventListener("click", (e) => e.preventDefault())
+    await user.click(link)
+    expect(container.querySelector("textarea")).toBeNull()
+
+    // The bubble itself still enters edit mode when clicked outside the link.
+    await user.click(container.querySelector(".msg.role-user") as HTMLElement)
+    expect(container.querySelector("textarea")).not.toBeNull()
+  })
+
   it("restores past-chat mention chips when editing a sent message", async () => {
     const user = userEvent.setup()
     const message = userMessage("@chat:Old_chat revisit", { backendID: "b1" })

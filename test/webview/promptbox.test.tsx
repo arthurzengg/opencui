@@ -944,6 +944,15 @@ describe("PromptBox mention chip rendering", () => {
     expect(backdrop).not.toBeNull()
     expect(backdrop!.getAttribute("aria-hidden")).toBe("true")
   })
+
+  it("highlights a typed URL in the backdrop, excluding trailing punctuation", async () => {
+    const user = userEvent.setup()
+    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
+    await user.type(screen.getByRole("textbox"), "see https://example.com. ok")
+    const token = container.querySelector(".promptbox-backdrop .link-token")
+    expect(token).not.toBeNull()
+    expect(token!.textContent).toBe("https://example.com")
+  })
 })
 
 describe("findChipAtCaret", () => {

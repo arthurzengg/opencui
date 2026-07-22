@@ -1057,6 +1057,16 @@ button:focus-visible {
 .msg.role-user .user-text:active::-webkit-scrollbar-thumb {
   background-color: var(--vscode-scrollbarSlider-background, var(--color-scrollbar-thumb));
 }
+/* Pasted web links in the sent bubble — theme link color like .md a, plus an
+   explicit underline so the affordance survives themes where link color is
+   close to the foreground. */
+.msg.role-user .user-text .user-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+}
+.msg.role-user .user-text .user-link:hover {
+  color: var(--vscode-textLink-activeForeground);
+}
 /* Hover / focus rules are scoped to `[data-edit-phase="view"]` so they
    physically cannot fire while the edit overlay is mounted. */
 .msg.role-user.is-editable[data-edit-phase="view"] {
@@ -2207,6 +2217,15 @@ button:focus-visible {
 .promptbox-backdrop .mention-chip-selected {
   background: var(--vscode-editor-selectionBackground, rgba(80, 140, 255, 0.45));
   box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(80, 140, 255, 0.9));
+}
+/* Web links while composing. The backdrop's glyphs are transparent (the
+   textarea above paints them), so the underline is the only paint we can add —
+   and text-decoration-color must be explicit because it defaults to
+   currentColor, which is transparent here. Decoration never shifts glyph
+   metrics, so textarea/backdrop alignment is preserved. */
+.promptbox-backdrop .link-token {
+  text-decoration: underline;
+  text-decoration-color: var(--vscode-textLink-foreground, rgba(80, 140, 255, 0.9));
 }
 .promptbox textarea {
   width: 100%;
