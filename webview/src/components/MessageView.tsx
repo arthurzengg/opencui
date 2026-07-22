@@ -52,6 +52,7 @@ type MessageViewProps = {
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
   conversations?: ConversationSummary[]
   activeConversationID?: string
+  onOpenLink?: (url: string) => void
 }
 
 /**
@@ -93,6 +94,7 @@ function MessageViewComponent({
   attachFile,
   conversations,
   activeConversationID,
+  onOpenLink,
 }: MessageViewProps) {
   if (message.role === "user") {
     return (
@@ -107,6 +109,7 @@ function MessageViewComponent({
         attachFile={attachFile}
         conversations={conversations}
         activeConversationID={activeConversationID}
+        onOpenLink={onOpenLink}
       />
     )
   }
@@ -190,6 +193,7 @@ function UserMessageView({
   attachFile,
   conversations,
   activeConversationID,
+  onOpenLink,
 }: {
   message: Message
   busy?: boolean
@@ -201,6 +205,7 @@ function UserMessageView({
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
   conversations?: ConversationSummary[]
   activeConversationID?: string
+  onOpenLink?: (url: string) => void
 }) {
   const originalText = message.blocks
     .filter((b): b is Extract<Block, { type: "text" }> => b.type === "text")
@@ -328,6 +333,7 @@ function UserMessageView({
             attachFile={attachFile}
             conversations={conversations}
             activeConversationID={activeConversationID}
+            onOpenLink={onOpenLink}
             variant="edit"
             initial={{
               text: originalText,

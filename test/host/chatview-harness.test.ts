@@ -161,6 +161,23 @@ describe("ChatView harness: mounted handshake", () => {
   })
 })
 
+describe("ChatView harness: openExternal", () => {
+  it("routes an http(s) URL to vscode.env.openExternal", async () => {
+    vi.mocked(vscode.env.openExternal).mockClear()
+    await harness.send({ type: "openExternal", url: "https://example.com/docs" })
+    expect(vscode.env.openExternal).toHaveBeenCalledTimes(1)
+    const uri = vi.mocked(vscode.env.openExternal).mock.calls[0]![0]
+    expect(String(uri)).toContain("https://example.com/docs")
+  })
+
+  it("refuses non-http schemes at the trust boundary", async () => {
+    vi.mocked(vscode.env.openExternal).mockClear()
+    await harness.send({ type: "openExternal", url: "javascript:alert(1)" })
+    await harness.send({ type: "openExternal", url: "file:///etc/passwd" })
+    expect(vscode.env.openExternal).not.toHaveBeenCalled()
+  })
+})
+
 describe("ChatView harness: send round-trip", () => {
   it("creates a session, dispatches the prompt, streams the reply, and persists the turn", async () => {
     await harness.send({ type: "mounted" })

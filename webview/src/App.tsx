@@ -39,6 +39,7 @@ export default function App() {
     attachFile,
     startIndex,
     stopIndex,
+    openLink,
   } = useChatState()
   const scrollRef = useRef<HTMLDivElement>(null)
   const dockRef = useRef<HTMLDivElement>(null)
@@ -276,6 +277,7 @@ export default function App() {
           commands={state.commands}
           onRunCommand={runCommandAndPinTop}
           inject={state.injectedText}
+          onOpenLink={openLink}
         />
       )}
       <div
@@ -332,6 +334,7 @@ export default function App() {
                 attachFile={attachFile}
                 conversations={state.conversations}
                 activeConversationID={state.conversationID}
+                onOpenLink={openLink}
               />
             )}
             {turn.assistants.map((m, i) => (
@@ -394,6 +397,7 @@ export default function App() {
               commands={state.commands}
               onRunCommand={runCommandAndPinTop}
               inject={state.injectedText}
+              onOpenLink={openLink}
             />
           </div>
         )}

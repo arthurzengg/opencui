@@ -953,6 +953,42 @@ describe("PromptBox mention chip rendering", () => {
     expect(token).not.toBeNull()
     expect(token!.textContent).toBe("https://example.com")
   })
+
+  it("opens the URL under the caret on Cmd/Ctrl+Click", async () => {
+    const user = userEvent.setup()
+    const onOpenLink = vi.fn()
+    render(
+      <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} onOpenLink={onOpenLink} />,
+    )
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "see https://example.com. ok")
+    // By click time the browser has placed the caret at the clicked spot;
+    // jsdom has no layout, so position the caret explicitly.
+    textarea.setSelectionRange(10, 10)
+    fireEvent.click(textarea, { metaKey: true })
+    expect(onOpenLink).toHaveBeenCalledWith("https://example.com")
+
+    onOpenLink.mockClear()
+    fireEvent.click(textarea, { ctrlKey: true })
+    expect(onOpenLink).toHaveBeenCalledWith("https://example.com")
+  })
+
+  it("does not open on plain click, caret outside the URL, or a drag selection", async () => {
+    const user = userEvent.setup()
+    const onOpenLink = vi.fn()
+    render(
+      <PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} onOpenLink={onOpenLink} />,
+    )
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+    await user.type(textarea, "see https://example.com. ok")
+    textarea.setSelectionRange(10, 10)
+    fireEvent.click(textarea)
+    textarea.setSelectionRange(1, 1)
+    fireEvent.click(textarea, { metaKey: true })
+    textarea.setSelectionRange(5, 12)
+    fireEvent.click(textarea, { metaKey: true })
+    expect(onOpenLink).not.toHaveBeenCalled()
+  })
 })
 
 describe("findChipAtCaret", () => {

@@ -120,6 +120,26 @@ describe("MessageView (user role)", () => {
     expect(container.querySelector("textarea")).not.toBeNull()
   })
 
+  it("passes onOpenLink through to the edit composer for Cmd+Click", async () => {
+    const user = userEvent.setup()
+    const onOpenLink = vi.fn()
+    const { container } = render(
+      <MessageView
+        message={userMessage("see https://example.com ok", { backendID: "b1" })}
+        processOpen={false}
+        processOnly={false}
+        onEditMessage={vi.fn()}
+        onOpenLink={onOpenLink}
+      />,
+    )
+    await user.click(container.querySelector(".msg.role-user") as HTMLElement)
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement
+    expect(textarea.value).toBe("see https://example.com ok")
+    textarea.setSelectionRange(10, 10)
+    fireEvent.click(textarea, { metaKey: true })
+    expect(onOpenLink).toHaveBeenCalledWith("https://example.com")
+  })
+
   it("restores past-chat mention chips when editing a sent message", async () => {
     const user = userEvent.setup()
     const message = userMessage("@chat:Old_chat revisit", { backendID: "b1" })

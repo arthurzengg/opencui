@@ -591,6 +591,9 @@ export function useChatState() {
     stopIndex() {
       vscode.post({ type: "stopIndex" })
     },
+    openLink(url: string) {
+      vscode.post({ type: "openExternal", url })
+    },
     }),
     [],
   )

@@ -930,6 +930,14 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "openFile":
         await openFile(msg.path)
         return
+      case "openExternal":
+        // The webview only ever sends regex-matched http(s) URLs, but this is
+        // a trust boundary — re-check the scheme so no other kind of URI can
+        // reach openExternal through a forged message.
+        if (/^https?:\/\//i.test(msg.url)) {
+          await vscode.env.openExternal(vscode.Uri.parse(msg.url))
+        }
+        return
       case "openReviewChange":
         void this.openReviewChange(msg.change)
         return

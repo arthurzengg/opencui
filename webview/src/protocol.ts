@@ -476,6 +476,7 @@ export type Inbound =
   | { type: "deleteConversation"; id: string }
   | { type: "apply"; code: string; language?: string }
   | { type: "openFile"; path: string }
+  | { type: "openExternal"; url: string }
   | { type: "openReviewChange"; change: ReviewChange }
   | { type: "reviewAllInChange"; source: string; path: string; action: ReviewHunkState }
   | { type: "selectAgent" }

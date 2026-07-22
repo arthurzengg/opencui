@@ -92,6 +92,8 @@ type Props = {
    * or conversation switch so a re-mounted composer never re-applies stale text.
    */
   inject?: { text: string; nonce: number }
+  /** Open a highlighted URL (Cmd/Ctrl+Click in the textarea) externally. */
+  onOpenLink?: (url: string) => void
 }
 
 function buildInitialAttachments(initial: Props["initial"]): Map<string, Attachment> {
@@ -125,7 +127,7 @@ function buildInitialConversations(initial: Props["initial"]): Map<string, strin
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject, onOpenLink }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   // The Send button renders a disabled "Stopping…" while aborting, but Enter
   // routes through submit() — both must honor the same block, or a prompt
@@ -493,6 +495,25 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     if (result.error) setAttachError(result.error)
   }
 
+  // Cmd+Click (Ctrl+Click off macOS) opens a highlighted URL, matching the
+  // VS Code editor convention — a plain click must keep placing the caret.
+  // On macOS Ctrl+Click raises the context menu instead of a click event, so
+  // accepting ctrlKey here is harmless. By click time the browser has already
+  // set the caret to the clicked position, which is what locates the link.
+  const onTextareaClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    if (!onOpenLink || (!e.metaKey && !e.ctrlKey)) return
+    const el = e.currentTarget
+    const caret = el.selectionStart
+    // A collapsed selection distinguishes a click from a modifier-drag select.
+    if (caret === null || caret !== el.selectionEnd) return
+    for (const r of findTokenRanges(text, allKnownLabels())) {
+      if (r.kind === "link" && r.start <= caret && caret <= r.end) {
+        onOpenLink(r.url)
+        return
+      }
+    }
+  }
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // If an IME composition is in progress (e.g. typing Chinese pinyin),
     // Enter belongs to the IME — it commits the candidate, NOT submits the
@@ -751,6 +772,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
           placeholder={canQueue ? "@ for files, Enter to queue" : "/ for commands, @ for files, Enter to send"}
           onChange={(e) => updateText(e.target.value, e.target.selectionStart ?? e.target.value.length)}
           onKeyDown={onKeyDown}
+          onClick={onTextareaClick}
           onPaste={onPaste}
           onSelect={onSelect}
           onScroll={(e) => {
