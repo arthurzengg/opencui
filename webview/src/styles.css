@@ -967,6 +967,16 @@ button:focus-visible {
   min-height: 24px;
   padding: var(--bubble-text-padding);
 }
+/* The backdrop must keep character-for-character wrap parity with the
+   textarea it paints behind. Its base padding is the bottom composer's
+   6px 8px; when the edit-mode rule above narrows the textarea's padding,
+   the two layers get different content widths and wrap long lines at
+   different points — chip backgrounds drift off their tokens and a link
+   underline breaks up mid-URL. Any padding change to the edit-mode
+   textarea must be mirrored here. */
+.msg.role-user:not([data-edit-phase="view"]) .promptbox .promptbox-backdrop {
+  padding: var(--bubble-text-padding);
+}
 /* Fade + slide the action row in when entering edit mode so the buttons
    don't pop into existence below the textarea. The animation only runs
    on mount (the row stays mounted while editing), and is scoped to
