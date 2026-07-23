@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-22
+
+### Added
+- URLs in your own messages are now live links. While composing, a pasted `http(s)://` URL is underlined in place, and in the sent bubble it renders as a real link that opens in your default browser — clicking it no longer flips the bubble into edit mode. Trailing punctuation stays out of the link, and Wikipedia-style URLs ending in `(...)` keep their closing paren. Assistant messages already auto-linked bare URLs; this brings your side of the conversation to parity (#465, #466).
+- Cmd+Click (Ctrl+Click on Windows/Linux) on an underlined URL inside the composer — the bottom send box or an in-place edit — opens it in the external browser without moving focus out of the text (#467, #468).
+
+### Changed
+- The `@` mention picker responds faster in large workspaces: concurrent lookups now share a single in-flight file scan instead of each starting their own, and filtering debounces keystrokes by 100ms instead of re-querying per character (#457, #458).
+
+### Fixed
+- Slash commands typed while a turn is running are no longer silently swallowed — the composer shows a muted hint that the command has to wait for the turn to finish, and the session-neutral `/new`, `/mcp`, and `/provider` now run immediately even mid-turn (#459, #460).
+- A send that failed just after dispatch could leave a phantom "running" Main row in the Agents popover that survived window reloads; the row now settles as soon as the turn fails (#461, #462).
+- Arrow-key navigation in the prompt-box pickers no longer snaps back to the row under a resting mouse cursor — scrolling the highlight used to fire a synthetic hover event that stole the selection, making Up/Down appear stuck while the mouse rested over the list (#463, #464).
+- Editing a sent message no longer paints mention-chip backgrounds and link underlines slightly off the text. The edit composer's highlight backdrop kept the bottom composer's padding while the textarea used the bubble's, so the two layers wrapped long lines at different points — most visibly breaking a link underline mid-URL (#469, #470).
+
 ## [1.9.0] - 2026-07-17
 
 ### Added
