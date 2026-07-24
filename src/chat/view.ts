@@ -206,6 +206,11 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (this.sessionID && this.taskStore) {
       void this.taskStore.markSessionIdle(this.sessionID)
     }
+    // A pending permission/question cannot outlive its turn — opencode
+    // blocks the turn on it. An entry surviving here would wedge the NEXT
+    // turn's Main row on `waiting` (syncAgentWaitState counts these maps).
+    this.activePermissions.clear()
+    this.activeQuestions.clear()
     this.subagentDispatch.clearMainTaskID()
     this.post({ type: "sessionIdle" })
     void this.manager.flushPersist()
@@ -218,6 +223,19 @@ export class ChatView implements vscode.WebviewViewProvider {
       `[agents-status] post snapshot conv=${activeID} total=${status.total} (running=${status.running} waiting=${status.waiting} error=${status.error}) ids=[${status.tasks.map((t) => `${t.kind}:${t.id}`).join(", ")}]`,
     )
     this.post({ type: "agentsStatus", status })
+  }
+
+  /**
+   * Recompute "is this turn blocked on the user?" from the pending
+   * permission + question maps and mirror it onto the Main task row.
+   * Must be called after every mutation of either map — the popover
+   * renders `waiting` as "waiting for input", and before this wiring
+   * nothing ever set that status, so a permission-blocked turn showed
+   * as `running`.
+   */
+  private syncAgentWaitState() {
+    const pending = this.activePermissions.size + this.activeQuestions.size
+    void this.subagentDispatch.setMainWaiting(pending > 0)
   }
 
   async resolveWebviewView(view: vscode.WebviewView) {
@@ -964,6 +982,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       case "permissionReply": {
         this.activePermissions.delete(msg.id)
+        this.syncAgentWaitState()
         if (!this.sessionID) return
         try {
           const backend = await this.servers.ensure()
@@ -978,11 +997,13 @@ export class ChatView implements vscode.WebviewViewProvider {
       }
       case "questionReply": {
         this.activeQuestions.delete(msg.id)
+        this.syncAgentWaitState()
         await this.replyQuestion(msg.id, msg.answers)
         return
       }
       case "questionReject": {
         this.activeQuestions.delete(msg.id)
+        this.syncAgentWaitState()
         await this.rejectQuestion(msg.id)
         return
       }
@@ -1106,6 +1127,11 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.aborting = true
     this.pendingUserBackendID = undefined
     this.post({ type: "aborted" })
+    // The webview reducer drops its permission/question dialogs on
+    // `aborted`; mirror that here or the dead prompts wedge the next
+    // turn's waiting computation in syncAgentWaitState.
+    this.activePermissions.clear()
+    this.activeQuestions.clear()
     void this.subagentDispatch.recordMainTaskFinish("cancelled")
 
     // Tear down the tracker's local view of the subagent tree first.
@@ -1759,6 +1785,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         // and no resolution event exists that would ever clear the dialog.
         if (this.aborting) return
         this.activePermissions.set(perm.id, perm)
+        this.syncAgentWaitState()
         this.post({
           type: "permission",
           id: perm.id,
@@ -1769,6 +1796,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       onQuestionAsked: (q) => {
         if (this.aborting) return
         this.activeQuestions.set(q.id, q)
+        this.syncAgentWaitState()
         this.post({
           type: "question",
           id: q.id,
@@ -1777,6 +1805,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       },
       onQuestionResolved: (id) => {
         this.activeQuestions.delete(id)
+        this.syncAgentWaitState()
         this.post({ type: "questionResolved", id })
       },
       onMessageRemoved: (backendID) => {

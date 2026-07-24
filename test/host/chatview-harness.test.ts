@@ -816,6 +816,47 @@ describe("ChatView harness: review-hunk sync debounce", () => {
   })
 })
 
+describe("ChatView harness: waiting-for-input Main status", () => {
+  function lastMainStatus() {
+    return harness.taskStore
+      .list()
+      .filter((t) => t.kind === "main")
+      .at(-1)?.status
+  }
+
+  it("flips the Main row to waiting on permission.asked and back to running on reply", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "guarded edit" })
+
+    server.push({ type: "permission.asked", id: "perm_1", sessionID: SESSION_ID, title: "Edit file" })
+    await until(() => lastMainStatus() === "waiting")
+    const snap = harness.posted.filter((m) => m.type === "agentsStatus").at(-1)
+    expect(snap && "status" in snap ? snap.status.waiting : 0).toBe(1)
+
+    await harness.send({ type: "permissionReply", id: "perm_1", response: "once" })
+    await until(() => lastMainStatus() === "running")
+  })
+
+  it("Stop clears pending prompts so the next turn cannot wedge on waiting", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "first try" })
+    server.push({ type: "permission.asked", id: "perm_stale", sessionID: SESSION_ID, title: "T" })
+    await until(() => lastMainStatus() === "waiting")
+
+    await harness.send({ type: "abort" })
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+
+    await harness.send({ type: "send", text: "second try" })
+    server.push({ type: "permission.asked", id: "perm_2", sessionID: SESSION_ID, title: "T2" })
+    await until(() => lastMainStatus() === "waiting")
+    await harness.send({ type: "permissionReply", id: "perm_2", response: "once" })
+    // Without the abort-time map clear, perm_stale would keep the pending
+    // count above zero and the row would stay `waiting` forever.
+    await until(() => lastMainStatus() === "running")
+  })
+})
+
 describe("ChatView harness: errored Main task clears on next turn", () => {
   it("keeps the error row visible until the next send, then drops it", async () => {
     await harness.send({ type: "mounted" })
