@@ -294,13 +294,20 @@ export function extractChanges(messages: ChatMessage[]): ReviewChange[] {
  * - `oldPath` (move) propagates through if any contributing record had it
  */
 export function aggregateChanges(changes: ReviewChange[]): ReviewChange[] {
-  return changes.reduce<ReviewChange[]>((acc, change) => {
-    const existingIndex = acc.findIndex((item) => samePath(item.path, change.path))
-    if (existingIndex < 0) {
-      return [...acc, { ...change, actors: dedupActors(change.actors) }]
+  // Map keyed on the normalized path (the same equivalence `samePath` uses).
+  // Map.set on an existing key keeps its original insertion position, so rows
+  // stay in first-appearance order. This runs per delta flush in the webview's
+  // ReviewPanel memo — it must stay a single pass, not a findIndex-per-record
+  // scan.
+  const byPath = new Map<string, ReviewChange>()
+  for (const change of changes) {
+    const key = normalizePath(change.path)
+    const prev = byPath.get(key)
+    if (!prev) {
+      byPath.set(key, { ...change, actors: dedupActors(change.actors) })
+      continue
     }
-    const prev = acc[existingIndex]!
-    const merged: ReviewChange = {
+    byPath.set(key, {
       ...change,
       additions: prev.additions + change.additions,
       deletions: prev.deletions + change.deletions,
@@ -308,11 +315,9 @@ export function aggregateChanges(changes: ReviewChange[]): ReviewChange[] {
       oldPath: prev.oldPath ?? change.oldPath,
       absolutePath: change.absolutePath ?? prev.absolutePath,
       actors: dedupActors([...(prev.actors ?? []), ...(change.actors ?? [])]),
-    }
-    const copy = acc.slice()
-    copy[existingIndex] = merged
-    return copy
-  }, [])
+    })
+  }
+  return [...byPath.values()]
 }
 
 function priorityKind(prev: ReviewChange["kind"], next: ReviewChange["kind"]): ReviewChange["kind"] {
@@ -338,7 +343,7 @@ function dedupActors(actors: ReviewChangeActor[] | undefined): ReviewChangeActor
 /**
  * The canonical "what does this turn contain?" function. Used by:
  *  - webview ReviewPanel to render the review card
- *  - host syncReviewDecorations / handleReviewAllInChange to drive actions
+ *  - host syncReviewHunks / handleReviewAllInChange to drive actions
  *
  * Both sides MUST produce the same list — keep this the only place that
  * collapses multiple records for the same path.

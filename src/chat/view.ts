@@ -184,7 +184,6 @@ export class ChatView implements vscode.WebviewViewProvider {
       },
       saveActive: () => this.saveActive(),
       sendConversationState: () => this.sendConversationState(),
-      queueReviewDecorationsSync: () => this.queueReviewDecorationsSync(),
       resetSessionState: () => this.resetSessionState(),
       applyActiveSnapshot: () => this.applyActiveSnapshot(),
       refreshContextUsage: (backend) => this.refreshContextUsage(backend),
@@ -245,7 +244,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
     vscode.window.onDidChangeActiveTextEditor(() => {
       this.pushContext()
-      this.queueReviewDecorationsSync()
+      this.queueReviewHunkSync()
     }, null, this.context.subscriptions)
     vscode.window.onDidChangeTextEditorSelection(
       () => this.pushContext(),
@@ -323,6 +322,10 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription = undefined
     this.aborting = false
     this.clearPendingDeltas()
+    if (this.reviewSyncTimer) {
+      clearTimeout(this.reviewSyncTimer)
+      this.reviewSyncTimer = undefined
+    }
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
     // Write any debounced tail before the view (and its context) goes away,
@@ -621,7 +624,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "restore":
         this.messages = msg.messages.map((m) => ({ ...m, pending: false }))
         this.reviewHunks = msg.reviewHunks ?? {}
-        this.queueReviewDecorationsSync()
+        this.queueReviewHunkSync()
         return
       case "clear":
         this.messages = []
@@ -689,7 +692,10 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "tool":
         this.messages = upsertTool(this.messages, msg.id, msg.update, msg.actor)
         this.saveActive()
-        this.queueReviewDecorationsSync()
+        // Only a completed tool can change the review set — extractChanges
+        // skips every other status, so pending/running ticks would sync for
+        // nothing.
+        if (msg.update.status === "completed") this.queueReviewHunkSync()
         return
       case "patch":
         this.messages = this.messages.map((m) =>
@@ -698,14 +704,14 @@ export class ChatView implements vscode.WebviewViewProvider {
             : m,
         )
         this.saveActive()
-        this.queueReviewDecorationsSync()
+        this.queueReviewHunkSync()
         return
       case "reviewHunkState":
         this.reviewHunks = { ...this.reviewHunks }
         if (msg.state) this.reviewHunks[msg.key] = msg.state
         else delete this.reviewHunks[msg.key]
         this.saveActive()
-        this.queueReviewDecorationsSync()
+        this.queueReviewHunkSync()
         return
       case "assistantError":
         this.messages = this.messages.map((m) =>
@@ -1633,7 +1639,6 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.reviewHunks = {}
       this.saveActive()
       this.sendConversationState()
-      this.queueReviewDecorationsSync()
     }
 
     await this.handleSend(trimmed, mentions, attachments, conversationMentions)
@@ -1945,7 +1950,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     if (event.type === "tool") {
       const wire = toWire(event.update, cwd)
       this.post({ type: "tool", id: parentWebviewID, update: wire, actor })
-      this.queueReviewDecorationsSync()
       return
     }
     this.post({
@@ -1955,7 +1959,6 @@ export class ChatView implements vscode.WebviewViewProvider {
       diff: event.diff,
       actor,
     })
-    this.queueReviewDecorationsSync()
   }
 
   private resolveSubagentActor(childSessionID: string) {
@@ -2002,10 +2005,10 @@ export class ChatView implements vscode.WebviewViewProvider {
       if (active !== doc.uri.toString()) {
         await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
       }
-      // Decoration sync (purging missing-file hunks) is independent of where
-      // the editor is pointed — run it AFTER the editor swap so the visible
-      // pane updates immediately rather than waiting on fs.stat I/O.
-      void this.syncReviewDecorations()
+      // Hunk-state reconciliation (purging missing-file hunks) is independent
+      // of where the editor is pointed — queue it so the editor swap never
+      // waits on fs.stat I/O.
+      this.queueReviewHunkSync()
     } catch (e) {
       log(`could not open review file ${change.path}`, e)
       vscode.window.showWarningMessage(`OpenCode Panel: could not open ${change.path} as text.`)
@@ -2073,19 +2076,37 @@ export class ChatView implements vscode.WebviewViewProvider {
         `OpenCode Panel: couldn't ${verb} ${result.conflicts} hunk${result.conflicts === 1 ? "" : "s"} in ${requestedPath} — the file has changed since the diff was produced.`,
       )
     }
-    if (result.applied > 0) await this.syncReviewDecorations()
-    else log("reviewAllInChange: no hunks applied", { source, path: requestedPath, action, conflicts: result.conflicts })
+    // No explicit sync here: applied > 0 guarantees at least one
+    // reviewHunkState post above (the all-reviewed case returned early inside
+    // reviewAllForPath), and each of those already queued the debounced sync.
+    if (result.applied === 0) {
+      log("reviewAllInChange: no hunks applied", { source, path: requestedPath, action, conflicts: result.conflicts })
+    }
   }
 
   private backendDirectory(): string | undefined {
     return this.servers.currentWorkspace()?.fsPath
   }
 
-  private queueReviewDecorationsSync() {
-    void this.syncReviewDecorations().catch((e) => log("review decorations sync failed", e))
+  private reviewSyncTimer?: ReturnType<typeof setTimeout>
+  private static readonly REVIEW_SYNC_DEBOUNCE_MS = 100
+
+  /**
+   * Debounced entry to syncReviewHunks. Review-relevant events arrive in
+   * bursts — tool closures during a streaming turn, one reviewHunkState post
+   * per hunk from Keep/Undo-all — and each pass costs a full extract +
+   * aggregate plus an fs.stat per changed path, so bursts must collapse into
+   * one pass. Same first-call-arms idiom as queueDelta: events landing inside
+   * the window ride the pending timer.
+   */
+  private queueReviewHunkSync() {
+    this.reviewSyncTimer ??= setTimeout(() => {
+      this.reviewSyncTimer = undefined
+      this.syncReviewHunks().catch((e) => log("review hunk sync failed", e))
+    }, ChatView.REVIEW_SYNC_DEBOUNCE_MS)
   }
 
-  private async syncReviewDecorations() {
+  private async syncReviewHunks() {
     // All editor-side review UI (line highlights, ghost-text deletions,
     // unlocatable banner) was removed — review actions live exclusively in
     // the Review Card now. This sync only purges hunks for files that have

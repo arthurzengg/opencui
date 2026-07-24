@@ -103,7 +103,10 @@ beforeEach(async () => {
   server = await startMockOpencode()
   const client = createOpencodeClient({ baseUrl: server.url })
   const backend = { url: server.url, client, directory: "/ws" } as unknown as Backend
-  const servers = { ensure: vi.fn(async () => backend) } as unknown as ServerManager
+  const servers = {
+    ensure: vi.fn(async () => backend),
+    currentWorkspace: vi.fn(() => undefined),
+  } as unknown as ServerManager
   const prefs = {
     get: () => ({}),
     onChange: vi.fn(() => ({ dispose: vi.fn() })),
@@ -745,6 +748,71 @@ describe("ChatView harness: host-side delta coalescing", () => {
     const lines = appendLine.mock.calls.map((c) => String(c[0]))
     expect(lines.some((l) => l.includes("[sse] message.part.delta"))).toBe(false)
     expect(lines.some((l) => l.includes("[sse] session.idle"))).toBe(true)
+  })
+})
+
+describe("ChatView harness: review-hunk sync debounce", () => {
+  function editToolEvent(callID: string, status: "running" | "completed", filePath: string) {
+    return {
+      type: "message.part.updated",
+      part: {
+        id: `part_${callID}`,
+        messageID: "msg_a",
+        sessionID: SESSION_ID,
+        type: "tool",
+        callID,
+        tool: "edit",
+        state: {
+          status,
+          input: { filePath },
+          ...(status === "completed"
+            ? { metadata: { filediff: { patch: "@@ -1 +1 @@\n-old\n+new", additions: 1, deletions: 1 } } }
+            : {}),
+        },
+      },
+    }
+  }
+
+  async function startAssistantTurn(prompt: string) {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: prompt })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID } })
+    await until(() => harness.posted.some((m) => m.type === "assistantStart"))
+  }
+
+  // The send pipeline stats other paths (context collectors), so counts are
+  // filtered to the test's own file rather than cleared globally.
+  function statCallsFor(name: string) {
+    return vi
+      .mocked(vscode.workspace.fs.stat)
+      .mock.calls.filter((c) => String((c[0] as vscode.Uri | undefined)?.fsPath ?? c[0]).includes(name))
+      .length
+  }
+
+  it("coalesces a burst of completed tool closures into one hunk-sync pass", async () => {
+    await startAssistantTurn("edit a file five times")
+    for (let i = 0; i < 5; i++) server.push(editToolEvent(`call_${i}`, "completed", "src/burst.ts"))
+
+    // Each sync pass stats the changed path exactly once (the default fs.stat
+    // mock resolves, so the first workspace candidate wins and nothing gets
+    // purged or re-queued). Five closures inside one debounce window must
+    // collapse to one pass — allow two in case a closure straddles the timer.
+    await until(() => statCallsFor("burst.ts") > 0)
+    await new Promise((r) => setTimeout(r, 250))
+    expect(statCallsFor("burst.ts")).toBeLessThanOrEqual(2)
+  })
+
+  it("does not run the sync for non-completed tool ticks", async () => {
+    await startAssistantTurn("edit a file")
+    // Seed one completed change, then wait for its debounced pass: with a
+    // change present, a sync pass — if one were wrongly queued later — would
+    // stat this path again.
+    server.push(editToolEvent("call_seed", "completed", "src/seed.ts"))
+    await until(() => statCallsFor("seed.ts") === 1)
+
+    for (let i = 0; i < 3; i++) server.push(editToolEvent(`call_run_${i}`, "running", "src/seed.ts"))
+    await new Promise((r) => setTimeout(r, 250))
+    expect(statCallsFor("seed.ts")).toBe(1)
   })
 })
 

@@ -79,7 +79,6 @@ function makeHarness(opts: HarnessOpts = {}) {
     }),
     saveActive: vi.fn(),
     sendConversationState: vi.fn(),
-    queueReviewDecorationsSync: vi.fn(),
     resetSessionState: vi.fn(),
     applyActiveSnapshot: vi.fn(),
     refreshContextUsage: vi.fn().mockResolvedValue(undefined),
