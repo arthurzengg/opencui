@@ -10,6 +10,7 @@ import {
   samePath,
   normalizePath,
 } from "../../webview/src/components/ReviewPanel"
+import { aggregateChanges, type ReviewChange } from "../../webview/src/review-extract"
 import type { Message } from "../../webview/src/hooks/useChatState"
 
 describe("synthesizeCreatePatch", () => {
@@ -228,6 +229,76 @@ describe("turnChanges", () => {
       { id: "a1", role: "assistant", blocks: [{ type: "text", text: "hi" }] },
     ]
     expect(turnChanges(messages)).toHaveLength(0)
+  })
+})
+
+describe("aggregateChanges", () => {
+  function change(over: Partial<ReviewChange>): ReviewChange {
+    return {
+      source: "s",
+      path: "a.ts",
+      kind: "updated",
+      additions: 1,
+      deletions: 0,
+      patch: "@@\n+x",
+      ...over,
+    }
+  }
+
+  it("keeps rows in first-appearance order, merging onto the original row", () => {
+    const result = aggregateChanges([
+      change({ path: "a.ts", source: "s1" }),
+      change({ path: "b.ts", source: "s2" }),
+      change({ path: "a.ts", source: "s3" }),
+      change({ path: "c.ts", source: "s4" }),
+    ])
+    expect(result.map((c) => c.path)).toEqual(["a.ts", "b.ts", "c.ts"])
+  })
+
+  it("merges records whose paths differ only by normalization", () => {
+    const result = aggregateChanges([
+      change({ path: "./src/foo.ts", additions: 2 }),
+      change({ path: "src\\foo.ts", additions: 3 }),
+    ])
+    expect(result).toHaveLength(1)
+    expect(result[0]!.additions).toBe(5)
+  })
+
+  it("takes source and patch from the most recent record and sums counts", () => {
+    const result = aggregateChanges([
+      change({ source: "first", patch: "@@\n+a", additions: 1, deletions: 1 }),
+      change({ source: "last", patch: "@@\n+b", additions: 2, deletions: 3 }),
+    ])
+    expect(result[0]).toMatchObject({ source: "last", patch: "@@\n+b", additions: 3, deletions: 4 })
+  })
+
+  it("prefers the later sticky kind when two sticky kinds conflict", () => {
+    const result = aggregateChanges([change({ kind: "created" }), change({ kind: "deleted" })])
+    expect(result[0]!.kind).toBe("deleted")
+  })
+
+  it("keeps the first oldPath and the latest absolutePath", () => {
+    const result = aggregateChanges([
+      change({ kind: "moved", oldPath: "old.ts", absolutePath: "/w/1.ts" }),
+      change({ absolutePath: "/w/2.ts" }),
+    ])
+    expect(result[0]!.oldPath).toBe("old.ts")
+    expect(result[0]!.absolutePath).toBe("/w/2.ts")
+  })
+
+  it("dedupes actors across merged records", () => {
+    const main = { kind: "main" as const }
+    const sub = { kind: "subagent" as const, sessionID: "child_1", subagent: "explore" }
+    const result = aggregateChanges([
+      change({ actors: [main] }),
+      change({ actors: [sub, main] }),
+    ])
+    expect(result[0]!.actors).toEqual([main, sub])
+  })
+
+  it("drops the actors field entirely when no record carries one", () => {
+    const result = aggregateChanges([change({}), change({})])
+    expect(result[0]!.actors).toBeUndefined()
   })
 })
 

@@ -37,7 +37,6 @@ export type BuiltinRunnerDeps = {
   clearReviewHunks: () => void
   saveActive: () => void
   sendConversationState: () => void
-  queueReviewDecorationsSync: () => void
   resetSessionState: () => void
   applyActiveSnapshot: () => void
   refreshContextUsage: (backend: Backend) => Promise<void>
@@ -229,8 +228,9 @@ export class BuiltinRunners {
     this.deps.setMessages(messages.slice(0, idx))
     this.deps.clearReviewHunks()
     this.deps.saveActive()
+    // sendConversationState posts a `restore`, which queues the review-hunk
+    // sync on the ChatView side — no separate trigger needed.
     this.deps.sendConversationState()
-    this.deps.queueReviewDecorationsSync()
     // Restore the undone prompt so the user can edit and resend. Plain text only:
     // mentions/attachments are not re-hydrated.
     this.deps.post({ type: "setComposerText", text: userMessageText(target) })
@@ -275,7 +275,6 @@ export class BuiltinRunners {
     this.deps.setMessages([...this.deps.getMessages(), ...tail])
     this.deps.saveActive()
     this.deps.sendConversationState()
-    this.deps.queueReviewDecorationsSync()
     this.deps.post({ type: "setComposerText", text: "" })
   }
 
