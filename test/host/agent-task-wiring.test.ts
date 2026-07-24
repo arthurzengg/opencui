@@ -4,9 +4,9 @@ import {
   summarizeAgentTasks,
   isSubagentTool,
 } from "../../src/agents/summary"
-import { summarizePrompt } from "../../src/chat/subagent-dispatch"
+import { SubagentDispatch, summarizePrompt } from "../../src/chat/subagent-dispatch"
 import type { ToolUpdate } from "../../src/chat/stream"
-import type { AgentTask } from "../../src/agents/task-store"
+import { AgentTaskStore, type AgentTask, type Memento } from "../../src/agents/task-store"
 
 function makeUpdate(overrides: Partial<ToolUpdate> = {}): ToolUpdate {
   return {
@@ -275,5 +275,67 @@ describe("summarizePrompt", () => {
   it("falls back to 'Main agent' when text is empty", () => {
     expect(summarizePrompt("")).toBe("Main agent")
     expect(summarizePrompt("   ")).toBe("Main agent")
+  })
+})
+
+describe("SubagentDispatch.setMainWaiting", () => {
+  function makeDispatch() {
+    const backing = new Map<string, unknown>()
+    const memento = {
+      get: (key: string, defaultValue?: unknown) =>
+        backing.has(key) ? backing.get(key) : defaultValue,
+      update: async (key: string, value: unknown) => {
+        backing.set(key, value)
+      },
+    }
+    const store = new AgentTaskStore(memento as unknown as Memento)
+    const dispatch = new SubagentDispatch({
+      taskStore: store,
+      getSessionID: () => "sess_1",
+      getActiveConversationID: () => "conv_1",
+      collapseToGraceIfSettled: () => {},
+    })
+    return { store, dispatch }
+  }
+
+  it("flips the current Main row running -> waiting -> running", async () => {
+    const { store, dispatch } = makeDispatch()
+    await dispatch.recordMainTaskStart("guarded work")
+    await dispatch.setMainWaiting(true)
+    expect(store.list()[0]!.status).toBe("waiting")
+    await dispatch.setMainWaiting(false)
+    expect(store.list()[0]!.status).toBe("running")
+  })
+
+  it("is idempotent in both directions", async () => {
+    const { store, dispatch } = makeDispatch()
+    await dispatch.recordMainTaskStart("x")
+    await dispatch.setMainWaiting(false)
+    expect(store.list()[0]!.status).toBe("running")
+    await dispatch.setMainWaiting(true)
+    await dispatch.setMainWaiting(true)
+    expect(store.list()[0]!.status).toBe("waiting")
+  })
+
+  it("still settles a waiting row on finish", async () => {
+    const { store, dispatch } = makeDispatch()
+    await dispatch.recordMainTaskStart("x")
+    await dispatch.setMainWaiting(true)
+    await dispatch.recordMainTaskFinish("completed")
+    expect(store.list()[0]!.status).toBe("completed")
+  })
+
+  it("never touches a settled row (stray sync after finish)", async () => {
+    const { store, dispatch } = makeDispatch()
+    await dispatch.recordMainTaskStart("x")
+    await dispatch.recordMainTaskFinish("completed")
+    await dispatch.setMainWaiting(true)
+    expect(store.list()[0]!.status).toBe("completed")
+  })
+
+  it("no-ops when no turn is in flight", async () => {
+    const { store, dispatch } = makeDispatch()
+    await dispatch.setMainWaiting(true)
+    expect(store.list()).toHaveLength(0)
   })
 })

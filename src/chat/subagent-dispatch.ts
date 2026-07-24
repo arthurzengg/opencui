@@ -127,4 +127,27 @@ export class SubagentDispatch {
       updatedAt: Date.now(),
     })
   }
+
+  /**
+   * Flip the current turn's Main row between `running` and `waiting`.
+   * Driven by ChatView's pending permission/question count — "waiting"
+   * means opencode is blocked on the user's answer, which is exactly when
+   * the popover should stop claiming work is running. Only the two
+   * expected transitions are applied (running → waiting, waiting →
+   * running); a settled row keeps its terminal status and a stray call
+   * after the turn ended no-ops on the cleared `currentMainTaskID`.
+   */
+  async setMainWaiting(waiting: boolean): Promise<void> {
+    if (!this.deps.taskStore) return
+    const id = this.currentMainTaskID
+    if (!id) return
+    const existing = this.deps.taskStore.get(id)
+    if (!existing) return
+    const from = waiting ? "running" : "waiting"
+    if (existing.status !== from) return
+    await this.deps.taskStore.update(id, {
+      status: waiting ? "waiting" : "running",
+      updatedAt: Date.now(),
+    })
+  }
 }
