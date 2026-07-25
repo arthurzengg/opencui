@@ -436,6 +436,30 @@ describe("SubagentTracker.handleChildSessionEvent", () => {
     expect(store.get(subagentTaskIDByChildSession("ses_child_1"))!.status).toBe("completed")
   })
 
+  it("repeated `busy` events on an already-running task perform no store writes", async () => {
+    const { tracker, store } = await bootstrapPromoted()
+    const before = store.get(subagentTaskIDByChildSession("ses_child_1"))!
+    let fires = 0
+    store.onDidChange(() => (fires += 1))
+    // Per-token traffic: routeChildSessionEvent maps every
+    // message.part.delta on the child to a `busy` signal.
+    for (let i = 0; i < 25; i++) {
+      await tracker.handleChildSessionEvent({ type: "busy", sessionID: "ses_child_1" })
+    }
+    expect(fires).toBe(0)
+    const after = store.get(subagentTaskIDByChildSession("ses_child_1"))!
+    expect(after.status).toBe("running")
+    expect(after.updatedAt).toBe(before.updatedAt)
+  })
+
+  it("a `busy` event still promotes a waiting task back to running", async () => {
+    const { tracker, store } = await bootstrapPromoted()
+    const taskID = subagentTaskIDByChildSession("ses_child_1")
+    await store.update(taskID, { status: "waiting" })
+    await tracker.handleChildSessionEvent({ type: "busy", sessionID: "ses_child_1" })
+    expect(store.get(taskID)!.status).toBe("running")
+  })
+
   it("an `assistantEnd` event backfills the model when omo metadata didn't carry one", async () => {
     const { tracker, store, subscription } = setupTracker()
     // Dispatch without model in metadata.
@@ -719,6 +743,30 @@ describe("SubagentTracker.registerChildSession", () => {
     const { tracker, store } = setupTracker({ sessionID: "ses_parent" })
     await tracker.registerChildSession({ id: "ses_orphan", parentID: "ses_someone_else" })
     expect(store.get(subagentTaskIDByChildSession("ses_orphan"))).toBeUndefined()
+  })
+
+  it("performs no store write when the child is already known", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.registerChildSession({ id: "ses_child_x", parentID: "ses_parent", title: "First" })
+    const before = store.get(subagentTaskIDByChildSession("ses_child_x"))!
+    let fires = 0
+    store.onDidChange(() => (fires += 1))
+    // session.updated re-fires discovery on every child title/time change.
+    await tracker.registerChildSession({ id: "ses_child_x", parentID: "ses_parent", title: "Renamed" })
+    expect(fires).toBe(0)
+    expect(store.get(subagentTaskIDByChildSession("ses_child_x"))!.updatedAt).toBe(before.updatedAt)
+  })
+
+  it("does not drift a settled row's frozen runtime when the session stays warm", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.registerChildSession({ id: "ses_child_w", parentID: "ses_parent" })
+    await tracker.handleChildSessionEvent({ type: "idle", sessionID: "ses_child_w" })
+    const settled = store.get(subagentTaskIDByChildSession("ses_child_w"))!
+    expect(settled.status).toBe("completed")
+    // Some plugins keep the child session warm — a late session.updated
+    // must not move the terminal row's endedAt (updatedAt - startedAt).
+    await tracker.registerChildSession({ id: "ses_child_w", parentID: "ses_parent" })
+    expect(store.get(subagentTaskIDByChildSession("ses_child_w"))!.updatedAt).toBe(settled.updatedAt)
   })
 
   it("does not overwrite an existing richer record", async () => {

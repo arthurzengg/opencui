@@ -289,11 +289,18 @@ export class SubagentTracker {
     const now = Date.now()
     switch (event.type) {
       case "busy":
-        // Refresh updatedAt but don't bounce a terminal task back to
-        // running — once errored/completed, a stray busy is ignored.
+        // Don't bounce a terminal task back to running — once
+        // errored/completed, a stray busy is ignored.
         if (existing.status === "error" || existing.status === "completed" || existing.status === "cancelled") {
           return
         }
+        // Already running: skip the write. Busy signals arrive per streamed
+        // token (message.part.delta et al.), and each store.update() is a
+        // full workspaceState persist + onDidChange broadcast + agentsStatus
+        // IPC post. Nothing reads updatedAt on a live row (AgentsRow derives
+        // elapsed from startedAt) — the only transition left to make here is
+        // waiting -> running.
+        if (existing.status === "running") return
         await this.store.update(taskID, { status: "running", updatedAt: now })
         return
       case "idle":
@@ -370,12 +377,12 @@ export class SubagentTracker {
     const conversationID = this.getConversationID()
     const taskID = subagentTaskIDByChildSession(info.id)
     const existing = this.store.get(taskID)
+    // Already known — nothing to learn. session.updated re-fires this on
+    // every child title/time change, and an updatedAt-only refresh is a full
+    // persist + broadcast that feeds no consumer; on a settled row it would
+    // even drift the popover's frozen runtime (updatedAt - startedAt).
+    if (existing) return
     const now = Date.now()
-    if (existing) {
-      // Already known — refresh updatedAt only.
-      await this.store.update(taskID, { updatedAt: now })
-      return
-    }
     // If the parent's `task` tool dispatch already created a callID-keyed row
     // and is sitting waiting on a child sessionID, promote it now rather than
     // creating a second row. The "exactly one unclaimed dispatch" guard
