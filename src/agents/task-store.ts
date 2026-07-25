@@ -370,6 +370,14 @@ function isTerminal(status: AgentTaskStatus): boolean {
   return status === "completed" || status === "error" || status === "cancelled"
 }
 
+/**
+ * Deliberately ignores `updatedAt`: a write whose only difference is the
+ * clock is not a change, and treating it as one turned high-frequency
+ * callers (repeated `running` tool events, child busy signals) into a
+ * workspaceState persist + broadcast per event. `updatedAt` is a
+ * consequence of a material change — it lands whenever any compared field
+ * differs, which every terminal transition does via `status`.
+ */
 function sameTask(a: AgentTask, b: AgentTask): boolean {
   return (
     a.status === b.status &&
@@ -387,8 +395,7 @@ function sameTask(a: AgentTask, b: AgentTask): boolean {
     a.kind === b.kind &&
     a.conversationID === b.conversationID &&
     a.sessionID === b.sessionID &&
-    a.startedAt === b.startedAt &&
-    a.updatedAt === b.updatedAt
+    a.startedAt === b.startedAt
   )
 }
 

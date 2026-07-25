@@ -93,6 +93,19 @@ describe("AgentTaskStore", () => {
     expect(store.list()).toHaveLength(1)
   })
 
+  it("drops a write whose only change is updatedAt (no persist, no emit)", async () => {
+    const store = new AgentTaskStore(memento)
+    await store.upsert(fixedTask({ updatedAt: 1000 }))
+    let fires = 0
+    store.onDidChange(() => (fires += 1))
+    await store.update("main:conv:sess", { updatedAt: 2000 })
+    await store.upsert(fixedTask({ updatedAt: 3000 }))
+    expect(fires).toBe(0)
+    expect(store.get("main:conv:sess")!.updatedAt).toBe(1000)
+    const persisted = memento.get<AgentTask[]>(AGENT_TASKS_KEY)
+    expect(persisted?.[0]?.updatedAt).toBe(1000)
+  })
+
   it("upsert preserves startedAt across mutations", async () => {
     const store = new AgentTaskStore(memento)
     await store.upsert(fixedTask({ startedAt: 1000, updatedAt: 1000 }))
