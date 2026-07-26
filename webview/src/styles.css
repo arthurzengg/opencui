@@ -395,11 +395,6 @@ button:focus-visible {
 .agents-row-running .agents-row-title { color: var(--color-agent-running); }
 .agents-row-error .agents-row-meta { color: var(--color-error); }
 .agents-row-waiting .agents-row-meta { color: var(--color-warn); }
-.agents-popover-empty {
-  padding: 6px 12px;
-  opacity: 0.6;
-  font-style: italic;
-}
 
 .selector-menu {
   flex: 0 1 auto;

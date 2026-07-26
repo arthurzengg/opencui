@@ -18,7 +18,9 @@ export function AgentActivity({ status }: { status?: AgentsStatusInfo }) {
     (errorOnly ? " is-error" : "") +
     (waitingOnly ? " is-waiting" : "")
 
-  const tasks = status.tasks ?? []
+  // total === tasks.length by construction in summarizeAgentTasks (pinned
+  // by test), so past the total-0 guard above the popover always has rows.
+  const tasks = status.tasks
   const main = tasks.filter((t) => t.kind === "main")
   const sub = tasks.filter((t) => t.kind === "subagent")
 
@@ -40,27 +42,24 @@ export function AgentActivity({ status }: { status?: AgentsStatusInfo }) {
       {open && (
         <div className="agents-popover agent-activity-popover" role="menu">
           <div className="agents-popover-title">Agents in this response</div>
-          {tasks.length === 0 && <div className="agents-popover-empty">No active agent details</div>}
-          {tasks.length > 0 && (
-            <div className="agents-popover-scroll">
-              {main.length > 0 && (
-                <>
-                  <div className="agents-popover-section">Main</div>
-                  {main.map((task) => (
-                    <AgentsRow key={task.id} task={task} />
-                  ))}
-                </>
-              )}
-              {sub.length > 0 && (
-                <>
-                  <div className="agents-popover-section">Subagents</div>
-                  {sub.map((task) => (
-                    <AgentsRow key={task.id} task={task} />
-                  ))}
-                </>
-              )}
-            </div>
-          )}
+          <div className="agents-popover-scroll">
+            {main.length > 0 && (
+              <>
+                <div className="agents-popover-section">Main</div>
+                {main.map((task) => (
+                  <AgentsRow key={task.id} task={task} />
+                ))}
+              </>
+            )}
+            {sub.length > 0 && (
+              <>
+                <div className="agents-popover-section">Subagents</div>
+                {sub.map((task) => (
+                  <AgentsRow key={task.id} task={task} />
+                ))}
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -100,17 +99,15 @@ function AgentsRow({ task }: { task: AgentsTaskInfo }) {
   )
 }
 
+// Both helpers render only behind the total-0 guard, and total is the sum
+// of running + waiting + error — at least one count is always non-zero.
 function activitySummary(status: AgentsStatusInfo): string {
   if (status.running > 0) return `${status.running} running`
   if (status.waiting > 0) return `${status.waiting} waiting`
-  if (status.error > 0) return `${status.error} error${status.error === 1 ? "" : "s"}`
-  return `${status.total} active`
+  return `${status.error} error${status.error === 1 ? "" : "s"}`
 }
 
-export function buildAgentsTitle(status?: AgentsStatusInfo): string {
-  if (!status || status.total === 0) {
-    return "No agents in this response"
-  }
+function buildAgentsTitle(status: AgentsStatusInfo): string {
   const lines: string[] = []
   if (status.running > 0)
     lines.push(`${status.running} agent${status.running === 1 ? "" : "s"} running`)
