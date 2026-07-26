@@ -82,6 +82,20 @@ describe("summarizeAgentTasks", () => {
     expect(result.tasks.map((t) => t.id).sort()).toEqual(["a", "b", "c", "d"])
   })
 
+  it("keeps total === tasks.length and total === running + waiting + error", () => {
+    // AgentActivity renders nothing at total 0 and renders the popover rows
+    // unconditionally past that guard — both rely on these two identities.
+    const result = summarizeAgentTasks([
+      task({ id: "a", status: "running" }),
+      task({ id: "b", status: "waiting" }),
+      task({ id: "c", status: "error" }),
+      task({ id: "d", status: "completed" }),
+      task({ id: "e", status: "cancelled" }),
+    ])
+    expect(result.total).toBe(result.tasks.length)
+    expect(result.total).toBe(result.running + result.waiting + result.error)
+  })
+
   it("drops completed tasks — the popover shows only what's currently active", () => {
     const result = summarizeAgentTasks([
       task({ id: "a", status: "completed", startedAt: 1000, updatedAt: 5000 }),
