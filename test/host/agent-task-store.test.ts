@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
 import {
   AGENT_TASKS_KEY,
   AgentTaskStore,
@@ -80,6 +80,43 @@ describe("AgentTaskStore", () => {
     const store = new AgentTaskStore(memento)
     expect(store.list()).toHaveLength(1)
     expect(store.list()[0]!.kind).toBe("main")
+  })
+
+  it("settles active rows to cancelled at construction — no turn survives the extension host", async () => {
+    memento.setSeed(AGENT_TASKS_KEY, [
+      fixedTask({ id: "m1", status: "running" }),
+      fixedTask({ id: "m2", status: "waiting", sessionID: "s2" }),
+      fixedTask({ id: "m3", status: "completed", sessionID: "s3", updatedAt: 2000 }),
+      fixedTask({ id: "m4", status: "error", error: "boom", sessionID: "s4", updatedAt: 2000 }),
+    ])
+    const store = new AgentTaskStore(memento)
+    expect(store.get("m1")!.status).toBe("cancelled")
+    expect(store.get("m2")!.status).toBe("cancelled")
+    expect(store.get("m1")!.updatedAt).toBeGreaterThan(1000)
+    // Terminal rows keep their status: error stays visible until the next
+    // turn's clearErrored, and settled rows keep their frozen endedAt.
+    expect(store.get("m3")!.status).toBe("completed")
+    expect(store.get("m3")!.updatedAt).toBe(2000)
+    expect(store.get("m4")!.status).toBe("error")
+    expect(store.get("m4")!.error).toBe("boom")
+    expect(store.hasRunning()).toBe(false)
+    // The settlement persists so an early host exit can't resurrect them.
+    await new Promise((r) => setTimeout(r, 0))
+    const persisted = memento.get<AgentTask[]>(AGENT_TASKS_KEY)!
+    expect(persisted.find((t) => t.id === "m1")!.status).toBe("cancelled")
+    expect(persisted.find((t) => t.id === "m2")!.status).toBe("cancelled")
+  })
+
+  it("performs no write at construction when no loaded row is active", async () => {
+    memento.setSeed(AGENT_TASKS_KEY, [
+      fixedTask({ id: "m1", status: "completed", updatedAt: 2000 }),
+      fixedTask({ id: "m2", status: "cancelled", sessionID: "s2", updatedAt: 3000 }),
+    ])
+    const spy = vi.spyOn(memento, "update")
+    const store = new AgentTaskStore(memento)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(spy).not.toHaveBeenCalled()
+    expect(store.list()).toHaveLength(2)
   })
 
   it("upsert is idempotent for an unchanged task", async () => {

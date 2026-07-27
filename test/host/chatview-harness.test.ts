@@ -106,6 +106,7 @@ beforeEach(async () => {
   const servers = {
     ensure: vi.fn(async () => backend),
     currentWorkspace: vi.fn(() => undefined),
+    currentBackend: vi.fn(() => backend),
   } as unknown as ServerManager
   const prefs = {
     get: () => ({}),
@@ -874,5 +875,60 @@ describe("ChatView harness: errored Main task clears on next turn", () => {
     expect(mains).toHaveLength(1)
     expect(mains[0]!.status).toBe("running")
     expect(mains[0]!.title).toContain("second try")
+  })
+})
+
+describe("ChatView harness: stale-row reconcile on conversation entry", () => {
+  it("settles a ghost running row when re-entering a conversation whose session ended", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "start a turn" })
+    await until(() => harness.taskStore.list().some((t) => t.kind === "main" && t.status === "running"))
+    const ghostConvID = harness.chatView.activeConversationID()
+
+    // Switch away mid-turn: this aborts the SSE subscription but not the
+    // server-side turn, so the Main row stays running with nothing left
+    // to settle it — the audit's ghost-row scenario.
+    await harness.send({ type: "createConversation" })
+    expect(harness.taskStore.list().some((t) => t.status === "running")).toBe(true)
+
+    // By the time the user returns, the abandoned turn has ended.
+    server.setSessionStatus(SESSION_ID, { type: "idle" })
+    await harness.send({ type: "openConversation", id: ghostConvID })
+    await until(() =>
+      harness.taskStore.list().every((t) => t.status !== "running" && t.status !== "waiting"),
+    )
+  })
+
+  it("leaves rows running when the abandoned session is still busy server-side", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "long turn" })
+    await until(() => harness.taskStore.list().some((t) => t.kind === "main" && t.status === "running"))
+    const ghostConvID = harness.chatView.activeConversationID()
+    await harness.send({ type: "createConversation" })
+
+    // A child row too: the still-busy branch re-registers the child into
+    // the entry-reconcile's no-op subscription — pin that this leaves the
+    // row alone instead of crashing or settling it.
+    await harness.taskStore.upsert({
+      id: "subagent:child:ses_child_ghost",
+      kind: "subagent",
+      conversationID: ghostConvID,
+      sessionID: SESSION_ID,
+      childSessionID: "ses_child_ghost",
+      title: "Ghost child",
+      status: "running",
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    server.setSessionStatus(SESSION_ID, { type: "busy" })
+    server.setSessionStatus("ses_child_ghost", { type: "busy" })
+
+    const pollsBefore = server.statusPollCount()
+    await harness.send({ type: "openConversation", id: ghostConvID })
+    await until(() => server.statusPollCount() > pollsBefore)
+    await new Promise((r) => setTimeout(r, 50))
+    const rows = harness.taskStore.list().filter((t) => t.conversationID === ghostConvID)
+    expect(rows.some((t) => t.kind === "main" && t.status === "running")).toBe(true)
+    expect(rows.find((t) => t.id === "subagent:child:ses_child_ghost")!.status).toBe("running")
   })
 })

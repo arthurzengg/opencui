@@ -115,6 +115,16 @@ export class ServerManager {
     return this.workspace
   }
 
+  /**
+   * The already-running backend, or undefined if none — never spawns one.
+   * For best-effort callers (e.g. stale-task reconciliation on conversation
+   * switch) that should stay silent rather than cold-start a server.
+   */
+  currentBackend(): Backend | undefined {
+    if (!this.server || !this.client) return undefined
+    return this.toBackend(this.server, this.client)
+  }
+
   private toBackend(server: ServerHandle, client: OpencodeClient): Backend {
     return {
       url: server.url,

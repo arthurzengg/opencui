@@ -9,9 +9,15 @@ export type AgentsQuickPickItem = vscode.QuickPickItem & {
  * Open a compact QuickPick grouping active or attention-worthy agent work
  * into `Main` and `Subagents` sections. Selecting a row focuses the
  * OpenCode Panel chat; we don't currently surface retry / abort actions.
+ * Scoped to the active conversation like the Agents popover — the focus
+ * action lands on the active chat, so listing other conversations' rows
+ * here would point at work the click can't reach.
  */
-export async function showAgentsQuickPick(taskStore: AgentTaskStore): Promise<void> {
-  const tasks = taskStore.active()
+export async function showAgentsQuickPick(
+  taskStore: AgentTaskStore,
+  conversationID: string,
+): Promise<void> {
+  const tasks = taskStore.active().filter((task) => task.conversationID === conversationID)
   if (tasks.length === 0) {
     await vscode.window.showQuickPick([{ label: "No active agents" }], {
       title: "OpenCode Panel: Agents",
