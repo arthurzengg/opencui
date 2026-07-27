@@ -180,6 +180,27 @@ export class AgentTaskStore {
     this.tasks = sanitize(storage.get<AgentTask[]>(AGENT_TASKS_KEY))
     this.emitter = new vscode.EventEmitter<AgentTask[]>()
     this.onDidChange = this.emitter.event
+    this.settleLoadedActive()
+  }
+
+  /**
+   * Rows loaded as running/waiting belong to a previous extension-host
+   * process. The panel spawns its own opencode server, so no turn survives
+   * the host — whatever these rows were tracking died with it. Settle them
+   * to `cancelled` at load; without this, a reload mid-turn left the pill
+   * pulsing "N running" with live growing timers until the next send in
+   * that conversation. Terminal rows (including `error`, which the popover
+   * deliberately keeps until the next turn) are untouched.
+   */
+  private settleLoadedActive(): void {
+    const now = Date.now()
+    let changed = false
+    this.tasks = this.tasks.map((task) => {
+      if (!ACTIVE_STATUSES.includes(task.status)) return task
+      changed = true
+      return { ...task, status: "cancelled" as const, updatedAt: now }
+    })
+    if (changed) void this.persistAndEmit()
   }
 
   list(): AgentTask[] {

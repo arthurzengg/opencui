@@ -477,6 +477,37 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.post({ type: "contextUsage", usage: undefined })
     if (this.sessionID) void this.refreshContextUsage()
     if (this.taskStore) this.postAgentsStatus(this.taskStore.list())
+    this.reconcileOnConversationEntry()
+  }
+
+  /**
+   * Settle stale task rows when the user lands on a conversation without
+   * sending anything. attachSubscription's reconcile only runs on send
+   * paths, and switching away aborts the SSE subscription but not the
+   * server-side turn — so a conversation abandoned mid-turn kept its rows
+   * `running` (pulsing pill, growing timers) until the next send here.
+   * Uses a throwaway tracker with a no-op subscription: there is no live
+   * stream to resume still-busy children into, so genuinely-busy sessions
+   * keep their rows running (truthful) and idle/absent ones settle. Only
+   * consults an already-running backend — never cold-starts one.
+   */
+  private reconcileOnConversationEntry(): void {
+    if (!this.taskStore || !this.sessionID) return
+    const backend = this.servers.currentBackend()
+    if (!backend) return
+    const sessionID = this.sessionID
+    const tracker = new SubagentTracker({
+      store: this.taskStore,
+      getActiveConversationID: () => this.manager.getActiveID(),
+      getParentSessionID: () => sessionID,
+      subscription: { addChildSession: () => {}, removeChildSession: () => {} },
+    })
+    void tracker.reconcile(backend, sessionID)
+  }
+
+  /** Active conversation ID for host-side consumers outside the webview (agents QuickPick). */
+  activeConversationID(): string {
+    return this.manager.getActiveID()
   }
 
   private async renameConversation(id: string, title: string) {
@@ -512,6 +543,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.sendConversationState()
       this.post({ type: "contextUsage", usage: undefined })
       if (this.sessionID) void this.refreshContextUsage()
+      this.reconcileOnConversationEntry()
       return
     }
     await this.manager.flushPersist()

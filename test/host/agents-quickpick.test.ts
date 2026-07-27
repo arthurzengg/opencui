@@ -112,7 +112,7 @@ describe("Agents QuickPick", () => {
     const store = new AgentTaskStore(memento)
     const showQuickPick = vscode.window.showQuickPick as unknown as ReturnType<typeof vi.fn>
     showQuickPick.mockResolvedValueOnce(undefined)
-    await showAgentsQuickPick(store)
+    await showAgentsQuickPick(store, "c")
     const args = showQuickPick.mock.calls[0]![0] as Array<{ label: string }>
     expect(args[0]!.label).toBe("No active agents")
   })
@@ -124,7 +124,7 @@ describe("Agents QuickPick", () => {
     const showQuickPick = vscode.window.showQuickPick as unknown as ReturnType<typeof vi.fn>
     const exec = vscode.commands.executeCommand as unknown as ReturnType<typeof vi.fn>
     showQuickPick.mockResolvedValueOnce({ label: "Main", taskID: "main:c:s" })
-    await showAgentsQuickPick(store)
+    await showAgentsQuickPick(store, "c")
     expect(exec).toHaveBeenCalledWith("opencui.chat.focus")
   })
 
@@ -135,7 +135,40 @@ describe("Agents QuickPick", () => {
     const showQuickPick = vscode.window.showQuickPick as unknown as ReturnType<typeof vi.fn>
     const exec = vscode.commands.executeCommand as unknown as ReturnType<typeof vi.fn>
     showQuickPick.mockResolvedValueOnce(undefined)
-    await showAgentsQuickPick(store)
+    await showAgentsQuickPick(store, "c")
     expect(exec).not.toHaveBeenCalled()
+  })
+
+  it("lists only the active conversation's tasks", async () => {
+    const memento = new FakeMemento()
+    const store = new AgentTaskStore(memento)
+    await store.upsert(task({ id: "main:c:s", conversationID: "c", title: "Mine", status: "running" }))
+    await store.upsert(
+      task({
+        id: "main:other:s2",
+        conversationID: "other",
+        sessionID: "s2",
+        title: "Other chat",
+        status: "running",
+      }),
+    )
+    const showQuickPick = vscode.window.showQuickPick as unknown as ReturnType<typeof vi.fn>
+    showQuickPick.mockResolvedValueOnce(undefined)
+    await showAgentsQuickPick(store, "c")
+    const items = showQuickPick.mock.calls[0]![0] as Array<{ label: string }>
+    expect(items.map((i) => i.label)).toEqual(["Main", "Mine"])
+  })
+
+  it("shows the empty state when only other conversations have active work", async () => {
+    const memento = new FakeMemento()
+    const store = new AgentTaskStore(memento)
+    await store.upsert(
+      task({ id: "main:other:s2", conversationID: "other", sessionID: "s2", status: "running" }),
+    )
+    const showQuickPick = vscode.window.showQuickPick as unknown as ReturnType<typeof vi.fn>
+    showQuickPick.mockResolvedValueOnce(undefined)
+    await showAgentsQuickPick(store, "c")
+    const args = showQuickPick.mock.calls[0]![0] as Array<{ label: string }>
+    expect(args[0]!.label).toBe("No active agents")
   })
 })

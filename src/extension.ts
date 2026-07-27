@@ -58,7 +58,9 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("opencui.selectVariant", () => picker.pickVariantForCurrent()),
     vscode.commands.registerCommand("opencui.manageMcp", () => mcp.run()),
     vscode.commands.registerCommand("opencui.manageProviders", () => providers.run()),
-    vscode.commands.registerCommand("opencui.agents.open", () => showAgentsQuickPick(agentTaskStore!)),
+    vscode.commands.registerCommand("opencui.agents.open", () =>
+      showAgentsQuickPick(agentTaskStore!, chat.activeConversationID()),
+    ),
     vscode.commands.registerCommand("opencui.server.restart", async () => {
       status.set("starting", "restarting backend")
       await servers!.restart().then(
