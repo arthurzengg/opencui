@@ -40,8 +40,8 @@ import { ContinuationState, isContinuationToast } from "./continuation-state"
 import { sweepAbortTree, drainAbortTree } from "./abort-tree"
 import { SubagentDispatch } from "./subagent-dispatch"
 import { relativeToCwd, samePath } from "./paths"
-import { isTextReviewPath, reviewKey, splitReviewDiff } from "./diff"
-import { extractChanges, reviewChanges } from "./review-changes"
+import { reviewKey, splitReviewDiff } from "./diff"
+import { extractChanges, isTextReviewPathName, reviewChanges } from "./review-changes"
 import { reviewAllForPath } from "./review-actions"
 import { attachableConversationIDs, buildPrompt, readMentions, readConversationMentions } from "./prompt-builder"
 import { buildManifest } from "../workspace-context/manifest"
@@ -2051,7 +2051,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private async openReviewChange(change: ReviewChange) {
-    if (!isTextReviewPath(change.path)) {
+    if (!isTextReviewPathName(change.path)) {
       vscode.window.showWarningMessage(`OpenCode Panel: ${change.path} cannot be reviewed as text.`)
       return
     }
@@ -2172,7 +2172,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     // unlocatable banner) was removed — review actions live exclusively in
     // the Review Card now. This sync only purges hunks for files that have
     // been deleted on disk so they don't linger in the panel.
-    const changes = reviewChanges(this.messages).filter((change) => isTextReviewPath(change.path))
+    const changes = reviewChanges(this.messages).filter((change) => isTextReviewPathName(change.path))
     if (!changes.length) return
     await this.purgeMissingFileHunks(changes)
   }

@@ -236,4 +236,30 @@ describe("splitReviewDiff round-trip with findHunkInFile", () => {
     // It must point at the b() copy, not a().
     expect(afterEdit.slice(result!.start, result!.end)).toBe("function b() {\n  do_other_thing()\n}")
   })
+
+  it("locates and reverts a hunk that deletes a line starting with --", () => {
+    // A `-` prefixing `-- sql comment` yields the diff line `--- sql comment`.
+    // While that was mistaken for a file header the line landed in newText too,
+    // so findHunkInFile searched the post-edit file for a line that had just
+    // been deleted: Keep reported a phantom conflict and Undo restored a dash.
+    const before = ["SELECT 1;", "-- legacy note", "SELECT 2;"].join("\n")
+    const afterEdit = ["SELECT 1;", "SELECT 2;"].join("\n")
+    const patch = [
+      "@@ -1,3 +1,2 @@",
+      " SELECT 1;",
+      "--- legacy note",
+      " SELECT 2;",
+    ].join("\n")
+    const hunk = splitReviewDiff(patch).hunks[0]!
+    expect(hunk.oldText).toBe(before)
+    expect(hunk.newText).toBe(afterEdit)
+
+    // Keep: the post-change text is locatable, so no conflict is raised.
+    const located = findHunkInFile(afterEdit, hunk)
+    expect(located).toBeDefined()
+    // Undo: replacing that span with oldText restores the original byte-for-byte.
+    const reverted =
+      afterEdit.slice(0, located!.start) + hunk.oldText + afterEdit.slice(located!.end)
+    expect(reverted).toBe(before)
+  })
 })
