@@ -1,4 +1,3 @@
-import * as path from "path"
 import type { ReviewChange } from "../protocol"
 import { reviewKey as sharedReviewKey } from "../../webview/src/review-extract"
 
@@ -36,21 +35,6 @@ export type ReviewDiffHunk = {
    * those rather than letting it silently fail.
    */
   reversible: boolean
-}
-
-const BINARY_EXTENSIONS = new Set([
-  ".ai", ".avif", ".bin", ".bmp", ".class", ".db", ".dmg", ".doc", ".docx",
-  ".ds_store", ".eot", ".exe", ".gif", ".heic", ".icns", ".ico", ".jar",
-  ".jpeg", ".jpg", ".mov", ".mp3", ".mp4", ".otf", ".pdf", ".png", ".pyc",
-  ".so", ".sqlite", ".ttf", ".webp", ".woff", ".woff2", ".zip",
-])
-
-export function isTextReviewPath(value: string) {
-  const name = path.basename(value).toLowerCase()
-  if (!name || name === ".ds_store" || name === "thumbs.db") return false
-  const ext = path.extname(name)
-  if (!ext && name.startsWith(".")) return false
-  return !BINARY_EXTENSIONS.has(ext)
 }
 
 export function countDiff(patch: string, prefix: "+" | "-") {
@@ -110,7 +94,7 @@ export function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
     hunks.push({
       id: `${hunks.length}-${hunkHeader}`,
       header: hunkHeader,
-      lines: diffLines(hunkLines.join("\n")),
+      lines: diffLines(hunkLines.join("\n"), { fileHeaders: false }),
       anchorText,
       oldText,
       newText,
@@ -145,21 +129,31 @@ export function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
   return { hunks }
 }
 
+/**
+ * Split a hunk BODY into its pre-change and post-change text. `lines` never
+ * contains unified-diff file headers — splitReviewDiff only collects lines
+ * after the `@@` header — so a leading `---` / `+++` here is content, not a
+ * header, and must not be exempted from the +/- prefix strip. Guarding on it
+ * pushed a deleted `-- sql comment` (diff line `--- sql comment`) into BOTH
+ * oldText and newText with its prefix intact, which broke Undo (restored the
+ * extra dash) and Keep (searched for a newText containing a line that was
+ * actually deleted, so it reported a phantom conflict).
+ */
 export function hunkText(lines: string[]) {
   const oldLines: string[] = []
   const newLines: string[] = []
   const leadingContext: string[] = []
   const trailingContext: string[] = []
   let sawChange = false
-  const diff = diffLines(lines.join("\n"))
+  const diff = diffLines(lines.join("\n"), { fileHeaders: false })
   for (const line of lines) {
     if (line.startsWith("\\ No newline")) continue
-    if (line.startsWith("+") && !line.startsWith("+++")) {
+    if (line.startsWith("+")) {
       sawChange = true
       newLines.push(line.slice(1))
       continue
     }
-    if (line.startsWith("-") && !line.startsWith("---")) {
+    if (line.startsWith("-")) {
       sawChange = true
       oldLines.push(line.slice(1))
       continue
@@ -179,12 +173,22 @@ export function hunkText(lines: string[]) {
   }
 }
 
-export function diffLines(patch: string) {
+/**
+ * Classify each line of `patch`.
+ *
+ * `fileHeaders` (default true) treats `---` / `+++` as unified-diff file
+ * headers rather than content. Pass `false` for a HUNK BODY: file headers only
+ * ever precede the first `@@`, so inside a body those prefixes are real content
+ * (`-` prefixing `-- sql comment`, `+` prefixing `++x`) and skipping them
+ * silently reclassifies a deletion as context.
+ */
+export function diffLines(patch: string, options: { fileHeaders?: boolean } = {}) {
+  const fileHeaders = options.fileHeaders ?? true
   return patch.split("\n").map((text) => ({
     text,
-    kind: text.startsWith("+") && !text.startsWith("+++")
+    kind: text.startsWith("+") && !(fileHeaders && text.startsWith("+++"))
       ? "add"
-      : text.startsWith("-") && !text.startsWith("---")
+      : text.startsWith("-") && !(fileHeaders && text.startsWith("---"))
         ? "del"
         : text.startsWith("@@")
           ? "hunk"

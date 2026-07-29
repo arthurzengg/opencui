@@ -8,6 +8,7 @@ import type { ChatMessage, ReviewChange, ToolUpdate as WireToolUpdate } from "..
 import {
   displayPath,
   extractChanges,
+  isTextReviewPathName,
   patchChanges,
   patchKind,
   patchPath,
@@ -30,6 +31,7 @@ export function toolChanges(update: WireToolUpdate, source: string): ReviewChang
 export {
   displayPath,
   extractChanges,
+  isTextReviewPathName,
   patchChanges,
   patchKind,
   patchPath,

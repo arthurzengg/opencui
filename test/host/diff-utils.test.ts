@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { samePath, normalizePath, isRecord, unique } from "../../src/chat/paths"
 import {
-  isTextReviewPath,
   countDiff,
   findHunkText,
   splitReviewDiff,
@@ -11,7 +10,13 @@ import {
   reviewKey,
   diffLines,
 } from "../../src/chat/diff"
-import { patchKind, patchPath, synthesizeCreatePatch } from "../../src/chat/review-changes"
+import {
+  isTextReviewPathName,
+  patchKind,
+  patchPath,
+  synthesizeCreatePatch,
+} from "../../src/chat/review-changes"
+import { isTextReviewPathName as webviewIsTextReviewPathName } from "../../webview/src/review-extract"
 
 describe("samePath / normalizePath", () => {
   it("compares identical paths", () => {
@@ -31,31 +36,49 @@ describe("samePath / normalizePath", () => {
   })
 })
 
-describe("isTextReviewPath", () => {
+describe("isTextReviewPathName", () => {
   it("accepts standard source files", () => {
-    expect(isTextReviewPath("src/index.ts")).toBe(true)
-    expect(isTextReviewPath("README.md")).toBe(true)
-    expect(isTextReviewPath("config.yaml")).toBe(true)
+    expect(isTextReviewPathName("src/index.ts")).toBe(true)
+    expect(isTextReviewPathName("README.md")).toBe(true)
+    expect(isTextReviewPathName("config.yaml")).toBe(true)
   })
 
   it("rejects binary extensions", () => {
-    expect(isTextReviewPath("logo.png")).toBe(false)
-    expect(isTextReviewPath("clip.mp4")).toBe(false)
-    expect(isTextReviewPath("dump.bin")).toBe(false)
-    expect(isTextReviewPath("archive.zip")).toBe(false)
+    expect(isTextReviewPathName("logo.png")).toBe(false)
+    expect(isTextReviewPathName("clip.mp4")).toBe(false)
+    expect(isTextReviewPathName("dump.bin")).toBe(false)
+    expect(isTextReviewPathName("archive.zip")).toBe(false)
   })
 
   it("rejects .DS_Store / Thumbs.db", () => {
-    expect(isTextReviewPath(".DS_Store")).toBe(false)
-    expect(isTextReviewPath("Thumbs.db")).toBe(false)
+    expect(isTextReviewPathName(".DS_Store")).toBe(false)
+    expect(isTextReviewPathName("Thumbs.db")).toBe(false)
   })
 
   it("accepts dotfiles with extensions", () => {
-    expect(isTextReviewPath(".eslintrc.json")).toBe(true)
+    expect(isTextReviewPathName(".eslintrc.json")).toBe(true)
   })
 
-  it("rejects extensionless dotfiles", () => {
-    expect(isTextReviewPath(".nonexistent")).toBe(false)
+  it("accepts extensionless dotfiles", () => {
+    // The host used to run its own `path.extname`-based copy, which returns ""
+    // for these and rejected them while the webview accepted them — the panel
+    // rendered the row and openReviewChange refused to open it.
+    for (const name of [".gitignore", ".env", ".npmrc", ".editorconfig", ".gitattributes"]) {
+      expect(isTextReviewPathName(name)).toBe(true)
+    }
+  })
+
+  it("answers identically to the webview copy for every path shape", () => {
+    // One implementation, not two: the host re-exports the shared helper. If a
+    // host-local copy is ever reintroduced, these diverge on the dotfiles.
+    const paths = [
+      "src/index.ts", "README.md", "Makefile", "LICENSE", "archive.tar.gz",
+      ".gitignore", ".env", ".env.local", ".eslintrc.json", ".babelrc",
+      ".DS_Store", "Thumbs.db", "logo.png", "dump.bin", "nested/dir/.nvmrc",
+    ]
+    for (const p of paths) {
+      expect([p, isTextReviewPathName(p)]).toEqual([p, webviewIsTextReviewPathName(p)])
+    }
   })
 })
 
@@ -154,6 +177,40 @@ describe("splitReviewDiff", () => {
     expect(hunk!.oldText).toContain("old")
     expect(hunk!.newText).toContain("new")
     expect(hunk!.newText).toContain("extra")
+  })
+
+  // Inside a hunk body `---` / `+++` are content, not file headers: file
+  // headers only ever precede the first `@@`. Treating them as headers pushed
+  // the line into BOTH sides with its prefix intact.
+  it("treats a deleted line starting with -- as a deletion, not context", () => {
+    const patch = "@@ -1,2 +1,1 @@\n--- old comment\n keep"
+    const hunk = splitReviewDiff(patch).hunks[0]!
+    expect(hunk.oldText).toBe("-- old comment\nkeep")
+    expect(hunk.newText).toBe("keep")
+    expect(hunk.lines.map((l) => l.kind)).toEqual(["del", "ctx"])
+  })
+
+  it("treats an added line starting with ++ as an addition, not context", () => {
+    const patch = "@@ -1,1 +1,2 @@\n keep\n+++counter"
+    const hunk = splitReviewDiff(patch).hunks[0]!
+    expect(hunk.oldText).toBe("keep")
+    expect(hunk.newText).toBe("keep\n++counter")
+    expect(hunk.lines.map((l) => l.kind)).toEqual(["ctx", "add"])
+  })
+
+  it("handles a removed markdown --- separator", () => {
+    const patch = "@@ -1,3 +1,2 @@\n title\n----\n body"
+    const hunk = splitReviewDiff(patch).hunks[0]!
+    expect(hunk.oldText).toBe("title\n---\nbody")
+    expect(hunk.newText).toBe("title\nbody")
+  })
+
+  it("still reads --- / +++ as file headers in the no-hunk fallback path", () => {
+    // No `@@` anywhere, so splitReviewDiff falls back to classifying the whole
+    // patch — there the prefixes really are unified-diff file headers.
+    const patch = "--- a/foo.md\n+++ b/foo.md"
+    const hunk = splitReviewDiff(patch).hunks[0]!
+    expect(hunk.lines.map((l) => l.kind)).toEqual(["ctx", "ctx"])
   })
 })
 
