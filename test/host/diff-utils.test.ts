@@ -205,6 +205,35 @@ describe("splitReviewDiff", () => {
     expect(hunk.newText).toBe("title\nbody")
   })
 
+  // `oldText` is newline-joined and so never carries the original file's
+  // terminator; the marker is the only record that there wasn't one.
+  it("reports oldNoNewlineAtEof only when the marker follows an old-side line", () => {
+    const marker = "\\ No newline at end of file"
+    const oldSide = splitReviewDiff(["@@ -1,1 +0,0 @@", "-only", marker].join("\n")).hunks[0]!
+    expect(oldSide.oldNoNewlineAtEof).toBe(true)
+    expect(oldSide.oldText).toBe("only")
+
+    // After a `+` line the marker describes the POST-change file — the original
+    // still ended with a newline, so a restore must put one back.
+    const newSide = splitReviewDiff(["@@ -1,1 +1,1 @@", "-old", "+new", marker].join("\n")).hunks[0]!
+    expect(newSide.oldNoNewlineAtEof).toBe(false)
+
+    // Both sides ended at a shared context line.
+    const ctx = splitReviewDiff(["@@ -1,2 +1,1 @@", "-gone", " last", marker].join("\n")).hunks[0]!
+    expect(ctx.oldNoNewlineAtEof).toBe(true)
+
+    // Replacing the final line marks each side separately.
+    const bothMarked = splitReviewDiff(
+      ["@@ -1,1 +1,1 @@", "-old", marker, "+new", marker].join("\n"),
+    ).hunks[0]!
+    expect(bothMarked.oldNoNewlineAtEof).toBe(true)
+  })
+
+  it("defaults oldNoNewlineAtEof to false when no marker is present", () => {
+    expect(splitReviewDiff("@@ -1,1 +0,0 @@\n-only").hunks[0]!.oldNoNewlineAtEof).toBe(false)
+    expect(splitReviewDiff("no @@ here").hunks[0]!.oldNoNewlineAtEof).toBe(false)
+  })
+
   it("still reads --- / +++ as file headers in the no-hunk fallback path", () => {
     // No `@@` anywhere, so splitReviewDiff falls back to classifying the whole
     // patch — there the prefixes really are unified-diff file headers.
