@@ -60,18 +60,22 @@ export async function reviewAllForPath(
   let applied = 0
   let conflicts = 0
   for (const record of ordered) {
-    const hunks = splitReviewDiff(record.patch).hunks
-    let firstHunk = true
+    const parsed = splitReviewDiff(record.patch).hunks
+    // Create / delete / move revert the file as a unit, so one runner call
+    // covers the whole record and only its first hunk is ever attempted.
+    // Slicing up front rather than tracking "have we called the runner yet" is
+    // what makes an unreversible first hunk consume that single attempt: while
+    // the guard keyed off a flag set only AFTER a successful call, an
+    // unparseable first `@@` left the slot open and hunk 2 ran too — for a
+    // `deleted` record that had `undoDelete` restore the file from a partial
+    // fragment of its content and report success.
+    const hunks = record.kind === "updated" ? parsed : parsed.slice(0, 1)
     for (const hunk of hunks) {
       if (action === "rejected" && !hunk.reversible) {
         conflicts += 1
         continue
       }
-      if (!firstHunk && record.kind !== "updated") {
-        continue
-      }
       const outcome = await runner(record, hunk, action, { silent: true, root: options.root })
-      firstHunk = false
       if (outcome.status === "applied" || outcome.status === "no-op") {
         applied += 1
         continue

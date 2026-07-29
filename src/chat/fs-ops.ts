@@ -48,6 +48,22 @@ export async function openFileDocument(relPath: string, root?: string) {
   return vscode.workspace.openTextDocument(uri)
 }
 
+/**
+ * Show `doc` unless its editor is already the active one — `showTextDocument`
+ * pulls focus out of the chat panel and flashes the editor pane, so re-showing
+ * what the user is already looking at is pure noise. Every review action routes
+ * its reveal through here: "Undo all in file" calls the hunk runner once per
+ * hunk per per-tool record, and without the guard each of those N calls yanked
+ * focus again.
+ */
+export async function revealDocument(
+  doc: vscode.TextDocument,
+  options?: vscode.TextDocumentShowOptions,
+) {
+  if (vscode.window.activeTextEditor?.document.uri.toString() === doc.uri.toString()) return
+  await vscode.window.showTextDocument(doc, options)
+}
+
 export async function workspaceFileUri(relPath: string, root?: string) {
   const existing = await existingWorkspaceFileUri(relPath, root)
   if (existing) return existing
@@ -354,7 +370,7 @@ async function undoDelete(
   }
   const uri = await workspaceFileUri(change.path, root)
   try {
-    const data = new TextEncoder().encode(hunk.oldText)
+    const data = new TextEncoder().encode(restoredFileContent(hunk))
     await vscode.workspace.fs.writeFile(uri, data)
     return { status: "applied" }
   } catch (e) {
@@ -364,6 +380,19 @@ async function undoDelete(
       silent,
     )
   }
+}
+
+/**
+ * Whole-file content to write when restoring a deleted file. `hunk.oldText` is
+ * newline-JOINED, so the terminator the original file ended with is not in it —
+ * and a unified diff only ever records the ABSENCE of one, as a `\ No newline
+ * at end of file` marker. Writing `oldText` raw therefore stripped the final
+ * newline off every restored file, which git then reported as a real change to
+ * a file we claimed to have put back untouched.
+ */
+function restoredFileContent(hunk: ReviewDiffHunk): string {
+  if (!hunk.oldText || hunk.oldNoNewlineAtEof) return hunk.oldText
+  return `${hunk.oldText}\n`
 }
 
 async function undoMove(
@@ -454,7 +483,7 @@ async function undoUpdate(
     return reportConflict(change.path, `Could not undo hunk in ${change.path}.`, silent)
   }
   // Reveal the file so the user sees the revert immediately; previous behavior.
-  await vscode.window.showTextDocument(doc)
+  await revealDocument(doc)
   return { status: "applied" }
 }
 

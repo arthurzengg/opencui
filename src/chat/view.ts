@@ -57,6 +57,7 @@ import {
   applyCode,
   openFile,
   openFileDocument,
+  revealDocument,
   reviewPathExists,
 } from "./fs-ops"
 
@@ -2058,14 +2059,11 @@ export class ChatView implements vscode.WebviewViewProvider {
     try {
       const root = this.backendDirectory()
       const doc = await openFileDocument(change.path, root)
-      // If the requested file is already the active editor, don't re-show it —
-      // showTextDocument would steal focus + flash the editor pane for no
-      // reason. (Common when the user just clicked a different row and the
-      // editor already moved there.)
-      const active = vscode.window.activeTextEditor?.document.uri.toString()
-      if (active !== doc.uri.toString()) {
-        await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
-      }
+      // Skips the re-show when this file is already the active editor — common
+      // when the user just clicked a different row and the editor already moved
+      // there. `revealDocument` owns that guard; the Undo path needs the same
+      // one, and having each side spell it out is how they drifted apart.
+      await revealDocument(doc, { viewColumn: vscode.ViewColumn.One, preview: false })
       // Hunk-state reconciliation (purging missing-file hunks) is independent
       // of where the editor is pointed — queue it so the editor swap never
       // waits on fs.stat I/O.

@@ -30,6 +30,14 @@ export type ReviewDiffHunk = {
   /** Context lines that follow the change, used as a secondary anchor. */
   trailingContext: string[]
   /**
+   * True when the diff carried a `\ No newline at end of file` marker for the
+   * ORIGINAL side. `oldText` is newline-joined and so never ends in one; a
+   * unified diff only records the ABSENCE of the terminator, which makes this
+   * the only way to tell "the file ended without a newline" from "the join
+   * dropped it". Read when restoring a deleted file.
+   */
+  oldNoNewlineAtEof: boolean
+  /**
    * True when we have enough information to reconstruct the original state.
    * False for malformed hunks (no @@ header parsed) — the UI hides Undo for
    * those rather than letting it silently fail.
@@ -84,7 +92,14 @@ export function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
       index += 1
     }
 
-    const { oldText, newText, anchorText, leadingContext, trailingContext } = hunkText(hunkLines)
+    const {
+      oldText,
+      newText,
+      anchorText,
+      leadingContext,
+      trailingContext,
+      oldNoNewlineAtEof,
+    } = hunkText(hunkLines)
     const headerInfo = parseHunkHeader(hunkHeader) ?? {
       oldStart: 0,
       oldCount: 0,
@@ -104,6 +119,7 @@ export function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
       newCount: headerInfo.newCount,
       leadingContext,
       trailingContext,
+      oldNoNewlineAtEof,
       reversible: HUNK_HEADER_RE.test(hunkHeader),
     })
   }
@@ -122,6 +138,7 @@ export function splitReviewDiff(patch: string): { hunks: ReviewDiffHunk[] } {
       newCount: 0,
       leadingContext: [],
       trailingContext: [],
+      oldNoNewlineAtEof: false,
       reversible: false,
     })
   }
@@ -145,14 +162,25 @@ export function hunkText(lines: string[]) {
   const leadingContext: string[] = []
   const trailingContext: string[] = []
   let sawChange = false
+  let oldNoNewlineAtEof = false
+  // Whether the line the NEXT `\ No newline at end of file` marker would apply
+  // to belongs to the original side: the marker annotates the line right above
+  // it, so it means "the old file had no terminator" after a `-` or context
+  // line, and only "the new file has none" after a `+`.
+  let previousLineIsOld = false
   const diff = diffLines(lines.join("\n"), { fileHeaders: false })
   for (const line of lines) {
-    if (line.startsWith("\\ No newline")) continue
+    if (line.startsWith("\\ No newline")) {
+      if (previousLineIsOld) oldNoNewlineAtEof = true
+      continue
+    }
     if (line.startsWith("+")) {
       sawChange = true
       newLines.push(line.slice(1))
+      previousLineIsOld = false
       continue
     }
+    previousLineIsOld = true
     if (line.startsWith("-")) {
       sawChange = true
       oldLines.push(line.slice(1))
@@ -170,6 +198,7 @@ export function hunkText(lines: string[]) {
     anchorText: firstReviewAnchor(diff, newLines.join("\n")),
     leadingContext,
     trailingContext,
+    oldNoNewlineAtEof,
   }
 }
 

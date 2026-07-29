@@ -80,6 +80,11 @@ beforeEach(() => {
       return true
     },
   )
+  // The reveal tests below assert call counts and drive `activeTextEditor`, and
+  // neither is cleared between tests by default (no `clearMocks` in the vitest
+  // config), so reset both here rather than at the end of each test.
+  ;(vscode.window as { activeTextEditor?: unknown }).activeTextEditor = undefined
+  ;(vscode.window.showTextDocument as ReturnType<typeof vi.fn>).mockReset()
   ;(vscode.window.showTextDocument as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
   ;(vscode.window.showWarningMessage as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
   ;(vscode.window.showInformationMessage as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
@@ -151,12 +156,32 @@ describe("reviewHunk: created files", () => {
 })
 
 describe("reviewHunk: deleted files", () => {
-  it("Undo: recreates the file using oldText from the diff", async () => {
+  it("Undo: recreates the file using oldText from the diff, terminator included", async () => {
     const patch = ["@@ -1,2 +0,0 @@", "-line1", "-line2"].join("\n")
     const { change, hunk } = makeChange({ path: "gone.ts", kind: "deleted", patch })
     const outcome = await reviewHunk(change, hunk, "rejected", { silent: true })
     expect(outcome.status).toBe("applied")
+    // `oldText` is newline-JOINED, so it stops after "line2"; a diff records
+    // only the ABSENCE of a trailing newline, and this one didn't. Writing
+    // oldText raw stripped the terminator off every restored file.
+    expect(writes[0]?.content).toBe("line1\nline2\n")
+  })
+
+  it("Undo: omits the terminator when the diff carried a no-newline marker", async () => {
+    const patch = ["@@ -1,2 +0,0 @@", "-line1", "-line2", "\\ No newline at end of file"].join("\n")
+    const { change, hunk } = makeChange({ path: "gone.ts", kind: "deleted", patch })
+    const outcome = await reviewHunk(change, hunk, "rejected", { silent: true })
+    expect(outcome.status).toBe("applied")
     expect(writes[0]?.content).toBe("line1\nline2")
+  })
+
+  it("Undo: preserves a blank final line", async () => {
+    // "line1\n\n" diffs as `-line1` plus a bare `-`, so the join already ends
+    // in "\n" and the restored terminator makes it two.
+    const patch = ["@@ -1,2 +0,0 @@", "-line1", "-"].join("\n")
+    const { change, hunk } = makeChange({ path: "gone.ts", kind: "deleted", patch })
+    expect((await reviewHunk(change, hunk, "rejected", { silent: true })).status).toBe("applied")
+    expect(writes[0]?.content).toBe("line1\n\n")
   })
 
   it("Undo: conflicts when a file is already at that path", async () => {
@@ -507,6 +532,59 @@ describe("reviewAllForPath: multi-tool turn", () => {
     expect(result.conflicts).toBe(0)
     expect(deletes.map((u) => u.fsPath)).toContain("/workspace/new.ts")
     expect(files.has("/workspace/new.ts")).toBe(false)
+  })
+
+  it("a whole-file record with an unreversible first hunk writes nothing", async () => {
+    // Two hunks, the first with an unparseable header. The whole-file guard
+    // used to key off a flag set only after a SUCCESSFUL runner call, so
+    // skipping hunk 1 left the record's single attempt open and hunk 2 ran —
+    // restoring the file from its own fragment ("line2") and reporting success.
+    const record: ReviewChange = {
+      source: "callA",
+      path: "gone.ts",
+      kind: "deleted",
+      additions: 0,
+      deletions: 2,
+      patch: ["@@ broken @@", "-line1", "@@ -2,1 +0,0 @@", "-line2"].join("\n"),
+    }
+    const result = await reviewAllForPath([record], record, "rejected", { reviewedKeys: {} })
+    expect(result.applied).toBe(0)
+    expect(result.conflicts).toBe(1)
+    expect(writes).toHaveLength(0)
+    expect(files.has("/workspace/gone.ts")).toBe(false)
+    // Nothing landed, so the row stays pending for the user to inspect.
+    expect(result.hunkUpdates).toHaveLength(0)
+  })
+
+  it("reveals the reverted file once for the whole batch, not once per hunk", async () => {
+    // `showTextDocument` yanks focus out of the chat panel, and the runner is
+    // called once per hunk per record — so the reveal has to notice that the
+    // first call already made this document active.
+    ;(vscode.window.showTextDocument as ReturnType<typeof vi.fn>).mockImplementation(
+      async (doc: { uri: vscode.Uri }) => {
+        ;(vscode.window as { activeTextEditor?: unknown }).activeTextEditor = { document: doc }
+        return {}
+      },
+    )
+    files.set("/workspace/foo.ts", { content: "one\ntwo-revA\nthree\nfour\nfive-revB\n" })
+    const recordA = buildUpdate({ source: "callA", path: "foo.ts", oldText: "two", newText: "two-revA", line: 2 })
+    const recordB = buildUpdate({ source: "callB", path: "foo.ts", oldText: "five", newText: "five-revB", line: 5 })
+    const result = await reviewAllForPath([recordA, recordB], aggregateLike([recordA, recordB]), "rejected", {
+      reviewedKeys: {},
+    })
+    expect(result.applied).toBe(2)
+    expect(vscode.window.showTextDocument).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not reveal at all when the file is already the active editor", async () => {
+    files.set("/workspace/foo.ts", { content: "one\ntwo-revA\n" })
+    ;(vscode.window as { activeTextEditor?: unknown }).activeTextEditor = {
+      document: { uri: vscode.Uri.file("/workspace/foo.ts") },
+    }
+    const record = buildUpdate({ source: "callA", path: "foo.ts", oldText: "two", newText: "two-revA", line: 2 })
+    const result = await reviewAllForPath([record], aggregateLike([record]), "rejected", { reviewedKeys: {} })
+    expect(result.applied).toBe(1)
+    expect(vscode.window.showTextDocument).not.toHaveBeenCalled()
   })
 
   it("returns zeros when no records match (defensive)", async () => {
