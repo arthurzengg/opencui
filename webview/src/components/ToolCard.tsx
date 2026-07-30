@@ -1,4 +1,5 @@
 import type { Todo, ToolStatus, ToolUpdate } from "../protocol"
+import { isRecord } from "../review-extract"
 import { vscode } from "../vscode"
 
 type FileAction = "read" | "created" | "updated" | "deleted" | "moved"
@@ -407,10 +408,6 @@ export function lineRange(update: ToolUpdate): string | undefined {
   if (offset && limit) return `L${offset}-${offset + limit - 1}`
   if (offset) return `L${offset}`
   return undefined
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
 }
 
 function isFileTool(tool: string) {

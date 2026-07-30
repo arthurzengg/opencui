@@ -1,7 +1,8 @@
 import * as path from "path"
 import type { ToolUpdate } from "./stream"
 import type { ToolUpdate as WireToolUpdate } from "../protocol"
-import { isRecord, relativeToCwd } from "./paths"
+import { isRecord } from "../../webview/src/review-extract"
+import { relativeToCwd } from "./paths"
 
 /**
  * Normalize an SDK ToolUpdate into the wire format that flows to the webview.

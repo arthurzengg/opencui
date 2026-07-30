@@ -141,6 +141,67 @@ describe("readMentions", () => {
   })
 })
 
+describe("readMentions: truncation lands on a character boundary", () => {
+  beforeEach(() => {
+    vi.mocked(vscode.workspace.fs.readFile).mockReset()
+  })
+
+  it("never emits a replacement character when the cut splits a code point", async () => {
+    // Each 世 is 3 bytes, so a 5-byte budget lands one byte into the second —
+    // decoding that raw slice yields "世�".
+    const text = "世世世"
+    vi.mocked(vscode.workspace.fs.readFile).mockResolvedValueOnce(new TextEncoder().encode(text))
+    const out = await readMentions(["cjk.txt"], 5)
+    expect(out.block).toBeDefined()
+    expect(out.block).not.toContain("�")
+    expect(out.block).toContain("世")
+    // The split character is dropped whole rather than half-emitted.
+    expect(out.block).not.toContain("世世")
+  })
+
+  it("reports the emitted byte count, not the budget it was offered", async () => {
+    const text = "世世世"
+    vi.mocked(vscode.workspace.fs.readFile).mockResolvedValueOnce(new TextEncoder().encode(text))
+    const out = await readMentions(["cjk.txt"], 5)
+    const entry = out.bytes["cjk.txt"]!
+    expect(entry.original).toBe(9)
+    // 5 bytes were on offer; only the 3-byte character fits whole.
+    expect(entry.included).toBe(3)
+    expect(out.block).toContain("(truncated to 3 bytes)")
+  })
+
+  it("keeps the whole file when it fits, with no truncation note", async () => {
+    const text = "世界\n"
+    vi.mocked(vscode.workspace.fs.readFile).mockResolvedValueOnce(new TextEncoder().encode(text))
+    const out = await readMentions(["cjk.txt"], 1000)
+    expect(out.block).toContain(text.trimEnd())
+    expect(out.block).not.toContain("truncated to")
+    expect(out.bytes["cjk.txt"]).toEqual({ included: 7, original: 7 })
+  })
+
+  it("prefers a line boundary when one sits in the second half of the cut", async () => {
+    const text = "line one\nline two\nline three"
+    vi.mocked(vscode.workspace.fs.readFile).mockResolvedValueOnce(new TextEncoder().encode(text))
+    const out = await readMentions(["a.txt"], 20)
+    expect(out.block).toContain("line one\nline two")
+    expect(out.block).not.toContain("line three")
+    expect(out.bytes["a.txt"]!.included).toBe(17)
+  })
+
+  it("charges the shared budget by what was emitted, so the next mention sees the remainder", async () => {
+    vi.mocked(vscode.workspace.fs.readFile)
+      .mockResolvedValueOnce(new TextEncoder().encode("世世世"))
+      .mockResolvedValueOnce(new TextEncoder().encode("ok"))
+    const out = await readMentions(["cjk.txt", "b.txt"], 8)
+    // 8 bytes on offer fit two whole 3-byte characters. Charging the budget
+    // the full 8 (the old behavior) left nothing and capped the second file;
+    // charging the 6 actually emitted leaves exactly enough for it.
+    expect(out.bytes["cjk.txt"]!.included).toBe(6)
+    expect(out.bytes["b.txt"]!.included).toBe(2)
+    expect(out.capped).toEqual([])
+  })
+})
+
 describe("readMentions: multi-root workspaces", () => {
   // asRelativePath prefixes the owning folder's name in multi-root setups,
   // so a mention arrives as "folderB/src/x.ts". The old code resolved it

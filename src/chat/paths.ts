@@ -36,10 +36,6 @@ export function relativeToCwd(cwd: string, p: string): string {
   return rel && !rel.startsWith("..") ? rel : p
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
-}
-
 export function unique(items: string[]) {
   return [...new Set(items)]
 }
