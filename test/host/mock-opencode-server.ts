@@ -104,6 +104,8 @@ export type MockOpencodeServer = {
 
 export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const sseClients: ServerResponse[] = []
+  /** Events pushed while no client was connected; flushed on the next connect. */
+  const pendingEvents: string[] = []
   const prompts: Array<{ sessionID: string; body: unknown }> = []
   const reverts: Array<{ sessionID: string; body: unknown }> = []
   let revertStatus = 200
@@ -167,6 +169,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       res.setHeader("cache-control", "no-cache")
       res.setHeader("connection", "keep-alive")
       sseClients.push(res)
+      for (const line of pendingEvents.splice(0)) res.write(line)
       if (clientResolver) {
         clientResolver()
         clientResolver = undefined
@@ -410,6 +413,19 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     push(event) {
       // SSE format: "data: {json}\n\n"
       const line = `data: ${JSON.stringify({ type: event.type, properties: event })}\n\n`
+      if (sseClients.length === 0) {
+        // Buffer instead of dropping. ChatView attaches its SSE subscription
+        // on the send paths, and awaiting the Inbound message only guarantees
+        // the subscribe call was issued — not that its HTTP request reached
+        // this server. A test scripting an event right after `send` races
+        // that request; losing the race silently discarded the event and left
+        // the assertion waiting on an effect that could never arrive, which
+        // read as an intermittent "condition not met in time" under load.
+        // Replaying to the first client to connect closes the window without
+        // every call site having to know which Inbound message subscribes.
+        pendingEvents.push(line)
+        return
+      }
       for (const client of sseClients) client.write(line)
     },
     awaitClient() {
