@@ -25,8 +25,13 @@ const BINARY_EXTS = new Set([
   ".so", ".sqlite", ".ttf", ".webp", ".woff", ".woff2", ".zip",
 ])
 
+/**
+ * Narrow to a plain keyed object. Arrays are excluded: `typeof [] === "object"`,
+ * so without the check the predicate hands callers a `Record<string, unknown>`
+ * they can index with any key while the value is really a list.
+ */
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 export function basename(value: string): string {

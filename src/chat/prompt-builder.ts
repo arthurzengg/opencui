@@ -112,13 +112,19 @@ export async function readMentions(
         continue
       }
       const truncated = buf.byteLength > remaining
-      const slice = truncated ? buf.slice(0, remaining) : buf
-      const content = Buffer.from(slice).toString("utf8")
+      // Cutting the buffer at `remaining` can land mid-sequence, and the
+      // dangling bytes then decode to a trailing U+FFFD. truncateUtf8 already
+      // handles that (and lands on a line boundary) for conversation mentions,
+      // so the byte accounting has to come from what it actually emitted
+      // rather than from the budget we offered it.
+      const text = Buffer.from(buf).toString("utf8")
+      const content = truncated ? truncateUtf8(text, remaining) : text
+      const included = Buffer.byteLength(content, "utf8")
       const lang = guessFenceLang(rel)
-      const note = truncated ? ` (truncated to ${remaining} bytes)` : ""
+      const note = truncated ? ` (truncated to ${included} bytes)` : ""
       blocks.push(`@${rel}${note}\n\`\`\`${lang}\n${content}\n\`\`\``)
-      bytes[rel] = { included: slice.byteLength, original: buf.byteLength }
-      totalBytes += slice.byteLength
+      bytes[rel] = { included, original: buf.byteLength }
+      totalBytes += included
     } catch (e) {
       log("readMentions: skipping", rel, e)
       failed.push(rel)

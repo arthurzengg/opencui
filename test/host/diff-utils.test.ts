@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { samePath, normalizePath, isRecord, unique } from "../../src/chat/paths"
+import { samePath, normalizePath, unique } from "../../src/chat/paths"
 import {
   countDiff,
   findHunkText,
@@ -16,7 +16,10 @@ import {
   patchPath,
   synthesizeCreatePatch,
 } from "../../src/chat/review-changes"
-import { isTextReviewPathName as webviewIsTextReviewPathName } from "../../webview/src/review-extract"
+import {
+  isRecord,
+  isTextReviewPathName as webviewIsTextReviewPathName,
+} from "../../webview/src/review-extract"
 
 describe("samePath / normalizePath", () => {
   it("compares identical paths", () => {
@@ -131,6 +134,15 @@ describe("unique / isRecord", () => {
     expect(isRecord("x")).toBe(false)
     expect(isRecord(42)).toBe(false)
     expect(isRecord({})).toBe(true)
+  })
+
+  it("isRecord rejects arrays", () => {
+    // `typeof [] === "object"`, so without the Array.isArray check the guard
+    // asserted Record<string, unknown> for a list and let callers index it
+    // with any key. Every current call site re-checks a named property, so
+    // this is about the predicate's contract rather than a live misbehavior.
+    expect(isRecord([])).toBe(false)
+    expect(isRecord([{ relativePath: "a.ts" }])).toBe(false)
   })
 })
 
