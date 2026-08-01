@@ -25,6 +25,7 @@ import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail } from "./ImageThumbnail"
 import { ICON_SIZE } from "../design-tokens"
 import { fileTypeCodicon } from "../file-icons"
+import { caretAtFirstLine, caretAtLastLine, type PromptHistoryEntry } from "../prompt-history"
 
 // Re-export so existing consumers (tests, integrators) keep working through PromptBox.
 export {
@@ -67,6 +68,12 @@ type Props = {
    * stripped-down textarea.
    */
   initial?: { text?: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: ConversationMention[] }
+  /**
+   * Prompts recallable with Up/Down, oldest first. Send composers only — the
+   * edit composer keeps plain caret movement, since the message it is editing
+   * is itself a history entry and swapping it out would look like data loss.
+   */
+  history?: PromptHistoryEntry[]
   /**
    * "send" (default) renders the standard Send/Stop bottom row. "edit"
    * renders Cancel + Save & regenerate, plus a warning that subsequent
@@ -127,7 +134,7 @@ function buildInitialConversations(initial: Props["initial"]): Map<string, strin
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject, onOpenLink }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, history, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject, onOpenLink }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   // The Send button renders a disabled "Stopping…" while aborting, but Enter
   // routes through submit() — both must honor the same block, or a prompt
@@ -136,6 +143,14 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   const sendBlocked = busy || aborting
   const canQueue = sendBlocked && variant === "send" && Boolean(onQueue)
   const [selectedChipStart, setSelectedChipStart] = useState<number | undefined>(undefined)
+  // How far back the user has walked the prompt history: -1 is "composing a
+  // new prompt", 0 the newest recalled entry, 1 the one before it. Kept
+  // component-local rather than in the reducer — it is caret-adjacent UI state
+  // that means nothing outside this composer instance.
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  // The in-progress draft, stashed on the first Up so walking back Down past
+  // the newest entry returns it instead of destroying unsent typing.
+  const historyDraft = useRef<string | null>(null)
   const [attachError, setAttachError] = useState<string | undefined>(undefined)
   // Feedback for a turn-bound command submitted while busy: it neither runs
   // nor queues (queueing would send the literal "/compact" as prose), and
@@ -220,8 +235,21 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     if (!inject) return
     setText(inject.text)
     pendingCursor.current = inject.text.length
+    // The injected text replaces whatever was recalled, so the browse position
+    // and its stashed draft no longer describe the box — leaving them set would
+    // have the next Down restore a draft the user can no longer see.
+    setHistoryIndex(-1)
+    historyDraft.current = null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inject?.nonce])
+
+  // The composer outlives a conversation switch, but the history behind it is
+  // replaced wholesale — a position counted against the old conversation would
+  // index into the new one's prompts.
+  useEffect(() => {
+    setHistoryIndex(-1)
+    historyDraft.current = null
+  }, [activeConversationID])
 
   type MentionCategory = "files" | "chats"
   const [mentionCategory, setMentionCategory] = useState<MentionCategory | null>(null)
@@ -313,10 +341,47 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     closeMention()
   }
 
+  /**
+   * Load history position `index` into the composer (-1 restores the stashed
+   * draft). Re-registers the entry's mentions before setting the text so the
+   * backdrop paints chips on the same commit the text lands — registering
+   * after would flash one frame of unstyled `@path` prose.
+   */
+  const applyHistory = (index: number) => {
+    const entries = history ?? []
+    if (index < 0) {
+      const draft = historyDraft.current ?? ""
+      historyDraft.current = null
+      setHistoryIndex(-1)
+      setSelectedChipStart(undefined)
+      pendingCursor.current = draft.length
+      setText(draft)
+      return
+    }
+    const entry = entries[entries.length - 1 - index]
+    if (!entry) return
+    if (historyIndex < 0) historyDraft.current = text
+    for (const label of entry.mentions ?? []) knownMentions.current.add(label)
+    for (const { label, id } of entry.conversationMentions ?? []) {
+      if (!label || !id) continue
+      knownConversations.current.set(label, id)
+      knownMentions.current.add(label)
+    }
+    setHistoryIndex(index)
+    setSelectedChipStart(undefined)
+    pendingCursor.current = entry.text.length
+    setText(entry.text)
+  }
+
   const updateText = (next: string, caret: number) => {
     setText(next)
     setSelectedChipStart(undefined)
     setBusyHint(undefined)
+    // Typing forks off whatever was recalled: the draft becomes what is in the
+    // box now, so the stash is dead and the next Up starts from the newest
+    // entry again.
+    if (historyIndex >= 0) setHistoryIndex(-1)
+    historyDraft.current = null
     // The `/` and `@` pickers are mutually exclusive: a leading slash command
     // wins, and we close the mention picker so they never render together.
     if (detectCommandAtCaret(next, caret)) {
@@ -329,6 +394,8 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   /** Clear the composer to its empty state after a send or command run. */
   const clearComposer = () => {
     setText("")
+    setHistoryIndex(-1)
+    historyDraft.current = null
     knownMentions.current.clear()
     knownAttachments.current.clear()
     knownConversations.current.clear()
@@ -670,6 +737,32 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
         e.preventDefault()
         closeMention()
         return
+      }
+    }
+    // Prompt history. MUST stay below every picker branch above: while a
+    // popover is open the arrows drive its selection and those branches return
+    // before reaching here, so an open picker keeps first claim on the key.
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && variant === "send" && (history?.length ?? 0) > 0) {
+      const ta = e.currentTarget
+      const caret = ta.selectionStart ?? 0
+      // Modifier chords are the textarea's (Shift extends a selection, Alt/Cmd
+      // jump by word or line), and with a live selection the user is selecting,
+      // not navigating — leave all of those alone.
+      const plainPress = !e.shiftKey && !e.metaKey && !e.altKey && !e.ctrlKey
+      if (plainPress && ta.selectionStart === ta.selectionEnd) {
+        if (e.key === "ArrowUp" && caretAtFirstLine(text, caret)) {
+          e.preventDefault()
+          applyHistory(Math.min(historyIndex + 1, (history?.length ?? 0) - 1))
+          return
+        }
+        // Down only claims the key while actually browsing. In a fresh
+        // composer there is nothing newer than the draft, so swallowing it
+        // would make the key feel broken for no gain.
+        if (e.key === "ArrowDown" && historyIndex >= 0 && caretAtLastLine(text, caret)) {
+          e.preventDefault()
+          applyHistory(historyIndex - 1)
+          return
+        }
       }
     }
     if (e.key === "Backspace" && !e.shiftKey && !e.metaKey && !e.altKey) {

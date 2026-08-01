@@ -12,6 +12,7 @@ import { PermissionDialog } from "./components/PermissionDialog"
 import { QuestionDialog } from "./components/QuestionDialog"
 import { ReviewPanel } from "./components/ReviewPanel"
 import { IndexStatus } from "./components/IndexStatus"
+import { promptHistory } from "./prompt-history"
 
 export default function App() {
   const {
@@ -162,6 +163,7 @@ export default function App() {
   // Rebuild the turn structure only when the message list actually changes,
   // not on every coalesced streaming frame.
   const turns = useMemo(() => groupTurns(state.messages), [state.messages])
+  const promptHistoryEntries = useMemo(() => promptHistory(state.messages), [state.messages])
 
   // Active exactly when the Stop button is clickable.
   useEscapeToStop(busy && !state.aborting, abort)
@@ -277,6 +279,7 @@ export default function App() {
           commands={state.commands}
           onRunCommand={runCommandAndPinTop}
           inject={state.injectedText}
+          history={promptHistoryEntries}
           onOpenLink={openLink}
         />
       )}
@@ -397,6 +400,7 @@ export default function App() {
               commands={state.commands}
               onRunCommand={runCommandAndPinTop}
               inject={state.injectedText}
+              history={promptHistoryEntries}
               onOpenLink={openLink}
             />
           </div>
