@@ -1813,9 +1813,10 @@ export class ChatView implements vscode.WebviewViewProvider {
         })
       },
       onPermissionNeeded: (perm) => {
-        // Same ignore-while-aborting gate as the other non-terminal events:
-        // a permission raised mid-Stop targets a session being torn down,
-        // and no resolution event exists that would ever clear the dialog.
+        // Same ignore-while-aborting gate as the other non-terminal events: a
+        // permission raised mid-Stop targets a session being torn down, and
+        // nothing will ever answer it, so no `permission.replied` is coming to
+        // clear the dialog either.
         if (this.aborting) return
         this.activePermissions.set(perm.id, perm)
         this.syncAgentWaitState()
@@ -1825,6 +1826,13 @@ export class ChatView implements vscode.WebviewViewProvider {
           title: perm.title,
           pattern: perm.pattern,
         })
+      },
+      onPermissionResolved: (id) => {
+        // Fires for our own reply too, where `permissionReply` already did
+        // this — both sides are id-keyed, so the echo is a no-op.
+        this.activePermissions.delete(id)
+        this.syncAgentWaitState()
+        this.post({ type: "permissionResolved", id })
       },
       onQuestionAsked: (q) => {
         if (this.aborting) return
