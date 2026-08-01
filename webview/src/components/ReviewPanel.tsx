@@ -121,7 +121,7 @@ export function ReviewPanel({
                 aria-label="Keep all changes"
               >
                 <span className="codicon codicon-check" aria-hidden="true" />
-                Keep all
+                <span className="review-bulk-label">Keep all</span>
               </button>
               <button
                 className="review-bulk-action reject"
@@ -131,7 +131,7 @@ export function ReviewPanel({
                 aria-label="Undo all changes"
               >
                 <span className="codicon codicon-discard" aria-hidden="true" />
-                Undo all
+                <span className="review-bulk-label">Undo all</span>
               </button>
             </>
           )}

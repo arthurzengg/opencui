@@ -1804,6 +1804,9 @@ button:focus-visible {
   --review-file-target-height: 24px;
   --review-head-text-line: var(--review-head-target-height);
   --review-file-text-line: var(--review-file-target-height);
+  /* The header degrades on the card's width, not the window's — see the
+     `review-card` query below. */
+  container: review-card / inline-size;
   position: relative;
   margin: 0 12px;
   /* Keep top and bottom padding equal. Each row already centers its own text,
@@ -1842,6 +1845,13 @@ button:focus-visible {
   gap: 8px;
   flex: 1 1 180px;
   min-width: 0;
+  /* The basis is deliberately below the head's content width so a long
+     filename in the summary ellipsizes instead of wrapping the row — which
+     means the head is routinely handed less space than its content wants.
+     Without this the overflow was *painted*, and the diff counts landed on top
+     of the "Keep all" icon next to it. Clip instead; the shrink order below
+     decides what gives way first. */
+  overflow: hidden;
   height: var(--review-head-target-height);
   padding: 0 6px 0 3px;
   border: 0;
@@ -1881,6 +1891,17 @@ button:focus-visible {
   line-height: var(--review-head-target-height);
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease;
+}
+/* Under this the head's own content plus two worded buttons stops fitting on
+   one line, and something has to give: the counts would overflow the head, or
+   the row would wrap. The buttons shed their words instead — the same
+   icon-only shape the single-change header already uses, with `title` and
+   `aria-label` still carrying the full wording. Set a little above the real
+   threshold so font and zoom variation lands on the safe side. */
+@container review-card (max-width: 420px) {
+  .review-bulk-label {
+    display: none;
+  }
 }
 .review-bulk-action:hover {
   background: var(--hover-bg-icon);
@@ -1930,11 +1951,24 @@ button:focus-visible {
   --review-text-line: var(--review-file-text-line);
 }
 .review-title {
-  flex: 0 0 auto;
+  /* Shrinks only once the summary is gone, and truncates rather than clipping
+     — the counts must never lose a digit, which would read as a wrong number. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 12px;
   font-weight: 600;
 }
 .review-summary {
+  /* The summary is the least load-bearing thing in the head, so it gives way
+     first. Flex has no strict priority — it splits a deficit by shrink factor
+     x base size — so the factor has to be big enough that the title's share
+     rounds away below Chromium's 1/64px layout unit. At 100 the title still
+     leaked a quarter pixel on a wide deficit, which is enough to trip its
+     ellipsis and drop a character from a label that visually fits. */
+  flex: 0 10000 auto;
   min-width: 0;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
@@ -2405,8 +2439,17 @@ button:focus-visible {
   background: transparent;
   pointer-events: none;
 }
-.bottom-dock > .review-panel + .bottom-composer {
+/* A card stacked directly above the composer leaves only this 4px seam between
+   the two. Unlike the composer's wider edge gap — where the transcript sliding
+   behind reads as depth — a 4px slit shows nothing but the clipped tops of
+   glyphs, which looks like a paint fault. Fill exactly the seam (hard gradient
+   stop, so the rest of the composer's padding stays see-through) and the stack
+   reads as one surface. The review card's `::after` peek is a positioned
+   descendant, so it still paints over this. */
+.bottom-dock > .review-panel + .bottom-composer,
+.bottom-dock > .queued-messages + .bottom-composer {
   padding-top: var(--space-1);
+  background: linear-gradient(var(--color-bg-panel) var(--space-1), transparent var(--space-1));
 }
 .bottom-composer > .promptbox {
   pointer-events: auto;
@@ -2419,9 +2462,6 @@ button:focus-visible {
   flex-direction: column;
   gap: 4px;
   margin: 0 12px;
-}
-.queued-messages + .bottom-composer {
-  padding-top: var(--space-1);
 }
 .queued-row {
   display: flex;
