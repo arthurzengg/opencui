@@ -211,6 +211,25 @@ describe("ReviewPanel", () => {
     expect(screen.getByRole("button", { name: /Undo all/i })).toBeInTheDocument()
   })
 
+  it("keeps each bulk button's word in its own span so a narrow card can hide it", () => {
+    // The `review-card` container query drops these labels below 420px, which
+    // is what stops the head's counts from colliding with the buttons. A bare
+    // text node would be unhideable and the collision would come back.
+    const messages = [
+      editMessage("m1", { filePath: "a.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
+      editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
+    ]
+    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    expect([...container.querySelectorAll(".review-bulk-label")].map((n) => n.textContent)).toEqual([
+      "Keep all",
+      "Undo all",
+    ])
+    // Hiding the word must not cost the button its name — that comes from
+    // aria-label, not the text.
+    expect(screen.getByRole("button", { name: "Keep all changes" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Undo all changes" })).toBeInTheDocument()
+  })
+
   it("hides the bulk buttons when there is only a single file (the row button suffices)", () => {
     const messages = [
       editMessage("m1", { filePath: "only.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
