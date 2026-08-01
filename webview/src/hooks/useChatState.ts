@@ -91,7 +91,7 @@ export type ChatState = {
 export type Action =
   | Outbound
   | { type: "reset" }
-  | { type: "clearPermission" }
+  | { type: "clearPermission"; id: string }
   | { type: "clearQuestion"; id: string }
   | { type: "queueMessage"; message: QueuedMessage }
   | { type: "unqueueMessage"; id: string }
@@ -387,16 +387,22 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "continuationPending":
       return { ...state, continuationPending: action.pending }
     case "permission":
-      // Ignore-while-aborting, like the other non-terminal events: there is
-      // no permission-resolved wire event, so a dialog raised mid-Stop could
-      // never be cleared once the session dies.
+      // Ignore-while-aborting, like the other non-terminal events: nothing
+      // will answer a permission raised mid-Stop, so no `permissionResolved`
+      // is coming for it and the dialog would sit there once the session dies.
       if (state.aborting) return state
       return {
         ...state,
         pendingPermission: { id: action.id, title: action.title, pattern: action.pattern },
       }
+    case "permissionResolved":
     case "clearPermission":
-      return { ...state, pendingPermission: undefined }
+      // Same id guard as questions: our reply clears the dialog locally, and
+      // opencode's echoing `permission.replied` lands after a new permission
+      // may already be showing — dismissing that one would drop a live prompt.
+      return state.pendingPermission?.id === action.id
+        ? { ...state, pendingPermission: undefined }
+        : state
     case "question":
       if (state.aborting) return state
       return {
@@ -575,7 +581,7 @@ export function useChatState() {
     },
     replyPermission(id: string, response: "once" | "always" | "reject") {
       vscode.post({ type: "permissionReply", id, response })
-      dispatch({ type: "clearPermission" })
+      dispatch({ type: "clearPermission", id })
     },
     replyQuestion(id: string, answers: string[][]) {
       vscode.post({ type: "questionReply", id, answers })

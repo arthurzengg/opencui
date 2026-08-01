@@ -825,11 +825,11 @@ describe("ChatView harness: waiting-for-input Main status", () => {
       .at(-1)?.status
   }
 
-  it("flips the Main row to waiting on permission.asked and back to running on reply", async () => {
+  it("flips the Main row to waiting on permission.updated and back to running on reply", async () => {
     await harness.send({ type: "mounted" })
     await harness.send({ type: "send", text: "guarded edit" })
 
-    server.push({ type: "permission.asked", id: "perm_1", sessionID: SESSION_ID, title: "Edit file" })
+    server.push({ type: "permission.updated", id: "perm_1", sessionID: SESSION_ID, title: "Edit file" })
     await until(() => lastMainStatus() === "waiting")
     const snap = harness.posted.filter((m) => m.type === "agentsStatus").at(-1)
     expect(snap && "status" in snap ? snap.status.waiting : 0).toBe(1)
@@ -841,7 +841,7 @@ describe("ChatView harness: waiting-for-input Main status", () => {
   it("Stop clears pending prompts so the next turn cannot wedge on waiting", async () => {
     await harness.send({ type: "mounted" })
     await harness.send({ type: "send", text: "first try" })
-    server.push({ type: "permission.asked", id: "perm_stale", sessionID: SESSION_ID, title: "T" })
+    server.push({ type: "permission.updated", id: "perm_stale", sessionID: SESSION_ID, title: "T" })
     await until(() => lastMainStatus() === "waiting")
 
     await harness.send({ type: "abort" })
@@ -849,12 +849,40 @@ describe("ChatView harness: waiting-for-input Main status", () => {
     await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
 
     await harness.send({ type: "send", text: "second try" })
-    server.push({ type: "permission.asked", id: "perm_2", sessionID: SESSION_ID, title: "T2" })
+    server.push({ type: "permission.updated", id: "perm_2", sessionID: SESSION_ID, title: "T2" })
     await until(() => lastMainStatus() === "waiting")
     await harness.send({ type: "permissionReply", id: "perm_2", response: "once" })
     // Without the abort-time map clear, perm_stale would keep the pending
     // count above zero and the row would stay `waiting` forever.
     await until(() => lastMainStatus() === "running")
+  })
+
+  it("a permission answered outside the panel releases the row and dismisses the dialog", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "guarded edit" })
+
+    server.push({ type: "permission.updated", id: "perm_ext", sessionID: SESSION_ID, title: "Edit file" })
+    await until(() => lastMainStatus() === "waiting")
+
+    // Nobody sent `permissionReply` — this is opencode reporting that something
+    // else (a plugin, an `always` rule) answered. `permission.replied` keys the
+    // permission as `permissionID`, not `id`.
+    server.push({ type: "permission.replied", sessionID: SESSION_ID, permissionID: "perm_ext", response: "once" })
+    await until(() => lastMainStatus() === "running")
+    await until(() => harness.posted.some((m) => m.type === "permissionResolved" && m.id === "perm_ext"))
+  })
+
+  it("ignores a reply for another session", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "guarded edit" })
+
+    server.push({ type: "permission.updated", id: "perm_mine", sessionID: SESSION_ID, title: "Edit file" })
+    await until(() => lastMainStatus() === "waiting")
+
+    server.push({ type: "permission.replied", sessionID: "ses_other", permissionID: "perm_mine", response: "once" })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(lastMainStatus()).toBe("waiting")
+    expect(harness.posted.some((m) => m.type === "permissionResolved")).toBe(false)
   })
 })
 

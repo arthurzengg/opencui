@@ -75,6 +75,8 @@ export type StreamHandlers = {
   onPatch?: (messageID: string, files: string[], diff?: string) => void
   onFileRead?: (messageID: string, filename: string) => void
   onPermissionNeeded?: (permission: PermissionRequest) => void
+  /** Fired when a permission is answered — by us, or by anything else holding the session. */
+  onPermissionResolved?: (permissionID: string) => void
   onQuestionAsked?: (question: QuestionRequest) => void
   /** Fired when a question is answered (by us or another client) or rejected. */
   onQuestionResolved?: (requestID: string) => void
@@ -325,9 +327,12 @@ export function subscribeSession(
         onPartDelta(props)
         markActivity(props?.sessionID)
         return
-      case "permission.asked":
       case "permission.updated":
         onPermissionUpdated(props)
+        markActivity(props?.sessionID)
+        return
+      case "permission.replied":
+        onPermissionResolved(props)
         markActivity(props?.sessionID)
         return
       case "question.asked":
@@ -761,6 +766,16 @@ export function subscribeSession(
       pattern: p.pattern ?? p.patterns,
       type: p.permission ?? p.type,
     })
+  }
+
+  function onPermissionResolved(p: any) {
+    if (!p || p.sessionID !== sessionID) return
+    // `permission.updated` carries a full Permission (keyed `id`) while
+    // `permission.replied` carries only `{sessionID, permissionID, response}`,
+    // so the two events name the same permission differently.
+    const id = p.permissionID ?? p.id
+    if (!id) return
+    handlers.onPermissionResolved?.(id)
   }
 
   function onQuestionAsked(p: any) {

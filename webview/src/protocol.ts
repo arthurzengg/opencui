@@ -449,6 +449,12 @@ export type Outbound =
    */
   | { type: "continuationPending"; pending: boolean }
   | { type: "permission"; id: string; title: string; pattern?: string | string[] }
+  /**
+   * A permission was answered. Also fires for our own reply (opencode echoes
+   * `permission.replied` back), which the webview has already acted on — the
+   * point of the event is the answer that came from somewhere else.
+   */
+  | { type: "permissionResolved"; id: string }
   | { type: "question"; id: string; questions: QuestionInfo[] }
   | { type: "questionResolved"; id: string }
   | { type: "messageRemoved"; id: string }
