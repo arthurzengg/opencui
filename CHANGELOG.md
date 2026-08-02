@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-08-02
+
+### Added
+- Up and Down in the send composer now walk this conversation's prompt history, the way a shell does. Up loads the previous prompt and stops at the oldest instead of wrapping; Down walks forward and, past the newest entry, restores the draft stashed on the first Up, so unsent typing is never destroyed. Typing after a recall forks off into a new draft. Recalled prompts keep their `@file` and `@chat` mentions bound, so they re-send with the same context attached. The arrows only mean "history" at the outer edges of the text — an open `/` or `@` picker, a caret with another line to move to, an active selection, a modifier chord, or IME composition all keep their normal behavior — and in-place message editing is excluded (#494, #495).
+
+### Changed
+- Extensionless dotfiles — `.gitignore`, `.env`, `.npmrc`, `.editorconfig`, `.gitattributes` and friends — can now be reviewed. The panel already listed them, but clicking one was refused with a "cannot be reviewed as text" toast: the host and the webview each carried their own copy of the reviewable-file test and disagreed about files with no extension. There is now one implementation (#484, #485).
+- Review-panel updates got cheaper on both sides. Change aggregation is a single Map-keyed pass instead of a scan per record, and the host's review sync is debounced, so an event burst — tool closures during a streaming turn, or one "Keep all" click — collapses into one pass instead of one per event (#473, #474).
+- A streaming subagent no longer rewrites the task store on every token. Each busy signal from a child session used to persist the whole task list, fire a change event and re-render the Agents pill, even when the row's only difference was its clock; those writes are now dropped at the store boundary (#478, #479).
+- Internal: unreachable render states removed from the Agents pill — its empty-popover state became impossible once the popover went active-only — with the invariants the render now leans on pinned by tests (#480, #481).
+- Internal: the mock opencode server used by the host tests buffers events pushed before a client connects, fixing an intermittent full-suite-only failure in the ChatView harness (#490, #491).
+
+### Fixed
+- The Agents popover now shows "waiting for input" when a turn is blocked on a permission prompt or a question. The status, its pill styling and its tooltip all existed already but were unreachable, because nothing ever produced the state (#475, #476).
+- Reloading the window mid-turn, or switching away from a conversation mid-turn, no longer leaves phantom "running" rows in the Agents popover with live growing timers on work that has already ended. Rows settle at load, and re-entering a conversation re-checks its session. The agents QuickPick is also scoped to the active conversation now, matching the popover (#482, #483).
+- A permission answered outside the panel now dismisses the dialog and releases the "waiting" row, instead of pinning the turn to "waiting for input" until it ended. The extension was listening for a `permission.asked` event that opencode never sends, so the real resolution event fell through unhandled (#492, #493).
+- Keep and Undo no longer mangle content lines that start with `---` or `+++`. Those were treated as unified-diff file headers even inside a hunk body, so deleting a line like `-- legacy note` from Markdown, YAML or SQL either restored it with an extra dash, or raised a phantom "the file has been modified since" conflict (#484, #485).
+- "Undo all" on a file with several hunks no longer yanks focus out of the chat panel once per hunk — the reverted file is revealed once for the whole batch, and not at all when it is already the active editor (#486, #487).
+- Undoing a file deletion restores the trailing newline, so a file the panel claims to have put back untouched no longer shows up as a real change in `git diff`. The diff's "no newline at end of file" marker is now read per side, so a file that genuinely lacked a terminator still lacks it (#486, #487).
+- A create/delete/move change whose first hunk cannot be parsed no longer falls through to the next hunk — which, for a deleted file, restored it from a fragment of the original and reported success. The row now stays pending with the conflict reported (#486, #487).
+- `@`-mentioning a file that exceeds the prompt's byte budget no longer cuts it mid-character, and the cut prefers a nearby line or word boundary. The truncation note and the prompt manifest report what was actually included rather than the budget offered, so an over-budget mention no longer charges the shared budget for bytes it dropped and squeezes the next file out of the prompt (#488, #489).
+- The review card's diff counts no longer paint on top of the "Keep all" button. The header clips its content instead of overflowing it, with a shrink order that drops the file count first and truncates the title next, never the counts; below 420px of card width the bulk buttons show just their icons, which keeps the header on one row at sidebar widths and brings back the "N files" count that had been collapsing to zero to make room. The 4px seam between the review card and the composer no longer shows the scrolling transcript through it (#496, #497).
+
 ## [1.10.0] - 2026-07-22
 
 ### Added
