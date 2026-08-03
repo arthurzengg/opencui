@@ -54,19 +54,33 @@ describe("StatusBar", () => {
     expect(screen.getAllByText("default").length).toBeGreaterThanOrEqual(1)
   })
 
-  it("hides connecting text when connected", () => {
-    render(<StatusBar {...baseProps} connected={true} />)
+  it("shows the healthy connected state as the ok dot, titled", () => {
+    const { container } = render(<StatusBar {...baseProps} connected={true} />)
+    expect(container.querySelector(".status-indicator-dot.ok")?.getAttribute("title")).toBe(
+      "connected",
+    )
+  })
+
+  it("shows the disconnected state as a dot only — never as text in the bar", () => {
+    const { container } = render(<StatusBar {...baseProps} connected={false} />)
+    expect(container.querySelector(".status-indicator-dot.warn")).not.toBeNull()
     expect(screen.queryByText("connecting…")).not.toBeInTheDocument()
   })
 
-  it("shows 'connecting…' when not connected", () => {
-    render(<StatusBar {...baseProps} connected={false} />)
-    expect(screen.getByText("connecting…")).toBeInTheDocument()
+  it("shows a pending continuation as the pulsing dot, not as text", () => {
+    const { container } = render(
+      <StatusBar {...baseProps} connected={true} continuationPending={true} />,
+    )
+    expect(container.querySelector(".status-indicator-dot.pending")).not.toBeNull()
+    expect(screen.queryByText("continuing…")).not.toBeInTheDocument()
   })
 
-  it("shows error text when error is set", () => {
-    render(<StatusBar {...baseProps} connected={false} error="boom" />)
-    expect(screen.getByText(/error · boom/)).toBeInTheDocument()
+  it("keeps the error message reachable in the tooltip once the label is gone", () => {
+    const { container } = render(<StatusBar {...baseProps} connected={false} error="boom" />)
+    expect(container.querySelector(".status-indicator-dot.err")?.getAttribute("title")).toBe(
+      "error · boom",
+    )
+    expect(screen.queryByText(/error · boom/)).not.toBeInTheDocument()
   })
 
   it("opens the selector popover on trigger click and shows Model, Effort, Agent rows", async () => {
