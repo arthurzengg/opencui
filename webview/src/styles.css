@@ -170,25 +170,10 @@ button:focus-visible {
 .statusbar .spacer { flex: 1; }
 
 /* ===== StatusIndicator =====
-   Coloured marker dot + optional label. Component-scoped so any surface
-   (status bar, permission badge, etc.) can drop one in without redoing
-   the alignment dance.
-
-   Why the inline-block wrapper + `vertical-align: middle` on children:
-   sibling flex children get centred by their own box centres, which
-   makes a small 8 px dot visually sit below the larger text glyph next
-   to it. Giving the pair a shared inline line-box (`display: inline-block`
-   with `line-height: 1` to hug the glyph height) and using
-   `vertical-align: middle` aligns by font x-height — the perceived text
-   midpoint — instead. The two pieces stay locked together regardless of
-   what the parent flex layout does. */
-.status-indicator {
-  display: inline-block;
-  white-space: nowrap;
-  line-height: 1;
-}
+   Coloured marker dot. Carries no text — the status string is a native
+   tooltip — so it is a single element and the header's flex centring
+   places it directly. */
 .status-indicator-dot {
-  vertical-align: middle;
   display: inline-block;
   width: 8px;
   height: 8px;
@@ -209,13 +194,6 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .status-indicator-dot.pending { animation: none; }
 }
-.status-indicator-label {
-  vertical-align: middle;
-  margin-left: var(--space-3);
-  opacity: 0.75;
-  white-space: nowrap;
-}
-
 /* ===== AgentActivity =====
    Message-flow activity surface for live main-agent + subagent work. It
    renders inside the active assistant message, next to the Process panel,
@@ -592,8 +570,8 @@ button:focus-visible {
    hardcoded git-add green.
    `line-height: 1` collapses the icon (13px) and label (11px) onto a single
    tight line box so they center on the same horizontal line instead of each
-   sitting at its own default-line-height box centre (see .status-indicator and
-   .review-bulk-action for the same glyph-pair alignment treatment). */
+   sitting at its own default-line-height box centre (see .review-bulk-action
+   for the same glyph-pair alignment treatment). */
 .history-new {
   display: inline-flex;
   align-items: center;

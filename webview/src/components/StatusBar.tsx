@@ -52,14 +52,6 @@ export function StatusBar({
     setCurrentPopover((current) => open ? id : current === id ? null : current)
   }
 
-  const showStatus = !connected || Boolean(error) || Boolean(continuationPending)
-  const statusLabel: string | undefined = error
-    ? `error · ${error}`
-    : !connected
-      ? "connecting…"
-      : continuationPending
-        ? "continuing…"
-        : undefined
   const dotKind: StatusIndicatorKind = error
     ? "err"
     : continuationPending
@@ -76,11 +68,7 @@ export function StatusBar({
         : "connecting…"
   return (
     <div className="statusbar">
-      <StatusIndicator
-        kind={dotKind}
-        label={showStatus ? statusLabel : undefined}
-        title={statusTitle}
-      />
+      <StatusIndicator kind={dotKind} title={statusTitle} />
       <div className="spacer" />
       <SelectorMenu
         agent={agent}
