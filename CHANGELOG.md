@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.10.2] - 2026-08-04
+
+### Changed
+- The connection status in the chat panel header is now the coloured dot alone. `connecting…`, `continuing…` and `error · <message>` no longer print beside it, which frees width in a header that also carries the model/effort/agent selector and two buttons. All four states keep their own colour — green connected, amber connecting, blue pulsing while a turn continues, red on error — and the full status string, error message included, is still there on hover (#500, #501).
+
 ## [1.10.1] - 2026-08-02
 
 ### Added
