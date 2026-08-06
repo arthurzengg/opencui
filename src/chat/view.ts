@@ -39,9 +39,15 @@ import { ConversationManager } from "./conversation-manager"
 import { ContinuationState, isContinuationToast } from "./continuation-state"
 import { sweepAbortTree, drainAbortTree } from "./abort-tree"
 import { SubagentDispatch } from "./subagent-dispatch"
-import { relativeToCwd, samePath } from "./paths"
-import { reviewKey, splitReviewDiff } from "./diff"
-import { extractChanges, isTextReviewPathName, reviewChanges } from "./review-changes"
+import { relativeToCwd } from "./paths"
+import { splitReviewDiff } from "./diff"
+import {
+  extractChanges,
+  isTextReviewPathName,
+  reviewKey,
+  samePath,
+  turnChanges,
+} from "../../webview/src/review-extract"
 import { reviewAllForPath } from "./review-actions"
 import { attachableConversationIDs, buildPrompt, readMentions, readConversationMentions } from "./prompt-builder"
 import { buildManifest } from "../workspace-context/manifest"
@@ -267,11 +273,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     }, null, this.context.subscriptions)
     vscode.window.onDidChangeTextEditorSelection(
       () => this.pushContext(),
-      null,
-      this.context.subscriptions,
-    )
-    vscode.workspace.onDidChangeWorkspaceFolders(
-      () => this.pushWorkspace(),
       null,
       this.context.subscriptions,
     )
@@ -817,10 +818,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.post({ type: "context", ref: { path: ctx.filePath, label } })
   }
 
-  private pushWorkspace() {
-    this.post({ type: "workspace", workspace: this.workspaceInfo() })
-  }
-
   private workspaceInfo(): WorkspaceInfo | undefined {
     const root = primaryWorkspaceRoot()
     if (!root) return undefined
@@ -899,7 +896,6 @@ export class ChatView implements vscode.WebviewViewProvider {
         await this.prepareStoredAttachments()
         this.sendConversationState()
         this.pushContext()
-        this.pushWorkspace()
         this.indexManager.onStatusChange((status) => {
           this.post({ type: "indexStatus", status })
         })
@@ -965,9 +961,6 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       case "abort":
         await this.abortCurrent()
-        return
-      case "newSession":
-        await this.newSession()
         return
       case "createConversation":
         await this.createConversation()
@@ -2118,7 +2111,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     // so acting on the aggregated patch alone would silently miss every
     // earlier tool call's hunks. We pass both into the pure helper — records
     // drive the fs ops, the aggregated row drives the UI state updates.
-    const aggregatedAll = reviewChanges(this.messages)
+    const aggregatedAll = turnChanges(this.messages)
     const aggregated = aggregatedAll.find((c) => samePath(c.path, requestedPath))
     if (!aggregated) {
       log("reviewAllInChange: no matching change", { source, path: requestedPath, available: aggregatedAll.map((c) => c.path) })
@@ -2178,7 +2171,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     // unlocatable banner) was removed — review actions live exclusively in
     // the Review Card now. This sync only purges hunks for files that have
     // been deleted on disk so they don't linger in the panel.
-    const changes = reviewChanges(this.messages).filter((change) => isTextReviewPathName(change.path))
+    const changes = turnChanges(this.messages).filter((change) => isTextReviewPathName(change.path))
     if (!changes.length) return
     await this.purgeMissingFileHunks(changes)
   }

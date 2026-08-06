@@ -1,24 +1,23 @@
 import { describe, it, expect } from "vitest"
-import { samePath, normalizePath, unique } from "../../src/chat/paths"
+import { unique } from "../../src/chat/paths"
 import {
-  countDiff,
   findHunkText,
   splitReviewDiff,
   reviewLineText,
   firstReviewAnchor,
   firstChangedBlock,
-  reviewKey,
   diffLines,
 } from "../../src/chat/diff"
 import {
+  countDiff,
+  isRecord,
   isTextReviewPathName,
+  normalizePath,
   patchKind,
   patchPath,
+  reviewKey,
+  samePath,
   synthesizeCreatePatch,
-} from "../../src/chat/review-changes"
-import {
-  isRecord,
-  isTextReviewPathName as webviewIsTextReviewPathName,
 } from "../../webview/src/review-extract"
 
 describe("samePath / normalizePath", () => {
@@ -71,16 +70,26 @@ describe("isTextReviewPathName", () => {
     }
   })
 
-  it("answers identically to the webview copy for every path shape", () => {
-    // One implementation, not two: the host re-exports the shared helper. If a
-    // host-local copy is ever reintroduced, these diverge on the dotfiles.
-    const paths = [
-      "src/index.ts", "README.md", "Makefile", "LICENSE", "archive.tar.gz",
-      ".gitignore", ".env", ".env.local", ".eslintrc.json", ".babelrc",
-      ".DS_Store", "Thumbs.db", "logo.png", "dump.bin", "nested/dir/.nvmrc",
+  it("classifies every path shape the panel can encounter", () => {
+    const expected: Array<[string, boolean]> = [
+      ["src/index.ts", true],
+      ["README.md", true],
+      ["Makefile", true],
+      ["LICENSE", true],
+      ["archive.tar.gz", true],
+      [".gitignore", true],
+      [".env", true],
+      [".env.local", true],
+      [".eslintrc.json", true],
+      [".babelrc", true],
+      ["nested/dir/.nvmrc", true],
+      [".DS_Store", false],
+      ["Thumbs.db", false],
+      ["logo.png", false],
+      ["dump.bin", false],
     ]
-    for (const p of paths) {
-      expect([p, isTextReviewPathName(p)]).toEqual([p, webviewIsTextReviewPathName(p)])
+    for (const [p, want] of expected) {
+      expect([p, isTextReviewPathName(p)]).toEqual([p, want])
     }
   })
 })

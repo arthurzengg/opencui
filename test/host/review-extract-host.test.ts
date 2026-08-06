@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest"
-import { reviewChanges, toolChanges, patchChanges, displayPath } from "../../src/chat/review-changes"
+import {
+  displayPath,
+  patchChanges,
+  toolChanges,
+  turnChanges,
+} from "../../webview/src/review-extract"
 import type { ChatMessage } from "../../webview/src/protocol"
+
+// In the `host` (node) project on purpose: the extension host imports this
+// webview module directly, so this proves it works outside jsdom.
 
 describe("toolChanges", () => {
   it("emits a synthesized patch for write/create when no metadata.filediff", () => {
@@ -149,7 +157,7 @@ describe("displayPath", () => {
   })
 })
 
-describe("reviewChanges", () => {
+describe("turnChanges", () => {
   function toolMsg(id: string, blockIdx: number, opts: { tool: string; metadata?: Record<string, unknown>; input?: Record<string, unknown>; status?: string; callID?: string }): ChatMessage {
     const blocks = Array.from({ length: blockIdx }, () => ({ type: "text" as const, text: "" })).concat([
       {
@@ -174,7 +182,7 @@ describe("reviewChanges", () => {
         metadata: { filediff: { patch: "@@\n+a", additions: 1, deletions: 0 } },
       }),
     ]
-    expect(reviewChanges(messages)).toHaveLength(1)
+    expect(turnChanges(messages)).toHaveLength(1)
   })
 
   it("ignores non-completed tool blocks", () => {
@@ -186,11 +194,11 @@ describe("reviewChanges", () => {
         status: "running",
       }),
     ]
-    expect(reviewChanges(messages)).toHaveLength(0)
+    expect(turnChanges(messages)).toHaveLength(0)
   })
 
   it("dedupes by samePath AND (sameSource OR samePatch)", () => {
-    // Two records for the same file with the SAME patch → host's reduce
+    // Two records for the same file with the SAME patch → the aggregating reduce
     // collapses them.
     const same = "@@\n+a"
     const messages = [
@@ -207,7 +215,7 @@ describe("reviewChanges", () => {
         callID: "call-edit",
       }),
     ]
-    expect(reviewChanges(messages)).toHaveLength(1)
+    expect(turnChanges(messages)).toHaveLength(1)
   })
 
   it("preserves both records when patches differ AND sources differ", () => {
@@ -226,6 +234,6 @@ describe("reviewChanges", () => {
       }),
     ]
     // host's dedup keeps multiple records since neither source nor patch matches
-    expect(reviewChanges(messages).length).toBeGreaterThanOrEqual(1)
+    expect(turnChanges(messages).length).toBeGreaterThanOrEqual(1)
   })
 })

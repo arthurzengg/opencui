@@ -200,9 +200,8 @@ export type EditorContextRef = {
 /**
  * Workspace root the host is currently operating against. Undefined means no
  * folder is open — automatic context features should treat that as a no-op
- * state. Phase 2+ of the workspace-context plan attaches a richer manifest
- * per prompt; this `workspace` message is the unconditional "what root are
- * we in?" surface the UI uses today.
+ * state. Reaches the webview only as `PromptContextManifest.workspace`, pinned
+ * to the turn it was built for; no standing message carries it.
  */
 export type WorkspaceInfo = {
   name: string
@@ -417,7 +416,6 @@ export type Outbound =
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
-  | { type: "workspace"; workspace?: WorkspaceInfo }
   | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[]; conversationMentions?: ConversationMention[]; context?: PromptContextManifest }
   | { type: "userMessageBackendID"; id: string; backendID: string }
   /**
@@ -475,7 +473,6 @@ export type Inbound =
   | { type: "runCommand"; command: string; arguments: string }
   | { type: "editMessage"; id: string; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: ConversationMention[] }
   | { type: "abort" }
-  | { type: "newSession" }
   | { type: "createConversation" }
   | { type: "openConversation"; id: string }
   | { type: "renameConversation"; id: string; title: string }

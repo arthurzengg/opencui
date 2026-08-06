@@ -1,5 +1,5 @@
 import type { Todo, ToolStatus, ToolUpdate } from "../protocol"
-import { isRecord } from "../review-extract"
+import { basename, isRecord, patchKind } from "../review-extract"
 import { vscode } from "../vscode"
 
 type FileAction = "read" | "created" | "updated" | "deleted" | "moved"
@@ -376,13 +376,6 @@ export function patchFilesFromUpdate(update: ToolUpdate): Array<{ path: string; 
   }))
 }
 
-export function patchKind(value: unknown): FileAction {
-  if (value === "add") return "created"
-  if (value === "delete") return "deleted"
-  if (value === "move") return "moved"
-  return "updated"
-}
-
 function diffStats(update: ToolUpdate): { additions?: number; deletions?: number } {
   const filediff = isRecord(update.metadata?.filediff) ? update.metadata.filediff : undefined
   return {
@@ -412,10 +405,6 @@ export function lineRange(update: ToolUpdate): string | undefined {
 
 function isFileTool(tool: string) {
   return tool === "read" || tool === "edit" || tool === "write"
-}
-
-function basename(value: string) {
-  return value.split(/[\\/]/).filter(Boolean).at(-1) ?? value
 }
 
 function pastTense(tool: string) {

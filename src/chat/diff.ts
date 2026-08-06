@@ -1,6 +1,3 @@
-import type { ReviewChange } from "../protocol"
-import { reviewKey as sharedReviewKey } from "../../webview/src/review-extract"
-
 export type ReviewDiffLine = {
   text: string
   kind: "add" | "del" | "hunk" | "ctx"
@@ -43,13 +40,6 @@ export type ReviewDiffHunk = {
    * those rather than letting it silently fail.
    */
   reversible: boolean
-}
-
-export function countDiff(patch: string, prefix: "+" | "-") {
-  return patch
-    .split("\n")
-    .filter((line) => line.startsWith(prefix) && !line.startsWith(`${prefix}${prefix}${prefix}`))
-    .length
 }
 
 const HUNK_HEADER_RE = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/
@@ -248,11 +238,6 @@ export function reviewLineText(line: ReviewDiffLine) {
     return line.text.slice(1)
   }
   return line.text
-}
-
-export function reviewKey(change: ReviewChange, hunkID: string) {
-  // Delegate to the shared helper so host + webview agree byte-for-byte.
-  return sharedReviewKey(change, hunkID)
 }
 
 /**

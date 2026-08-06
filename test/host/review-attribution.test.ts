@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest"
-import { reviewChanges } from "../../src/chat/review-changes"
 import { turnChanges } from "../../webview/src/review-extract"
 import type { ChatMessage } from "../../webview/src/protocol"
 
@@ -41,7 +40,7 @@ describe("ReviewChange attribution: subagent vs main", () => {
         }),
       ]),
     ]
-    const changes = reviewChanges(messages)
+    const changes = turnChanges(messages)
     expect(changes).toHaveLength(1)
     expect(changes[0]!.actors).toEqual([
       { kind: "subagent", sessionID: "ses_child_1", subagent: "explore" },
@@ -65,7 +64,7 @@ describe("ReviewChange attribution: subagent vs main", () => {
         }),
       ]),
     ]
-    const changes = reviewChanges(messages)
+    const changes = turnChanges(messages)
     expect(changes).toHaveLength(1)
     expect(changes[0]!.actors).toEqual(
       expect.arrayContaining([
@@ -94,7 +93,7 @@ describe("ReviewChange attribution: subagent vs main", () => {
         }),
       ]),
     ]
-    const changes = reviewChanges(messages)
+    const changes = turnChanges(messages)
     expect(changes).toHaveLength(1)
     expect(changes[0]!.actors).toHaveLength(1)
   })
@@ -109,25 +108,21 @@ describe("ReviewChange attribution: subagent vs main", () => {
         }),
       ]),
     ]
-    const changes = reviewChanges(messages)
+    const changes = turnChanges(messages)
     expect(changes).toHaveLength(1)
     expect(changes[0]!.actors).toEqual([{ kind: "main" }])
   })
 })
 
-describe("Host/webview aggregation consistency", () => {
-  // Run the same input through both pipelines and assert the outputs match.
-  // Webview uses `turnChanges`; host uses `reviewChanges`. They MUST agree
-  // because actions (Keep/Undo by path) cross the boundary.
-  function eqOnPaths(a: { path: string; additions: number; deletions: number }[],
-                    b: { path: string; additions: number; deletions: number }[]) {
-    const norm = (xs: typeof a) =>
-      xs.map((x) => ({ path: x.path, additions: x.additions, deletions: x.deletions }))
-        .sort((p, q) => p.path.localeCompare(q.path))
-    expect(norm(a)).toEqual(norm(b))
-  }
+// Was a host-vs-webview equality suite; both sides now import this one
+// function, so it pins the aggregation shape Keep/Undo-by-path acts on.
+describe("turn aggregation shape", () => {
+  const rows = (changes: { path: string; additions: number; deletions: number }[]) =>
+    changes
+      .map((c) => ({ path: c.path, additions: c.additions, deletions: c.deletions }))
+      .sort((p, q) => p.path.localeCompare(q.path))
 
-  it("agrees on the per-file row count + sums", () => {
+  it("emits one row per file with stats summed across that file's tool calls", () => {
     const messages: ChatMessage[] = [
       assistant("m1", [
         toolBlock({ callID: "c1", filePath: "src/a.ts", patch: "@@\n+x\n+y", additions: 2 }),
@@ -135,15 +130,13 @@ describe("Host/webview aggregation consistency", () => {
         toolBlock({ callID: "c3", filePath: "src/a.ts", patch: "@@\n-q", additions: 0, deletions: 1 }),
       ]),
     ]
-    const host = reviewChanges(messages)
-    const web = turnChanges(messages)
-    eqOnPaths(host, web)
-    // And both should produce two rows: a.ts and b.ts.
-    expect(host).toHaveLength(2)
-    expect(web).toHaveLength(2)
+    expect(rows(turnChanges(messages))).toEqual([
+      { path: "src/a.ts", additions: 2, deletions: 1 },
+      { path: "src/b.ts", additions: 1, deletions: 0 },
+    ])
   })
 
-  it("agrees in the presence of subagent attribution", () => {
+  it("keeps one row when a subagent and main both edit the same file", () => {
     const messages: ChatMessage[] = [
       assistant("m1", [
         toolBlock({
@@ -160,26 +153,25 @@ describe("Host/webview aggregation consistency", () => {
         }),
       ]),
     ]
-    const host = reviewChanges(messages)
-    const web = turnChanges(messages)
-    eqOnPaths(host, web)
-    expect(host[0]!.actors!.length).toBe(2)
-    expect(web[0]!.actors!.length).toBe(2)
+    const changes = turnChanges(messages)
+    expect(changes).toHaveLength(1)
+    expect(changes[0]!.actors!.length).toBe(2)
   })
 
-  it("agrees for a pure-deletion patch", () => {
+  it("reports a pure-deletion patch as an update, not a create", () => {
     const patch = ["@@ -1,3 +1,1 @@", " ctx", "-removed1", "-removed2"].join("\n")
     const messages: ChatMessage[] = [
       assistant("m1", [
         toolBlock({ callID: "c1", filePath: "src/a.ts", patch, additions: 0, deletions: 2 }),
       ]),
     ]
-    const host = reviewChanges(messages)
-    const web = turnChanges(messages)
-    eqOnPaths(host, web)
+    const changes = turnChanges(messages)
+    expect(changes).toHaveLength(1)
+    expect(changes[0]!.kind).toBe("updated")
+    expect(rows(changes)).toEqual([{ path: "src/a.ts", additions: 0, deletions: 2 }])
   })
 
-  it("agrees on a created-file row", () => {
+  it("marks a write to a non-existent file as created", () => {
     const messages: ChatMessage[] = [
       {
         id: "m1",
@@ -198,14 +190,12 @@ describe("Host/webview aggregation consistency", () => {
         ],
       } as ChatMessage,
     ]
-    const host = reviewChanges(messages)
-    const web = turnChanges(messages)
-    eqOnPaths(host, web)
-    expect(host[0]!.kind).toBe("created")
-    expect(web[0]!.kind).toBe("created")
+    const changes = turnChanges(messages)
+    expect(changes).toHaveLength(1)
+    expect(changes[0]!.kind).toBe("created")
   })
 
-  it("agrees that subagent + main edits collapse onto one row, not two", () => {
+  it("collapses edits to one file onto a single row across separate turns", () => {
     const messages: ChatMessage[] = [
       assistant("m1", [
         toolBlock({
@@ -224,10 +214,8 @@ describe("Host/webview aggregation consistency", () => {
         }),
       ]),
     ]
-    const host = reviewChanges(messages)
-    const web = turnChanges(messages)
-    expect(host).toHaveLength(1)
-    expect(web).toHaveLength(1)
-    eqOnPaths(host, web)
+    const changes = turnChanges(messages)
+    expect(changes).toHaveLength(1)
+    expect(changes[0]!.path).toBe("src/file.ts")
   })
 })
