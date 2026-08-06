@@ -1,11 +1,11 @@
 /**
- * Shared change-extraction + aggregation used by the host (src/chat/review-changes.ts)
- * and the webview Review Panel (components/ReviewPanel.tsx). Both must agree on
- * which file changes a turn contains, otherwise host actions (Keep/Undo all by
- * path) and webview rendering can drift — e.g. the webview would hide a row the
- * host still considers pending, or vice versa.
+ * Shared change extraction + aggregation, plus the pure path/patch helpers both
+ * trees need. Imported directly by the host (src/chat/*) and the webview Review
+ * Panel — no host-side wrapper, so agreement on "what changed this turn" is
+ * structural. If the two sides disagree, host Keep/Undo-by-path acts on rows
+ * the webview isn't showing.
  *
- * No vscode / node imports here so this works in the webview's jsdom context.
+ * No vscode / node imports, so this also works in the webview's jsdom context.
  */
 import type { ChatMessage, ReviewChange, ReviewChangeActor, ToolUpdate } from "./protocol"
 

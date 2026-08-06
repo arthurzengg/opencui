@@ -1,13 +1,5 @@
 import * as path from "path"
-
-export function normalizePath(value: string) {
-  return value.replace(/\\/g, "/").replace(/^\.?\//, "")
-}
-
-export function samePath(left: string, right?: string) {
-  if (!right) return false
-  return normalizePath(left) === normalizePath(right)
-}
+import { normalizePath } from "../../webview/src/review-extract"
 
 /**
  * If `relPath` starts with the workspace folder's basename (e.g. opencode

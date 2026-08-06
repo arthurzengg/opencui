@@ -1,5 +1,4 @@
 import type { PromptContextManifestItem } from "../protocol"
-import type { WorkspaceRoot } from "../workspace-root"
 
 /**
  * A single chunk of context the host plans to include in the prompt. The
@@ -24,8 +23,4 @@ export type PromptContextBlock = {
 export type CollectorOutput = {
   items: PromptContextManifestItem[]
   blocks: PromptContextBlock[]
-}
-
-export type CollectorInput = {
-  workspace: WorkspaceRoot
 }
