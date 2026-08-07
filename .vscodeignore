@@ -1,5 +1,6 @@
-# Source — only the bundled `dist/extension.js` and `dist/webview/index.html`
-# need to ship in the .vsix; all source TS/TSX/HTML stays out.
+# Source — only the bundled `dist/extension.js`, `dist/webview/index.html`,
+# and the lazily-fetched `dist/webview/grammars/*.json` need to ship in the
+# .vsix; all source TS/TSX/HTML stays out.
 src/**
 webview/**
 **/*.ts

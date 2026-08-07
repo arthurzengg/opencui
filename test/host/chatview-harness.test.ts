@@ -960,3 +960,22 @@ describe("ChatView harness: stale-row reconcile on conversation entry", () => {
     expect(rows.find((t) => t.id === "subagent:child:ses_child_ghost")!.status).toBe("running")
   })
 })
+
+describe("ChatView harness: webview HTML", () => {
+  it("injects the grammars base URI and lets connect-src reach it", async () => {
+    const fsFiles = (vscode as unknown as { __fsFiles: Map<string, Uint8Array> }).__fsFiles
+    const key = "file:///ext/dist/webview/index.html"
+    fsFiles.set(key, new TextEncoder().encode("<!doctype html><html><head></head><body></body></html>"))
+    try {
+      const fake = makeFakeWebviewView()
+      await harness.chatView.resolveWebviewView(fake.view)
+      const html = (fake.view.webview as { html?: string }).html ?? ""
+      // The webview fetches dist/webview/grammars/*.json lazily; both halves —
+      // the injected base and the CSP allowance — must survive edits together.
+      expect(html).toContain('window.__opencuiGrammarsBase="file:///ext/dist/webview/grammars"')
+      expect(html).toContain("connect-src vscode-resource: data: blob:")
+    } finally {
+      fsFiles.delete(key)
+    }
+  })
+})
