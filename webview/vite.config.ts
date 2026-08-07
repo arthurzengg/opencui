@@ -2,6 +2,8 @@ import { defineConfig, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import { viteSingleFile } from "vite-plugin-singlefile"
 import path from "node:path"
+import fs from "node:fs/promises"
+import { GRAMMAR_FILES } from "./src/shiki-langs"
 
 /**
  * KaTeX declares every font in woff2 + woff + ttf; with everything inlined
@@ -28,8 +30,47 @@ function katexWoff2Only(): Plugin {
   }
 }
 
+/**
+ * Grammars are NOT bundled — `inlineDynamicImports` would fold ~2.2MB of them
+ * into the single-file HTML. Instead this emits dist/webview/grammars/ for
+ * the webview to fetch on demand (grammar-loader.ts): one JSON per unique
+ * registration, deduped across entries (they share dependencies; per-entry
+ * files would ship 5.2MB where 2.0MB suffices), plus manifest.json mapping
+ * each entry to the registration names it needs. Runs on closeBundle so
+ * watch-mode rebuilds re-emit.
+ */
+function emitGrammars(): Plugin {
+  return {
+    name: "emit-shiki-grammars",
+    apply: "build",
+    async closeBundle() {
+      const dir = path.resolve(__dirname, "../dist/webview/grammars")
+      await fs.mkdir(dir, { recursive: true })
+      const manifest: Record<string, string[]> = {}
+      const written = new Set<string>()
+      for (const file of GRAMMAR_FILES) {
+        const mod = await import(`@shikijs/langs/${file}`)
+        const names: string[] = []
+        for (const reg of mod.default as Array<{ name: string }>) {
+          // Registration names become fetch paths; "manifest" would collide.
+          if (!/^[\w-]+$/.test(reg.name) || reg.name === "manifest") {
+            throw new Error(`unsafe grammar registration name: ${reg.name}`)
+          }
+          if (!names.includes(reg.name)) names.push(reg.name)
+          if (!written.has(reg.name)) {
+            written.add(reg.name)
+            await fs.writeFile(path.join(dir, `${reg.name}.json`), JSON.stringify(reg))
+          }
+        }
+        manifest[file] = names
+      }
+      await fs.writeFile(path.join(dir, "manifest.json"), JSON.stringify(manifest))
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), katexWoff2Only(), viteSingleFile()],
+  plugins: [react(), katexWoff2Only(), viteSingleFile(), emitGrammars()],
   build: {
     outDir: path.resolve(__dirname, "../dist/webview"),
     emptyOutDir: true,

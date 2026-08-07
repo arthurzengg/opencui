@@ -4,6 +4,19 @@ import userEvent from "@testing-library/user-event"
 import { CodeBlock } from "../../webview/src/components/CodeBlock"
 import { vscode } from "../../webview/src/vscode"
 
+// In production grammars are fetched from dist/webview/grammars (built by
+// vite.config.ts's emitGrammars); here the loader is bridged straight to the
+// real @shikijs/langs modules so highlighting runs against the same grammar
+// data without a dist/ build. `fail` simulates a fetch outage.
+const grammarCtl = vi.hoisted(() => ({ fail: false }))
+vi.mock("../../webview/src/grammar-loader", () => ({
+  loadGrammar: async (file: string) => {
+    if (grammarCtl.fail) throw new Error("grammar fetch failed")
+    const mod = await import(`../../webview/node_modules/@shikijs/langs/dist/${file}.mjs`)
+    return mod.default
+  },
+}))
+
 // Stub clipboard for the Copy button
 const writeText = vi.fn().mockResolvedValue(undefined)
 beforeEach(() => {
@@ -82,5 +95,27 @@ describe("CodeBlock", () => {
     const { container } = render(<CodeBlock code="x" language="some-fake-lang" />)
     await screen.findByRole("button", { name: /^Apply$/ })
     expect(container.querySelector(".codeblock-lang")?.textContent).toBe("text")
+  })
+
+  it("falls back to plaintext when the grammar fetch fails, then recovers on the next block", async () => {
+    // Must use a language no other test loads — successful loads are cached
+    // module-wide, and a cached grammar would bypass the failing loader.
+    grammarCtl.fail = true
+    const first = render(<CodeBlock code="package main" language="go" />)
+    // The escaped-fallback branch renders div.codeblock-body > pre; the
+    // pre-highlight placeholder is pre.codeblock-body. Waiting for the former
+    // proves the catch ran rather than passing on the placeholder.
+    await waitFor(() => {
+      expect(first.container.querySelector("div.codeblock-body pre code")?.textContent).toBe("package main")
+    }, { timeout: 5000 })
+    expect(first.container.querySelector(".shiki")).toBeNull()
+    first.unmount()
+
+    // The failed load must have been evicted, not cached as a rejection.
+    grammarCtl.fail = false
+    const second = render(<CodeBlock code="package main" language="go" />)
+    await waitFor(() => expect(second.container.querySelector(".codeblock-body .shiki")).not.toBeNull(), {
+      timeout: 5000,
+    })
   })
 })

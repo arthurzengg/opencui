@@ -2186,10 +2186,20 @@ export class ChatView implements vscode.WebviewViewProvider {
       `script-src 'unsafe-inline' 'unsafe-eval' ${webview.cspSource}`,
       `img-src ${webview.cspSource} https: data: blob:`,
       `font-src ${webview.cspSource} data:`,
-      `connect-src data: blob:`,
+      // cspSource lets the webview fetch the on-demand shiki grammars.
+      `connect-src ${webview.cspSource} data: blob:`,
       `worker-src blob:`,
     ].join("; ")
-    html = html.replace("<head>", `<head><meta http-equiv="Content-Security-Policy" content="${csp}">`)
+    // Grammars are fetched lazily from dist/webview/grammars/ (grammar-loader
+    // in the webview); the base URI only exists host-side, so inject it.
+    const grammarsBase = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, "dist", "webview", "grammars"),
+    )
+    html = html.replace(
+      "<head>",
+      `<head><meta http-equiv="Content-Security-Policy" content="${csp}">` +
+        `<script>window.__opencuiGrammarsBase=${JSON.stringify(grammarsBase.toString())}</script>`,
+    )
     return html
   }
 }
