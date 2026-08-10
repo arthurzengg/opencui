@@ -25,21 +25,21 @@ export type ReviewAllForPathOptions = {
 }
 
 /**
- * Apply Keep / Undo to every per-tool record matching a single path.
+ * Apply Keep / Undo for a single path. The two actions walk different record
+ * sets on purpose:
  *
- * Why iterate per-tool records instead of the aggregated row: aggregateChanges
- * collapses multiple ReviewChange records into one row by KEEPING ONLY the
- * last contributing record's `patch`. Acting on the aggregated patch alone
- * silently skips every earlier tool call's hunks — a half-undo the user
- * never sees. We act on the un-aggregated extract so every hunk reaches
- * `reviewHunk()`, then key the UI state on the aggregated row so the panel,
- * decorations, and snapshots stay coherent.
+ * Undo iterates EVERY per-tool record, newest first: aggregateChanges keeps
+ * only the last record's `patch`, so undoing the aggregated row alone would
+ * silently skip every earlier tool call's hunks, and only newest-first
+ * iteration leaves each record's `newText` anchor matchable when records
+ * layered edits on the same lines (A: orig → rev1, B: rev1 → final).
  *
- * Reverse order for Undo: when two records edited the same lines (A: orig →
- * rev1, B: rev1 → final), only newest-first iteration leaves each record's
- * `newText` anchor matchable. For non-overlapping edits the order still
- * matters because reverting a downstream hunk first keeps upstream line
- * anchors unshifted.
+ * Keep verifies ONLY the newest record: it mutates nothing, and once a later
+ * tool call touched the file again, earlier records describe intermediate
+ * states that by definition no longer exist — verifying them against the
+ * final file reported the agent's own follow-up edits as "file has changed"
+ * conflicts (#508). Hunks are marked accepted per-result, so a genuinely
+ * drifted hunk stays pending instead of being swept up by a wholesale mark.
  */
 export async function reviewAllForPath(
   records: ReviewChange[],
@@ -56,7 +56,10 @@ export async function reviewAllForPath(
     return { applied: 0, conflicts: 0, hunkUpdates: [] }
   }
   const runner = options.runReviewHunk ?? defaultReviewHunk
-  const ordered = action === "rejected" ? records.slice().reverse() : records
+  if (action === "accepted") {
+    return acceptNewestRecord(records[records.length - 1]!, aggregated, runner, options)
+  }
+  const ordered = records.slice().reverse()
   let applied = 0
   let conflicts = 0
   for (const record of ordered) {
@@ -71,7 +74,7 @@ export async function reviewAllForPath(
     // fragment of its content and report success.
     const hunks = record.kind === "updated" ? parsed : parsed.slice(0, 1)
     for (const hunk of hunks) {
-      if (action === "rejected" && !hunk.reversible) {
+      if (!hunk.reversible) {
         conflicts += 1
         continue
       }
@@ -89,6 +92,53 @@ export async function reviewAllForPath(
       if (options.reviewedKeys[key]) continue
       hunkUpdates.push({ key, state: action })
     }
+  }
+  return { applied, conflicts, hunkUpdates }
+}
+
+/**
+ * The newest record's kind (not the aggregated row's sticky kind) picks the
+ * check: a create-then-edit turn aggregates as "created", but the final state
+ * on disk is the edit's, and the text verification is the stronger claim.
+ * Hunk keys are computed against the aggregated row because that is what the
+ * panel and reviewedKeys are keyed on — the ids line up since aggregateChanges
+ * takes the aggregated `patch` from this same newest record.
+ */
+async function acceptNewestRecord(
+  newest: ReviewChange,
+  aggregated: ReviewChange,
+  runner: ReviewHunkRunner,
+  options: ReviewAllForPathOptions,
+): Promise<ReviewAllForPathResult> {
+  const parsed = splitReviewDiff(newest.patch).hunks
+  const hunkUpdates: HunkUpdate[] = []
+  // Create / delete / move verify the file as a unit: one runner call, and
+  // success settles every hunk of the row.
+  if (newest.kind !== "updated") {
+    const hunk = parsed[0]
+    if (!hunk) return { applied: 0, conflicts: 0, hunkUpdates }
+    const outcome = await runner(newest, hunk, "accepted", { silent: true, root: options.root })
+    if (outcome.status !== "applied" && outcome.status !== "no-op") {
+      return { applied: 0, conflicts: 1, hunkUpdates }
+    }
+    for (const key of splitReviewDiff(aggregated.patch).hunks.map((h) => reviewKey(aggregated, h.id))) {
+      if (options.reviewedKeys[key]) continue
+      hunkUpdates.push({ key, state: "accepted" })
+    }
+    return { applied: 1, conflicts: 0, hunkUpdates }
+  }
+  let applied = 0
+  let conflicts = 0
+  for (const hunk of parsed) {
+    const key = reviewKey(aggregated, hunk.id)
+    if (options.reviewedKeys[key]) continue
+    const outcome = await runner(newest, hunk, "accepted", { silent: true, root: options.root })
+    if (outcome.status === "applied" || outcome.status === "no-op") {
+      applied += 1
+      hunkUpdates.push({ key, state: "accepted" })
+      continue
+    }
+    conflicts += 1
   }
   return { applied, conflicts, hunkUpdates }
 }
