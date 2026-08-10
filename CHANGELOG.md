@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.10.3] - 2026-08-09
+
+### Changed
+- The chat panel starts from a much smaller bundle. Syntax-highlighting grammars — ~2.2MB of the 3.7MB webview HTML, re-parsed on every panel open — are no longer inlined; each grammar now ships as its own file and is fetched the first time a code block needs it, with languages that share a dependency (ruby alone pulls twenty) downloading it once. The first block in a new language shows a brief plaintext frame while its grammar loads, and a failed fetch degrades only that block to plaintext and retries on the next one instead of poisoning later highlights (#506, #507).
+- Internal: the path/diff helpers duplicated between the extension host and the webview were collapsed into the shared review-extract module, and dead protocol variants plus an unused type were removed (#504, #505).
+
+### Fixed
+- "Keep all" on a file the agent edited several times in one turn no longer fails with "couldn't accept N hunks — the file has changed since the diff was produced". Keep verified every intermediate edit against the final file, so the agent's own follow-up edits were counted as conflicts; it now verifies only the newest edit, whose state is the one actually on disk. Hunks are also marked confirmed per-result, so a hunk that genuinely drifted after the last edit stays pending in the review list instead of being swept along with the rest, and the warning now says what it means (#508, #509).
+
 ## [1.10.2] - 2026-08-04
 
 ### Changed
