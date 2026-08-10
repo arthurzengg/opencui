@@ -469,7 +469,7 @@ describe("reviewAllForPath: multi-tool turn", () => {
     expect(files.get("/workspace/foo.ts")?.content).toBe("one\ntwo\nthree\nfour\nfive\n")
   })
 
-  it("undo iterates per-tool records in REVERSE order; keep iterates forward", async () => {
+  it("undo iterates per-tool records in REVERSE order; keep verifies only the newest", async () => {
     const seen: Array<{ source: string; action: ReviewHunkState }> = []
     const runner = vi.fn(async (change: ReviewChange, _hunk, action) => {
       seen.push({ source: change.source, action })
@@ -484,7 +484,7 @@ describe("reviewAllForPath: multi-tool turn", () => {
 
     seen.length = 0
     await reviewAllForPath([recordA, recordB], aggregated, "accepted", { reviewedKeys: {}, runReviewHunk: runner })
-    expect(seen.map((s) => s.source)).toEqual(["callA", "callB"])
+    expect(seen.map((s) => s.source)).toEqual(["callB"])
   })
 
   it("is idempotent: a re-click with all aggregated hunks already marked is a no-op", async () => {
@@ -593,6 +593,90 @@ describe("reviewAllForPath: multi-tool turn", () => {
     expect(result.applied).toBe(0)
     expect(result.conflicts).toBe(0)
     expect(result.hunkUpdates).toHaveLength(0)
+  })
+
+  // #508: a multi-edit turn made Keep verify every record's intermediate diff
+  // against the final file, reporting the agent's own follow-up edits as
+  // "file has changed" conflicts.
+  describe("Keep on stacked records", () => {
+    it("layered edits on the same line confirm cleanly instead of conflicting", async () => {
+      files.set("/workspace/foo.ts", { content: "alpha\nfinal\ngamma\n" })
+      const recordA = buildUpdate({ source: "callA", path: "foo.ts", oldText: "beta", newText: "rev1", line: 2 })
+      const recordB = buildUpdate({ source: "callB", path: "foo.ts", oldText: "rev1", newText: "final", line: 2 })
+      const aggregated = aggregateLike([recordA, recordB])
+      const result = await reviewAllForPath([recordA, recordB], aggregated, "accepted", { reviewedKeys: {} })
+      expect(result.conflicts).toBe(0)
+      expect(result.applied).toBe(1)
+      expect(result.hunkUpdates.length).toBeGreaterThan(0)
+      for (const update of result.hunkUpdates) {
+        expect(update.state).toBe("accepted")
+      }
+    })
+
+    it("marks hunks per-result: a drifted hunk stays pending while the intact one settles", async () => {
+      files.set("/workspace/foo.ts", { content: "one\ntwo-rev\nthree\nfour\nDRIFTED\n" })
+      const patch = [
+        "@@ -2,1 +2,1 @@",
+        "-two",
+        "+two-rev",
+        "@@ -5,1 +5,1 @@",
+        "-five",
+        "+five-rev",
+      ].join("\n")
+      const record: ReviewChange = {
+        source: "callA", path: "foo.ts", kind: "updated", additions: 2, deletions: 2, patch,
+      }
+      const result = await reviewAllForPath([record], record, "accepted", { reviewedKeys: {} })
+      expect(result.applied).toBe(1)
+      expect(result.conflicts).toBe(1)
+      const hunks = splitReviewDiff(patch).hunks
+      expect(result.hunkUpdates).toEqual([{ key: reviewKey(record, hunks[0]!.id), state: "accepted" }])
+    })
+
+    it("skips hunks already confirmed on a re-click", async () => {
+      const runner = vi.fn(async () => ({ status: "applied" }) satisfies ReviewHunkOutcome)
+      const patch = ["@@ -1,1 +1,1 @@", "-a", "+a2", "@@ -3,1 +3,1 @@", "-b", "+b2"].join("\n")
+      const record: ReviewChange = {
+        source: "callA", path: "foo.ts", kind: "updated", additions: 2, deletions: 2, patch,
+      }
+      const hunks = splitReviewDiff(patch).hunks
+      const reviewedKeys: Record<string, ReviewHunkState> = {
+        [reviewKey(record, hunks[0]!.id)]: "accepted",
+      }
+      const result = await reviewAllForPath([record], record, "accepted", { reviewedKeys, runReviewHunk: runner })
+      expect(runner).toHaveBeenCalledTimes(1)
+      expect(result.hunkUpdates).toEqual([{ key: reviewKey(record, hunks[1]!.id), state: "accepted" }])
+    })
+
+    it("the newest record's kind picks the check, not the aggregated row's sticky kind", async () => {
+      // Create-then-edit aggregates as "created"; Keep must still verify the
+      // edit's text, so a drifted file conflicts instead of passing on bare
+      // existence.
+      files.set("/workspace/new.ts", { content: "drifted\n" })
+      const createRecord: ReviewChange = {
+        source: "callA", path: "new.ts", kind: "created", additions: 1, deletions: 0,
+        patch: "@@ -0,0 +1,1 @@\n+hello",
+      }
+      const editRecord = buildUpdate({ source: "callB", path: "new.ts", oldText: "hello", newText: "hello-edited", line: 1 })
+      const aggregated: ReviewChange = { ...editRecord, kind: "created" }
+      const result = await reviewAllForPath([createRecord, editRecord], aggregated, "accepted", { reviewedKeys: {} })
+      expect(result.applied).toBe(0)
+      expect(result.conflicts).toBe(1)
+      expect(result.hunkUpdates).toHaveLength(0)
+    })
+
+    it("a unit-kind newest record settles every hunk of the row on success", async () => {
+      // File gone as the deleted record claims: one runner call, all keys marked.
+      const record: ReviewChange = {
+        source: "callA", path: "gone.ts", kind: "deleted", additions: 0, deletions: 1,
+        patch: "@@ -1,1 +0,0 @@\n-line1",
+      }
+      const result = await reviewAllForPath([record], record, "accepted", { reviewedKeys: {} })
+      expect(result.applied).toBe(1)
+      expect(result.conflicts).toBe(0)
+      const hunks = splitReviewDiff(record.patch).hunks
+      expect(result.hunkUpdates).toEqual([{ key: reviewKey(record, hunks[0]!.id), state: "accepted" }])
+    })
   })
 })
 

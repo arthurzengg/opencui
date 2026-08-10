@@ -2131,9 +2131,11 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.post({ type: "reviewHunkState", key: update.key, state: update.state })
     }
     if (result.conflicts > 0) {
-      const verb = action === "accepted" ? "accept" : "undo"
+      const count = `${result.conflicts} hunk${result.conflicts === 1 ? "" : "s"}`
       vscode.window.showWarningMessage(
-        `OpenCode Panel: couldn't ${verb} ${result.conflicts} hunk${result.conflicts === 1 ? "" : "s"} in ${requestedPath} — the file has changed since the diff was produced.`,
+        action === "accepted"
+          ? `OpenCode Panel: couldn't confirm ${count} in ${requestedPath} — the file has changed since opencode's last edit. Unconfirmed hunks stay in the review list.`
+          : `OpenCode Panel: couldn't undo ${count} in ${requestedPath} — the file has changed since the diff was produced.`,
       )
     }
     // No explicit sync here: applied > 0 guarantees at least one
