@@ -192,6 +192,31 @@ export type Selection = {
   modelVariant?: string
 }
 
+/**
+ * One selectable model in the in-panel picker. Pushed by the host as part of
+ * `modelCatalog` so the popover renders instantly instead of fetching
+ * providers on open.
+ */
+export type ModelCatalogEntry = {
+  providerID: string
+  modelID: string
+  providerName?: string
+  /** Effort/thinking variant keys in the provider's declared order. */
+  variants: string[]
+  /**
+   * Last variant the user picked for this model (per-model memory, held in
+   * host preferences). Re-selecting the model restores it, so a model
+   * switch never silently drops the effort tuning.
+   */
+  lastVariant?: string
+}
+
+export type ModelCatalogInfo = {
+  models: ModelCatalogEntry[]
+  /** `providerID/modelID` keys, most recently used first. */
+  recents: string[]
+}
+
 export type EditorContextRef = {
   path?: string
   label?: string
@@ -411,6 +436,7 @@ export type Outbound =
   | { type: "ready"; connected: boolean; selection: Selection }
   | { type: "connected"; connected: boolean; error?: string }
   | { type: "selection"; selection: Selection }
+  | { type: "modelCatalog"; catalog: ModelCatalogInfo }
   | { type: "contextUsage"; usage?: ContextUsage }
   | { type: "commands"; commands: CommandInfo[] }
   | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
@@ -483,8 +509,14 @@ export type Inbound =
   | { type: "openReviewChange"; change: ReviewChange }
   | { type: "reviewAllInChange"; source: string; path: string; action: ReviewHunkState }
   | { type: "selectAgent" }
-  | { type: "selectModel" }
-  | { type: "selectVariant" }
+  /**
+   * Direct model/effort selection from the in-panel picker. All-undefined
+   * means "reset to the opencode default model". The host validates
+   * `variant` against the model's live variant list before persisting.
+   */
+  | { type: "setModel"; providerID?: string; modelID?: string; variant?: string }
+  /** Re-fetch the provider list and re-push `modelCatalog` (picker opened). */
+  | { type: "refreshModels" }
   | { type: "fileSearch"; requestID: number; query: string }
   | { type: "listDir"; requestID: number; path: string }
   | { type: "attachFile"; requestID: number }

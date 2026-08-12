@@ -97,6 +97,7 @@ let harness: {
   workspaceState: Memento
   servers: ServerManager
   taskStore: AgentTaskStore
+  prefs: Preferences
 }
 
 beforeEach(async () => {
@@ -111,6 +112,9 @@ beforeEach(async () => {
   const prefs = {
     get: () => ({}),
     onChange: vi.fn(() => ({ dispose: vi.fn() })),
+    recentModels: () => [] as string[],
+    variantFor: () => undefined,
+    setModel: vi.fn(async () => {}),
   } as unknown as Preferences
   const indexManager = {
     onStatusChange: vi.fn(() => ({ dispose: vi.fn() })),
@@ -138,7 +142,7 @@ beforeEach(async () => {
   )
   const fake = makeFakeWebviewView()
   await chatView.resolveWebviewView(fake.view)
-  harness = { chatView, posted: fake.posted, send: fake.send, disposeView: fake.disposeView, workspaceState, servers, taskStore }
+  harness = { chatView, posted: fake.posted, send: fake.send, disposeView: fake.disposeView, workspaceState, servers, taskStore, prefs }
 })
 
 afterEach(async () => {
@@ -977,5 +981,66 @@ describe("ChatView harness: webview HTML", () => {
     } finally {
       fsFiles.delete(key)
     }
+  })
+})
+
+describe("ChatView harness: model catalog", () => {
+  const GPT_PROVIDER = {
+    id: "openai",
+    name: "OpenAI",
+    models: { "gpt-5.5": { variants: { low: {}, high: {} } } },
+  }
+
+  function catalogs() {
+    return harness.posted.filter((m) => m.type === "modelCatalog")
+  }
+
+  it("pushes the model catalog after the mounted handshake", async () => {
+    server.setProviders([GPT_PROVIDER])
+    await harness.send({ type: "mounted" })
+    await until(() => catalogs().length > 0)
+    const msg = catalogs()[0]!
+    expect(msg.type === "modelCatalog" && msg.catalog).toEqual({
+      models: [
+        {
+          providerID: "openai",
+          modelID: "gpt-5.5",
+          providerName: "OpenAI",
+          variants: ["low", "high"],
+          lastVariant: undefined,
+        },
+      ],
+      recents: [],
+    })
+  })
+
+  it("refreshModels refetches the provider list and re-pushes the catalog", async () => {
+    await harness.send({ type: "mounted" })
+    await until(() => catalogs().length > 0)
+    server.setProviders([GPT_PROVIDER])
+    await harness.send({ type: "refreshModels" })
+    await until(() =>
+      catalogs().some(
+        (m) => m.type === "modelCatalog" && m.catalog.models.some((e) => e.modelID === "gpt-5.5"),
+      ),
+    )
+  })
+
+  it("setModel persists via prefs; the variant is validated against the live catalog", async () => {
+    server.setProviders([GPT_PROVIDER])
+    await harness.send({ type: "mounted" })
+    await until(() => catalogs().length > 0)
+    const setModel = vi.mocked(harness.prefs.setModel)
+
+    await harness.send({ type: "setModel", providerID: "openai", modelID: "gpt-5.5", variant: "high" })
+    expect(setModel).toHaveBeenLastCalledWith("openai", "gpt-5.5", "high")
+
+    // Stale variant from a changed config must not persist.
+    await harness.send({ type: "setModel", providerID: "openai", modelID: "gpt-5.5", variant: "bogus" })
+    expect(setModel).toHaveBeenLastCalledWith("openai", "gpt-5.5", undefined)
+
+    // All-undefined = reset to the opencode default.
+    await harness.send({ type: "setModel" })
+    expect(setModel).toHaveBeenLastCalledWith(undefined, undefined, undefined)
   })
 })

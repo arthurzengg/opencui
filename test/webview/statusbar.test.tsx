@@ -15,8 +15,8 @@ const baseProps = {
   conversations: [],
   activeConversationID: undefined as string | undefined,
   onSelectAgent: vi.fn(),
-  onSelectModel: vi.fn(),
-  onSelectVariant: vi.fn(),
+  onSetModel: vi.fn(),
+  onRefreshModels: vi.fn(),
   onCreateConversation: vi.fn(),
   onOpenConversation: vi.fn(),
   onRenameConversation: vi.fn(),
@@ -83,41 +83,35 @@ describe("StatusBar", () => {
     expect(screen.queryByText(/error · boom/)).not.toBeInTheDocument()
   })
 
-  it("opens the selector popover on trigger click and shows Model, Effort, Agent rows", async () => {
+  it("opens the in-panel model picker on trigger click (no QuickPick handoff)", async () => {
     const user = userEvent.setup()
-    render(<StatusBar {...baseProps} selection={{ model: "claude-opus-4-7" }} />)
+    const onRefreshModels = vi.fn()
+    render(
+      <StatusBar
+        {...baseProps}
+        selection={{ model: "anthropic/claude-opus-4-7" }}
+        modelCatalog={{
+          models: [
+            { providerID: "anthropic", modelID: "claude-opus-4-7", providerName: "Anthropic", variants: [] },
+          ],
+          recents: [],
+        }}
+        onRefreshModels={onRefreshModels}
+      />,
+    )
     const trigger = screen.getByRole("button", { name: /change agent, model, and effort/i })
     await user.click(trigger)
-    expect(screen.getAllByRole("menuitem")).toHaveLength(3)
+    expect(screen.getByRole("listbox", { name: "Models" })).toBeInTheDocument()
+    // Opening asks the host for a fresh catalog (stale-while-revalidate).
+    expect(onRefreshModels).toHaveBeenCalledOnce()
   })
 
-  it("invokes onSelectModel when clicking the Model row in popover", async () => {
-    const user = userEvent.setup()
-    const onSelectModel = vi.fn()
-    render(<StatusBar {...baseProps} onSelectModel={onSelectModel} />)
-    await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
-    const items = screen.getAllByRole("menuitem")
-    await user.click(items[0]!)
-    expect(onSelectModel).toHaveBeenCalledOnce()
-  })
-
-  it("invokes onSelectVariant when clicking the Effort row in popover", async () => {
-    const user = userEvent.setup()
-    const onSelectVariant = vi.fn()
-    render(<StatusBar {...baseProps} onSelectVariant={onSelectVariant} />)
-    await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
-    const items = screen.getAllByRole("menuitem")
-    await user.click(items[1]!) // Order: Model, Effort, Agent
-    expect(onSelectVariant).toHaveBeenCalledOnce()
-  })
-
-  it("invokes onSelectAgent when clicking the Agent row in popover", async () => {
+  it("invokes onSelectAgent when clicking the Agent footer row in the picker", async () => {
     const user = userEvent.setup()
     const onSelectAgent = vi.fn()
     render(<StatusBar {...baseProps} onSelectAgent={onSelectAgent} />)
     await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
-    const items = screen.getAllByRole("menuitem")
-    await user.click(items[2]!)
+    await user.click(screen.getByRole("button", { name: /Agent/ }))
     expect(onSelectAgent).toHaveBeenCalledOnce()
   })
 
@@ -131,12 +125,24 @@ describe("StatusBar", () => {
     expect(screen.getByText("high")).toBeInTheDocument()
   })
 
-  it("Effort row shows 'default' when no variant is selected", async () => {
+  it("shows the current model's effort chips in the picker with 'default' active", async () => {
     const user = userEvent.setup()
-    render(<StatusBar {...baseProps} selection={{ model: "openai/gpt-5.5" }} />)
+    render(
+      <StatusBar
+        {...baseProps}
+        selection={{ model: "openai/gpt-5.5" }}
+        modelCatalog={{
+          models: [
+            { providerID: "openai", modelID: "gpt-5.5", providerName: "OpenAI", variants: ["low", "high"] },
+          ],
+          recents: [],
+        }}
+      />,
+    )
     await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
-    const items = screen.getAllByRole("menuitem")
-    expect(items[1]!.textContent).toMatch(/default/i)
+    const defaultChip = screen.getByRole("button", { name: "default" })
+    expect(defaultChip.className).toContain("is-active")
+    expect(screen.getByRole("button", { name: "high" })).toBeInTheDocument()
   })
 
   it("trigger shows the Effort segment with 'default' even when no variant is set", () => {

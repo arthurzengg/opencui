@@ -1,6 +1,7 @@
 import * as vscode from "vscode"
 import type { ServerManager } from "./server"
 import type { Preferences } from "./preferences"
+import type { ModelCatalogInfo } from "./protocol"
 import { log } from "./output"
 
 /**
@@ -58,17 +59,16 @@ export class Picker {
   }
 
   /**
-   * Single-step model picker — pick a model and you're done. Variant /
-   * effort tuning has moved entirely to the StatusBar's Effort row
-   * (`pickVariantForCurrent`) so picking a model never asks a second
-   * question; the dropdown is short and the two concerns stay
-   * orthogonal.
+   * Single-step model picker — pick a model and you're done. Effort is
+   * tuned separately (the panel's picker chips or `pickVariantForCurrent`)
+   * so picking a model never asks a second question.
    *
-   * Variant is always reset on a successful model change: variants are
-   * model-scoped (e.g. `max` exists on Sonnet 4.6 but not on Haiku
-   * 4.5), so carrying the prior variant string forward to a different
-   * model would silently produce an invalid combo. The Effort row in
-   * the StatusBar lets the user retune effort immediately afterward.
+   * The variant is never carried over from the PREVIOUS model (variants are
+   * model-scoped; e.g. `max` exists on Sonnet 4.6 but not on Haiku 4.5).
+   * Instead the last variant used with the PICKED model is restored from
+   * per-model memory, validated against its live variant list — switching
+   * away and back keeps the effort tuning without ever minting an invalid
+   * combo.
    */
   async pickModel() {
     try {
@@ -105,11 +105,12 @@ export class Picker {
         log("pickModel: no matching model for", cleaned)
         return
       }
-      await this.prefs.setModel(model.providerID, model.modelID, undefined)
-      const hint = model.variants.length > 0 ? " — tune effort from the StatusBar" : ""
-      vscode.window.showInformationMessage(
-        `OpenCode Panel: model → ${model.providerID}/${model.modelID}${hint}`,
-      )
+      const variant = validVariant(model, this.prefs.variantFor(model.providerID, model.modelID))
+      await this.prefs.setModel(model.providerID, model.modelID, variant)
+      const display = variant
+        ? `${model.providerID}/${model.modelID} · ${variant}`
+        : `${model.providerID}/${model.modelID}`
+      vscode.window.showInformationMessage(`OpenCode Panel: model → ${display}`)
     } catch (e) {
       log("pickModel failed", e)
       vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
@@ -213,7 +214,7 @@ export type ModelInfo = {
   variants: string[]
 }
 
-type ProviderShape = {
+export type ProviderShape = {
   id: string
   name?: string
   models?: Record<string, { variants?: Record<string, unknown> } | undefined>
@@ -237,5 +238,44 @@ export function listModels(providers: ProviderShape[]): ModelInfo[] {
     }
   }
   return models
+}
+
+/**
+ * A variant is only meaningful for the model it was declared on. With the
+ * model at hand, membership is enforced; without it (webview `setModel`
+ * arriving before the catalog loaded), the variant is trusted — opencode
+ * ignores unknown variant keys, and dropping it would lose a valid pick.
+ */
+export function validVariant(
+  model: ModelInfo | undefined,
+  variant: string | undefined,
+): string | undefined {
+  if (!variant) return undefined
+  if (!model) return variant
+  return model.variants.includes(variant) ? variant : undefined
+}
+
+/**
+ * Wire catalog for the in-panel picker. Recents are filtered to models that
+ * still exist (an opencode config change must not leave dead rows), and each
+ * entry carries the validated per-model variant memory so the webview can
+ * restore effort on selection without a round-trip.
+ */
+export function buildModelCatalog(
+  models: ModelInfo[],
+  recents: string[],
+  variantFor: (providerID: string, modelID: string) => string | undefined,
+): ModelCatalogInfo {
+  const keys = new Set(models.map((m) => `${m.providerID}/${m.modelID}`))
+  return {
+    models: models.map((m) => ({
+      providerID: m.providerID,
+      modelID: m.modelID,
+      providerName: m.providerName,
+      variants: m.variants,
+      lastVariant: validVariant(m, variantFor(m.providerID, m.modelID)),
+    })),
+    recents: recents.filter((key) => keys.has(key)),
+  }
 }
 

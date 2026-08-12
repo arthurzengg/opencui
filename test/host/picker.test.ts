@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { isUserSelectableAgent, listModels } from "../../src/picker"
+import { buildModelCatalog, isUserSelectableAgent, listModels, validVariant } from "../../src/picker"
 
 describe("isUserSelectableAgent", () => {
   it("accepts a normal primary agent", () => {
@@ -93,3 +93,48 @@ describe("listModels", () => {
   })
 })
 
+
+describe("validVariant", () => {
+  const model = { providerID: "openai", modelID: "gpt-5.5", variants: ["low", "high"] }
+
+  it("keeps a variant the model declares", () => {
+    expect(validVariant(model, "high")).toBe("high")
+  })
+
+  it("drops a variant the model does not declare (stale memory, changed config)", () => {
+    expect(validVariant(model, "max")).toBeUndefined()
+  })
+
+  it("passes undefined through", () => {
+    expect(validVariant(model, undefined)).toBeUndefined()
+  })
+
+  it("trusts the variant when the model is unknown (catalog not loaded yet)", () => {
+    expect(validVariant(undefined, "high")).toBe("high")
+  })
+})
+
+describe("buildModelCatalog", () => {
+  const models = [
+    { providerID: "anthropic", modelID: "sonnet", providerName: "Anthropic", variants: ["max"] },
+    { providerID: "openai", modelID: "gpt-5.5", providerName: "OpenAI", variants: ["low", "high"] },
+  ]
+
+  it("attaches validated per-model variant memory as lastVariant", () => {
+    const memory: Record<string, string | undefined> = {
+      "anthropic/sonnet": "max",
+      "openai/gpt-5.5": "xhigh", // no longer declared — must not survive
+    }
+    const catalog = buildModelCatalog(models, [], (p, m) => memory[`${p}/${m}`])
+    expect(catalog.models.map((m) => m.lastVariant)).toEqual(["max", undefined])
+  })
+
+  it("filters recents to models that still exist, preserving order", () => {
+    const catalog = buildModelCatalog(
+      models,
+      ["openai/gpt-5.5", "meta/removed-model", "anthropic/sonnet"],
+      () => undefined,
+    )
+    expect(catalog.recents).toEqual(["openai/gpt-5.5", "anthropic/sonnet"])
+  })
+})
