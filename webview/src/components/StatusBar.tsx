@@ -1,7 +1,8 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
-import type { ConversationSummary, Selection } from "../protocol"
+import type { ConversationSummary, ModelCatalogInfo, Selection } from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
+import { ModelPicker } from "./ModelPicker"
 
 export type HeaderPopoverID = "selector" | "history"
 type HeaderPopoverSetter = Dispatch<SetStateAction<HeaderPopoverID | null>>
@@ -11,13 +12,14 @@ type Props = {
   error?: string
   continuationPending?: boolean
   selection: Selection
+  modelCatalog?: ModelCatalogInfo
   conversations: ConversationSummary[]
   activeConversationID?: string
   activePopover?: HeaderPopoverID | null
   onActivePopoverChange?: HeaderPopoverSetter
   onSelectAgent: () => void
-  onSelectModel: () => void
-  onSelectVariant: () => void
+  onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
+  onRefreshModels: () => void
   onCreateConversation: () => void
   onOpenConversation: (id: string) => void
   onRenameConversation: (id: string, title: string) => void
@@ -29,21 +31,19 @@ export function StatusBar({
   error,
   continuationPending,
   selection,
+  modelCatalog,
   conversations,
   activeConversationID,
   activePopover,
   onActivePopoverChange,
   onSelectAgent,
-  onSelectModel,
-  onSelectVariant,
+  onSetModel,
+  onRefreshModels,
   onCreateConversation,
   onOpenConversation,
   onRenameConversation,
   onDeleteConversation,
 }: Props) {
-  const agent = selection.agent ?? "default"
-  const model = selection.model ?? "default"
-  const variant = selection.modelVariant
   const active = conversations.find((c) => c.id === activeConversationID)
   const [localActivePopover, setLocalActivePopover] = useState<HeaderPopoverID | null>(null)
   const currentPopover = activePopover === undefined ? localActivePopover : activePopover
@@ -71,14 +71,13 @@ export function StatusBar({
       <StatusIndicator kind={dotKind} title={statusTitle} />
       <div className="spacer" />
       <SelectorMenu
-        agent={agent}
-        model={model}
-        variant={variant}
+        selection={selection}
+        catalog={modelCatalog}
         open={currentPopover === "selector"}
         onOpenChange={(open) => setPopoverOpen("selector", open)}
         onSelectAgent={onSelectAgent}
-        onSelectModel={onSelectModel}
-        onSelectVariant={onSelectVariant}
+        onSetModel={onSetModel}
+        onRefreshModels={onRefreshModels}
       />
       <button
         type="button"
@@ -310,29 +309,29 @@ export function formatUpdated(updatedAt: number) {
 }
 
 function SelectorMenu({
-  agent,
-  model,
-  variant,
+  selection,
+  catalog,
   open,
   onOpenChange,
   onSelectAgent,
-  onSelectModel,
-  onSelectVariant,
+  onSetModel,
+  onRefreshModels,
 }: {
-  agent: string
-  model: string
-  variant?: string
+  selection: Selection
+  catalog?: ModelCatalogInfo
   open: boolean
   onOpenChange: (open: boolean) => void
   onSelectAgent: () => void
-  onSelectModel: () => void
-  onSelectVariant: () => void
+  onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
+  onRefreshModels: () => void
 }) {
   const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
 
+  const agent = selection.agent ?? "default"
+  const model = selection.model ?? "default"
+  const variant = selection.modelVariant
   const prettyModel = formatModel(model)
   const prettyAgent = formatAgent(agent)
-  const prettyVariant = variant ?? "default"
   const triggerTitle = `Model: ${model}${variant ? ` (effort: ${variant})` : ""}\nAgent: ${agent}`
 
   return (
@@ -354,47 +353,16 @@ function SelectorMenu({
         <span className="selector-secondary">{prettyAgent}</span>
       </button>
       {open && (
-        <div className="selector-popover" role="menu">
-          <button
-            type="button"
-            className="selector-row"
-            role="menuitem"
-            onClick={() => {
-              onSelectModel()
-              close()
-            }}
-          >
-            <span className="selector-row-label">Model</span>
-            <span className="selector-row-value" title={model}>{prettyModel}</span>
-            <span className="selector-row-arrow">›</span>
-          </button>
-          <button
-            type="button"
-            className="selector-row"
-            role="menuitem"
-            onClick={() => {
-              onSelectVariant()
-              close()
-            }}
-            title="Change effort / thinking budget for the current model"
-          >
-            <span className="selector-row-label">Effort</span>
-            <span className="selector-row-value" title={variant ?? "default"}>{prettyVariant}</span>
-            <span className="selector-row-arrow">›</span>
-          </button>
-          <button
-            type="button"
-            className="selector-row"
-            role="menuitem"
-            onClick={() => {
-              onSelectAgent()
-              close()
-            }}
-          >
-            <span className="selector-row-label">Agent</span>
-            <span className="selector-row-value" title={agent}>{prettyAgent}</span>
-            <span className="selector-row-arrow">›</span>
-          </button>
+        <div className="model-picker-popover" role="dialog" aria-label="Select model and effort">
+          <ModelPicker
+            catalog={catalog}
+            selection={selection}
+            agentLabel={prettyAgent}
+            onSetModel={onSetModel}
+            onSelectAgent={onSelectAgent}
+            onRefresh={onRefreshModels}
+            onClose={close}
+          />
         </div>
       )}
     </div>

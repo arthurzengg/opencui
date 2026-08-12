@@ -75,6 +75,8 @@ export type MockOpencodeServer = {
   commandCalls: Array<{ sessionID: string; body: unknown }>
   /** Configure what GET /command returns. */
   setCommands: (commands: Array<Record<string, unknown>>) => void
+  /** Configure what GET /config/providers returns (default: none). */
+  setProviders: (providers: Array<Record<string, unknown>>) => void
   /**
    * Configure what GET /session/status returns. Pass `undefined` to clear
    * the entry. Tests use this to drive the watchdog's recovery path.
@@ -119,6 +121,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const childrenByParent = new Map<string, string[]>()
   const commandCalls: Array<{ sessionID: string; body: unknown }> = []
   let commands: Array<Record<string, unknown>> = []
+  let providers: Array<Record<string, unknown>> = []
   const sessionStatuses = new Map<string, { type: "idle" | "busy" | "retry" }>()
   let statusDelayMs = 0
   let statusPolls = 0
@@ -198,7 +201,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
 
     // Providers
     if (path === "/config/providers" && req.method === "GET") {
-      reply(res, 200, { providers: [], default: {} })
+      reply(res, 200, { providers, default: {} })
       return
     }
 
@@ -460,6 +463,9 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     commandCalls,
     setCommands(next) {
       commands = next
+    },
+    setProviders(next) {
+      providers = next
     },
     setSessionStatus(sessionID, status) {
       if (status) sessionStatuses.set(sessionID, status)

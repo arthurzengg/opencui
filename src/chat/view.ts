@@ -16,6 +16,7 @@ import { pickAttachments, bytesToDataUrl } from "../attachments"
 import { AttachmentStore, dataUrlToBytes } from "./attachment-store"
 import { log } from "../output"
 import { getWorkspaceRoots, primaryWorkspaceRoot } from "../workspace-root"
+import { buildModelCatalog, listModels, validVariant, type ModelInfo, type ProviderShape } from "../picker"
 import type { WorkspaceInfo } from "../protocol"
 import type {
   Attachment,
@@ -111,6 +112,13 @@ export class ChatView implements vscode.WebviewViewProvider {
   private contextUsageRequest = 0
   /** Names from the last `command.list` fetch — lets a custom command shadow a built-in. */
   private customCommandNames = new Set<string>()
+  /**
+   * Cached provider fetch backing the in-panel model picker. Refetched on
+   * webview mount and on `refreshModels` (picker open); prefs changes only
+   * re-post from this cache (recents / variant memory moved, models didn't).
+   */
+  private modelCatalogModels?: ModelInfo[]
+  private modelCatalogFetch?: Promise<void>
   /**
    * True between user-pressed Stop and the subsequent `session.idle` event.
    * While true, drop incoming SSE message/tool deltas — opencode keeps draining
@@ -276,7 +284,12 @@ export class ChatView implements vscode.WebviewViewProvider {
       null,
       this.context.subscriptions,
     )
-    this.prefs.onChange(() => this.postSelection())
+    this.prefs.onChange(() => {
+      this.postSelection()
+      // Recents and per-model variant memory ride on the catalog message —
+      // re-post from cache so the picker reflects the pick it just made.
+      this.postModelCatalog()
+    })
   }
 
   focus() {
@@ -806,6 +819,42 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.post({ type: "selection", selection: this.buildSelection() })
   }
 
+  private postModelCatalog() {
+    if (!this.modelCatalogModels) return
+    const catalog = buildModelCatalog(
+      this.modelCatalogModels,
+      this.prefs.recentModels(),
+      (providerID, modelID) => this.prefs.variantFor(providerID, modelID),
+    )
+    this.post({ type: "modelCatalog", catalog })
+  }
+
+  /**
+   * Fetch the provider list and push the model catalog. The picker posts
+   * `refreshModels` on every open, so concurrent calls coalesce onto one
+   * in-flight fetch instead of stacking HTTP requests.
+   */
+  private refreshModelCatalog(backend?: Backend): Promise<void> {
+    if (this.modelCatalogFetch) return this.modelCatalogFetch
+    this.modelCatalogFetch = (async () => {
+      try {
+        const activeBackend = backend ?? (await this.servers.ensure())
+        const res = await activeBackend.client.config.providers()
+        if (res.error || !res.data) {
+          log("model catalog: config.providers failed", res.error)
+          return
+        }
+        this.modelCatalogModels = listModels((res.data.providers ?? []) as unknown as ProviderShape[])
+        this.postModelCatalog()
+      } catch (e) {
+        log("model catalog refresh failed", e)
+      } finally {
+        this.modelCatalogFetch = undefined
+      }
+    })()
+    return this.modelCatalogFetch
+  }
+
   private buildSelection(): Selection {
     const sel = this.prefs.get()
     const model = sel.modelProviderID && sel.modelID ? `${sel.modelProviderID}/${sel.modelID}` : undefined
@@ -907,6 +956,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           const backend = await this.servers.ensure()
           this.post({ type: "connected", connected: true })
           void this.refreshCommands(backend)
+          void this.refreshModelCatalog(backend)
           if (this.sessionID) void this.refreshContextUsage(backend)
         } catch (e) {
           this.post({ type: "connected", connected: false, error: (e as Error).message })
@@ -998,13 +1048,19 @@ export class ChatView implements vscode.WebviewViewProvider {
         log("selectAgent → executing opencui.selectAgent")
         await vscode.commands.executeCommand("opencui.selectAgent")
         return
-      case "selectModel":
-        log("selectModel → executing opencui.selectModel")
-        await vscode.commands.executeCommand("opencui.selectModel")
+      case "setModel": {
+        if (!msg.providerID || !msg.modelID) {
+          await this.prefs.setModel(undefined, undefined, undefined)
+          return
+        }
+        const model = this.modelCatalogModels?.find(
+          (m) => m.providerID === msg.providerID && m.modelID === msg.modelID,
+        )
+        await this.prefs.setModel(msg.providerID, msg.modelID, validVariant(model, msg.variant))
         return
-      case "selectVariant":
-        log("selectVariant → executing opencui.selectVariant")
-        await vscode.commands.executeCommand("opencui.selectVariant")
+      }
+      case "refreshModels":
+        void this.refreshModelCatalog()
         return
       case "permissionReply": {
         this.activePermissions.delete(msg.id)

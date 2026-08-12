@@ -14,6 +14,7 @@ import type {
   EditorContextRef,
   FileSearchHit,
   IndexStatusInfo,
+  ModelCatalogInfo,
   Outbound,
   QuestionInfo,
   ReviewChange,
@@ -58,6 +59,12 @@ export type ChatState = {
   continuationPending: boolean
   error?: string
   selection: Selection
+  /**
+   * Host-pushed model list backing the in-panel picker. Arrives on connect
+   * and after every preference change; workspace-scoped like `commands`, so
+   * it survives conversation resets.
+   */
+  modelCatalog?: ModelCatalogInfo
   conversations: ConversationSummary[]
   conversationID?: string
   contextUsage?: ContextUsage
@@ -177,13 +184,15 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "reset":
       // idleNonce is monotonic for the webview's lifetime — resetting it to 0
       // would desync the flush hook's last-seen ref.
-      return { ...initial, selection: state.selection, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce }
+      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce }
     case "ready":
       return { ...state, connected: action.connected, selection: action.selection }
     case "connected":
       return { ...state, connected: action.connected, error: action.error }
     case "selection":
       return { ...state, selection: action.selection }
+    case "modelCatalog":
+      return { ...state, modelCatalog: action.catalog }
     case "contextUsage":
       return { ...state, contextUsage: action.usage }
     case "commands":
@@ -434,7 +443,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "unqueueMessage":
       return { ...state, queued: state.queued.filter((q) => q.id !== action.id) }
     case "clear":
-      return { ...initial, selection: state.selection, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce }
+      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce }
     default:
       return state
   }
@@ -573,11 +582,11 @@ export function useChatState() {
     selectAgent() {
       vscode.post({ type: "selectAgent" })
     },
-    selectModel() {
-      vscode.post({ type: "selectModel" })
+    setModel(providerID?: string, modelID?: string, variant?: string) {
+      vscode.post({ type: "setModel", providerID, modelID, variant })
     },
-    selectVariant() {
-      vscode.post({ type: "selectVariant" })
+    refreshModels() {
+      vscode.post({ type: "refreshModels" })
     },
     replyPermission(id: string, response: "once" | "always" | "reject") {
       vscode.post({ type: "permissionReply", id, response })

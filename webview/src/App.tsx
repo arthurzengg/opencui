@@ -27,8 +27,8 @@ export default function App() {
     renameConversation,
     deleteConversation,
     selectAgent,
-    selectModel,
-    selectVariant,
+    setModel,
+    refreshModels,
     replyPermission,
     replyQuestion,
     rejectQuestion,
@@ -245,13 +245,14 @@ export default function App() {
         error={state.error}
         continuationPending={state.continuationPending}
         selection={state.selection}
+        modelCatalog={state.modelCatalog}
         conversations={state.conversations}
         activeConversationID={state.conversationID}
         activePopover={activeHeaderPopover}
         onActivePopoverChange={setActiveHeaderPopover}
         onSelectAgent={selectAgent}
-        onSelectModel={selectModel}
-        onSelectVariant={selectVariant}
+        onSetModel={setModel}
+        onRefreshModels={refreshModels}
         onCreateConversation={newSession}
         onOpenConversation={openConversation}
         onRenameConversation={renameConversation}

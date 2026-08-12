@@ -438,7 +438,9 @@ button:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.selector-popover {
+/* In-panel model picker (#512): the selector trigger opens this instead of
+   handing off to a native QuickPick at the top of the window. */
+.model-picker-popover {
   position: absolute;
   /* `top: 100%` is the bottom of .statusbar; the +2px is a small visual
      gap. `right: 10px` matches .statusbar's right padding so the popover's
@@ -447,14 +449,142 @@ button:focus-visible {
   top: calc(100% + 2px);
   right: 10px;
   z-index: var(--z-popover);
-  width: min(300px, calc(100vw - 20px));
+  width: min(340px, calc(100vw - 20px));
+  max-height: min(440px, calc(100vh - 70px));
   display: flex;
   flex-direction: column;
-  padding: 4px;
+  padding: 8px;
   border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
   border-radius: var(--radius);
   background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
   box-shadow: var(--shadow-popover);
+}
+.model-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.model-picker-search {
+  width: 100%;
+  height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.model-picker-search:focus {
+  border-color: var(--vscode-focusBorder);
+}
+.model-picker-effort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 4px 2px;
+}
+.model-picker-effort-label {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.model-picker-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.model-picker-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.model-picker-chip:hover {
+  background: var(--hover-bg-pill);
+}
+.model-picker-chip.is-active {
+  border-color: transparent;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+.model-picker-list {
+  margin-top: 6px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.model-picker-section {
+  padding: 6px 8px 2px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: default;
+}
+.model-picker-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+/* Hover moves the active index (via hoverMove), so `.active` is the single
+   highlight — a separate :hover rule would double-highlight during
+   keyboard navigation with a resting cursor. */
+.model-picker-row.active {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.model-picker-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.model-picker-last-variant,
+.model-picker-provider {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+.model-picker-row.active .model-picker-last-variant,
+.model-picker-row.active .model-picker-provider {
+  color: var(--vscode-list-activeSelectionForeground);
+  opacity: 0.8;
+}
+.model-picker-row .codicon-check {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 13px;
+}
+.model-picker-empty {
+  padding: 10px 8px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+/* Agent footer keeps the old selector-row look, separated from the list. */
+.model-picker-agent {
+  margin-top: 6px;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
 }
 .selector-row {
   display: grid;
