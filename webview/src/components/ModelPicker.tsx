@@ -173,16 +173,19 @@ export function ModelPicker({
 
   return (
     <div className="model-picker">
-      <input
-        className="model-picker-search"
-        type="text"
-        placeholder="Search models…"
-        aria-label="Search models"
-        value={query}
-        autoFocus
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={onKeyDown}
-      />
+      <div className="model-picker-search-wrap">
+        <span className="codicon codicon-search" aria-hidden="true" />
+        <input
+          className="model-picker-search"
+          type="text"
+          placeholder="Search models…"
+          aria-label="Search models"
+          value={query}
+          autoFocus
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onKeyDown}
+        />
+      </div>
       {current && current.variants.length > 0 && (
         <div className="model-picker-effort">
           <span className="model-picker-effort-label">Effort</span>
@@ -232,7 +235,7 @@ export function ModelPicker({
                   type="button"
                   role="option"
                   aria-selected={i === activeIndex}
-                  className={`model-picker-row ${i === activeIndex ? "active" : ""}`}
+                  className={`model-picker-row ${i === activeIndex ? "active" : ""} ${currentKey ? "" : "is-current"}`}
                   onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
                   onClick={() => selectItem(item)}
                   title="Use opencode's configured default model"
@@ -247,6 +250,10 @@ export function ModelPicker({
           const key = modelKey(entry)
           const isCurrent = key === currentKey
           const tooltip = entry.lastVariant ? `${key} · ${entry.lastVariant}` : key
+          // Inside a provider group the header already names the provider;
+          // repeating it per row is noise. Recent rows and filtered results
+          // mix providers, so there the label disambiguates.
+          const showProvider = item.section === "Recent" || item.section === ""
           return (
             <Fragment key={`${item.section}:${key}`}>
               {showHeader && <div className="model-picker-section">{item.section}</div>}
@@ -254,7 +261,7 @@ export function ModelPicker({
                 type="button"
                 role="option"
                 aria-selected={i === activeIndex}
-                className={`model-picker-row ${i === activeIndex ? "active" : ""}`}
+                className={`model-picker-row ${i === activeIndex ? "active" : ""} ${isCurrent ? "is-current" : ""}`}
                 onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
                 onClick={() => selectItem(item)}
                 title={tooltip}
@@ -265,9 +272,11 @@ export function ModelPicker({
                 {entry.lastVariant && (
                   <span className="model-picker-last-variant">{entry.lastVariant}</span>
                 )}
-                <span className="model-picker-provider">
-                  {entry.providerName ?? entry.providerID}
-                </span>
+                {showProvider && (
+                  <span className="model-picker-provider">
+                    {entry.providerName ?? entry.providerID}
+                  </span>
+                )}
                 {isCurrent && <span className="codicon codicon-check" aria-hidden="true" />}
               </button>
             </Fragment>
@@ -276,17 +285,17 @@ export function ModelPicker({
       </div>
       <button
         type="button"
-        className="selector-row model-picker-agent"
+        className="model-picker-agent"
         onClick={() => {
           onSelectAgent()
           onClose()
         }}
       >
-        <span className="selector-row-label">Agent</span>
-        <span className="selector-row-value" title={agentLabel}>
+        <span className="model-picker-agent-label">Agent</span>
+        <span className="model-picker-agent-value" title={agentLabel}>
           {agentLabel}
         </span>
-        <span className="selector-row-arrow">›</span>
+        <span className="codicon codicon-chevron-right" aria-hidden="true" />
       </button>
     </div>
   )

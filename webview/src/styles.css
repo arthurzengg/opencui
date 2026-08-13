@@ -438,24 +438,27 @@ button:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* In-panel model picker (#512): the selector trigger opens this instead of
-   handing off to a native QuickPick at the top of the window. */
+/* In-panel model picker (#512, restyled #514): command-palette look — a
+   borderless search line over a hairline divider, a segmented effort
+   control, and inset rounded rows. Zones own their padding (the popover
+   has none) so the search/footer dividers run edge to edge; `overflow:
+   hidden` keeps the footer's hover square corners inside the radius. */
 .model-picker-popover {
   position: absolute;
-  /* `top: 100%` is the bottom of .statusbar; the +2px is a small visual
+  /* `top: 100%` is the bottom of .statusbar; the +4px is a small visual
      gap. `right: 10px` matches .statusbar's right padding so the popover's
      right edge lands inside the sidebar, the same place the History
      popover lands. */
-  top: calc(100% + 2px);
+  top: calc(100% + 4px);
   right: 10px;
   z-index: var(--z-popover);
   width: min(340px, calc(100vw - 20px));
-  max-height: min(440px, calc(100vh - 70px));
+  max-height: min(460px, calc(100vh - 70px));
   display: flex;
   flex-direction: column;
-  padding: 8px;
-  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
-  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: var(--radius-lg);
   background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
   box-shadow: var(--shadow-popover);
 }
@@ -464,80 +467,124 @@ button:focus-visible {
   flex-direction: column;
   min-height: 0;
 }
+.model-picker-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+}
+.model-picker-search-wrap .codicon-search {
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--vscode-descriptionForeground);
+}
 .model-picker-search {
-  width: 100%;
-  height: 26px;
-  padding: 3px 8px;
-  border: 1px solid var(--vscode-input-border, transparent);
-  border-radius: var(--radius-sm);
-  background: var(--vscode-input-background);
-  color: var(--vscode-input-foreground);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
   font-family: inherit;
   font-size: 12px;
   outline: none;
 }
-.model-picker-search:focus {
-  border-color: var(--vscode-focusBorder);
+.model-picker-search::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
 }
 .model-picker-effort {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
   flex-wrap: wrap;
-  padding: 8px 4px 2px;
+  padding: var(--space-3) 12px 2px;
 }
 .model-picker-effort-label {
   color: var(--vscode-descriptionForeground);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+/* Segmented control: recessed track, raised active segment. NOT
+   --radius-pill — that token is 50% (circles) and turns wide chips into
+   ovals. */
 .model-picker-chips {
-  display: flex;
-  gap: 4px;
+  display: inline-flex;
   flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
 }
 .model-picker-chip {
-  padding: 2px 8px;
-  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  border-radius: var(--radius-pill);
+  padding: 2px 9px;
+  border: 0;
+  border-radius: 5px;
   background: transparent;
-  color: inherit;
+  color: var(--vscode-descriptionForeground);
   font-size: 11px;
   line-height: 1.5;
   cursor: pointer;
 }
 .model-picker-chip:hover {
-  background: var(--hover-bg-pill);
+  color: var(--vscode-foreground);
 }
 .model-picker-chip.is-active {
-  border-color: transparent;
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
+  color: var(--vscode-foreground);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 .model-picker-list {
-  margin-top: 6px;
   min-height: 0;
   overflow-y: auto;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  /* Same fade-in-on-hover scrollbar as .mention-popover — a permanently
+     visible thumb reads as chrome, not content. */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.18s ease;
+}
+.model-picker-list:hover,
+.model-picker-list:focus-within {
+  scrollbar-color: var(--vscode-scrollbarSlider-background, var(--color-scrollbar-thumb)) transparent;
+}
+.model-picker-list::-webkit-scrollbar {
+  width: 8px;
+  background: transparent;
+}
+.model-picker-list::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  background-clip: padding-box;
+  transition: background-color 0.18s ease;
+}
+.model-picker-list:hover::-webkit-scrollbar-thumb,
+.model-picker-list:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--vscode-scrollbarSlider-background, var(--color-scrollbar-thumb));
 }
 .model-picker-section {
-  padding: 6px 8px 2px;
+  padding: var(--space-3) var(--space-3) 3px;
   color: var(--vscode-descriptionForeground);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
+  /* All uppercase micro-labels track at 0.05em (see .question-header,
+     .mention-section, .agents-popover-*). */
   letter-spacing: 0.05em;
   cursor: default;
 }
 .model-picker-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: var(--space-3);
   width: 100%;
-  padding: 4px 8px;
+  padding: 5px var(--space-3);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: transparent;
   color: inherit;
   font-size: 12px;
@@ -557,70 +604,80 @@ button:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 500;
 }
-.model-picker-last-variant,
+.model-picker-row.is-current .model-picker-name {
+  font-weight: 600;
+}
+.model-picker-last-variant {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+}
+.model-picker-row.active .model-picker-last-variant {
+  background: color-mix(in srgb, var(--vscode-list-activeSelectionForeground) 16%, transparent);
+  color: inherit;
+}
 .model-picker-provider {
   flex: 0 0 auto;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
 }
-.model-picker-row.active .model-picker-last-variant,
 .model-picker-row.active .model-picker-provider {
-  color: var(--vscode-list-activeSelectionForeground);
-  opacity: 0.8;
+  color: inherit;
+  opacity: 0.75;
 }
 .model-picker-row .codicon-check {
   flex: 0 0 auto;
-  align-self: center;
-  font-size: 13px;
+  font-size: 14px;
+  color: var(--vscode-textLink-foreground);
+}
+.model-picker-row.active .codicon-check {
+  color: var(--vscode-list-activeSelectionForeground);
 }
 .model-picker-empty {
-  padding: 10px 8px;
+  padding: 12px;
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
 }
-/* Agent footer keeps the old selector-row look, separated from the list. */
 .model-picker-agent {
-  margin-top: 6px;
-  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-}
-.selector-row {
-  display: grid;
-  grid-template-columns: 50px minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
+  gap: var(--space-3);
+  padding: 8px 12px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
   background: transparent;
   color: inherit;
   font-size: 12px;
   text-align: left;
+  cursor: pointer;
 }
-.selector-row:hover {
+.model-picker-agent:hover {
   background: var(--hover-bg-row);
 }
-.selector-row-label {
+.model-picker-agent-label {
+  flex: 0 0 auto;
   color: var(--vscode-descriptionForeground);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  /* All uppercase micro-labels track at 0.05em (see .question-header,
-     .mention-section, .agents-popover-*). */
   letter-spacing: 0.05em;
 }
-.selector-row-value {
+.model-picker-agent-value {
+  flex: 1 1 auto;
   min-width: 0;
-  font-weight: 600;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  font-weight: 500;
 }
-.selector-row-arrow {
+.model-picker-agent .codicon-chevron-right {
+  flex: 0 0 auto;
+  font-size: 13px;
   color: var(--vscode-descriptionForeground);
-  opacity: 0.7;
 }
 
 @media (max-width: 520px) {
