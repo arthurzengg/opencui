@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-08-12
+
+### Added
+- Model and effort selection now happens inside the chat panel. Clicking the header's Model selector opens a picker popover in the sidebar itself — command-palette styled, with a search line, models grouped per provider, and a **Recent** section holding the last six models picked — replacing the native QuickPick that opened at the top-center of the window after a blocking provider fetch. The list renders instantly from a catalog the extension keeps pushed to the panel, and model rows show the raw model id, because the picker is exactly where a date suffix or point release matters. Selecting a model restores the effort it was last used with: remembered per model, validated against the model's current variant list, so switching away and back never drops the tuning and never produces an invalid combination (#512, #513, #514, #515).
+- Effort lives in the same popover as a segmented control for the current model's variants. Switching levels slides the active segment over (skipped under reduced motion), applies immediately without waiting for the round-trip, and keeps the popover open so levels can be compared without reopening — only picking a model closes it. Keyboard flow holds throughout: focus returns to the search line after a click, arrows and Enter navigate with the same IME and hover guards as the composer pickers (#516, #517).
+
+### Changed
+- "OpenCode Panel: Select Model" from the command palette also restores the remembered per-model effort instead of resetting it on every switch (#512, #513).
+
 ## [1.10.3] - 2026-08-09
 
 ### Changed
