@@ -509,8 +509,10 @@ button:focus-visible {
 }
 /* Segmented control: recessed track, raised active segment. NOT
    --radius-pill — that token is 50% (circles) and turns wide chips into
-   ovals. */
+   ovals. `position: relative` makes the track the offsetParent the sliding
+   thumb is measured against. */
 .model-picker-chips {
+  position: relative;
   display: inline-flex;
   flex-wrap: wrap;
   gap: 2px;
@@ -519,6 +521,9 @@ button:focus-visible {
   background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
 }
 .model-picker-chip {
+  position: relative;
+  /* Labels paint above the sliding thumb. */
+  z-index: 1;
   padding: 2px 9px;
   border: 0;
   border-radius: 5px;
@@ -527,15 +532,33 @@ button:focus-visible {
   font-size: 11px;
   line-height: 1.5;
   cursor: pointer;
+  transition: color 0.15s ease;
 }
-.model-picker-chip:hover {
-  color: var(--vscode-foreground);
-}
+.model-picker-chip:hover,
 .model-picker-chip.is-active {
-  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
+  /* The raised-segment look lives on the thumb; the active chip only
+     brightens. No font-weight change — bolding reflows the neighboring
+     chips mid-slide. */
   color: var(--vscode-foreground);
-  font-weight: 600;
+}
+/* One floating segment that translates to the active chip (#516). Mounted
+   already at its target (measured in a layout effect), so opening the
+   picker never animates — only an effort change does. */
+.model-picker-chip-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 5px;
+  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  transition: transform 0.18s ease, width 0.18s ease, height 0.18s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-picker-chip,
+  .model-picker-chip-thumb {
+    transition: none;
+  }
 }
 .model-picker-list {
   min-height: 0;

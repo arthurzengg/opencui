@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ModelCatalogEntry, ModelCatalogInfo, Selection } from "../protocol"
 
 /**
@@ -145,10 +145,43 @@ export function ModelPicker({
     onClose()
   }
 
+  // Effort tuning is iterative — try a level, glance at the result, adjust —
+  // so unlike a model pick (the terminal action) a chip click leaves the
+  // popover open. The active chip moves optimistically; the host's selection
+  // echo then confirms it, and wins if it ever disagrees.
+  const [pendingVariant, setPendingVariant] = useState<{ variant?: string } | null>(null)
+  useEffect(() => {
+    setPendingVariant(null)
+  }, [selection.modelVariant, selection.model])
+  const activeVariant = pendingVariant ? pendingVariant.variant : selection.modelVariant
+
+  const searchRef = useRef<HTMLInputElement | null>(null)
+  const chipsRef = useRef<HTMLDivElement | null>(null)
+  const [thumb, setThumb] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  // Segment widths vary with their labels, so the sliding thumb is measured
+  // off the active chip instead of derived from an index. Layout effect so
+  // the thumb lands before paint — opening the picker must not animate.
+  useLayoutEffect(() => {
+    const active = chipsRef.current?.querySelector<HTMLElement>(".model-picker-chip.is-active")
+    if (!active) {
+      setThumb(null)
+      return
+    }
+    setThumb({
+      x: active.offsetLeft,
+      y: active.offsetTop,
+      w: active.offsetWidth,
+      h: active.offsetHeight,
+    })
+  }, [activeVariant, currentKey, catalog])
+
   const pickVariant = (variant?: string) => {
     if (!current) return
+    setPendingVariant({ variant })
     onSetModel(current.providerID, current.modelID, variant)
-    onClose()
+    // The click parked focus on the chip; hand it back so arrows and typing
+    // keep working without another click.
+    searchRef.current?.focus()
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -176,6 +209,7 @@ export function ModelPicker({
       <div className="model-picker-search-wrap">
         <span className="codicon codicon-search" aria-hidden="true" />
         <input
+          ref={searchRef}
           className="model-picker-search"
           type="text"
           placeholder="Search models…"
@@ -189,10 +223,21 @@ export function ModelPicker({
       {current && current.variants.length > 0 && (
         <div className="model-picker-effort">
           <span className="model-picker-effort-label">Effort</span>
-          <div className="model-picker-chips">
+          <div className="model-picker-chips" ref={chipsRef}>
+            {thumb && (
+              <span
+                className="model-picker-chip-thumb"
+                style={{
+                  transform: `translate(${thumb.x}px, ${thumb.y}px)`,
+                  width: thumb.w,
+                  height: thumb.h,
+                }}
+                aria-hidden="true"
+              />
+            )}
             <button
               type="button"
-              className={`model-picker-chip ${selection.modelVariant ? "" : "is-active"}`}
+              className={`model-picker-chip ${activeVariant ? "" : "is-active"}`}
               title="Use the model's default effort"
               onClick={() => pickVariant(undefined)}
             >
@@ -202,7 +247,7 @@ export function ModelPicker({
               <button
                 key={v}
                 type="button"
-                className={`model-picker-chip ${selection.modelVariant === v ? "is-active" : ""}`}
+                className={`model-picker-chip ${activeVariant === v ? "is-active" : ""}`}
                 onClick={() => pickVariant(v)}
               >
                 {v}

@@ -114,7 +114,7 @@ describe("ModelPicker", () => {
     expect(rows[0]!.getAttribute("aria-selected")).toBe("true")
   })
 
-  it("renders effort chips for the current model; a chip click re-picks with that variant", async () => {
+  it("a chip click re-picks with that variant, stays open, and moves the active chip optimistically", async () => {
     const user = userEvent.setup()
     const onSetModel = vi.fn()
     const onClose = vi.fn()
@@ -130,21 +130,53 @@ describe("ModelPicker", () => {
     expect(high.className).toContain("is-active")
     await user.click(screen.getByRole("button", { name: "medium" }))
     expect(onSetModel).toHaveBeenCalledWith("openai", "gpt-5.5", "medium")
-    expect(onClose).toHaveBeenCalledOnce()
+    // Effort tuning is iterative — the popover must survive the click, and
+    // the active chip must not wait for the host's selection echo.
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole("button", { name: "medium" }).className).toContain("is-active")
+    expect(high.className).not.toContain("is-active")
+    // Focus returns to the search input so keyboard flow continues.
+    expect(screen.getByRole("textbox", { name: "Search models" })).toHaveFocus()
   })
 
-  it("the default chip clears the variant for the current model", async () => {
+  it("the host's selection echo wins over the optimistic chip if they disagree", () => {
+    const { rerender } = render(
+      <ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5", modelVariant: "high" }} />,
+    )
+    fireEvent.click(screen.getByRole("button", { name: "medium" }))
+    expect(screen.getByRole("button", { name: "medium" }).className).toContain("is-active")
+    rerender(
+      <ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5", modelVariant: "low" }} />,
+    )
+    expect(screen.getByRole("button", { name: "low" }).className).toContain("is-active")
+    expect(screen.getByRole("button", { name: "medium" }).className).not.toContain("is-active")
+  })
+
+  it("the default chip clears the variant for the current model without closing", async () => {
     const user = userEvent.setup()
     const onSetModel = vi.fn()
+    const onClose = vi.fn()
     render(
       <ModelPicker
         {...baseProps}
         selection={{ model: "openai/gpt-5.5", modelVariant: "high" }}
         onSetModel={onSetModel}
+        onClose={onClose}
       />,
     )
     await user.click(screen.getByRole("button", { name: "default" }))
     expect(onSetModel).toHaveBeenCalledWith("openai", "gpt-5.5", undefined)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole("button", { name: "default" }).className).toContain("is-active")
+  })
+
+  it("renders the sliding thumb behind the chips (decorative, hidden from a11y)", () => {
+    const { container } = render(
+      <ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} />,
+    )
+    const thumb = container.querySelector(".model-picker-chip-thumb")
+    expect(thumb).not.toBeNull()
+    expect(thumb!.getAttribute("aria-hidden")).toBe("true")
   })
 
   it("hides the effort chips when the current model has no variants", () => {
