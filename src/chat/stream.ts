@@ -327,7 +327,11 @@ export function subscribeSession(
         onPartDelta(props)
         markActivity(props?.sessionID)
         return
+      // opencode <=1.17 emitted `permission.updated`; >=1.18 emits
+      // `permission.asked` for the same request (#520). The name already
+      // flipped once (#492 went the other way), so route both forever.
       case "permission.updated":
+      case "permission.asked":
         onPermissionUpdated(props)
         markActivity(props?.sessionID)
         return
@@ -770,10 +774,10 @@ export function subscribeSession(
 
   function onPermissionResolved(p: any) {
     if (!p || p.sessionID !== sessionID) return
-    // `permission.updated` carries a full Permission (keyed `id`) while
-    // `permission.replied` carries only `{sessionID, permissionID, response}`,
-    // so the two events name the same permission differently.
-    const id = p.permissionID ?? p.id
+    // The ask event carries a full request (keyed `id`) while the reply event
+    // names the same permission `permissionID` (opencode <=1.17) or
+    // `requestID` (>=1.18) — each shape carries exactly one of these keys.
+    const id = p.permissionID ?? p.requestID ?? p.id
     if (!id) return
     handlers.onPermissionResolved?.(id)
   }
