@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-08-13
+
+### Fixed
+- Permission dialogs appear again with opencode server 1.18.x. The server renamed its permission events — the ask event `permission.updated` became `permission.asked`, and replies now carry `requestID`/`reply` instead of `permissionID`/`response` — so any tool call needing authorization (for example external directory access) hung on "Working…" with no dialog until aborted, while unanswered permission requests piled up server-side. The panel now routes both spellings of both events, so older 1.17.x servers keep working too. Thanks to @VinciYan for the report with a complete root-cause analysis (#520, #521).
+
 ## [1.11.0] - 2026-08-12
 
 ### Added
