@@ -888,6 +888,31 @@ describe("ChatView harness: waiting-for-input Main status", () => {
     expect(lastMainStatus()).toBe("waiting")
     expect(harness.posted.some((m) => m.type === "permissionResolved")).toBe(false)
   })
+
+  it("routes the opencode >=1.18 shapes: permission.asked and a requestID-keyed reply", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "guarded edit" })
+
+    // 1.18 renamed the ask event and dropped `title`; the request carries
+    // `permission` + `patterns` instead (#520).
+    server.push({
+      type: "permission.asked",
+      id: "perm_v2",
+      sessionID: SESSION_ID,
+      permission: "external_directory",
+      patterns: ["/outside/*"],
+      always: ["/outside/*"],
+      tool: { messageID: "msg_1", callID: "call_1" },
+    })
+    await until(() => lastMainStatus() === "waiting")
+    const dialog = harness.posted.find((m) => m.type === "permission" && m.id === "perm_v2")
+    expect(dialog && "title" in dialog ? dialog.title : "").toContain("external_directory")
+
+    // 1.18 replies key the permission `requestID` and the answer `reply`.
+    server.push({ type: "permission.replied", sessionID: SESSION_ID, requestID: "perm_v2", reply: "once" })
+    await until(() => lastMainStatus() === "running")
+    await until(() => harness.posted.some((m) => m.type === "permissionResolved" && m.id === "perm_v2"))
+  })
 })
 
 describe("ChatView harness: errored Main task clears on next turn", () => {
