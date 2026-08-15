@@ -16,8 +16,8 @@ import { pickAttachments, bytesToDataUrl } from "../attachments"
 import { AttachmentStore, dataUrlToBytes } from "./attachment-store"
 import { log } from "../output"
 import { getWorkspaceRoots, primaryWorkspaceRoot } from "../workspace-root"
-import { buildModelCatalog, listModels, validVariant, type ModelInfo, type ProviderShape } from "../picker"
-import type { WorkspaceInfo } from "../protocol"
+import { buildModelCatalog, isUserSelectableAgent, listModels, validVariant, type ModelInfo, type ProviderShape } from "../picker"
+import type { AgentCatalogEntry, WorkspaceInfo } from "../protocol"
 import type {
   Attachment,
   ChatBlock,
@@ -118,6 +118,7 @@ export class ChatView implements vscode.WebviewViewProvider {
    * re-post from this cache (recents / variant memory moved, models didn't).
    */
   private modelCatalogModels?: ModelInfo[]
+  private modelCatalogAgents?: AgentCatalogEntry[]
   private modelCatalogFetch?: Promise<void>
   /**
    * True between user-pressed Stop and the subsequent `session.idle` event.
@@ -825,6 +826,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.modelCatalogModels,
       this.prefs.recentModels(),
       (providerID, modelID) => this.prefs.variantFor(providerID, modelID),
+      this.modelCatalogAgents ?? [],
     )
     this.post({ type: "modelCatalog", catalog })
   }
@@ -839,9 +841,28 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.modelCatalogFetch = (async () => {
       try {
         const activeBackend = backend ?? (await this.servers.ensure())
-        const res = await activeBackend.client.config.providers()
+        // Agents failing must not take the model list down with it (and vice
+        // versa) — the picker degrades to whichever half arrived.
+        const [res, agentsRes] = await Promise.all([
+          activeBackend.client.config.providers(),
+          activeBackend.client.app.agents().catch((e: unknown) => {
+            log("model catalog: app.agents threw", e)
+            return undefined
+          }),
+        ])
+        if (agentsRes?.data && !agentsRes.error) {
+          // The server reports agents in config-discovery order, which reads
+          // as arbitrary in the chips — sort so the row is stable and scannable.
+          this.modelCatalogAgents = agentsRes.data
+            .filter(isUserSelectableAgent)
+            .flatMap((a) => (a.name ? [{ name: a.name, description: a.description }] : []))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+        } else if (agentsRes) {
+          log("model catalog: app.agents failed", agentsRes.error)
+        }
         if (res.error || !res.data) {
           log("model catalog: config.providers failed", res.error)
+          if (this.modelCatalogModels) this.postModelCatalog()
           return
         }
         this.modelCatalogModels = listModels((res.data.providers ?? []) as unknown as ProviderShape[])
@@ -1044,9 +1065,10 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "reviewAllInChange":
         await this.handleReviewAllInChange(msg.source, msg.path, msg.action)
         return
-      case "selectAgent":
-        log("selectAgent → executing opencui.selectAgent")
-        await vscode.commands.executeCommand("opencui.selectAgent")
+      case "setAgent":
+        // prefs.onChange re-posts selection + catalog, which is the echo the
+        // picker's optimistic chip waits on.
+        await this.prefs.setAgent(msg.name || undefined)
         return
       case "setModel": {
         if (!msg.providerID || !msg.modelID) {

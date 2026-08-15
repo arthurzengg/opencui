@@ -115,6 +115,7 @@ beforeEach(async () => {
     recentModels: () => [] as string[],
     variantFor: () => undefined,
     setModel: vi.fn(async () => {}),
+    setAgent: vi.fn(async () => {}),
   } as unknown as Preferences
   const indexManager = {
     onStatusChange: vi.fn(() => ({ dispose: vi.fn() })),
@@ -1036,6 +1037,7 @@ describe("ChatView harness: model catalog", () => {
         },
       ],
       recents: [],
+      agents: [{ name: "default" }],
     })
   })
 
@@ -1067,5 +1069,35 @@ describe("ChatView harness: model catalog", () => {
     // All-undefined = reset to the opencode default.
     await harness.send({ type: "setModel" })
     expect(setModel).toHaveBeenLastCalledWith(undefined, undefined, undefined)
+  })
+
+  it("the catalog carries user-selectable agents only; setAgent persists via prefs", async () => {
+    // Deliberately unsorted: the catalog must come back alphabetical, not in
+    // the server's config-discovery order.
+    server.setAgents([
+      { name: "plan", mode: "primary" },
+      { name: "build", mode: "primary", description: "makes changes" },
+      { name: "explore", mode: "subagent" },
+      { name: "title", mode: "primary" }, // internal — filtered by name
+    ])
+    await harness.send({ type: "mounted" })
+    await until(() =>
+      catalogs().some(
+        (m) => m.type === "modelCatalog" && m.catalog.agents.some((a) => a.name === "build"),
+      ),
+    )
+    const last = catalogs().at(-1)!
+    expect(last.type === "modelCatalog" && last.catalog.agents).toEqual([
+      { name: "build", description: "makes changes" },
+      { name: "plan" },
+    ])
+
+    const setAgent = vi.mocked(harness.prefs.setAgent)
+    await harness.send({ type: "setAgent", name: "plan" })
+    expect(setAgent).toHaveBeenLastCalledWith("plan")
+
+    // No name = reset to the opencode default agent.
+    await harness.send({ type: "setAgent" })
+    expect(setAgent).toHaveBeenLastCalledWith(undefined)
   })
 })

@@ -579,8 +579,8 @@ export function useChatState() {
     reviewAllInChange(source: string, path: string, action: ReviewHunkState) {
       vscode.post({ type: "reviewAllInChange", source, path, action })
     },
-    selectAgent() {
-      vscode.post({ type: "selectAgent" })
+    setAgent(name?: string) {
+      vscode.post({ type: "setAgent", name })
     },
     setModel(providerID?: string, modelID?: string, variant?: string) {
       vscode.post({ type: "setModel", providerID, modelID, variant })

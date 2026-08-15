@@ -26,7 +26,7 @@ export default function App() {
     openConversation,
     renameConversation,
     deleteConversation,
-    selectAgent,
+    setAgent,
     setModel,
     refreshModels,
     replyPermission,
@@ -250,7 +250,7 @@ export default function App() {
         activeConversationID={state.conversationID}
         activePopover={activeHeaderPopover}
         onActivePopoverChange={setActiveHeaderPopover}
-        onSelectAgent={selectAgent}
+        onSetAgent={setAgent}
         onSetModel={setModel}
         onRefreshModels={refreshModels}
         onCreateConversation={newSession}

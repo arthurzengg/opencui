@@ -1,7 +1,7 @@
 import * as vscode from "vscode"
 import type { ServerManager } from "./server"
 import type { Preferences } from "./preferences"
-import type { ModelCatalogInfo } from "./protocol"
+import type { AgentCatalogEntry, ModelCatalogInfo } from "./protocol"
 import { log } from "./output"
 
 /**
@@ -265,6 +265,7 @@ export function buildModelCatalog(
   models: ModelInfo[],
   recents: string[],
   variantFor: (providerID: string, modelID: string) => string | undefined,
+  agents: AgentCatalogEntry[],
 ): ModelCatalogInfo {
   const keys = new Set(models.map((m) => `${m.providerID}/${m.modelID}`))
   return {
@@ -276,6 +277,7 @@ export function buildModelCatalog(
       lastVariant: validVariant(m, variantFor(m.providerID, m.modelID)),
     })),
     recents: recents.filter((key) => keys.has(key)),
+    agents,
   }
 }
 

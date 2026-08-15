@@ -211,10 +211,23 @@ export type ModelCatalogEntry = {
   lastVariant?: string
 }
 
+/** One selectable agent for the picker's Agent chips. */
+export type AgentCatalogEntry = {
+  name: string
+  /** Shown as the chip tooltip. */
+  description?: string
+}
+
 export type ModelCatalogInfo = {
   models: ModelCatalogEntry[]
   /** `providerID/modelID` keys, most recently used first. */
   recents: string[]
+  /**
+   * User-selectable agents (subagents and opencode's internal agents are
+   * filtered host-side). Rides on the catalog message so the picker's Agent
+   * chips share the models' stale-while-revalidate refresh cycle.
+   */
+  agents: AgentCatalogEntry[]
 }
 
 export type EditorContextRef = {
@@ -508,7 +521,11 @@ export type Inbound =
   | { type: "openExternal"; url: string }
   | { type: "openReviewChange"; change: ReviewChange }
   | { type: "reviewAllInChange"; source: string; path: string; action: ReviewHunkState }
-  | { type: "selectAgent" }
+  /**
+   * Direct agent selection from the picker's Agent chips. Undefined name
+   * means "reset to the opencode default agent".
+   */
+  | { type: "setAgent"; name?: string }
   /**
    * Direct model/effort selection from the in-panel picker. All-undefined
    * means "reset to the opencode default model". The host validates

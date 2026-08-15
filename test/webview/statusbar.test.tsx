@@ -14,7 +14,7 @@ const baseProps = {
   selection: {},
   conversations: [],
   activeConversationID: undefined as string | undefined,
-  onSelectAgent: vi.fn(),
+  onSetAgent: vi.fn(),
   onSetModel: vi.fn(),
   onRefreshModels: vi.fn(),
   onCreateConversation: vi.fn(),
@@ -106,13 +106,21 @@ describe("StatusBar", () => {
     expect(onRefreshModels).toHaveBeenCalledOnce()
   })
 
-  it("invokes onSelectAgent when clicking the Agent footer row in the picker", async () => {
+  it("clicking an agent chip in the picker sets the agent and keeps the popover open", async () => {
     const user = userEvent.setup()
-    const onSelectAgent = vi.fn()
-    render(<StatusBar {...baseProps} onSelectAgent={onSelectAgent} />)
+    const onSetAgent = vi.fn()
+    render(
+      <StatusBar
+        {...baseProps}
+        modelCatalog={{ models: [], recents: [], agents: [{ name: "build" }, { name: "plan" }] }}
+        onSetAgent={onSetAgent}
+      />,
+    )
     await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
-    await user.click(screen.getByRole("button", { name: /Agent/ }))
-    expect(onSelectAgent).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole("button", { name: "plan" }))
+    expect(onSetAgent).toHaveBeenCalledWith("plan")
+    // Picking in place replaced the old close-into-QuickPick footer handoff.
+    expect(screen.getByRole("listbox", { name: "Models" })).toBeInTheDocument()
   })
 
   it("renders the variant text in the trigger when modelVariant is set", () => {
