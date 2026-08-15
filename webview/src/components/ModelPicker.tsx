@@ -57,13 +57,86 @@ export function buildPickerItems(
   return items
 }
 
+type ChipOption = { key: string; label: string; title?: string }
+
+/**
+ * Segmented chip control with the sliding thumb (#516), shared by the
+ * Effort and Agent rows. Segment widths vary with their labels, so the
+ * thumb is measured off the active chip instead of derived from an index.
+ * Layout effect so the thumb lands before paint — opening the picker must
+ * not animate; only an in-picker change does.
+ */
+function ChipGroup({
+  groupLabel,
+  options,
+  activeKey,
+  defaultTitle,
+  onPick,
+}: {
+  groupLabel: string
+  options: ChipOption[]
+  /** undefined = the leading "default" chip. */
+  activeKey?: string
+  defaultTitle: string
+  onPick: (key?: string) => void
+}) {
+  const chipsRef = useRef<HTMLDivElement | null>(null)
+  const [thumb, setThumb] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const optionsSig = options.map((o) => o.label).join("\n")
+  useLayoutEffect(() => {
+    const active = chipsRef.current?.querySelector<HTMLElement>(".model-picker-chip.is-active")
+    if (!active) {
+      setThumb(null)
+      return
+    }
+    setThumb({
+      x: active.offsetLeft,
+      y: active.offsetTop,
+      w: active.offsetWidth,
+      h: active.offsetHeight,
+    })
+  }, [activeKey, optionsSig])
+  return (
+    <div className="model-picker-chips" ref={chipsRef} role="group" aria-label={groupLabel}>
+      {thumb && (
+        <span
+          className="model-picker-chip-thumb"
+          style={{
+            transform: `translate(${thumb.x}px, ${thumb.y}px)`,
+            width: thumb.w,
+            height: thumb.h,
+          }}
+          aria-hidden="true"
+        />
+      )}
+      <button
+        type="button"
+        className={`model-picker-chip ${activeKey ? "" : "is-active"}`}
+        title={defaultTitle}
+        onClick={() => onPick(undefined)}
+      >
+        default
+      </button>
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          className={`model-picker-chip ${activeKey === o.key ? "is-active" : ""}`}
+          title={o.title}
+          onClick={() => onPick(o.key)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 type Props = {
   catalog?: ModelCatalogInfo
   selection: Selection
-  /** Display label for the agent footer row. */
-  agentLabel: string
   onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
-  onSelectAgent: () => void
+  onSetAgent: (name?: string) => void
   /** Posted on mount so a freshly opened picker re-syncs the catalog. */
   onRefresh: () => void
   onClose: () => void
@@ -72,9 +145,8 @@ type Props = {
 export function ModelPicker({
   catalog,
   selection,
-  agentLabel,
   onSetModel,
-  onSelectAgent,
+  onSetAgent,
   onRefresh,
   onClose,
 }: Props) {
@@ -145,42 +217,35 @@ export function ModelPicker({
     onClose()
   }
 
-  // Effort tuning is iterative — try a level, glance at the result, adjust —
-  // so unlike a model pick (the terminal action) a chip click leaves the
-  // popover open. The active chip moves optimistically; the host's selection
-  // echo then confirms it, and wins if it ever disagrees.
+  // Effort and agent are iterative tweaks — try one, glance at the result,
+  // adjust — so unlike a model pick (the terminal action) a chip click leaves
+  // the popover open. The active chip moves optimistically; the host's
+  // selection echo then confirms it, and wins if it ever disagrees.
   const [pendingVariant, setPendingVariant] = useState<{ variant?: string } | null>(null)
   useEffect(() => {
     setPendingVariant(null)
   }, [selection.modelVariant, selection.model])
   const activeVariant = pendingVariant ? pendingVariant.variant : selection.modelVariant
 
-  const searchRef = useRef<HTMLInputElement | null>(null)
-  const chipsRef = useRef<HTMLDivElement | null>(null)
-  const [thumb, setThumb] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
-  // Segment widths vary with their labels, so the sliding thumb is measured
-  // off the active chip instead of derived from an index. Layout effect so
-  // the thumb lands before paint — opening the picker must not animate.
-  useLayoutEffect(() => {
-    const active = chipsRef.current?.querySelector<HTMLElement>(".model-picker-chip.is-active")
-    if (!active) {
-      setThumb(null)
-      return
-    }
-    setThumb({
-      x: active.offsetLeft,
-      y: active.offsetTop,
-      w: active.offsetWidth,
-      h: active.offsetHeight,
-    })
-  }, [activeVariant, currentKey, catalog])
+  const [pendingAgent, setPendingAgent] = useState<{ name?: string } | null>(null)
+  useEffect(() => {
+    setPendingAgent(null)
+  }, [selection.agent])
+  const activeAgent = pendingAgent ? pendingAgent.name : selection.agent
+  const agents = catalog?.agents ?? []
 
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const pickVariant = (variant?: string) => {
     if (!current) return
     setPendingVariant({ variant })
     onSetModel(current.providerID, current.modelID, variant)
     // The click parked focus on the chip; hand it back so arrows and typing
     // keep working without another click.
+    searchRef.current?.focus()
+  }
+  const pickAgent = (name?: string) => {
+    setPendingAgent({ name })
+    onSetAgent(name)
     searchRef.current?.focus()
   }
 
@@ -222,38 +287,14 @@ export function ModelPicker({
       </div>
       {current && current.variants.length > 0 && (
         <div className="model-picker-effort">
-          <span className="model-picker-effort-label">Effort</span>
-          <div className="model-picker-chips" ref={chipsRef}>
-            {thumb && (
-              <span
-                className="model-picker-chip-thumb"
-                style={{
-                  transform: `translate(${thumb.x}px, ${thumb.y}px)`,
-                  width: thumb.w,
-                  height: thumb.h,
-                }}
-                aria-hidden="true"
-              />
-            )}
-            <button
-              type="button"
-              className={`model-picker-chip ${activeVariant ? "" : "is-active"}`}
-              title="Use the model's default effort"
-              onClick={() => pickVariant(undefined)}
-            >
-              default
-            </button>
-            {current.variants.map((v) => (
-              <button
-                key={v}
-                type="button"
-                className={`model-picker-chip ${activeVariant === v ? "is-active" : ""}`}
-                onClick={() => pickVariant(v)}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
+          <span className="model-picker-chip-label">Effort</span>
+          <ChipGroup
+            groupLabel="Effort"
+            options={current.variants.map((v) => ({ key: v, label: v }))}
+            activeKey={activeVariant}
+            defaultTitle="Use the model's default effort"
+            onPick={pickVariant}
+          />
         </div>
       )}
       <div
@@ -328,20 +369,18 @@ export function ModelPicker({
           )
         })}
       </div>
-      <button
-        type="button"
-        className="model-picker-agent"
-        onClick={() => {
-          onSelectAgent()
-          onClose()
-        }}
-      >
-        <span className="model-picker-agent-label">Agent</span>
-        <span className="model-picker-agent-value" title={agentLabel}>
-          {agentLabel}
-        </span>
-        <span className="codicon codicon-chevron-right" aria-hidden="true" />
-      </button>
+      {agents.length > 0 && (
+        <div className="model-picker-agents">
+          <span className="model-picker-chip-label">Agent</span>
+          <ChipGroup
+            groupLabel="Agent"
+            options={agents.map((a) => ({ key: a.name, label: a.name, title: a.description }))}
+            activeKey={activeAgent}
+            defaultTitle="Use the opencode default agent"
+            onPick={pickAgent}
+          />
+        </div>
+      )}
     </div>
   )
 }

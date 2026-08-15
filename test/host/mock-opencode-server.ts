@@ -77,6 +77,8 @@ export type MockOpencodeServer = {
   setCommands: (commands: Array<Record<string, unknown>>) => void
   /** Configure what GET /config/providers returns (default: none). */
   setProviders: (providers: Array<Record<string, unknown>>) => void
+  /** Configure what GET /agent returns (default: one primary agent). */
+  setAgents: (agents: Array<Record<string, unknown>>) => void
   /**
    * Configure what GET /session/status returns. Pass `undefined` to clear
    * the entry. Tests use this to drive the watchdog's recovery path.
@@ -122,6 +124,16 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const commandCalls: Array<{ sessionID: string; body: unknown }> = []
   let commands: Array<Record<string, unknown>> = []
   let providers: Array<Record<string, unknown>> = []
+  let agents: Array<Record<string, unknown>> = [
+    {
+      name: "default",
+      mode: "primary",
+      builtIn: true,
+      permission: { edit: "allow", bash: {} },
+      tools: {},
+      options: {},
+    },
+  ]
   const sessionStatuses = new Map<string, { type: "idle" | "busy" | "retry" }>()
   let statusDelayMs = 0
   let statusPolls = 0
@@ -186,16 +198,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
 
     // App agents endpoint
     if (path === "/agent" && req.method === "GET") {
-      reply(res, 200, [
-        {
-          name: "default",
-          mode: "primary",
-          builtIn: true,
-          permission: { edit: "allow", bash: {} },
-          tools: {},
-          options: {},
-        },
-      ])
+      reply(res, 200, agents)
       return
     }
 
@@ -466,6 +469,9 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     setProviders(next) {
       providers = next
+    },
+    setAgents(next) {
+      agents = next
     },
     setSessionStatus(sessionID, status) {
       if (status) sessionStatuses.set(sessionID, status)

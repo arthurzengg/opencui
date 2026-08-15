@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { fireEvent, render, screen, cleanup } from "@testing-library/react"
+import { fireEvent, render, screen, cleanup, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ModelPicker, buildPickerItems } from "../../webview/src/components/ModelPicker"
 import { reducer, initialChatState } from "../../webview/src/hooks/useChatState"
@@ -29,16 +29,23 @@ const catalog: ModelCatalogInfo = {
     { providerID: "google", modelID: "gemini-3-pro", providerName: "Google", variants: [] },
   ],
   recents: ["openai/gpt-5.5", "anthropic/claude-sonnet-4-6"],
+  agents: [{ name: "build", description: "makes changes" }, { name: "plan" }],
 }
 
 const baseProps = {
   catalog,
   selection: {},
-  agentLabel: "default",
   onSetModel: vi.fn(),
-  onSelectAgent: vi.fn(),
+  onSetAgent: vi.fn(),
   onRefresh: vi.fn(),
   onClose: vi.fn(),
+}
+
+function effortChips() {
+  return within(screen.getByRole("group", { name: "Effort" }))
+}
+function agentChips() {
+  return within(screen.getByRole("group", { name: "Agent" }))
 }
 
 function rowNames(): string[] {
@@ -164,19 +171,20 @@ describe("ModelPicker", () => {
         onClose={onClose}
       />,
     )
-    await user.click(screen.getByRole("button", { name: "default" }))
+    await user.click(effortChips().getByRole("button", { name: "default" }))
     expect(onSetModel).toHaveBeenCalledWith("openai", "gpt-5.5", undefined)
     expect(onClose).not.toHaveBeenCalled()
-    expect(screen.getByRole("button", { name: "default" }).className).toContain("is-active")
+    expect(effortChips().getByRole("button", { name: "default" }).className).toContain("is-active")
   })
 
-  it("renders the sliding thumb behind the chips (decorative, hidden from a11y)", () => {
+  it("renders a sliding thumb per chip group (decorative, hidden from a11y)", () => {
     const { container } = render(
       <ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} />,
     )
-    const thumb = container.querySelector(".model-picker-chip-thumb")
-    expect(thumb).not.toBeNull()
-    expect(thumb!.getAttribute("aria-hidden")).toBe("true")
+    const thumbs = container.querySelectorAll(".model-picker-chip-thumb")
+    // One in the Effort group, one in the Agent group.
+    expect(thumbs).toHaveLength(2)
+    for (const thumb of thumbs) expect(thumb.getAttribute("aria-hidden")).toBe("true")
   })
 
   it("hides the effort chips when the current model has no variants", () => {
@@ -232,20 +240,59 @@ describe("ModelPicker", () => {
     expect(rows[3]!.getAttribute("aria-selected")).toBe("true")
   })
 
-  it("shows a waiting state before the catalog arrives, still offering the agent row", () => {
+  it("shows a waiting state before the catalog arrives (agent chips wait with it)", () => {
     render(<ModelPicker {...baseProps} catalog={undefined} />)
     expect(screen.getByText(/Waiting for the model list/)).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /Agent/ })).toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument()
   })
 
-  it("agent footer row routes to onSelectAgent and closes", async () => {
+  it("an agent chip picks that agent, stays open, and moves the active chip optimistically", async () => {
     const user = userEvent.setup()
-    const onSelectAgent = vi.fn()
+    const onSetAgent = vi.fn()
     const onClose = vi.fn()
-    render(<ModelPicker {...baseProps} onSelectAgent={onSelectAgent} onClose={onClose} />)
-    await user.click(screen.getByRole("button", { name: /Agent/ }))
-    expect(onSelectAgent).toHaveBeenCalledOnce()
-    expect(onClose).toHaveBeenCalledOnce()
+    render(
+      <ModelPicker {...baseProps} selection={{ agent: "build" }} onSetAgent={onSetAgent} onClose={onClose} />,
+    )
+    const build = agentChips().getByRole("button", { name: "build" })
+    expect(build.className).toContain("is-active")
+    await user.click(agentChips().getByRole("button", { name: "plan" }))
+    expect(onSetAgent).toHaveBeenCalledWith("plan")
+    // Same stay-open contract as the effort chips — the popover survives the
+    // click and the active chip moves before the host's selection echo.
+    expect(onClose).not.toHaveBeenCalled()
+    expect(agentChips().getByRole("button", { name: "plan" }).className).toContain("is-active")
+    expect(build.className).not.toContain("is-active")
+    expect(screen.getByRole("textbox", { name: "Search models" })).toHaveFocus()
+  })
+
+  it("the default agent chip resets to the opencode default without closing", async () => {
+    const user = userEvent.setup()
+    const onSetAgent = vi.fn()
+    const onClose = vi.fn()
+    render(
+      <ModelPicker {...baseProps} selection={{ agent: "build" }} onSetAgent={onSetAgent} onClose={onClose} />,
+    )
+    await user.click(agentChips().getByRole("button", { name: "default" }))
+    expect(onSetAgent).toHaveBeenCalledWith(undefined)
+    expect(onClose).not.toHaveBeenCalled()
+    expect(agentChips().getByRole("button", { name: "default" }).className).toContain("is-active")
+  })
+
+  it("the host's selection echo wins over the optimistic agent chip if they disagree", () => {
+    const { rerender } = render(<ModelPicker {...baseProps} selection={{ agent: "build" }} />)
+    fireEvent.click(agentChips().getByRole("button", { name: "plan" }))
+    expect(agentChips().getByRole("button", { name: "plan" }).className).toContain("is-active")
+    rerender(<ModelPicker {...baseProps} selection={{ agent: "build" }} />)
+    // Same agent echoed back — the optimistic pick stands until told otherwise.
+    expect(agentChips().getByRole("button", { name: "plan" }).className).toContain("is-active")
+    rerender(<ModelPicker {...baseProps} selection={{}} />)
+    expect(agentChips().getByRole("button", { name: "default" }).className).toContain("is-active")
+    expect(agentChips().getByRole("button", { name: "plan" }).className).not.toContain("is-active")
+  })
+
+  it("hides the agent chips when the catalog reports no agents", () => {
+    render(<ModelPicker {...baseProps} catalog={{ ...catalog, agents: [] }} />)
+    expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument()
   })
 })
 

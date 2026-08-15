@@ -125,7 +125,7 @@ describe("buildModelCatalog", () => {
       "anthropic/sonnet": "max",
       "openai/gpt-5.5": "xhigh", // no longer declared — must not survive
     }
-    const catalog = buildModelCatalog(models, [], (p, m) => memory[`${p}/${m}`])
+    const catalog = buildModelCatalog(models, [], (p, m) => memory[`${p}/${m}`], [])
     expect(catalog.models.map((m) => m.lastVariant)).toEqual(["max", undefined])
   })
 
@@ -134,7 +134,13 @@ describe("buildModelCatalog", () => {
       models,
       ["openai/gpt-5.5", "meta/removed-model", "anthropic/sonnet"],
       () => undefined,
+      [],
     )
     expect(catalog.recents).toEqual(["openai/gpt-5.5", "anthropic/sonnet"])
+  })
+
+  it("passes the agent entries through for the picker's Agent chips", () => {
+    const agents = [{ name: "build", description: "makes changes" }, { name: "plan" }]
+    expect(buildModelCatalog(models, [], () => undefined, agents).agents).toEqual(agents)
   })
 })

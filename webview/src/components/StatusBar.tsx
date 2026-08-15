@@ -17,7 +17,7 @@ type Props = {
   activeConversationID?: string
   activePopover?: HeaderPopoverID | null
   onActivePopoverChange?: HeaderPopoverSetter
-  onSelectAgent: () => void
+  onSetAgent: (name?: string) => void
   onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
   onRefreshModels: () => void
   onCreateConversation: () => void
@@ -36,7 +36,7 @@ export function StatusBar({
   activeConversationID,
   activePopover,
   onActivePopoverChange,
-  onSelectAgent,
+  onSetAgent,
   onSetModel,
   onRefreshModels,
   onCreateConversation,
@@ -75,7 +75,7 @@ export function StatusBar({
         catalog={modelCatalog}
         open={currentPopover === "selector"}
         onOpenChange={(open) => setPopoverOpen("selector", open)}
-        onSelectAgent={onSelectAgent}
+        onSetAgent={onSetAgent}
         onSetModel={onSetModel}
         onRefreshModels={onRefreshModels}
       />
@@ -313,7 +313,7 @@ function SelectorMenu({
   catalog,
   open,
   onOpenChange,
-  onSelectAgent,
+  onSetAgent,
   onSetModel,
   onRefreshModels,
 }: {
@@ -321,7 +321,7 @@ function SelectorMenu({
   catalog?: ModelCatalogInfo
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSelectAgent: () => void
+  onSetAgent: (name?: string) => void
   onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
   onRefreshModels: () => void
 }) {
@@ -353,13 +353,12 @@ function SelectorMenu({
         <span className="selector-secondary">{prettyAgent}</span>
       </button>
       {open && (
-        <div className="model-picker-popover" role="dialog" aria-label="Select model and effort">
+        <div className="model-picker-popover" role="dialog" aria-label="Select model, effort, and agent">
           <ModelPicker
             catalog={catalog}
             selection={selection}
-            agentLabel={prettyAgent}
             onSetModel={onSetModel}
-            onSelectAgent={onSelectAgent}
+            onSetAgent={onSetAgent}
             onRefresh={onRefreshModels}
             onClose={close}
           />

@@ -439,10 +439,9 @@ button:focus-visible {
   text-overflow: ellipsis;
 }
 /* In-panel model picker (#512, restyled #514): command-palette look — a
-   borderless search line over a hairline divider, a segmented effort
-   control, and inset rounded rows. Zones own their padding (the popover
-   has none) so the search/footer dividers run edge to edge; `overflow:
-   hidden` keeps the footer's hover square corners inside the radius. */
+   borderless search line over a hairline divider, segmented effort/agent
+   controls, and inset rounded rows. Zones own their padding (the popover
+   has none) so the search and agent-row dividers run edge to edge. */
 .model-picker-popover {
   position: absolute;
   /* `top: 100%` is the bottom of .statusbar; the +4px is a small visual
@@ -493,14 +492,22 @@ button:focus-visible {
 .model-picker-search::placeholder {
   color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
 }
-.model-picker-effort {
+.model-picker-effort,
+.model-picker-agents {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
   padding: var(--space-3) 12px 2px;
 }
-.model-picker-effort-label {
+/* The agent chips replace the old footer handoff row — same divider-anchored
+   position at the bottom of the popover, but picking in place (like effort)
+   instead of closing into the native QuickPick. */
+.model-picker-agents {
+  padding: 8px 12px;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+}
+.model-picker-chip-label {
   color: var(--vscode-descriptionForeground);
   font-size: 10px;
   font-weight: 600;
@@ -527,7 +534,10 @@ button:focus-visible {
   padding: 2px 9px;
   border: 0;
   border-radius: 5px;
-  background: transparent;
+  /* Faint per-chip fill: multi-word agent names ("Hephaestus - Deep Agent")
+     have internal spaces, so without a fill adjacent chips read as one
+     continuous run of text and the segment boundaries disappear. */
+  background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent);
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
   line-height: 1.5;
@@ -540,6 +550,11 @@ button:focus-visible {
      brightens. No font-weight change — bolding reflows the neighboring
      chips mid-slide. */
   color: var(--vscode-foreground);
+}
+.model-picker-chip.is-active {
+  /* The sliding thumb paints BEHIND the chip — an opaque fill here would
+     cover it, so the active segment's look must come from the thumb alone. */
+  background: transparent;
 }
 /* One floating segment that translates to the active chip (#516). Mounted
    already at its target (measured in a layout effect), so opening the
@@ -665,44 +680,6 @@ button:focus-visible {
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
 }
-.model-picker-agent {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 8px 12px;
-  border: 0;
-  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  background: transparent;
-  color: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-.model-picker-agent:hover {
-  background: var(--hover-bg-row);
-}
-.model-picker-agent-label {
-  flex: 0 0 auto;
-  color: var(--vscode-descriptionForeground);
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.model-picker-agent-value {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-weight: 500;
-}
-.model-picker-agent .codicon-chevron-right {
-  flex: 0 0 auto;
-  font-size: 13px;
-  color: var(--vscode-descriptionForeground);
-}
-
 @media (max-width: 520px) {
   .statusbar {
     gap: 6px;
