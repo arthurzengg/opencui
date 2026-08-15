@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.11.2] - 2026-08-14
+
+### Added
+- Agent selection moved into the model picker as a segmented chip row, working exactly like the effort control: `default` plus one chip per selectable agent, a pick applies immediately and keeps the popover open, and the active segment slides over (skipped under reduced motion). This replaces the picker's Agent footer row, which closed the popover into a native QuickPick at the top-center of the window after a blocking fetch. The agent list arrives with the model catalog — rendered instantly, sorted alphabetically, with subagents and opencode's internal agents filtered out — and the command-palette "Select Agent" command is unchanged (#524, #525).
+
+### Changed
+- Inactive chips in the picker's segmented controls (Effort and Agent) now carry a faint fill so each segment reads as a discrete unit. Multi-word agent names have internal spaces, and fully transparent chips made adjacent labels blur into one continuous run of text (#524, #525).
+
 ## [1.11.1] - 2026-08-13
 
 ### Fixed
