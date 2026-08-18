@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.11.3] - 2026-08-17
+
+### Fixed
+- The sticky user bubble, the docked composer, the review card, the in-place edit overlay, and the context-usage ring now paint an opaque surface in themes whose `input.background` carries an alpha channel (some light themes ship it as `#0000000D`). On those themes the transcript scrolled straight through the pinned question and the composer text was hard to read; the input color is now layered over the panel ground, which is what VS Code renders for its own fields there and is a no-op for opaque themes (#528, #529).
+
 ## [1.11.2] - 2026-08-14
 
 ### Added
