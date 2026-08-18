@@ -42,6 +42,7 @@
   --color-fg-muted:     var(--vscode-descriptionForeground);
   --color-bg-input:     var(--vscode-input-background);
   --color-bg-panel:     var(--vscode-sideBar-background);
+  --surface-input:      linear-gradient(0deg, var(--color-bg-input), var(--color-bg-input)), var(--color-bg-panel);
   --color-border:       var(--vscode-input-border, transparent);
   --color-border-focus: var(--vscode-foreground); /* intentional: text colour, not focusBorder blue */
   --color-accent:       var(--vscode-focusBorder);
@@ -1086,10 +1087,9 @@ button:focus-visible {
   top: 0;
   z-index: var(--z-bubble-sticky);
   padding: var(--bubble-padding);
-  /* Solid opaque background so scrolling content underneath never bleeds
-     through, even when a hover/list color is layered on top. */
-  background: var(--color-bg-input);
-  background-color: var(--color-bg-input);
+  /* Opaque surface so scrolling content underneath never bleeds through, even
+     when a hover/list color is layered on top. */
+  background: var(--surface-input);
   border: var(--bubble-border-width) solid var(--color-border);
   border-radius: var(--radius);
   word-break: break-word;
@@ -1244,7 +1244,7 @@ button:focus-visible {
 }
 .msg.role-user.is-editable[data-edit-phase="view"]:hover {
   /* Layer the (possibly semi-transparent) hover color on TOP of the opaque
-     input-background so scrolling text behind the pinned bubble never shows
+     input surface so scrolling text behind the pinned bubble never shows
      through during hover. Without this, on themes where
      --vscode-list-hoverBackground is rgba(...) with low alpha, hover would
      reveal the chat content scrolling beneath the sticky message.
@@ -1252,7 +1252,7 @@ button:focus-visible {
      to the focus/white border while focused. */
   background:
     linear-gradient(0deg, var(--vscode-list-hoverBackground), var(--vscode-list-hoverBackground)),
-    var(--vscode-input-background);
+    var(--surface-input);
   border-color: var(--color-border);
 }
 .msg.role-user.is-editable[data-edit-phase="view"]:focus-visible {
@@ -1271,7 +1271,7 @@ button:focus-visible {
      normal border through `currentColor` for a frame after the overlay closes,
      which reads as a second white-to-gray flash. */
   border: var(--bubble-border-width) solid var(--color-border);
-  background: var(--color-bg-input);
+  background: var(--surface-input);
   box-shadow: none;
   overflow: visible;
   transition: none;
@@ -1293,7 +1293,7 @@ button:focus-visible {
   padding: var(--bubble-padding);
   border: var(--bubble-border-width) solid var(--color-border-focus);
   border-radius: var(--radius);
-  background: var(--color-bg-input);
+  background: var(--surface-input);
   animation: user-edit-border-in 0.18s ease both;
 }
 @keyframes user-edit-border-in {
@@ -1981,7 +1981,7 @@ button:focus-visible {
   padding: 4px 6px;
   border: var(--bubble-border-width) solid var(--vscode-panel-border);
   border-radius: var(--radius);
-  background: var(--color-bg-input);
+  background: var(--surface-input);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 .review-panel::after {
@@ -2360,7 +2360,7 @@ button:focus-visible {
   margin: 0;
   border: var(--bubble-border-width) solid var(--color-border);
   border-radius: var(--radius);
-  background: var(--color-bg-input);
+  background: var(--surface-input);
 }
 .promptbox--top {
   margin: 0;
@@ -2560,7 +2560,7 @@ button:focus-visible {
   position: absolute;
   inset: 3px;
   border-radius: var(--radius-pill);
-  background: var(--color-bg-input);
+  background: var(--surface-input);
 }
 
 .context-usage.is-empty .context-usage-ring {
