@@ -46,7 +46,7 @@
 - **Edit + regenerate** — click any past user message; the conversation rewinds via opencode's `session.revert`.
 - **Review Changes** card per file with `Keep` / `Undo` (per row + Keep / Undo all).
 - **Inline edit** with `Cmd+K` / `Ctrl+K` — rewrite selection with natural language.
-- **Effort / reasoning-budget picker** for models that expose variants (gpt-5.5, claude-opus, etc.).
+- **Model · Agent · Effort picker** — one in-panel popover: search models, set the effort / reasoning budget for models that expose variants (gpt-5.5, claude-opus, etc.), and switch opencode agents.
 - **Math, tables, lists** render properly in assistant messages (LaTeX, GFM, KaTeX).
 
 ## Setup
