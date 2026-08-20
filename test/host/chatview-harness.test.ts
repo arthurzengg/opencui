@@ -1101,3 +1101,86 @@ describe("ChatView harness: model catalog", () => {
     expect(setAgent).toHaveBeenLastCalledWith(undefined)
   })
 })
+
+describe("ChatView harness: external session interop", () => {
+  it("lists top-level unbound server sessions and adopts one on importSession", async () => {
+    server.setSessions([
+      { id: "ses_tui", title: "TUI refactor", time: { created: 1, updated: 2000 } },
+      { id: "ses_kid", parentID: "ses_tui", title: "subagent", time: { updated: 3000 } },
+    ])
+    server.setSessionMessages("ses_tui", [
+      { info: { id: "msg_u1", role: "user", sessionID: "ses_tui" }, parts: [{ type: "text", text: "refactor this" }] },
+      {
+        info: { id: "msg_a1", role: "assistant", sessionID: "ses_tui" },
+        parts: [
+          {
+            type: "tool",
+            callID: "call_1",
+            tool: "edit",
+            state: { status: "completed", title: "edit", input: { filePath: "/ws/a.ts" }, output: "ok" },
+          },
+          { type: "text", text: "done" },
+        ],
+      },
+    ])
+    await harness.send({ type: "mounted" })
+
+    // The mounted handshake fetches the session list; the child session and
+    // (later) bound sessions never reach the wire.
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "conversations" && (m.external ?? []).some((s) => s.id === "ses_tui"),
+      ),
+    )
+    const withExternal = harness.posted.filter((m) => m.type === "conversations" && m.external?.length)
+    const external = withExternal.at(-1)!.type === "conversations" ? withExternal.at(-1)!.external : undefined
+    expect(external).toEqual([{ id: "ses_tui", title: "TUI refactor", updatedAt: 2000 }])
+
+    await harness.send({ type: "importSession", sessionID: "ses_tui" })
+
+    // Adopted: a saved conversation bound to the session, transcript rebuilt.
+    const adopted = savedConversations().find((c) => c.sessionID === "ses_tui")
+    expect(adopted).toBeDefined()
+    expect(adopted!.title).toBe("TUI refactor")
+    expect(adopted!.messages.map((m) => m.id)).toEqual(["msg_u1", "msg_a1"])
+    expect(adopted!.messages[1]!.blocks.map((b) => b.type)).toEqual(["tool", "text"])
+    expect(harness.chatView.activeConversationID()).toBe(adopted!.id)
+
+    // The restore post carries the rebuilt transcript to the webview.
+    const restore = harness.posted.filter((m) => m.type === "restore").at(-1)!
+    expect(restore.type === "restore" && restore.messages.map((m) => m.id)).toEqual(["msg_u1", "msg_a1"])
+
+    // Once bound, the session drops out of the external section.
+    const lastConversations = harness.posted.filter((m) => m.type === "conversations").at(-1)!
+    expect(lastConversations.type === "conversations" && lastConversations.external).toEqual([])
+  })
+
+  it("importSession for an already-bound session opens the existing conversation", async () => {
+    server.setSessions([{ id: "ses_tui", title: "TUI chat", time: { updated: 10 } }])
+    server.setSessionMessages("ses_tui", [
+      { info: { id: "msg_u1", role: "user", sessionID: "ses_tui" }, parts: [{ type: "text", text: "hi" }] },
+    ])
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "importSession", sessionID: "ses_tui" })
+    const first = savedConversations().filter((c) => c.sessionID === "ses_tui")
+    expect(first).toHaveLength(1)
+
+    // Switch away, then import the same session again — no duplicate.
+    await harness.send({ type: "createConversation" })
+    await harness.send({ type: "importSession", sessionID: "ses_tui" })
+    const again = savedConversations().filter((c) => c.sessionID === "ses_tui")
+    expect(again).toHaveLength(1)
+    expect(harness.chatView.activeConversationID()).toBe(again[0]!.id)
+  })
+
+  it("refreshSessions re-fetches the list on demand", async () => {
+    await harness.send({ type: "mounted" })
+    server.setSessions([{ id: "ses_late", title: "Started after mount", time: { updated: 99 } }])
+    await harness.send({ type: "refreshSessions" })
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "conversations" && (m.external ?? []).some((s) => s.id === "ses_late"),
+      ),
+    )
+  })
+})

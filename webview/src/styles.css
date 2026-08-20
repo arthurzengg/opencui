@@ -810,6 +810,18 @@ button:focus-visible {
   color: var(--vscode-descriptionForeground);
   font-size: 12px;
 }
+/* Divider heading for the "Also in this project" external-session section,
+   styled like the picker's EFFORT/AGENT group labels. */
+.history-section-label {
+  margin-top: 6px;
+  padding: 8px 7px 2px;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .history-item {
   position: relative;
   display: grid;

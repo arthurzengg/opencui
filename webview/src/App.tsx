@@ -24,6 +24,8 @@ export default function App() {
     abort,
     newSession,
     openConversation,
+    importSession,
+    refreshSessions,
     renameConversation,
     deleteConversation,
     setAgent,
@@ -247,6 +249,7 @@ export default function App() {
         selection={state.selection}
         modelCatalog={state.modelCatalog}
         conversations={state.conversations}
+        externalSessions={state.externalSessions}
         activeConversationID={state.conversationID}
         activePopover={activeHeaderPopover}
         onActivePopoverChange={setActiveHeaderPopover}
@@ -255,6 +258,8 @@ export default function App() {
         onRefreshModels={refreshModels}
         onCreateConversation={newSession}
         onOpenConversation={openConversation}
+        onImportSession={importSession}
+        onRefreshSessions={refreshSessions}
         onRenameConversation={renameConversation}
         onDeleteConversation={deleteConversation}
       />

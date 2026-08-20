@@ -79,6 +79,10 @@ export type MockOpencodeServer = {
   setProviders: (providers: Array<Record<string, unknown>>) => void
   /** Configure what GET /agent returns (default: one primary agent). */
   setAgents: (agents: Array<Record<string, unknown>>) => void
+  /** Configure what GET /session (session.list) returns (default: none). */
+  setSessions: (sessions: Array<Record<string, unknown>>) => void
+  /** Configure what GET /session/{id}/message (session.messages) returns for one session. */
+  setSessionMessages: (sessionID: string, items: Array<Record<string, unknown>>) => void
   /**
    * Configure what GET /session/status returns. Pass `undefined` to clear
    * the entry. Tests use this to drive the watchdog's recovery path.
@@ -124,6 +128,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const commandCalls: Array<{ sessionID: string; body: unknown }> = []
   let commands: Array<Record<string, unknown>> = []
   let providers: Array<Record<string, unknown>> = []
+  let sessions: Array<Record<string, unknown>> = []
+  const sessionMessages = new Map<string, Array<Record<string, unknown>>>()
   let agents: Array<Record<string, unknown>> = [
     {
       name: "default",
@@ -211,6 +217,19 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     // Custom command list
     if (path === "/command" && req.method === "GET") {
       reply(res, 200, commands)
+      return
+    }
+
+    // Session list (session.list)
+    if (path === "/session" && req.method === "GET") {
+      reply(res, 200, sessions)
+      return
+    }
+
+    // Session transcript (session.messages)
+    const messagesMatch = path.match(/^\/session\/([^/]+)\/message$/)
+    if (messagesMatch && req.method === "GET") {
+      reply(res, 200, sessionMessages.get(messagesMatch[1]!) ?? [])
       return
     }
 
@@ -472,6 +491,12 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     setAgents(next) {
       agents = next
+    },
+    setSessions(next) {
+      sessions = next
+    },
+    setSessionMessages(sessionID, items) {
+      sessionMessages.set(sessionID, items)
     },
     setSessionStatus(sessionID, status) {
       if (status) sessionStatuses.set(sessionID, status)
