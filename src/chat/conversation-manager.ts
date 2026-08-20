@@ -116,6 +116,18 @@ export class ConversationManager {
     return this.conversations.find((c) => c.id === id)?.title
   }
 
+  /** Backend session IDs already bound to a saved conversation. */
+  boundSessionIDs(): Set<string> {
+    const ids = new Set<string>()
+    for (const c of this.conversations) if (c.sessionID) ids.add(c.sessionID)
+    return ids
+  }
+
+  /** The saved conversation bound to a backend session, if any. */
+  findBySessionID(sessionID: string): string | undefined {
+    return this.conversations.find((c) => c.sessionID === sessionID)?.id
+  }
+
   summaries(): ConversationSummary[] {
     return this.conversations
       .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }))

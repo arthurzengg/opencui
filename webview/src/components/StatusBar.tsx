@@ -1,5 +1,5 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
-import type { ConversationSummary, ModelCatalogInfo, Selection } from "../protocol"
+import type { ConversationSummary, ExternalSessionSummary, ModelCatalogInfo, Selection } from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
 import { ModelPicker } from "./ModelPicker"
@@ -14,6 +14,7 @@ type Props = {
   selection: Selection
   modelCatalog?: ModelCatalogInfo
   conversations: ConversationSummary[]
+  externalSessions?: ExternalSessionSummary[]
   activeConversationID?: string
   activePopover?: HeaderPopoverID | null
   onActivePopoverChange?: HeaderPopoverSetter
@@ -22,6 +23,8 @@ type Props = {
   onRefreshModels: () => void
   onCreateConversation: () => void
   onOpenConversation: (id: string) => void
+  onImportSession?: (sessionID: string) => void
+  onRefreshSessions?: () => void
   onRenameConversation: (id: string, title: string) => void
   onDeleteConversation: (id: string) => void
 }
@@ -33,6 +36,7 @@ export function StatusBar({
   selection,
   modelCatalog,
   conversations,
+  externalSessions,
   activeConversationID,
   activePopover,
   onActivePopoverChange,
@@ -41,6 +45,8 @@ export function StatusBar({
   onRefreshModels,
   onCreateConversation,
   onOpenConversation,
+  onImportSession,
+  onRefreshSessions,
   onRenameConversation,
   onDeleteConversation,
 }: Props) {
@@ -90,12 +96,15 @@ export function StatusBar({
       </button>
       <ChatHistoryMenu
         conversations={conversations}
+        external={externalSessions ?? []}
         activeID={activeConversationID}
         activeTitle={active?.title}
         open={currentPopover === "history"}
         onOpenChange={(open) => setPopoverOpen("history", open)}
         onCreate={onCreateConversation}
         onOpen={onOpenConversation}
+        onImport={onImportSession}
+        onRefreshExternal={onRefreshSessions}
         onRename={onRenameConversation}
         onDelete={onDeleteConversation}
       />
@@ -105,22 +114,28 @@ export function StatusBar({
 
 function ChatHistoryMenu({
   conversations,
+  external,
   activeID,
   activeTitle,
   open,
   onOpenChange,
   onCreate,
   onOpen,
+  onImport,
+  onRefreshExternal,
   onRename,
   onDelete,
 }: {
   conversations: ConversationSummary[]
+  external: ExternalSessionSummary[]
   activeID?: string
   activeTitle?: string
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreate: () => void
   onOpen: (id: string) => void
+  onImport?: (sessionID: string) => void
+  onRefreshExternal?: () => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
 }) {
@@ -134,7 +149,12 @@ function ChatHistoryMenu({
     if (!open) {
       setQuery("")
       setConfirmDeleteID(undefined)
+      return
     }
+    // Stale-while-revalidate: the last known external list renders instantly,
+    // and opening the popover re-fetches so TUI sessions started since the
+    // panel mounted show up.
+    onRefreshExternal?.()
   }, [open])
 
   useEffect(() => {
@@ -170,7 +190,10 @@ function ChatHistoryMenu({
   const filtered = query.trim()
     ? conversations.filter((c) => c.title.toLowerCase().includes(query.trim().toLowerCase()))
     : conversations
-  const showSearch = conversations.length >= 5
+  const filteredExternal = query.trim()
+    ? external.filter((s) => s.title.toLowerCase().includes(query.trim().toLowerCase()))
+    : external
+  const showSearch = conversations.length + external.length >= 5
 
   return (
     <div className="history-menu" ref={ref}>
@@ -274,6 +297,31 @@ function ChatHistoryMenu({
                 </div>
               )
             })}
+            {filteredExternal.length > 0 && onImport && (
+              <>
+                <div
+                  className="history-section-label"
+                  title="opencode sessions in this project from the TUI, web UI, or another client. Opening one saves it as a conversation here."
+                >
+                  Also in this project
+                </div>
+                {filteredExternal.map((session) => (
+                  <div className="history-item is-external" key={session.id}>
+                    <button
+                      className="history-open"
+                      onClick={() => {
+                        close()
+                        onImport(session.id)
+                      }}
+                      title={session.title}
+                    >
+                      <span className="history-title">{session.title}</span>
+                      <span className="history-date">{formatUpdated(session.updatedAt)}</span>
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       )}

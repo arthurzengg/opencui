@@ -10,6 +10,7 @@ import type {
   ContextUsage,
   ConversationMention,
   ConversationSummary,
+  ExternalSessionSummary,
   DirEntry,
   EditorContextRef,
   FileSearchHit,
@@ -66,6 +67,7 @@ export type ChatState = {
    */
   modelCatalog?: ModelCatalogInfo
   conversations: ConversationSummary[]
+  externalSessions: ExternalSessionSummary[]
   conversationID?: string
   contextUsage?: ContextUsage
   /** Workspace opencode commands for the `/` picker (pushed by the host). */
@@ -110,6 +112,7 @@ const initial: ChatState = {
   continuationPending: false,
   selection: {},
   conversations: [],
+  externalSessions: [],
   commands: [],
   messages: [],
   reviewHunks: {},
@@ -200,7 +203,14 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "setComposerText":
       return { ...state, injectedText: { text: action.text, nonce: (state.injectedText?.nonce ?? 0) + 1 } }
     case "conversations":
-      return { ...state, conversations: action.conversations, conversationID: action.activeID }
+      return {
+        ...state,
+        conversations: action.conversations,
+        conversationID: action.activeID,
+        // Posts that predate a session-list fetch omit `external` — keep the
+        // last known list rather than flashing the section empty.
+        externalSessions: action.external ?? state.externalSessions,
+      }
     case "restore":
       // Clear any pending composer inject — a conversation switch invalidates it.
       // `/undo` posts `restore` then `setComposerText`, so its restore re-sets it.
@@ -560,6 +570,12 @@ export function useChatState() {
     },
     openConversation(id: string) {
       vscode.post({ type: "openConversation", id })
+    },
+    importSession(sessionID: string) {
+      vscode.post({ type: "importSession", sessionID })
+    },
+    refreshSessions() {
+      vscode.post({ type: "refreshSessions" })
     },
     renameConversation(id: string, title: string) {
       vscode.post({ type: "renameConversation", id, title })

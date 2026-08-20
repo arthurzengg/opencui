@@ -694,3 +694,97 @@ describe("AgentActivity", () => {
     expect(screen.getByText(/error · boom · 12s/)).toBeInTheDocument()
   })
 })
+
+describe("StatusBar: external sessions in the history popover", () => {
+  const conversations = [{ id: "c1", title: "Panel chat", updatedAt: Date.now() }]
+  const external = [
+    { id: "ses_tui", title: "TUI refactor", updatedAt: Date.now() - 60_000 },
+    { id: "ses_web", title: "Web session", updatedAt: Date.now() - 120_000 },
+  ]
+
+  it("renders the section with import rows and no rename/delete actions", async () => {
+    const user = userEvent.setup()
+    const onImportSession = vi.fn()
+    render(
+      <StatusBar
+        {...baseProps}
+        conversations={conversations}
+        externalSessions={external}
+        onImportSession={onImportSession}
+        onRefreshSessions={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    expect(screen.getByText("Also in this project")).toBeInTheDocument()
+    const row = screen.getByText("TUI refactor").closest("button")!
+    expect(row.closest(".history-item")?.querySelector(".history-action")).toBeNull()
+
+    await user.click(row)
+    expect(onImportSession).toHaveBeenCalledWith("ses_tui")
+    // Importing closes the popover, like opening a local conversation does.
+    expect(screen.queryByText("Also in this project")).not.toBeInTheDocument()
+  })
+
+  it("re-fetches the session list when the popover opens", async () => {
+    const user = userEvent.setup()
+    const onRefreshSessions = vi.fn()
+    render(
+      <StatusBar
+        {...baseProps}
+        conversations={conversations}
+        externalSessions={external}
+        onImportSession={vi.fn()}
+        onRefreshSessions={onRefreshSessions}
+      />,
+    )
+    expect(onRefreshSessions).not.toHaveBeenCalled()
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    expect(onRefreshSessions).toHaveBeenCalledTimes(1)
+  })
+
+  it("search filters external rows too, and the section hides when nothing matches", async () => {
+    const user = userEvent.setup()
+    const manyLocal = [
+      { id: "c1", title: "Panel chat one", updatedAt: Date.now() },
+      { id: "c2", title: "Panel chat two", updatedAt: Date.now() },
+      { id: "c3", title: "Panel chat three", updatedAt: Date.now() },
+    ]
+    render(
+      <StatusBar
+        {...baseProps}
+        conversations={manyLocal}
+        externalSessions={external}
+        onImportSession={vi.fn()}
+        onRefreshSessions={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    // The search box keys off the combined local + external count.
+    const search = screen.getByPlaceholderText("Search chats…")
+
+    await user.type(search, "TUI")
+    expect(screen.getByText("TUI refactor")).toBeInTheDocument()
+    expect(screen.queryByText("Web session")).not.toBeInTheDocument()
+    expect(screen.queryByText("Panel chat one")).not.toBeInTheDocument()
+
+    await user.clear(search)
+    await user.type(search, "Panel")
+    expect(screen.queryByText("Also in this project")).not.toBeInTheDocument()
+    expect(screen.getByText("Panel chat one")).toBeInTheDocument()
+  })
+
+  it("hides the section when there are no external sessions", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar
+        {...baseProps}
+        conversations={conversations}
+        externalSessions={[]}
+        onImportSession={vi.fn()}
+        onRefreshSessions={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    expect(screen.queryByText("Also in this project")).not.toBeInTheDocument()
+  })
+})

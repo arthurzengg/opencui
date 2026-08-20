@@ -24,6 +24,7 @@ import type {
   ChatMessage,
   CommandInfo,
   ConversationMention,
+  ExternalSessionSummary,
   Inbound,
   Outbound,
   ToolUpdate as WireToolUpdate,
@@ -36,6 +37,7 @@ import { BUILTIN_COMMAND_NAMES, withBuiltinCommands } from "./builtin-commands"
 import { BuiltinRunners } from "./builtin-runners"
 import { readContextUsage } from "./context-usage"
 import { adoptStorageIDs, migrateConversationsToWorkspace } from "./conversation-store"
+import { externalSessionSummaries, importedMessages, type SessionInfo } from "./import-session"
 import { ConversationManager } from "./conversation-manager"
 import { ContinuationState, isContinuationToast } from "./continuation-state"
 import { sweepAbortTree, drainAbortTree } from "./abort-tree"
@@ -75,6 +77,12 @@ export class ChatView implements vscode.WebviewViewProvider {
   private sessionID?: string
   private subscription?: Subscription
   private activePermissions = new Map<string, PermissionRequest>()
+  /**
+   * Raw top-level sessions from the last `session.list` fetch. Kept unfiltered
+   * so binding a session locally (import, fork) removes it from the popover's
+   * external section on the next post without a refetch.
+   */
+  private serverSessions: SessionInfo[] = []
   private activeQuestions = new Map<string, QuestionRequest>()
   /**
    * Last (text + variant) pair we surfaced as a toast plus its timestamp.
@@ -434,6 +442,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       type: "conversations",
       conversations: this.manager.summaries(),
       activeID: this.manager.getActiveID(),
+      external: this.externalSummaries(),
     })
     this.post({
       type: "restore",
@@ -448,7 +457,79 @@ export class ChatView implements vscode.WebviewViewProvider {
       type: "conversations",
       conversations: this.manager.summaries(),
       activeID: this.manager.getActiveID(),
+      external: this.externalSummaries(),
     })
+  }
+
+  private externalSummaries(): ExternalSessionSummary[] {
+    return externalSessionSummaries(this.serverSessions, this.manager.boundSessionIDs())
+  }
+
+  /**
+   * Sessions on the opencode server for this project that the panel doesn't
+   * know about — created by the TUI, the web UI, or another client. The panel
+   * is the only surface that can't see them: its conversations live in
+   * workspaceState, not on the server, so without this fetch the asymmetry
+   * reads as lost data to anyone running the TUI alongside.
+   */
+  private async refreshExternalSessions(backend?: Backend) {
+    try {
+      const activeBackend = backend ?? (await this.servers.ensure())
+      const res = await activeBackend.client.session.list({ query: { directory: activeBackend.directory } })
+      if (res.error || !res.data) {
+        log("session list failed", res.error)
+        return
+      }
+      this.serverSessions = res.data as SessionInfo[]
+      this.postConversationsList()
+    } catch (e) {
+      log("session list threw", e)
+    }
+  }
+
+  /**
+   * Adopt a server session into a saved conversation and open it. Mirrors the
+   * `/fork` adoption flow, but the transcript is rebuilt from the server's
+   * message list instead of copied from local state.
+   */
+  private async importSession(sessionID: string) {
+    // Double-click / stale-popover race: if something already bound this
+    // session (an earlier import, a fork), open that conversation instead of
+    // minting a duplicate.
+    const existing = this.manager.findBySessionID(sessionID)
+    if (existing) {
+      await this.selectConversation(existing)
+      return
+    }
+    try {
+      const backend = await this.servers.ensure()
+      const res = await backend.client.session.messages({
+        path: { id: sessionID },
+        query: { directory: backend.directory },
+      })
+      if (res.error || !res.data) {
+        log("import session: messages fetch failed", res.error)
+        void vscode.window.showErrorMessage("Failed to load the opencode session.")
+        return
+      }
+      const messages = importedMessages(res.data as Parameters<typeof importedMessages>[0], backend.directory)
+      const title =
+        this.serverSessions.find((sess) => sess.id === sessionID)?.title?.trim() || "Imported session"
+
+      this.resetSessionState()
+      const conversation = this.manager.add(title.slice(0, 80))
+      this.manager.setActiveID(conversation.id)
+      this.manager.updateActive((c) => ({ ...c, sessionID, messages }))
+      this.applyActiveSnapshot()
+      await this.manager.flushPersist()
+      this.sendConversationState()
+      this.post({ type: "contextUsage", usage: undefined })
+      void this.refreshContextUsage(backend)
+      this.reconcileOnConversationEntry()
+    } catch (e) {
+      log("import session threw", e)
+      void vscode.window.showErrorMessage("Failed to load the opencode session.")
+    }
   }
 
   /**
@@ -978,6 +1059,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           this.post({ type: "connected", connected: true })
           void this.refreshCommands(backend)
           void this.refreshModelCatalog(backend)
+          void this.refreshExternalSessions(backend)
           if (this.sessionID) void this.refreshContextUsage(backend)
         } catch (e) {
           this.post({ type: "connected", connected: false, error: (e as Error).message })
@@ -1038,6 +1120,12 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       case "openConversation":
         await this.selectConversation(msg.id)
+        return
+      case "importSession":
+        await this.importSession(msg.sessionID)
+        return
+      case "refreshSessions":
+        void this.refreshExternalSessions()
         return
       case "renameConversation":
         await this.renameConversation(msg.id, msg.title)

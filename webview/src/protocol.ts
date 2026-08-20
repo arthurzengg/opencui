@@ -140,6 +140,17 @@ export type ConversationSummary = {
 }
 
 /**
+ * An opencode session that exists on the server for this project directory
+ * but has no saved conversation in the panel (created by the opencode TUI,
+ * web UI, or another client). `id` is the backend session ID.
+ */
+export type ExternalSessionSummary = {
+  id: string
+  title: string
+  updatedAt: number
+}
+
+/**
  * A past-conversation @-mention: the chip label exactly as it appears in the
  * message text, bound to the conversation it references. Carried as a pair
  * end to end so the edit flow restores label→id bindings by lookup —
@@ -452,7 +463,7 @@ export type Outbound =
   | { type: "modelCatalog"; catalog: ModelCatalogInfo }
   | { type: "contextUsage"; usage?: ContextUsage }
   | { type: "commands"; commands: CommandInfo[] }
-  | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string }
+  | { type: "conversations"; conversations: ConversationSummary[]; activeID?: string; external?: ExternalSessionSummary[] }
   | { type: "restore"; conversationID: string; messages: ChatMessage[]; reviewHunks?: Record<string, ReviewHunkState> }
   | { type: "context"; ref: EditorContextRef }
   | { type: "userMessage"; id: string; text: string; ref?: EditorContextRef; backendID?: string; attachments?: Attachment[]; mentions?: string[]; conversationMentions?: ConversationMention[]; context?: PromptContextManifest }
@@ -514,6 +525,10 @@ export type Inbound =
   | { type: "abort" }
   | { type: "createConversation" }
   | { type: "openConversation"; id: string }
+  /** Adopt an opencode session (from the TUI/web) into a saved conversation and open it. */
+  | { type: "importSession"; sessionID: string }
+  /** Re-fetch the server's session list (history popover opening). */
+  | { type: "refreshSessions" }
   | { type: "renameConversation"; id: string; title: string }
   | { type: "deleteConversation"; id: string }
   | { type: "apply"; code: string; language?: string }
