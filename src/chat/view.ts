@@ -235,6 +235,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     // turn's Main row on `waiting` (syncAgentWaitState counts these maps).
     this.activePermissions.clear()
     this.activeQuestions.clear()
+    this.syncAttention()
     this.subagentDispatch.clearMainTaskID()
     this.post({ type: "sessionIdle" })
     void this.manager.flushPersist()
@@ -260,6 +261,44 @@ export class ChatView implements vscode.WebviewViewProvider {
   private syncAgentWaitState() {
     const pending = this.activePermissions.size + this.activeQuestions.size
     void this.subagentDispatch.setMainWaiting(pending > 0)
+    this.syncAttention()
+  }
+
+  /**
+   * A permission/question raised while the panel is hidden blocks the turn
+   * with nothing on screen to answer it — opencode just waits. Mirror the
+   * pending count onto the view container's badge so the activity bar shows
+   * something is stuck on the user. Cleared the moment the view is visible
+   * (the dialog itself is the affordance then) or the count drops to zero.
+   */
+  private syncAttention() {
+    const view = this.view
+    if (!view) return
+    const pending = this.activePermissions.size + this.activeQuestions.size
+    if (pending > 0 && !view.visible) {
+      view.badge = {
+        value: pending,
+        tooltip: pending === 1 ? "1 request is waiting for your input" : `${pending} requests are waiting for your input`,
+      }
+      return
+    }
+    view.badge = undefined
+    if (view.visible) this.attentionToastShown = false
+  }
+
+  /**
+   * One toast per hidden stretch (reset when the view becomes visible), so a
+   * permission storm doesn't stack notifications. The badge carries the count.
+   */
+  private attentionToastShown = false
+
+  private maybeNotifyHidden(message: string) {
+    const view = this.view
+    if (!view || view.visible || this.attentionToastShown) return
+    this.attentionToastShown = true
+    void Promise.resolve(vscode.window.showInformationMessage(message, "Open Panel")).then((choice) => {
+      if (choice === "Open Panel") this.focus()
+    })
   }
 
   async resolveWebviewView(view: vscode.WebviewView) {
@@ -283,6 +322,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     view.webview.onDidReceiveMessage((msg: Inbound) => this.onMessage(msg))
     view.onDidDispose(() => this.dispose())
+    view.onDidChangeVisibility(() => this.syncAttention())
 
     vscode.window.onDidChangeActiveTextEditor(() => {
       this.pushContext()
@@ -561,6 +601,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.redoStack = []
     this.activePermissions.clear()
     this.activeQuestions.clear()
+    this.syncAttention()
   }
 
   private async selectConversation(id: string) {
@@ -1324,6 +1365,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     // turn's waiting computation in syncAgentWaitState.
     this.activePermissions.clear()
     this.activeQuestions.clear()
+    this.syncAttention()
     void this.subagentDispatch.recordMainTaskFinish("cancelled")
 
     // Tear down the tracker's local view of the subagent tree first.
@@ -1979,6 +2021,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (this.aborting) return
         this.activePermissions.set(perm.id, perm)
         this.syncAgentWaitState()
+        this.maybeNotifyHidden(`OpenCode Panel is waiting for permission: ${perm.title}`)
         this.post({
           type: "permission",
           id: perm.id,
@@ -1997,6 +2040,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (this.aborting) return
         this.activeQuestions.set(q.id, q)
         this.syncAgentWaitState()
+        this.maybeNotifyHidden("OpenCode Panel is waiting for you to answer a question.")
         this.post({
           type: "question",
           id: q.id,
