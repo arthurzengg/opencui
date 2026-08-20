@@ -66,10 +66,15 @@ function makeFakeWebviewView() {
       disposeCb = cb
       return { dispose: vi.fn() }
     },
-    onDidChangeVisibility: () => ({ dispose: vi.fn() }),
+    onDidChangeVisibility: (cb: () => void) => {
+      visibilityCb = cb
+      return { dispose: vi.fn() }
+    },
     visible: true,
+    badge: undefined as { value: number; tooltip: string } | undefined,
     show: vi.fn(),
   }
+  let visibilityCb: (() => void) | undefined
   return {
     view: view as unknown as vscode.WebviewView,
     posted,
@@ -77,6 +82,11 @@ function makeFakeWebviewView() {
     // promise, so awaiting this awaits the full host-side handling.
     send: (msg: Inbound) => Promise.resolve(receive?.(msg)),
     disposeView: () => disposeCb?.(),
+    setVisible: (visible: boolean) => {
+      view.visible = visible
+      visibilityCb?.()
+    },
+    badge: () => view.badge,
   }
 }
 
@@ -94,6 +104,8 @@ let harness: {
   posted: Outbound[]
   send: (msg: Inbound) => Promise<unknown>
   disposeView: () => void
+  setVisible: (visible: boolean) => void
+  badge: () => { value: number; tooltip: string } | undefined
   workspaceState: Memento
   servers: ServerManager
   taskStore: AgentTaskStore
@@ -143,7 +155,7 @@ beforeEach(async () => {
   )
   const fake = makeFakeWebviewView()
   await chatView.resolveWebviewView(fake.view)
-  harness = { chatView, posted: fake.posted, send: fake.send, disposeView: fake.disposeView, workspaceState, servers, taskStore, prefs }
+  harness = { chatView, posted: fake.posted, send: fake.send, disposeView: fake.disposeView, setVisible: fake.setVisible, badge: fake.badge, workspaceState, servers, taskStore, prefs }
 })
 
 afterEach(async () => {
@@ -1182,5 +1194,70 @@ describe("ChatView harness: external session interop", () => {
         (m) => m.type === "conversations" && (m.external ?? []).some((s) => s.id === "ses_late"),
       ),
     )
+  })
+})
+
+describe("ChatView harness: hidden-panel attention", () => {
+  it("a permission arriving while hidden badges the container and toasts once", async () => {
+    const toast = vi.mocked(vscode.window.showInformationMessage)
+    toast.mockClear()
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "guarded edit" })
+    harness.setVisible(false)
+
+    server.push({ type: "permission.updated", id: "perm_1", sessionID: SESSION_ID, title: "Edit file" })
+    await until(() => harness.badge()?.value === 1)
+    expect(toast).toHaveBeenCalledTimes(1)
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining("Edit file"), "Open Panel")
+
+    // A second pending request bumps the badge but does not stack toasts.
+    server.push({ type: "permission.updated", id: "perm_2", sessionID: SESSION_ID, title: "Run command" })
+    await until(() => harness.badge()?.value === 2)
+    expect(toast).toHaveBeenCalledTimes(1)
+
+    // Answering one outside the panel drops the count.
+    server.push({ type: "permission.replied", sessionID: SESSION_ID, permissionID: "perm_1", response: "once" })
+    await until(() => harness.badge()?.value === 1)
+
+    // Revealing the panel clears the badge — the dialog is the affordance now.
+    harness.setVisible(true)
+    expect(harness.badge()).toBeUndefined()
+
+    // Hidden again: a fresh hidden stretch may toast again.
+    harness.setVisible(false)
+    server.push({ type: "permission.updated", id: "perm_3", sessionID: SESSION_ID, title: "Third ask" })
+    await until(() => toast.mock.calls.length === 2)
+  })
+
+  it("no badge or toast while the panel is visible", async () => {
+    const toast = vi.mocked(vscode.window.showInformationMessage)
+    toast.mockClear()
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "guarded edit" })
+
+    server.push({ type: "permission.updated", id: "perm_v", sessionID: SESSION_ID, title: "Edit file" })
+    await until(() => harness.posted.some((m) => m.type === "permission" && m.id === "perm_v"))
+    expect(harness.badge()).toBeUndefined()
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it("a question arriving while hidden badges too, and abort clears it", async () => {
+    const toast = vi.mocked(vscode.window.showInformationMessage)
+    toast.mockClear()
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "do the thing" })
+    harness.setVisible(false)
+
+    server.push({
+      type: "question.asked",
+      id: "q_1",
+      sessionID: SESSION_ID,
+      questions: [{ question: "Which flavor?", options: [{ label: "a" }, { label: "b" }] }],
+    })
+    await until(() => harness.badge()?.value === 1)
+    expect(toast).toHaveBeenCalledTimes(1)
+
+    await harness.send({ type: "abort" })
+    expect(harness.badge()).toBeUndefined()
   })
 })
