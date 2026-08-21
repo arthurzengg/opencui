@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-08-20
+
+### Added
+- The chat history popover now lists opencode sessions started outside the panel — from the TUI, the web UI, or another client working in the same project — in an "Also in this project" section below the panel's own conversations. Opening one adopts it as a regular saved conversation: the transcript is rebuilt from the server (text, reasoning, finished tool calls, and file patches, with paths rewritten relative to the workspace), edit and rewind work on the imported turns, and aborted turns keep their Stopped badge. A session already bound to a panel conversation is opened rather than duplicated, and the list refreshes each time the popover opens, showing the newest fifty (#534, #535).
+- The panel now asks for attention when it needs input while hidden. A permission request or agent question arriving with the sidebar collapsed or another view in front shows the pending count as a badge on the panel's activity-bar icon, plus one notification per hidden stretch with an "Open Panel" button. The badge tracks replies made from anywhere — including another opencode client — and clears on reveal, abort, or turn end; a visible panel behaves exactly as before (#536, #537).
+
 ## [1.11.3] - 2026-08-17
 
 ### Fixed
