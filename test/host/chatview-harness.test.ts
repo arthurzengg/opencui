@@ -121,6 +121,7 @@ beforeEach(async () => {
     currentWorkspace: vi.fn(() => undefined),
     currentBackend: vi.fn(() => backend),
   } as unknown as ServerManager
+  const foldedProviders: string[] = []
   const prefs = {
     get: () => ({}),
     onChange: vi.fn(() => ({ dispose: vi.fn() })),
@@ -128,6 +129,12 @@ beforeEach(async () => {
     variantFor: () => undefined,
     setModel: vi.fn(async () => {}),
     setAgent: vi.fn(async () => {}),
+    collapsedProviders: () => [...foldedProviders],
+    setProviderCollapsed: vi.fn(async (id: string, collapsed: boolean) => {
+      const idx = foldedProviders.indexOf(id)
+      if (collapsed && idx < 0) foldedProviders.push(id)
+      if (!collapsed && idx >= 0) foldedProviders.splice(idx, 1)
+    }),
   } as unknown as Preferences
   const indexManager = {
     onStatusChange: vi.fn(() => ({ dispose: vi.fn() })),
@@ -1049,6 +1056,7 @@ describe("ChatView harness: model catalog", () => {
         },
       ],
       recents: [],
+      collapsedProviders: [],
       agents: [{ name: "default" }],
     })
   })
@@ -1063,6 +1071,19 @@ describe("ChatView harness: model catalog", () => {
         (m) => m.type === "modelCatalog" && m.catalog.models.some((e) => e.modelID === "gpt-5.5"),
       ),
     )
+  })
+
+  it("setProviderCollapsed persists without an echo and rides the next catalog push", async () => {
+    server.setProviders([GPT_PROVIDER])
+    await harness.send({ type: "mounted" })
+    await until(() => catalogs().length > 0)
+    const before = catalogs().length
+    await harness.send({ type: "setProviderCollapsed", providerID: "openai", collapsed: true })
+    expect(catalogs().length).toBe(before)
+    await harness.send({ type: "refreshModels" })
+    await until(() => catalogs().length > before)
+    const last = catalogs()[catalogs().length - 1]!
+    expect(last.type === "modelCatalog" && last.catalog.collapsedProviders).toEqual(["openai"])
   })
 
   it("setModel persists via prefs; the variant is validated against the live catalog", async () => {

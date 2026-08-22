@@ -616,6 +616,23 @@ button:focus-visible {
   letter-spacing: 0.05em;
   cursor: default;
 }
+.model-picker-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.model-picker-section-toggle:hover {
+  color: var(--vscode-foreground);
+}
+.model-picker-section-toggle .codicon {
+  font-size: 11px;
+}
 .model-picker-row {
   display: flex;
   align-items: center;

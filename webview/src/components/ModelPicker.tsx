@@ -21,40 +21,83 @@ export function modelKey(entry: ModelCatalogEntry): string {
   return `${entry.providerID}/${entry.modelID}`
 }
 
+export type PickerSection = {
+  /** "" while filtering — the flat match list renders headerless. */
+  title: string
+  /** Folding identity; set only on provider groups. Recent/Default never fold. */
+  providerID?: string
+  collapsed: boolean
+  rows: PickerItem[]
+}
+
 /**
- * Flat, ordered row list for rendering AND keyboard navigation — one array
- * so the active index can never point at a row the list isn't showing.
- * Unfiltered: Recent (host-pushed order) → per-provider groups → the
- * default-reset row. Filtered: a flat match list; every whitespace-separated
- * token must appear in `providerID/modelID providerName`, so "openai mini"
- * or "5.2" both narrow the way you'd expect.
+ * Ordered section list for rendering. Unfiltered: Recent (host-pushed
+ * order) → per-provider groups → the default-reset row. Filtered: one flat
+ * headerless section ignoring folds — a query must always reach every
+ * model; every whitespace-separated token must appear in
+ * `providerID/modelID providerName`, so "openai mini" or "5.2" both narrow
+ * the way you'd expect. A folded provider keeps its section (the header
+ * stays clickable) but contributes nothing to the flat item list.
  */
-export function buildPickerItems(
+export function buildPickerSections(
   catalog: ModelCatalogInfo | undefined,
   query: string,
-): PickerItem[] {
+  collapsedProviders: ReadonlySet<string>,
+): PickerSection[] {
   if (!catalog) return []
   const q = query.trim().toLowerCase()
   if (q) {
     const tokens = q.split(/\s+/)
-    return catalog.models
+    const rows = catalog.models
       .filter((m) => {
         const hay = `${modelKey(m)} ${m.providerName ?? ""}`.toLowerCase()
         return tokens.every((t) => hay.includes(t))
       })
       .map((entry): PickerItem => ({ kind: "model", entry, section: "" }))
+    return rows.length ? [{ title: "", collapsed: false, rows }] : []
   }
   const byKey = new Map(catalog.models.map((m) => [modelKey(m), m]))
-  const items: PickerItem[] = []
+  const sections: PickerSection[] = []
+  const recent: PickerItem[] = []
   for (const key of catalog.recents) {
     const entry = byKey.get(key)
-    if (entry) items.push({ kind: "model", entry, section: "Recent" })
+    if (entry) recent.push({ kind: "model", entry, section: "Recent" })
   }
+  if (recent.length) sections.push({ title: "Recent", collapsed: false, rows: recent })
   for (const entry of catalog.models) {
-    items.push({ kind: "model", entry, section: entry.providerName ?? entry.providerID })
+    const tail = sections[sections.length - 1]
+    if (!tail || tail.providerID !== entry.providerID) {
+      sections.push({
+        title: entry.providerName ?? entry.providerID,
+        providerID: entry.providerID,
+        collapsed: collapsedProviders.has(entry.providerID),
+        rows: [],
+      })
+    }
+    sections[sections.length - 1]!.rows.push({
+      kind: "model",
+      entry,
+      section: entry.providerName ?? entry.providerID,
+    })
   }
-  if (catalog.models.length > 0) items.push({ kind: "default", section: "Default" })
-  return items
+  if (catalog.models.length > 0) {
+    sections.push({ title: "Default", collapsed: false, rows: [{ kind: "default", section: "Default" }] })
+  }
+  return sections
+}
+
+/**
+ * Flat row list for keyboard navigation — folded groups contribute no rows,
+ * so the active index can never point at a row the list isn't showing.
+ */
+export function buildPickerItems(
+  catalog: ModelCatalogInfo | undefined,
+  query: string,
+  collapsedProviders: ReadonlySet<string>,
+): PickerItem[] {
+  return buildPickerSections(catalog, query, collapsedProviders).flatMap((s) =>
+    s.collapsed ? [] : s.rows,
+  )
 }
 
 type ChipOption = { key: string; label: string; title?: string }
@@ -137,6 +180,7 @@ type Props = {
   selection: Selection
   onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
   onSetAgent: (name?: string) => void
+  onSetProviderCollapsed: (providerID: string, collapsed: boolean) => void
   /** Posted on mount so a freshly opened picker re-syncs the catalog. */
   onRefresh: () => void
   onClose: () => void
@@ -147,11 +191,20 @@ export function ModelPicker({
   selection,
   onSetModel,
   onSetAgent,
+  onSetProviderCollapsed,
   onRefresh,
   onClose,
 }: Props) {
   const [query, setQuery] = useState("")
-  const items = useMemo(() => buildPickerItems(catalog, query), [catalog, query])
+  // Fold state: the host-pushed catalog seeds it; after the first toggle the
+  // local set wins (the host persists without echoing, so a later catalog
+  // push carries the same folds and can never fight this).
+  const seededFolds = useMemo(() => new Set(catalog?.collapsedProviders ?? []), [catalog])
+  const [localFolds, setLocalFolds] = useState<ReadonlySet<string> | null>(null)
+  const folds = localFolds ?? seededFolds
+  const sections = useMemo(() => buildPickerSections(catalog, query, folds), [catalog, query, folds])
+  const items = useMemo(() => sections.flatMap((s) => (s.collapsed ? [] : s.rows)), [sections])
+  const indexOfItem = useMemo(() => new Map(items.map((item, i) => [item, i])), [items])
   const currentKey = selection.model
   const current = useMemo(
     () => (currentKey ? catalog?.models.find((m) => modelKey(m) === currentKey) : undefined),
@@ -217,6 +270,11 @@ export function ModelPicker({
     onClose()
   }
 
+  // Folding the tail group can strand the active index past the new end.
+  useEffect(() => {
+    setActiveIndex((i) => Math.min(i, Math.max(0, items.length - 1)))
+  }, [items.length])
+
   // Effort and agent are iterative tweaks — try one, glance at the result,
   // adjust — so unlike a model pick (the terminal action) a chip click leaves
   // the popover open. The active chip moves optimistically; the host's
@@ -246,6 +304,15 @@ export function ModelPicker({
   const pickAgent = (name?: string) => {
     setPendingAgent({ name })
     onSetAgent(name)
+    searchRef.current?.focus()
+  }
+  const toggleProvider = (providerID: string) => {
+    const next = new Set(folds)
+    const fold = !next.has(providerID)
+    if (fold) next.add(providerID)
+    else next.delete(providerID)
+    setLocalFolds(next)
+    onSetProviderCollapsed(providerID, fold)
     searchRef.current?.focus()
   }
 
@@ -310,64 +377,81 @@ export function ModelPicker({
             {query ? `No models match “${query.trim()}”` : "No models reported by opencode"}
           </div>
         )}
-        {items.map((item, i) => {
-          const showHeader =
-            item.section !== "" && (i === 0 || items[i - 1]!.section !== item.section)
-          if (item.kind === "default") {
-            return (
-              <Fragment key={`${item.section}:__default`}>
-                {showHeader && <div className="model-picker-section">{item.section}</div>}
+        {sections.map((section) => (
+          <Fragment key={section.providerID ? `provider:${section.providerID}` : `section:${section.title}`}>
+            {section.title !== "" &&
+              (section.providerID ? (
                 <button
                   type="button"
-                  role="option"
-                  aria-selected={i === activeIndex}
-                  className={`model-picker-row ${i === activeIndex ? "active" : ""} ${currentKey ? "" : "is-current"}`}
-                  onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
-                  onClick={() => selectItem(item)}
-                  title="Use opencode's configured default model"
+                  className="model-picker-section model-picker-section-toggle"
+                  aria-expanded={!section.collapsed}
+                  onClick={() => toggleProvider(section.providerID!)}
                 >
-                  <span className="model-picker-name">opencode default</span>
-                  {!currentKey && <span className="codicon codicon-check" aria-hidden="true" />}
+                  <span
+                    className={`codicon codicon-chevron-${section.collapsed ? "right" : "down"}`}
+                    aria-hidden="true"
+                  />
+                  {section.title}
                 </button>
-              </Fragment>
-            )
-          }
-          const entry = item.entry
-          const key = modelKey(entry)
-          const isCurrent = key === currentKey
-          const tooltip = entry.lastVariant ? `${key} · ${entry.lastVariant}` : key
-          // Inside a provider group the header already names the provider;
-          // repeating it per row is noise. Recent rows and filtered results
-          // mix providers, so there the label disambiguates.
-          const showProvider = item.section === "Recent" || item.section === ""
-          return (
-            <Fragment key={`${item.section}:${key}`}>
-              {showHeader && <div className="model-picker-section">{item.section}</div>}
-              <button
-                type="button"
-                role="option"
-                aria-selected={i === activeIndex}
-                className={`model-picker-row ${i === activeIndex ? "active" : ""} ${isCurrent ? "is-current" : ""}`}
-                onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
-                onClick={() => selectItem(item)}
-                title={tooltip}
-              >
-                {/* Raw model id, not the prettified label: the picker is where
-                    date-suffix and point-release differences matter. */}
-                <span className="model-picker-name">{entry.modelID}</span>
-                {entry.lastVariant && (
-                  <span className="model-picker-last-variant">{entry.lastVariant}</span>
-                )}
-                {showProvider && (
-                  <span className="model-picker-provider">
-                    {entry.providerName ?? entry.providerID}
-                  </span>
-                )}
-                {isCurrent && <span className="codicon codicon-check" aria-hidden="true" />}
-              </button>
-            </Fragment>
-          )
-        })}
+              ) : (
+                <div className="model-picker-section">{section.title}</div>
+              ))}
+            {!section.collapsed &&
+              section.rows.map((item) => {
+                const i = indexOfItem.get(item)!
+                if (item.kind === "default") {
+                  return (
+                    <button
+                      key={`${item.section}:__default`}
+                      type="button"
+                      role="option"
+                      aria-selected={i === activeIndex}
+                      className={`model-picker-row ${i === activeIndex ? "active" : ""} ${currentKey ? "" : "is-current"}`}
+                      onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
+                      onClick={() => selectItem(item)}
+                      title="Use opencode's configured default model"
+                    >
+                      <span className="model-picker-name">opencode default</span>
+                      {!currentKey && <span className="codicon codicon-check" aria-hidden="true" />}
+                    </button>
+                  )
+                }
+                const entry = item.entry
+                const key = modelKey(entry)
+                const isCurrent = key === currentKey
+                const tooltip = entry.lastVariant ? `${key} · ${entry.lastVariant}` : key
+                // Inside a provider group the header already names the provider;
+                // repeating it per row is noise. Recent rows and filtered results
+                // mix providers, so there the label disambiguates.
+                const showProvider = item.section === "Recent" || item.section === ""
+                return (
+                  <button
+                    key={`${item.section}:${key}`}
+                    type="button"
+                    role="option"
+                    aria-selected={i === activeIndex}
+                    className={`model-picker-row ${i === activeIndex ? "active" : ""} ${isCurrent ? "is-current" : ""}`}
+                    onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
+                    onClick={() => selectItem(item)}
+                    title={tooltip}
+                  >
+                    {/* Raw model id, not the prettified label: the picker is where
+                        date-suffix and point-release differences matter. */}
+                    <span className="model-picker-name">{entry.modelID}</span>
+                    {entry.lastVariant && (
+                      <span className="model-picker-last-variant">{entry.lastVariant}</span>
+                    )}
+                    {showProvider && (
+                      <span className="model-picker-provider">
+                        {entry.providerName ?? entry.providerID}
+                      </span>
+                    )}
+                    {isCurrent && <span className="codicon codicon-check" aria-hidden="true" />}
+                  </button>
+                )
+              })}
+          </Fragment>
+        ))}
       </div>
       {agents.length > 0 && (
         <div className="model-picker-agents">
