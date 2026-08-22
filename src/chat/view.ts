@@ -949,6 +949,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       this.prefs.recentModels(),
       (providerID, modelID) => this.prefs.variantFor(providerID, modelID),
       this.modelCatalogAgents ?? [],
+      this.prefs.collapsedProviders(),
     )
     this.post({ type: "modelCatalog", catalog })
   }
@@ -1212,6 +1213,11 @@ export class ChatView implements vscode.WebviewViewProvider {
       }
       case "refreshModels":
         void this.refreshModelCatalog()
+        return
+      case "setProviderCollapsed":
+        // No catalog re-push: the picker folds optimistically, and an echo
+        // would reset its keyboard position mid-interaction.
+        await this.prefs.setProviderCollapsed(msg.providerID, msg.collapsed)
         return
       case "permissionReply": {
         this.activePermissions.delete(msg.id)

@@ -604,6 +604,9 @@ export function useChatState() {
     refreshModels() {
       vscode.post({ type: "refreshModels" })
     },
+    setProviderCollapsed(providerID: string, collapsed: boolean) {
+      vscode.post({ type: "setProviderCollapsed", providerID, collapsed })
+    },
     replyPermission(id: string, response: "once" | "always" | "reject") {
       vscode.post({ type: "permissionReply", id, response })
       dispatch({ type: "clearPermission", id })

@@ -256,8 +256,9 @@ export function validVariant(
 }
 
 /**
- * Wire catalog for the in-panel picker. Recents are filtered to models that
- * still exist (an opencode config change must not leave dead rows), and each
+ * Wire catalog for the in-panel picker. Recents and folded provider groups
+ * are filtered to entries that still exist (an opencode config change must
+ * not leave dead rows or dead fold state), and each
  * entry carries the validated per-model variant memory so the webview can
  * restore effort on selection without a round-trip.
  */
@@ -266,8 +267,10 @@ export function buildModelCatalog(
   recents: string[],
   variantFor: (providerID: string, modelID: string) => string | undefined,
   agents: AgentCatalogEntry[],
+  collapsedProviders: string[],
 ): ModelCatalogInfo {
   const keys = new Set(models.map((m) => `${m.providerID}/${m.modelID}`))
+  const providerIDs = new Set(models.map((m) => m.providerID))
   return {
     models: models.map((m) => ({
       providerID: m.providerID,
@@ -277,6 +280,7 @@ export function buildModelCatalog(
       lastVariant: validVariant(m, variantFor(m.providerID, m.modelID)),
     })),
     recents: recents.filter((key) => keys.has(key)),
+    collapsedProviders: collapsedProviders.filter((id) => providerIDs.has(id)),
     agents,
   }
 }

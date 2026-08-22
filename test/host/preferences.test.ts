@@ -69,6 +69,7 @@ describe("Preferences per-model variant memory", () => {
     const store = new Map<string, unknown>([
       ["opencui.model.recents", "not-an-array"],
       ["opencui.model.variantMemory", [1, 2, 3]],
+      ["opencui.model.collapsedProviders", "not-an-array"],
     ])
     const memento = {
       keys: () => [...store.keys()],
@@ -78,5 +79,18 @@ describe("Preferences per-model variant memory", () => {
     const prefs = new Preferences(memento as unknown as vscode.Memento)
     expect(prefs.recentModels()).toEqual([])
     expect(prefs.variantFor("a", "b")).toBeUndefined()
+    expect(prefs.collapsedProviders()).toEqual([])
+  })
+})
+
+describe("Preferences folded picker providers", () => {
+  it("folds and unfolds a provider, deduping repeat folds", async () => {
+    const prefs = makePrefs()
+    await prefs.setProviderCollapsed("openai", true)
+    await prefs.setProviderCollapsed("anthropic", true)
+    await prefs.setProviderCollapsed("openai", true)
+    expect(prefs.collapsedProviders()).toEqual(["anthropic", "openai"])
+    await prefs.setProviderCollapsed("openai", false)
+    expect(prefs.collapsedProviders()).toEqual(["anthropic"])
   })
 })

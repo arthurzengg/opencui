@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { fireEvent, render, screen, cleanup, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { ModelPicker, buildPickerItems } from "../../webview/src/components/ModelPicker"
+import { ModelPicker, buildPickerItems, buildPickerSections } from "../../webview/src/components/ModelPicker"
 import { reducer, initialChatState } from "../../webview/src/hooks/useChatState"
 import type { ModelCatalogInfo } from "../../webview/src/protocol"
 
@@ -37,9 +37,12 @@ const baseProps = {
   selection: {},
   onSetModel: vi.fn(),
   onSetAgent: vi.fn(),
+  onSetProviderCollapsed: vi.fn(),
   onRefresh: vi.fn(),
   onClose: vi.fn(),
 }
+
+const noFolds: ReadonlySet<string> = new Set()
 
 function effortChips() {
   return within(screen.getByRole("group", { name: "Effort" }))
@@ -54,7 +57,7 @@ function rowNames(): string[] {
 
 describe("buildPickerItems", () => {
   it("orders recents first (host order), then provider groups, then the default row", () => {
-    const items = buildPickerItems(catalog, "")
+    const items = buildPickerItems(catalog, "", noFolds)
     expect(items.map((i) => (i.kind === "model" ? `${i.section}:${i.entry.modelID}` : i.kind))).toEqual([
       "Recent:gpt-5.5",
       "Recent:claude-sonnet-4-6",
@@ -67,21 +70,46 @@ describe("buildPickerItems", () => {
   })
 
   it("skips recents whose model is no longer in the catalog", () => {
-    const items = buildPickerItems({ ...catalog, recents: ["openai/gone", "google/gemini-3-pro"] }, "")
+    const items = buildPickerItems({ ...catalog, recents: ["openai/gone", "google/gemini-3-pro"] }, "", noFolds)
     const recent = items.filter((i) => i.section === "Recent")
     expect(recent).toHaveLength(1)
   })
 
   it("filters with every whitespace token matched against provider/model/name", () => {
-    const items = buildPickerItems(catalog, "anthropic sonnet")
+    const items = buildPickerItems(catalog, "anthropic sonnet", noFolds)
     expect(items).toHaveLength(1)
     expect(items[0]!.kind === "model" && items[0]!.entry.modelID).toBe("claude-sonnet-4-6")
     // Filtered mode drops sections and the default row.
-    expect(buildPickerItems(catalog, "gpt").some((i) => i.kind === "default")).toBe(false)
+    expect(buildPickerItems(catalog, "gpt", noFolds).some((i) => i.kind === "default")).toBe(false)
   })
 
   it("returns nothing while the catalog has not arrived", () => {
-    expect(buildPickerItems(undefined, "")).toEqual([])
+    expect(buildPickerItems(undefined, "", noFolds)).toEqual([])
+  })
+
+  it("a folded provider's rows leave the flat list; Recent and Default stay", () => {
+    const items = buildPickerItems(catalog, "", new Set(["anthropic"]))
+    expect(items.map((i) => (i.kind === "model" ? `${i.section}:${i.entry.modelID}` : i.kind))).toEqual([
+      "Recent:gpt-5.5",
+      "Recent:claude-sonnet-4-6",
+      "OpenAI:gpt-5.5",
+      "Google:gemini-3-pro",
+      "default",
+    ])
+  })
+
+  it("a folded provider keeps its section so the header stays clickable", () => {
+    const sections = buildPickerSections(catalog, "", new Set(["anthropic"]))
+    const anthropic = sections.find((s) => s.providerID === "anthropic")!
+    expect(anthropic.collapsed).toBe(true)
+    expect(anthropic.rows).toHaveLength(2)
+    expect(sections.filter((s) => s.collapsed)).toHaveLength(1)
+  })
+
+  it("filtering ignores folds so search always reaches every model", () => {
+    const items = buildPickerItems(catalog, "haiku", new Set(["anthropic"]))
+    expect(items).toHaveLength(1)
+    expect(items[0]!.kind === "model" && items[0]!.entry.modelID).toBe("claude-haiku-4-5")
   })
 })
 
@@ -293,6 +321,50 @@ describe("ModelPicker", () => {
   it("hides the agent chips when the catalog reports no agents", () => {
     render(<ModelPicker {...baseProps} catalog={{ ...catalog, agents: [] }} />)
     expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument()
+  })
+})
+
+describe("ModelPicker provider folding", () => {
+  it("clicking a provider header folds its rows and reports the fold to the host", async () => {
+    const user = userEvent.setup()
+    const onSetProviderCollapsed = vi.fn()
+    render(<ModelPicker {...baseProps} onSetProviderCollapsed={onSetProviderCollapsed} />)
+    const header = screen.getByRole("button", { name: "Anthropic" })
+    expect(header.getAttribute("aria-expanded")).toBe("true")
+    await user.click(header)
+    expect(onSetProviderCollapsed).toHaveBeenCalledWith("anthropic", true)
+    expect(header.getAttribute("aria-expanded")).toBe("false")
+    // Provider rows gone; the Recent copy of sonnet stays.
+    expect(rowNames()).toEqual(["gpt-5.5", "claude-sonnet-4-6", "gpt-5.5", "gemini-3-pro", "opencode default"])
+    // Focus handed back to the search line so arrows keep working (chip pattern).
+    expect(screen.getByRole("textbox", { name: "Search models" })).toHaveFocus()
+    await user.click(header)
+    expect(onSetProviderCollapsed).toHaveBeenLastCalledWith("anthropic", false)
+    expect(rowNames()).toContain("claude-haiku-4-5")
+  })
+
+  it("a catalog arriving with folded providers renders them folded", () => {
+    render(<ModelPicker {...baseProps} catalog={{ ...catalog, collapsedProviders: ["google"] }} />)
+    expect(rowNames()).not.toContain("gemini-3-pro")
+    expect(screen.getByRole("button", { name: "Google" }).getAttribute("aria-expanded")).toBe("false")
+  })
+
+  it("typing a query reaches models inside a folded group", () => {
+    render(<ModelPicker {...baseProps} catalog={{ ...catalog, collapsedProviders: ["anthropic"] }} />)
+    const input = screen.getByRole("textbox", { name: "Search models" })
+    fireEvent.change(input, { target: { value: "haiku" } })
+    expect(rowNames()).toEqual(["claude-haiku-4-5"])
+  })
+
+  it("folding the tail group clamps the active index instead of stranding it", async () => {
+    const user = userEvent.setup()
+    const onSetModel = vi.fn()
+    render(<ModelPicker {...baseProps} onSetModel={onSetModel} />)
+    const input = screen.getByRole("textbox", { name: "Search models" })
+    fireEvent.keyDown(input, { key: "ArrowUp" }) // wrap to the last row (default)
+    await user.click(screen.getByRole("button", { name: "Google" }))
+    fireEvent.keyDown(input, { key: "Enter" })
+    expect(onSetModel).toHaveBeenCalledWith(undefined, undefined, undefined)
   })
 })
 

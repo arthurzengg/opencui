@@ -20,6 +20,7 @@ type Props = {
   onActivePopoverChange?: HeaderPopoverSetter
   onSetAgent: (name?: string) => void
   onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
+  onSetProviderCollapsed: (providerID: string, collapsed: boolean) => void
   onRefreshModels: () => void
   onCreateConversation: () => void
   onOpenConversation: (id: string) => void
@@ -42,6 +43,7 @@ export function StatusBar({
   onActivePopoverChange,
   onSetAgent,
   onSetModel,
+  onSetProviderCollapsed,
   onRefreshModels,
   onCreateConversation,
   onOpenConversation,
@@ -83,6 +85,7 @@ export function StatusBar({
         onOpenChange={(open) => setPopoverOpen("selector", open)}
         onSetAgent={onSetAgent}
         onSetModel={onSetModel}
+        onSetProviderCollapsed={onSetProviderCollapsed}
         onRefreshModels={onRefreshModels}
       />
       <button
@@ -363,6 +366,7 @@ function SelectorMenu({
   onOpenChange,
   onSetAgent,
   onSetModel,
+  onSetProviderCollapsed,
   onRefreshModels,
 }: {
   selection: Selection
@@ -371,6 +375,7 @@ function SelectorMenu({
   onOpenChange: (open: boolean) => void
   onSetAgent: (name?: string) => void
   onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
+  onSetProviderCollapsed: (providerID: string, collapsed: boolean) => void
   onRefreshModels: () => void
 }) {
   const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
@@ -407,6 +412,7 @@ function SelectorMenu({
             selection={selection}
             onSetModel={onSetModel}
             onSetAgent={onSetAgent}
+            onSetProviderCollapsed={onSetProviderCollapsed}
             onRefresh={onRefreshModels}
             onClose={close}
           />

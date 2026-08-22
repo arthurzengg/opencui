@@ -4,6 +4,7 @@ const KEY_AGENT = "opencui.agent"
 const KEY_MODEL = "opencui.model"
 const KEY_MODEL_RECENTS = "opencui.model.recents"
 const KEY_MODEL_VARIANT_MEMORY = "opencui.model.variantMemory"
+const KEY_MODEL_COLLAPSED_PROVIDERS = "opencui.model.collapsedProviders"
 
 /**
  * Enough to cover a "testing new LLM releases across 4-5 providers" rotation
@@ -50,6 +51,18 @@ export class Preferences {
   /** Last variant the user picked for this model; undefined = its default. */
   variantFor(providerID: string, modelID: string): string | undefined {
     return this.variantMemory()[`${providerID}/${modelID}`]
+  }
+
+  /** Provider IDs whose model-picker group the user folded. */
+  collapsedProviders(): string[] {
+    const raw = this.state.get<unknown>(KEY_MODEL_COLLAPSED_PROVIDERS)
+    if (!Array.isArray(raw)) return []
+    return raw.filter((v): v is string => typeof v === "string")
+  }
+
+  async setProviderCollapsed(providerID: string, collapsed: boolean) {
+    const rest = this.collapsedProviders().filter((id) => id !== providerID)
+    await this.state.update(KEY_MODEL_COLLAPSED_PROVIDERS, collapsed ? [...rest, providerID] : rest)
   }
 
   async setAgent(agent: string | undefined) {

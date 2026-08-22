@@ -30,6 +30,7 @@ export default function App() {
     deleteConversation,
     setAgent,
     setModel,
+    setProviderCollapsed,
     refreshModels,
     replyPermission,
     replyQuestion,
@@ -255,6 +256,7 @@ export default function App() {
         onActivePopoverChange={setActiveHeaderPopover}
         onSetAgent={setAgent}
         onSetModel={setModel}
+        onSetProviderCollapsed={setProviderCollapsed}
         onRefreshModels={refreshModels}
         onCreateConversation={newSession}
         onOpenConversation={openConversation}

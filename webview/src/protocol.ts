@@ -234,6 +234,11 @@ export type ModelCatalogInfo = {
   /** `providerID/modelID` keys, most recently used first. */
   recents: string[]
   /**
+   * Provider IDs whose picker group the user folded. Persisted host-side
+   * and rides the catalog push like `recents`.
+   */
+  collapsedProviders?: string[]
+  /**
    * User-selectable agents (subagents and opencode's internal agents are
    * filtered host-side). Rides on the catalog message so the picker's Agent
    * chips share the models' stale-while-revalidate refresh cycle.
@@ -549,6 +554,8 @@ export type Inbound =
   | { type: "setModel"; providerID?: string; modelID?: string; variant?: string }
   /** Re-fetch the provider list and re-push `modelCatalog` (picker opened). */
   | { type: "refreshModels" }
+  /** Fold/unfold a provider group in the model picker (persisted host-side). */
+  | { type: "setProviderCollapsed"; providerID: string; collapsed: boolean }
   | { type: "fileSearch"; requestID: number; query: string }
   | { type: "listDir"; requestID: number; path: string }
   | { type: "attachFile"; requestID: number }
