@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-08-23
+
+### Added
+- Provider groups in the model picker now fold. Each provider header is a chevron toggle: click it to collapse the group to its header line, click again to expand. The folded set is persisted per user and rides the catalog push, so it survives reopening the popover and reloading the window; other windows pick it up on their next catalog refresh. Typing a search query ignores folds entirely — matches inside collapsed groups still appear — and keyboard navigation only ever lands on visible rows. The Recent and Default sections always stay open (#540, #541).
+
+### Fixed
+- Stopping a debug session (or any extension-host crash) no longer leaks an `opencode serve` process that holds its port forever. Teardown previously ran only in `deactivate`, which a debugger Stop skips, and opencode has no parent-death watchdog of its own — orphans several days old were observed. Every spawned server is now recorded in a registry under the extension's global storage, and each activation sweeps it: a recorded server is terminated only when its owning extension host is dead and the pid's live command line still matches `opencode serve`, so another window's healthy server and a recycled pid are never touched, and an unverifiable lookup is retried next time instead of killed blind. Normal shutdown also escalates — stdin EOF, then SIGTERM, then SIGKILL after three seconds if the process lingers (#542, #543).
+
 ## [1.12.0] - 2026-08-20
 
 ### Added
