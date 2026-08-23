@@ -13,6 +13,7 @@ import { AgentTaskStore } from "./agents/task-store"
 import { showAgentsQuickPick } from "./agents/quickpick"
 import { getOutputChannel, log } from "./output"
 import { initFileSearch } from "./file-search"
+import { reapOrphanServers, registryPath } from "./server-registry"
 
 let servers: ServerManager | undefined
 let recentEdits: RecentEditsTracker | undefined
@@ -22,6 +23,18 @@ let chatView: ChatView | undefined
 
 export async function activate(context: vscode.ExtensionContext) {
   log("activating OpenCode Panel")
+  // Sweep servers orphaned by killed extension hosts (debugger Stop, host
+  // crash) — those paths never run deactivate, and opencode has no
+  // parent-death watchdog of its own.
+  const storageDir = context.globalStorageUri?.fsPath
+  if (storageDir) {
+    void reapOrphanServers(registryPath(storageDir), process.pid).then(
+      (killed) => {
+        if (killed.length) log("reaped orphaned opencode servers", killed)
+      },
+      (e) => log("orphan server reap failed", e),
+    )
+  }
   servers = new ServerManager(context)
   recentEdits = new RecentEditsTracker()
   const indexSettings = readIndexSettings(vscode.workspace.getConfiguration("opencui"))
