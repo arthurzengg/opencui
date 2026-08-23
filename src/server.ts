@@ -4,6 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk"
 import { log } from "./output"
 import { primaryWorkspaceRoot, type WorkspaceRoot } from "./workspace-root"
+import { recordServer, registryPath, releaseServer } from "./server-registry"
 
 const SERVER_START_TIMEOUT_MS = 60000
 
@@ -11,6 +12,7 @@ export type OpencodeConfigMode = "isolated" | "user"
 
 type ServerHandle = {
   url: string
+  pid?: number
   close(): void
   /** Register a callback fired if the process exits AFTER successful startup. */
   onExit(listener: () => void): void
@@ -66,13 +68,31 @@ export class ServerManager {
       configMode,
       workspace: workspace?.fsPath ?? "(no workspace)",
     })
-    const server = await startOpencodeServer(binaryPath, {
-      hostname: "127.0.0.1",
-      port: port || randomPort(),
-      timeout: SERVER_START_TIMEOUT_MS,
-      cwd: workspace?.fsPath,
-      configMode,
-    })
+    let spawnedPid: number | undefined
+    let server: ServerHandle
+    try {
+      server = await startOpencodeServer(binaryPath, {
+        hostname: "127.0.0.1",
+        port: port || randomPort(),
+        timeout: SERVER_START_TIMEOUT_MS,
+        cwd: workspace?.fsPath,
+        configMode,
+        // Registered at spawn, not at ready: an extension host killed during
+        // the 60s startup window must still leave a reapable record.
+        onSpawn: (pid) => {
+          spawnedPid = pid
+          this.updateRegistry((file) =>
+            recordServer(file, { pid, ownerPid: process.pid, startedAt: Date.now() }),
+          )
+        },
+      })
+    } catch (e) {
+      if (spawnedPid !== undefined) {
+        const pid = spawnedPid
+        this.updateRegistry((file) => releaseServer(file, pid))
+      }
+      throw e
+    }
     log("opencode server ready at", server.url)
     const client = createOpencodeClient({
       baseUrl: server.url,
@@ -88,6 +108,7 @@ export class ServerManager {
       // must not clobber its successor.
       if (this.server !== server) return
       log("opencode server exited unexpectedly; clearing cached backend")
+      if (server.pid !== undefined) this.updateRegistry((file) => releaseServer(file, server.pid!))
       this.server = undefined
       this.client = undefined
       this.workspace = undefined
@@ -104,9 +125,24 @@ export class ServerManager {
     if (this.server) {
       log("stopping opencode server")
       this.server.close()
+      if (this.server.pid !== undefined) {
+        const pid = this.server.pid
+        this.updateRegistry((file) => releaseServer(file, pid))
+      }
       this.server = undefined
       this.client = undefined
       this.workspace = undefined
+    }
+  }
+
+  /** Registry writes are best-effort — a broken storage dir must never take the server down. */
+  private updateRegistry(fn: (file: string) => void): void {
+    const dir = this.context.globalStorageUri?.fsPath
+    if (!dir) return
+    try {
+      fn(registryPath(dir))
+    } catch (e) {
+      log("server registry update failed", e)
     }
   }
 
@@ -179,6 +215,8 @@ export function startOpencodeServer(
     /** Workspace root for the subprocess `cwd`. Undefined means inherit. */
     cwd?: string
     configMode: OpencodeConfigMode
+    /** Fired with the child pid immediately after spawn. */
+    onSpawn?: (pid: number) => void
   },
 ): Promise<ServerHandle> {
   // `isolated` keeps the historical behavior: hand opencode an empty config so
@@ -195,6 +233,7 @@ export function startOpencodeServer(
     cwd: options.cwd,
     env,
   })
+  if (proc.pid !== undefined) options.onSpawn?.(proc.pid)
 
   return new Promise((resolve, reject) => {
     let output = ""
@@ -231,6 +270,7 @@ export function startOpencodeServer(
         clearTimeout(timer)
         resolve({
           url: match[1],
+          pid: proc.pid,
           close: () => closeProcess(proc),
           onExit: (listener) => exitListeners.push(listener),
         })
@@ -266,6 +306,18 @@ function stripAnsi(value: string) {
 }
 
 function closeProcess(proc: ChildProcessWithoutNullStreams) {
-  if (proc.killed) return
+  if (proc.killed || proc.exitCode !== null) return
+  // MCP-style shutdown ladder: stdin EOF first (so an opencode that learns
+  // the convention exits cleanly), SIGTERM now, SIGKILL only if it lingers.
+  try {
+    proc.stdin.end()
+  } catch {
+    // stream already closed
+  }
   proc.kill()
+  const hardKill = setTimeout(() => {
+    if (proc.exitCode === null) proc.kill("SIGKILL")
+  }, 3000)
+  hardKill.unref?.()
+  proc.once("exit", () => clearTimeout(hardKill))
 }
