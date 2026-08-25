@@ -79,8 +79,21 @@ describe("buildPickerItems", () => {
     const items = buildPickerItems(catalog, "anthropic sonnet", noFolds)
     expect(items).toHaveLength(1)
     expect(items[0]!.kind === "model" && items[0]!.entry.modelID).toBe("claude-sonnet-4-6")
-    // Filtered mode drops sections and the default row.
+    // Filtered mode drops Recent and the default row.
     expect(buildPickerItems(catalog, "gpt", noFolds).some((i) => i.kind === "default")).toBe(false)
+  })
+
+  it("keeps matches grouped by provider while filtering", () => {
+    const sections = buildPickerSections(catalog, "g", noFolds)
+    expect(
+      sections.map((s) => ({
+        title: s.title,
+        rows: s.rows.map((r) => (r.kind === "model" ? `${r.section}:${r.entry.modelID}` : r.kind)),
+      })),
+    ).toEqual([
+      { title: "OpenAI", rows: ["OpenAI:gpt-5.5"] },
+      { title: "Google", rows: ["Google:gemini-3-pro"] },
+    ])
   })
 
   it("returns nothing while the catalog has not arrived", () => {
@@ -110,6 +123,11 @@ describe("buildPickerItems", () => {
     const items = buildPickerItems(catalog, "haiku", new Set(["anthropic"]))
     expect(items).toHaveLength(1)
     expect(items[0]!.kind === "model" && items[0]!.entry.modelID).toBe("claude-haiku-4-5")
+    // The match's section renders expanded even though its provider is folded.
+    const sections = buildPickerSections(catalog, "haiku", new Set(["anthropic"]))
+    expect(sections).toHaveLength(1)
+    expect(sections[0]!.collapsed).toBe(false)
+    expect(sections[0]!.title).toBe("Anthropic")
   })
 })
 
@@ -354,6 +372,19 @@ describe("ModelPicker provider folding", () => {
     const input = screen.getByRole("textbox", { name: "Search models" })
     fireEvent.change(input, { target: { value: "haiku" } })
     expect(rowNames()).toEqual(["claude-haiku-4-5"])
+  })
+
+  it("search results keep provider headers, rendered as labels rather than fold toggles", () => {
+    const onSetProviderCollapsed = vi.fn()
+    const { container } = render(<ModelPicker {...baseProps} onSetProviderCollapsed={onSetProviderCollapsed} />)
+    const input = screen.getByRole("textbox", { name: "Search models" })
+    fireEvent.change(input, { target: { value: "g" } })
+    expect(rowNames()).toEqual(["gpt-5.5", "gemini-3-pro"])
+    const headers = Array.from(container.querySelectorAll(".model-picker-section")).map((h) => h.textContent)
+    expect(headers).toEqual(["OpenAI", "Google"])
+    expect(screen.queryByRole("button", { name: "OpenAI" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Google" })).toBeNull()
+    expect(onSetProviderCollapsed).not.toHaveBeenCalled()
   })
 
   it("folding the tail group clamps the active index instead of stranding it", async () => {
