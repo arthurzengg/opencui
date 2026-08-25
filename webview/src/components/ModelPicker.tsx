@@ -22,9 +22,8 @@ export function modelKey(entry: ModelCatalogEntry): string {
 }
 
 export type PickerSection = {
-  /** "" while filtering — the flat match list renders headerless. */
   title: string
-  /** Folding identity; set only on provider groups. Recent/Default never fold. */
+  /** Provider identity; set only on provider groups. Recent/Default never fold. */
   providerID?: string
   collapsed: boolean
   rows: PickerItem[]
@@ -32,9 +31,10 @@ export type PickerSection = {
 
 /**
  * Ordered section list for rendering. Unfiltered: Recent (host-pushed
- * order) → per-provider groups → the default-reset row. Filtered: one flat
- * headerless section ignoring folds — a query must always reach every
- * model; every whitespace-separated token must appear in
+ * order) → per-provider groups → the default-reset row. Filtered: the
+ * matches keep their provider grouping but folds are ignored and the
+ * sections never collapse — a query must always reach every model; every
+ * whitespace-separated token must appear in
  * `providerID/modelID providerName`, so "openai mini" or "5.2" both narrow
  * the way you'd expect. A folded provider keeps its section (the header
  * stays clickable) but contributes nothing to the flat item list.
@@ -48,13 +48,26 @@ export function buildPickerSections(
   const q = query.trim().toLowerCase()
   if (q) {
     const tokens = q.split(/\s+/)
-    const rows = catalog.models
-      .filter((m) => {
-        const hay = `${modelKey(m)} ${m.providerName ?? ""}`.toLowerCase()
-        return tokens.every((t) => hay.includes(t))
+    const sections: PickerSection[] = []
+    for (const entry of catalog.models) {
+      const hay = `${modelKey(entry)} ${entry.providerName ?? ""}`.toLowerCase()
+      if (!tokens.every((t) => hay.includes(t))) continue
+      const tail = sections[sections.length - 1]
+      if (!tail || tail.providerID !== entry.providerID) {
+        sections.push({
+          title: entry.providerName ?? entry.providerID,
+          providerID: entry.providerID,
+          collapsed: false,
+          rows: [],
+        })
+      }
+      sections[sections.length - 1]!.rows.push({
+        kind: "model",
+        entry,
+        section: entry.providerName ?? entry.providerID,
       })
-      .map((entry): PickerItem => ({ kind: "model", entry, section: "" }))
-    return rows.length ? [{ title: "", collapsed: false, rows }] : []
+    }
+    return sections
   }
   const byKey = new Map(catalog.models.map((m) => [modelKey(m), m]))
   const sections: PickerSection[] = []
@@ -379,23 +392,25 @@ export function ModelPicker({
         )}
         {sections.map((section) => (
           <Fragment key={section.providerID ? `provider:${section.providerID}` : `section:${section.title}`}>
-            {section.title !== "" &&
-              (section.providerID ? (
-                <button
-                  type="button"
-                  className="model-picker-section model-picker-section-toggle"
-                  aria-expanded={!section.collapsed}
-                  onClick={() => toggleProvider(section.providerID!)}
-                >
-                  <span
-                    className={`codicon codicon-chevron-${section.collapsed ? "right" : "down"}`}
-                    aria-hidden="true"
-                  />
-                  {section.title}
-                </button>
-              ) : (
-                <div className="model-picker-section">{section.title}</div>
-              ))}
+            {/* While filtering, provider headers are labels, not fold toggles:
+                a query must reach every model regardless of fold state, and
+                browsing results must not mutate the persisted folds. */}
+            {section.providerID && !query.trim() ? (
+              <button
+                type="button"
+                className="model-picker-section model-picker-section-toggle"
+                aria-expanded={!section.collapsed}
+                onClick={() => toggleProvider(section.providerID!)}
+              >
+                <span
+                  className={`codicon codicon-chevron-${section.collapsed ? "right" : "down"}`}
+                  aria-hidden="true"
+                />
+                {section.title}
+              </button>
+            ) : (
+              <div className="model-picker-section">{section.title}</div>
+            )}
             {!section.collapsed &&
               section.rows.map((item) => {
                 const i = indexOfItem.get(item)!
@@ -421,9 +436,9 @@ export function ModelPicker({
                 const isCurrent = key === currentKey
                 const tooltip = entry.lastVariant ? `${key} · ${entry.lastVariant}` : key
                 // Inside a provider group the header already names the provider;
-                // repeating it per row is noise. Recent rows and filtered results
-                // mix providers, so there the label disambiguates.
-                const showProvider = item.section === "Recent" || item.section === ""
+                // repeating it per row is noise. Only Recent mixes providers,
+                // so only there the label disambiguates.
+                const showProvider = item.section === "Recent"
                 return (
                   <button
                     key={`${item.section}:${key}`}
