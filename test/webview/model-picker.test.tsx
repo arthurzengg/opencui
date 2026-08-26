@@ -238,6 +238,15 @@ describe("ModelPicker", () => {
     expect(screen.queryByText("Effort")).not.toBeInTheDocument()
   })
 
+  it("renders the chip rows as a footer: list first, then Effort, then Agent", () => {
+    render(<ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} />)
+    const list = screen.getByRole("listbox", { name: "Models" })
+    const effort = screen.getByRole("group", { name: "Effort" })
+    const agent = screen.getByRole("group", { name: "Agent" })
+    expect(list.compareDocumentPosition(effort) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(effort.compareDocumentPosition(agent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it("typing filters the list; Enter picks the active match", () => {
     const onSetModel = vi.fn()
     render(<ModelPicker {...baseProps} onSetModel={onSetModel} />)
