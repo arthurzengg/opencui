@@ -365,18 +365,6 @@ export function ModelPicker({
           onKeyDown={onKeyDown}
         />
       </div>
-      {current && current.variants.length > 0 && (
-        <div className="model-picker-effort">
-          <span className="model-picker-chip-label">Effort</span>
-          <ChipGroup
-            groupLabel="Effort"
-            options={current.variants.map((v) => ({ key: v, label: v }))}
-            activeKey={activeVariant}
-            defaultTitle="Use the model's default effort"
-            onPick={pickVariant}
-          />
-        </div>
-      )}
       <div
         className="model-picker-list"
         ref={listRef}
@@ -468,6 +456,18 @@ export function ModelPicker({
           </Fragment>
         ))}
       </div>
+      {current && current.variants.length > 0 && (
+        <div className="model-picker-effort">
+          <span className="model-picker-chip-label">Effort</span>
+          <ChipGroup
+            groupLabel="Effort"
+            options={current.variants.map((v) => ({ key: v, label: v }))}
+            activeKey={activeVariant}
+            defaultTitle="Use the model's default effort"
+            onPick={pickVariant}
+          />
+        </div>
+      )}
       {agents.length > 0 && (
         <div className="model-picker-agents">
           <span className="model-picker-chip-label">Agent</span>

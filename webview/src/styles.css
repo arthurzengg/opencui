@@ -493,20 +493,22 @@ button:focus-visible {
 .model-picker-search::placeholder {
   color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
 }
+/* Both chip rows sit below the list as a divider-anchored footer (the agent
+   row replaced the old footer handoff into the native QuickPick; effort
+   joined it in #551). One divider opens the footer; the rows inside share
+   it rather than each drawing their own. */
 .model-picker-effort,
 .model-picker-agents {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
-  padding: var(--space-3) 12px 2px;
-}
-/* The agent chips replace the old footer handoff row — same divider-anchored
-   position at the bottom of the popover, but picking in place (like effort)
-   instead of closing into the native QuickPick. */
-.model-picker-agents {
   padding: 8px 12px;
   border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+}
+.model-picker-effort + .model-picker-agents {
+  border-top: 0;
+  padding-top: 0;
 }
 .model-picker-chip-label {
   color: var(--vscode-descriptionForeground);
