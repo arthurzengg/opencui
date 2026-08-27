@@ -1,7 +1,7 @@
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
-import { execFile } from "child_process"
+import { execFile, spawn } from "child_process"
 import { promisify } from "util"
 
 const execFileAsync = promisify(execFile)
@@ -82,6 +82,14 @@ export function defaultProcessOps(): ProcessOps {
       }
     },
     terminate(pid) {
+      if (os.platform() === "win32") {
+        // The recorded pid may be the cmd.exe wrapper around npm's .cmd
+        // shim (#548); TerminateProcess on it alone would orphan the
+        // server it launched. Fire-and-forget is fine — the record is kept
+        // until a later pass observes the pid dead.
+        spawn("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore" }).unref()
+        return
+      }
       process.kill(pid)
     },
   }

@@ -1,5 +1,6 @@
 import * as vscode from "vscode"
 import * as path from "path"
+import * as fs from "fs"
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk"
 import { log } from "./output"
@@ -206,6 +207,48 @@ function bundledBinaryPath(extensionPath: string): string | undefined {
   }
 }
 
+export type SpawnTarget = {
+  command: string
+  /** Route through cmd.exe — required for the .cmd/.bat shims npm installs. */
+  shell: boolean
+}
+
+/**
+ * What to actually hand `spawn`. On Windows, CreateProcess resolves a bare
+ * "opencode" only to an .exe, and a .cmd/.bat shim cannot be spawned
+ * directly at all (EINVAL since the CVE-2024-27980 hardening) — yet
+ * `npm install -g opencode-ai` ships exactly such a shim (#548). Walk PATH
+ * ourselves: the first entry with a match wins (what cmd.exe would run),
+ * a real .exe inside it beats the shim (clean pid, clean kill), and a shim
+ * runs through the shell, quoted against spaces in the path.
+ */
+export function resolveSpawnTarget(
+  binaryPath: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  fileExists: (candidate: string) => boolean = (candidate) => {
+    try {
+      return fs.statSync(candidate).isFile()
+    } catch {
+      return false
+    }
+  },
+): SpawnTarget {
+  if (platform !== "win32") return { command: binaryPath, shell: false }
+  if (/\.(cmd|bat)$/i.test(binaryPath)) return { command: `"${binaryPath}"`, shell: true }
+  // Explicit path to anything else (.exe, extensionless) → spawn directly.
+  if (path.win32.basename(binaryPath) !== binaryPath) return { command: binaryPath, shell: false }
+  for (const dir of (env.PATH ?? env.Path ?? "").split(";").filter(Boolean)) {
+    const exe = path.win32.join(dir, `${binaryPath}.exe`)
+    if (fileExists(exe)) return { command: exe, shell: false }
+    for (const ext of [".cmd", ".bat"]) {
+      const shim = path.win32.join(dir, binaryPath + ext)
+      if (fileExists(shim)) return { command: `"${shim}"`, shell: true }
+    }
+  }
+  return { command: binaryPath, shell: false }
+}
+
 export function startOpencodeServer(
   binaryPath: string,
   options: {
@@ -229,9 +272,11 @@ export function startOpencodeServer(
   } else {
     delete env.OPENCODE_CONFIG_CONTENT
   }
-  const proc = spawn(binaryPath, ["serve", `--hostname=${options.hostname}`, `--port=${options.port}`], {
+  const target = resolveSpawnTarget(binaryPath)
+  const proc = spawn(target.command, ["serve", `--hostname=${options.hostname}`, `--port=${options.port}`], {
     cwd: options.cwd,
     env,
+    shell: target.shell,
   })
   if (proc.pid !== undefined) options.onSpawn?.(proc.pid)
 
@@ -307,6 +352,16 @@ function stripAnsi(value: string) {
 
 function closeProcess(proc: ChildProcessWithoutNullStreams) {
   if (proc.killed || proc.exitCode !== null) return
+  if (process.platform === "win32" && proc.pid !== undefined) {
+    // No ladder on Windows: proc.kill() is already a hard TerminateProcess,
+    // and when the spawn went through cmd.exe (npm's .cmd shim, #548) it
+    // would kill only the shell and orphan the server — taskkill takes the
+    // whole tree down.
+    const killer = spawn("taskkill", ["/pid", String(proc.pid), "/t", "/f"], { stdio: "ignore" })
+    killer.once("error", () => proc.kill())
+    killer.unref()
+    return
+  }
   // MCP-style shutdown ladder: stdin EOF first (so an opencode that learns
   // the convention exits cleanly), SIGTERM now, SIGKILL only if it lingers.
   try {
