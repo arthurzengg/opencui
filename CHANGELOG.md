@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-08-26
+
+### Added
+- Model search results keep their provider grouping. Typing in the picker's search line used to flatten every match into one headerless list; matches now render under their provider section headers in catalog order, the same presentation as the unfiltered view. While filtering, the headers are informational labels rather than fold toggles — a query always reaches every model, including those inside folded groups, and browsing results never changes the persisted folds. Rows inside a grouped result no longer repeat the provider name; only the Recent section, which mixes providers, keeps the per-row label (#549, #550).
+
+### Changed
+- The Effort chips moved from the top of the model picker into its footer, directly above the Agent row, so the popover reads: search, model list, Effort, Agent. The two chip rows share one divider-anchored footer — a single rule opens it, with no doubled seam between the rows. Behavior is unchanged: picking an effort still applies immediately and keeps the popover open (#551, #552).
+
+### Fixed
+- The panel can now launch opencode installed via `npm install -g opencode-ai` on Windows, which previously failed with `spawn opencode ENOENT` — and no setting could work around it, since pointing `opencui.binaryPath` at npm's `opencode.cmd` shim failed with EINVAL instead (Node refuses to spawn `.cmd`/`.bat` scripts without a shell). The extension now resolves the launch target the way the shell would: the first `PATH` entry with a match wins, a real `.exe` is spawned directly, and a `.cmd`/`.bat` shim runs through `cmd.exe` with the path quoted. Shutdown and the orphan-server reaper kill the full process tree on Windows, so a shim-wrapped server is never left behind. Thanks to @Witawat for the report and the diagnostics (#548, #553).
+
 ## [1.12.1] - 2026-08-23
 
 ### Added
