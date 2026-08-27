@@ -1,6 +1,40 @@
+import { useEffect, useState } from "react"
 import type { Todo, ToolStatus, ToolUpdate } from "../protocol"
 import { basename, isRecord, patchKind } from "../review-extract"
 import { vscode } from "../vscode"
+import { formatElapsed } from "./AgentActivity"
+
+/**
+ * Grace period before a running row starts showing elapsed time. Most tools
+ * finish well under this; ticking a counter on every quick read/edit would
+ * add churn without information. Past it, the counter is what distinguishes
+ * a slow tool from a hung one (#561).
+ */
+const ELAPSED_GRACE_MS = 2000
+
+/**
+ * Live elapsed time for a running tool row, or null while the row is not
+ * running or still inside the grace period. The wire ToolUpdate carries no
+ * timing, so the clock starts when the row is first observed in `running`
+ * status — the SSE update lands as the tool starts, so this tracks the real
+ * start closely. `pending` (e.g. awaiting a permission decision) deliberately
+ * does not count as running time.
+ */
+function useRunningElapsed(running: boolean): string | null {
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null)
+  useEffect(() => {
+    if (!running) {
+      setElapsedMs(null)
+      return
+    }
+    const started = Date.now()
+    setElapsedMs(0)
+    const handle = window.setInterval(() => setElapsedMs(Date.now() - started), 1000)
+    return () => window.clearInterval(handle)
+  }, [running])
+  if (elapsedMs === null || elapsedMs < ELAPSED_GRACE_MS) return null
+  return formatElapsed(elapsedMs)
+}
 
 type FileAction = "read" | "created" | "updated" | "deleted" | "moved"
 
@@ -89,6 +123,7 @@ function statusLabel(status: Todo["status"]): string {
 }
 
 function EditCard({ op, onReviewFile }: { op: FileOp; onReviewFile?: (path: string) => void }) {
+  const elapsed = useRunningElapsed(op.status === "running")
   const click = () => {
     if (onReviewFile && op.reviewable) onReviewFile(op.path)
     else vscode.post({ type: "openFile", path: op.path })
@@ -98,7 +133,7 @@ function EditCard({ op, onReviewFile }: { op: FileOp; onReviewFile?: (path: stri
       <span className="edit-name">{basename(op.path)}</span>
       {typeof op.additions === "number" && op.additions > 0 && <span className="edit-add">+{op.additions}</span>}
       {typeof op.deletions === "number" && op.deletions > 0 && <span className="edit-del">−{op.deletions}</span>}
-      {op.status === "running" && <span className="edit-running">running</span>}
+      {op.status === "running" && <span className="edit-running">running{elapsed ? ` · ${elapsed}` : ""}</span>}
       {op.errorText && <span className="edit-error">{op.errorText}</span>}
     </button>
   )
@@ -128,11 +163,12 @@ function ReadsLine({ reads }: { reads: FileOp[] }) {
 }
 
 function OtherRow({ op }: { op: OtherOp }) {
+  const elapsed = useRunningElapsed(op.status === "running")
   return (
     <div className={`other-row status-${op.status}`} title={op.title}>
       <span className="other-action">{op.action}</span>
       {op.detail && <span className="other-detail">{op.detail}</span>}
-      {op.status === "running" && <span className="other-meta">running</span>}
+      {op.status === "running" && <span className="other-meta">running{elapsed ? ` · ${elapsed}` : ""}</span>}
       {op.errorText && <span className="other-error">{op.errorText}</span>}
     </div>
   )

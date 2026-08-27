@@ -1767,6 +1767,9 @@ button:focus-visible {
   opacity: 0.65;
   font-style: italic;
   font-size: 11px;
+  /* The elapsed counter ticks every second; fixed-width digits keep the row
+     from jiggling on each tick (#561). */
+  font-variant-numeric: tabular-nums;
 }
 .edit-error {
   grid-column: 1 / -1;
@@ -1862,6 +1865,8 @@ button:focus-visible {
   flex: 0 0 auto;
   opacity: 0.75;
   font-style: italic;
+  /* Same tabular-nums rationale as .edit-running (#561). */
+  font-variant-numeric: tabular-nums;
 }
 .other-error {
   min-width: 0;
