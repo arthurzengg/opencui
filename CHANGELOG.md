@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-08-26
+
+### Changed
+- Provider folds now apply while searching in the model picker. Search result headers are the same chevron toggles as the unfiltered view instead of static labels, so a provider with many matching models can be collapsed mid-search, and an already-folded provider stays folded in results — its header still appears whenever it has matches, and one click reveals them. Folding from the search view persists exactly like folding from the list, keyboard navigation never lands on a hidden match, and the "no models match" message stays away when matches exist behind a collapsed header (#557, #558).
+
+### Fixed
+- Expanding a provider group in the model picker no longer shifts every row's text to the left. When the list grew past its height, the appearing scrollbar took its width out of the content and reflowed the rows; the scrollbar gutter is now reserved whether or not the list overflows (#556, #558).
+
 ## [1.13.0] - 2026-08-26
 
 ### Added
