@@ -32,12 +32,13 @@ export type PickerSection = {
 /**
  * Ordered section list for rendering. Unfiltered: Recent (host-pushed
  * order) → per-provider groups → the default-reset row. Filtered: the
- * matches keep their provider grouping but folds are ignored and the
- * sections never collapse — a query must always reach every model; every
- * whitespace-separated token must appear in
- * `providerID/modelID providerName`, so "openai mini" or "5.2" both narrow
- * the way you'd expect. A folded provider keeps its section (the header
- * stays clickable) but contributes nothing to the flat item list.
+ * matches keep their provider grouping AND their folds (#557 — a provider
+ * with many matches can be tucked away; its header proves it has matches
+ * and one click reveals them). Every whitespace-separated token must
+ * appear in `providerID/modelID providerName`, so "openai mini" or "5.2"
+ * both narrow the way you'd expect. A folded provider keeps its section
+ * (the header stays clickable) but contributes nothing to the flat item
+ * list.
  */
 export function buildPickerSections(
   catalog: ModelCatalogInfo | undefined,
@@ -57,7 +58,7 @@ export function buildPickerSections(
         sections.push({
           title: entry.providerName ?? entry.providerID,
           providerID: entry.providerID,
-          collapsed: false,
+          collapsed: collapsedProviders.has(entry.providerID),
           rows: [],
         })
       }
@@ -373,17 +374,16 @@ export function ModelPicker({
         onMouseMove={onListMouseMove}
       >
         {!catalog && <div className="model-picker-empty">Waiting for the model list…</div>}
-        {catalog && items.length === 0 && (
+        {/* Keyed off sections, not items: matches hidden behind a collapsed
+            header are still matches, not an empty result. */}
+        {catalog && sections.length === 0 && (
           <div className="model-picker-empty">
             {query ? `No models match “${query.trim()}”` : "No models reported by opencode"}
           </div>
         )}
         {sections.map((section) => (
           <Fragment key={section.providerID ? `provider:${section.providerID}` : `section:${section.title}`}>
-            {/* While filtering, provider headers are labels, not fold toggles:
-                a query must reach every model regardless of fold state, and
-                browsing results must not mutate the persisted folds. */}
-            {section.providerID && !query.trim() ? (
+            {section.providerID ? (
               <button
                 type="button"
                 className="model-picker-section model-picker-section-toggle"
