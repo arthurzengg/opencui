@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.2] - 2026-08-27
+
+### Added
+- Running tool rows in the trace show a live elapsed time. A `bash` command, agent dispatch, or slow file write that runs past two seconds now ticks a "running · 12s" suffix next to its status marker, so a slow tool is visibly distinct from a hung one. Time spent `pending` — for example waiting on a permission decision — does not count; the clock measures running time only and disappears when the tool finishes (#561, #562).
+
 ## [1.13.1] - 2026-08-26
 
 ### Changed
