@@ -581,6 +581,9 @@ button:focus-visible {
 .model-picker-list {
   min-height: 0;
   overflow-y: auto;
+  /* Reserve the gutter even while the list fits: expanding a group would
+     otherwise summon the scrollbar and shift every row's text left (#556). */
+  scrollbar-gutter: stable;
   padding: var(--space-1) var(--space-2) var(--space-2);
   /* Same fade-in-on-hover scrollbar as .mention-popover — a permanently
      visible thumb reads as chrome, not content. */
