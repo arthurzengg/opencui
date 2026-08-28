@@ -4,6 +4,7 @@ import type { Preferences } from "../preferences"
 import { log } from "../output"
 import {
   connectableProviders,
+  refreshInstance,
   removableProviders,
   removeProviderAuth,
   UNSUPPORTED_HINT,
@@ -183,10 +184,27 @@ export class ProviderManager {
         return
       }
       vscode.window.showInformationMessage(`OpenCode Panel: connected "${choice.name}".`)
+      await this.refreshBackend(backend)
     } catch (e) {
       log("auth.set failed", e)
       vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
     }
+  }
+
+  /**
+   * Make a just-changed credential visible to the running server. Stored
+   * credentials don't invalidate opencode's lazily-cached provider config,
+   * so without this the new provider's models only appear after a full
+   * server restart (#571) — which is exactly what the fallback offers when
+   * the dispose route is missing (older opencode).
+   */
+  private async refreshBackend(backend: Backend) {
+    if (await refreshInstance(backend.url, backend.directory)) return
+    const choice = await vscode.window.showInformationMessage(
+      "OpenCode Panel: restart the opencode server to apply the provider change.",
+      "Restart server",
+    )
+    if (choice === "Restart server") await vscode.commands.executeCommand("opencui.server.restart")
   }
 
   private async connectOAuth(backend: Backend, choice: ConnectableProvider, methodIndex: number) {
@@ -249,6 +267,7 @@ export class ProviderManager {
           return
         }
         vscode.window.showInformationMessage(`OpenCode Panel: connected "${choice.name}".`)
+        await this.refreshBackend(backend)
         return
       }
 
@@ -270,6 +289,7 @@ export class ProviderManager {
         return
       }
       vscode.window.showInformationMessage(`OpenCode Panel: connected "${choice.name}".`)
+      await this.refreshBackend(backend)
     } catch (e) {
       log("provider oauth failed", e)
       vscode.window.showErrorMessage(`OpenCode Panel: ${(e as Error).message}`)
@@ -292,6 +312,9 @@ export class ProviderManager {
     const result = await removeProviderAuth(backend.url, row.id)
     if (result.kind === "ok") {
       vscode.window.showInformationMessage(`OpenCode Panel: removed credentials for "${row.name}".`)
+      // Same staleness in the other direction: without the refresh the
+      // removed provider's models linger until a restart (#571).
+      await this.refreshBackend(backend)
       await this.warnIfActiveModel(row)
       return
     }

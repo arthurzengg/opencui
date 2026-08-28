@@ -272,3 +272,57 @@ describe("ProviderManager.run — connect", () => {
     expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("no providers available"))
   })
 })
+
+describe("ProviderManager — instance refresh after credential changes (#571)", () => {
+  const DISPOSE_URL = "http://127.0.0.1:1234/instance/dispose?directory=%2Fws"
+
+  const connectDeepseek = (backend: unknown) => {
+    win.showQuickPick
+      .mockResolvedValueOnce({ connect: true })
+      .mockResolvedValueOnce({ choice: choice("deepseek", "DeepSeek", [{ type: "api", label: "API key" }]) })
+      .mockResolvedValueOnce(undefined)
+    win.showInputBox.mockResolvedValueOnce("sk-test-123")
+    return makeManager(backend).run()
+  }
+
+  it("disposes the cached instance after an API-key connect so models appear without a restart", async () => {
+    const backend = makeBackend({ all: [{ id: "deepseek", name: "DeepSeek" }] })
+    fetchMock.mockResolvedValue({ ok: true, status: 200 })
+    await connectDeepseek(backend)
+    expect(fetchMock).toHaveBeenCalledWith(DISPOSE_URL, { method: "POST" })
+    // Dispose succeeded — no restart nudge rides along.
+    expect(win.showInformationMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining("restart"),
+      expect.anything(),
+    )
+  })
+
+  it("offers a server restart when the dispose route is missing (older opencode)", async () => {
+    const backend = makeBackend({ all: [{ id: "deepseek", name: "DeepSeek" }] })
+    fetchMock.mockResolvedValue({ ok: false, status: 404 })
+    win.showInformationMessage
+      .mockResolvedValueOnce(undefined) // the "connected" toast
+      .mockResolvedValueOnce("Restart server") // the fallback offer, accepted
+    await connectDeepseek(backend)
+    expect(win.showInformationMessage).toHaveBeenCalledWith(
+      expect.stringContaining("restart the opencode server"),
+      "Restart server",
+    )
+    expect(exec).toHaveBeenCalledWith("opencui.server.restart")
+  })
+
+  it("disposes the cached instance after a disconnect too", async () => {
+    const backend = makeBackend({
+      connected: ["deepseek"],
+      providers: [{ id: "deepseek", name: "DeepSeek", source: "config" }],
+    })
+    win.showQuickPick
+      .mockResolvedValueOnce({ row: row("deepseek", "DeepSeek", "config", true) })
+      .mockResolvedValueOnce(undefined)
+    win.showWarningMessage.mockResolvedValueOnce("Remove")
+    fetchMock.mockResolvedValue({ ok: true, status: 200 })
+    await makeManager(backend).run()
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:1234/auth/deepseek", { method: "DELETE" })
+    expect(fetchMock).toHaveBeenCalledWith(DISPOSE_URL, { method: "POST" })
+  })
+})
