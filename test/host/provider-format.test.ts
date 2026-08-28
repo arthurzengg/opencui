@@ -80,6 +80,34 @@ describe("connectableProviders", () => {
     expect(out.map((p) => p.id)).toEqual(["bar"])
     expect(out[0]!.name).toBe("bar")
   })
+
+  it("catalog providers without a declared login flow get the API-key method (#567)", () => {
+    // The #567 shape: deepseek is in the /provider catalog but has no
+    // /provider/auth entry — it must still be connectable via auth.set.
+    const out = connectableProviders(
+      { openai: [{ type: "oauth", label: "Login with OpenAI" }] },
+      new Map([
+        ["deepseek", "DeepSeek"],
+        ["openai", "OpenAI"],
+      ]),
+      [],
+    )
+    expect(out.map((p) => p.id)).toEqual(["deepseek", "openai"])
+    expect(out[0]!.methods).toEqual([{ type: "api", label: "API key" }])
+    // Declared methods always win over the synthetic fallback.
+    expect(out[1]!.methods).toEqual([{ type: "oauth", label: "Login with OpenAI" }])
+  })
+
+  it("a declared-but-empty method list falls back to API key when the catalog knows the id", () => {
+    const out = connectableProviders({ deepseek: [] }, new Map([["deepseek", "DeepSeek"]]), [])
+    expect(out).toHaveLength(1)
+    expect(out[0]!.methods).toEqual([{ type: "api", label: "API key" }])
+  })
+
+  it("flags connected catalog-only providers so they read as reconnect", () => {
+    const out = connectableProviders({}, new Map([["deepseek", "DeepSeek"]]), ["deepseek"])
+    expect(out[0]!.connected).toBe(true)
+  })
 })
 
 describe("removeProviderAuth", () => {

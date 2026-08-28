@@ -61,12 +61,23 @@ export type ConnectableProvider = {
 }
 
 /**
- * Build the "connect a provider" list from `provider.auth()` (providerID ->
- * login methods), the id->name map (from `provider.list().all` /
- * `config.providers()`), and the connected ids. Providers with no methods are
- * dropped; already-connected providers stay (so they can re-auth) and are
- * flagged. Sorted by name. Method order is preserved because the OAuth
- * `method` field is an index into it.
+ * Fallback login method for catalog providers with no declared flow.
+ * opencode's `auth.set` accepts a plain API key for ANY provider id — the
+ * TUI's `auth login` offers the whole catalog this way — so a missing
+ * `provider.auth()` entry means "API key", not "not connectable" (#567).
+ */
+const API_KEY_METHOD: AuthMethod = { type: "api", label: "API key" }
+
+/**
+ * Build the "connect a provider" list by merging `provider.auth()`
+ * (providerID -> declared login methods: OAuth flows, device logins, …)
+ * with the full catalog behind the id->name map (from `provider.list().all`
+ * / `config.providers()`). Catalog providers without declared methods get
+ * the synthetic API-key method; declared methods always win, and their
+ * order is preserved because the OAuth `method` field is an index into it.
+ * An id with an empty declared list and no catalog presence stays dropped.
+ * Already-connected providers stay (so they can re-auth) and are flagged.
+ * Sorted by name.
  */
 export function connectableProviders(
   methodsByProvider: Readonly<Record<string, ReadonlyArray<AuthMethod>>>,
@@ -74,14 +85,22 @@ export function connectableProviders(
   connected: ReadonlyArray<string>,
 ): ConnectableProvider[] {
   const connectedSet = new Set(connected)
-  return Object.entries(methodsByProvider)
-    .filter(([, methods]) => methods.length > 0)
-    .map(([id, methods]): ConnectableProvider => ({
-      id,
-      name: names.get(id)?.trim() || id,
-      connected: connectedSet.has(id),
-      methods: methods.map((m) => ({ type: m.type, label: m.label })),
-    }))
+  const ids = new Set(names.keys())
+  for (const [id, methods] of Object.entries(methodsByProvider)) {
+    if (methods.length > 0) ids.add(id)
+  }
+  return [...ids]
+    .map((id): ConnectableProvider => {
+      const declared = methodsByProvider[id] ?? []
+      return {
+        id,
+        name: names.get(id)?.trim() || id,
+        connected: connectedSet.has(id),
+        methods: declared.length > 0
+          ? declared.map((m) => ({ type: m.type, label: m.label }))
+          : [{ ...API_KEY_METHOD }],
+      }
+    })
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
