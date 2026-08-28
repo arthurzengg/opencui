@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.4] - 2026-08-28
+
+### Fixed
+- Connecting a provider now takes effect immediately. opencode caches its provider configuration lazily and storing a credential does not invalidate that cache, so a freshly connected provider's models stayed invisible — and a removed provider lingered — until the server was restarted. After every successful credential change (API-key connect, both OAuth flows, disconnect) the extension now asks the server to drop its cached instance state, and the model picker shows the change on next open. On an older opencode without the dispose route, a notification offers a one-click server restart instead of failing silently (#571, #572).
+
 ## [1.13.3] - 2026-08-28
 
 ### Changed
