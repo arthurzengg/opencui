@@ -32,13 +32,14 @@ export type PickerSection = {
 /**
  * Ordered section list for rendering. Unfiltered: Recent (host-pushed
  * order) → per-provider groups → the default-reset row. Filtered: the
- * matches keep their provider grouping AND their folds (#557 — a provider
- * with many matches can be tucked away; its header proves it has matches
- * and one click reveals them). Every whitespace-separated token must
- * appear in `providerID/modelID providerName`, so "openai mini" or "5.2"
- * both narrow the way you'd expect. A folded provider keeps its section
- * (the header stays clickable) but contributes nothing to the flat item
- * list.
+ * matches keep their provider grouping, folded by whatever set the caller
+ * passes — the picker passes its transient search folds there, NOT the
+ * persisted browse-view folds, so every search session starts with all
+ * matching groups revealed and mid-search folding stays local to the
+ * session (#565). Every whitespace-separated token must appear in
+ * `providerID/modelID providerName`, so "openai mini" or "5.2" both
+ * narrow the way you'd expect. A folded provider keeps its section (the
+ * header stays clickable) but contributes nothing to the flat item list.
  */
 export function buildPickerSections(
   catalog: ModelCatalogInfo | undefined,
@@ -216,7 +217,22 @@ export function ModelPicker({
   const seededFolds = useMemo(() => new Set(catalog?.collapsedProviders ?? []), [catalog])
   const [localFolds, setLocalFolds] = useState<ReadonlySet<string> | null>(null)
   const folds = localFolds ?? seededFolds
-  const sections = useMemo(() => buildPickerSections(catalog, query, folds), [catalog, query, folds])
+  const inSearch = query.trim().length > 0
+  // Transient folds for the search view (#565): a search always starts with
+  // every matching group revealed — the user typed a name to SEE it, so the
+  // browse view's persisted folds must not hide it. Folding mid-search only
+  // touches this set; it survives query refinement within the session and is
+  // discarded when the query clears.
+  const [searchFolds, setSearchFolds] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(() => {
+    // Functional update returning the same ref when already empty, so
+    // leaving search doesn't trigger a redundant render.
+    if (!inSearch) setSearchFolds((prev) => (prev.size ? new Set() : prev))
+  }, [inSearch])
+  const sections = useMemo(
+    () => buildPickerSections(catalog, query, inSearch ? searchFolds : folds),
+    [catalog, query, inSearch, searchFolds, folds],
+  )
   const items = useMemo(() => sections.flatMap((s) => (s.collapsed ? [] : s.rows)), [sections])
   const indexOfItem = useMemo(() => new Map(items.map((item, i) => [item, i])), [items])
   const currentKey = selection.model
@@ -321,6 +337,18 @@ export function ModelPicker({
     searchRef.current?.focus()
   }
   const toggleProvider = (providerID: string) => {
+    if (inSearch) {
+      // Transient act on a transient view: never written through to the
+      // persisted browse-view folds (#565).
+      setSearchFolds((prev) => {
+        const next = new Set(prev)
+        if (next.has(providerID)) next.delete(providerID)
+        else next.add(providerID)
+        return next
+      })
+      searchRef.current?.focus()
+      return
+    }
     const next = new Set(folds)
     const fold = !next.has(providerID)
     if (fold) next.add(providerID)
