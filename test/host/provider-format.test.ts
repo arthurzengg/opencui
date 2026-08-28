@@ -4,6 +4,7 @@ import {
   removeProviderAuth,
   authDeletePath,
   connectableProviders,
+  refreshInstance,
 } from "../../src/provider/provider-format"
 
 describe("removableProviders", () => {
@@ -145,5 +146,27 @@ describe("removeProviderAuth", () => {
     const fetchImpl = vi.fn().mockResolvedValue(resp(200))
     await removeProviderAuth("http://h///", "x", fetchImpl as never)
     expect(fetchImpl).toHaveBeenCalledWith("http://h/auth/x", { method: "DELETE" })
+  })
+})
+
+describe("refreshInstance", () => {
+  const resp = (status: number) => ({ ok: status >= 200 && status < 300, status })
+
+  it("POSTs the dispose route with the encoded directory and returns true on 2xx", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(resp(200))
+    expect(await refreshInstance("http://127.0.0.1:9/", "/my ws", fetchImpl as never)).toBe(true)
+    expect(fetchImpl).toHaveBeenCalledWith("http://127.0.0.1:9/instance/dispose?directory=%2Fmy%20ws", {
+      method: "POST",
+    })
+  })
+
+  it("returns false on non-2xx (route missing on older opencode)", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(resp(404))
+    expect(await refreshInstance("http://h", "/ws", fetchImpl as never)).toBe(false)
+  })
+
+  it("returns false when the fetch throws", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("boom"))
+    expect(await refreshInstance("http://h", "/ws", fetchImpl as never)).toBe(false)
   })
 })

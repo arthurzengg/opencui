@@ -109,6 +109,37 @@ export function authDeletePath(id: string): string {
   return `/auth/${encodeURIComponent(id)}`
 }
 
+/** The opencode route that disposes the cached per-directory instance state. */
+export function instanceDisposePath(directory: string): string {
+  return `/instance/dispose?directory=${encodeURIComponent(directory)}`
+}
+
+/**
+ * Drop the server's cached instance state so the next `config.providers`
+ * read is rebuilt from disk. opencode builds provider config lazily on
+ * first access and caches it; `auth.set` / credential removal do NOT
+ * invalidate that cache, so a freshly connected provider's models stay
+ * invisible (and a removed one lingers) until the cache is dropped (#571).
+ * The published SDK doesn't expose the route — untyped POST, same pattern
+ * as `removeProviderAuth`. Returns false on any failure (network error, or
+ * an older opencode without the route) so the caller can fall back to
+ * offering a server restart. Verified live: the global SSE stream survives
+ * a dispose, so a running chat is not disturbed.
+ */
+export async function refreshInstance(
+  baseUrl: string,
+  directory: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  const url = baseUrl.replace(/\/+$/, "") + instanceDisposePath(directory)
+  try {
+    const res = await fetchImpl(url, { method: "POST" })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 /**
  * Remove a provider's stored credentials.
  *
