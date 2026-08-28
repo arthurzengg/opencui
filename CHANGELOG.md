@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.3] - 2026-08-28
+
+### Changed
+- Model picker search results now start with every matching provider group unfolded, regardless of the browse view's folds — the user typed a model name precisely to see it. Headers remain fold toggles mid-search, but the fold is transient: it survives query refinement, is never written to the persisted fold state, and is discarded when the query clears, so the browse view comes back exactly as it was and the next search starts fully revealed again (#565, #566). Partially reverses the fold-carrying behavior from #557.
+
+### Fixed
+- "Connect a provider" now offers opencode's full provider catalog (about 207 providers, DeepSeek included) instead of only the 9 with declared special login flows. The list was built exclusively from the OAuth/device-login registry; providers without a declared flow now appear with a plain API-key method, matching what `opencode auth login` offers in a terminal (#567, #568).
+
 ## [1.13.2] - 2026-08-27
 
 ### Added
