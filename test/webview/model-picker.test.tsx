@@ -119,7 +119,7 @@ describe("buildPickerItems", () => {
     expect(sections.filter((s) => s.collapsed)).toHaveLength(1)
   })
 
-  it("filtering respects folds: matches collapse behind the folded header (#557)", () => {
+  it("sections fold by whatever set the caller passes; the search view hands over its transient folds (#565)", () => {
     // The rows leave the keyboard list, but the section survives with its
     // matches — the header is what proves the folded provider has any.
     const items = buildPickerItems(catalog, "haiku", new Set(["anthropic"]))
@@ -377,7 +377,7 @@ describe("ModelPicker provider folding", () => {
     expect(screen.getByRole("button", { name: "Google" }).getAttribute("aria-expanded")).toBe("false")
   })
 
-  it("a folded provider's matches sit behind its header while searching; one click reveals them", () => {
+  it("a provider folded in the browse view starts revealed while searching (#565)", () => {
     const onSetProviderCollapsed = vi.fn()
     render(
       <ModelPicker
@@ -388,17 +388,16 @@ describe("ModelPicker provider folding", () => {
     )
     const input = screen.getByRole("textbox", { name: "Search models" })
     fireEvent.change(input, { target: { value: "haiku" } })
-    expect(screen.queryAllByRole("option")).toHaveLength(0)
-    // Hidden matches are still matches — no empty state over the header.
-    expect(screen.queryByText(/No models match/)).toBeNull()
-    const header = screen.getByRole("button", { name: "Anthropic" })
-    expect(header.getAttribute("aria-expanded")).toBe("false")
-    fireEvent.click(header)
+    // The user typed a name to SEE it — the browse fold must not hide it.
     expect(rowNames()).toEqual(["claude-haiku-4-5"])
-    expect(onSetProviderCollapsed).toHaveBeenCalledWith("anthropic", false)
+    expect(screen.getByRole("button", { name: "Anthropic" }).getAttribute("aria-expanded")).toBe("true")
+    // Clearing the query returns to the browse view with its fold intact.
+    fireEvent.change(input, { target: { value: "" } })
+    expect(screen.getByRole("button", { name: "Anthropic" }).getAttribute("aria-expanded")).toBe("false")
+    expect(onSetProviderCollapsed).not.toHaveBeenCalled()
   })
 
-  it("search headers are the same fold toggles; collapsing a noisy provider persists", () => {
+  it("folding mid-search is transient: local to the session, never persisted (#565)", () => {
     const onSetProviderCollapsed = vi.fn()
     render(<ModelPicker {...baseProps} onSetProviderCollapsed={onSetProviderCollapsed} />)
     const input = screen.getByRole("textbox", { name: "Search models" })
@@ -408,10 +407,22 @@ describe("ModelPicker provider folding", () => {
     expect(google.getAttribute("aria-expanded")).toBe("true")
     fireEvent.click(google)
     expect(rowNames()).toEqual(["gpt-5.5"])
-    expect(onSetProviderCollapsed).toHaveBeenCalledWith("google", true)
+    expect(onSetProviderCollapsed).not.toHaveBeenCalled()
+    // The fold survives refining the query within the same session; hidden
+    // matches are still matches, so no empty state over the folded header.
+    fireEvent.change(input, { target: { value: "gem" } })
+    expect(screen.queryAllByRole("option")).toHaveLength(0)
+    expect(screen.queryByText(/No models match/)).toBeNull()
     // A query with no matches at all still gets the empty state.
     fireEvent.change(input, { target: { value: "zzz" } })
     expect(screen.getByText(/No models match/)).toBeInTheDocument()
+    // Leaving search discards the session fold: the browse view is untouched
+    // and the next search starts fully revealed again.
+    fireEvent.change(input, { target: { value: "" } })
+    expect(screen.getByRole("button", { name: "Google" }).getAttribute("aria-expanded")).toBe("true")
+    fireEvent.change(input, { target: { value: "g" } })
+    expect(rowNames()).toEqual(["gpt-5.5", "gemini-3-pro"])
+    expect(onSetProviderCollapsed).not.toHaveBeenCalled()
   })
 
   it("folding the tail group clamps the active index instead of stranding it", async () => {
