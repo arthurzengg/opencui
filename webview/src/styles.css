@@ -1547,13 +1547,26 @@ button:focus-visible {
      blocks then scroll horizontally on their own. Mirrors `.review-body`. */
   grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
+  /* The body stays mounted after collapsing (the fold animation needs content
+     to clip), and clipped-but-mounted text still rides along in a select-copy
+     of the transcript — a reasoning model's full thinking leaked into the
+     clipboard, glued to the answer (#575). `visibility: hidden` excludes it
+     from selection; the delay keeps the text visible while the fold plays. */
+  visibility: hidden;
   transition:
     grid-template-rows 0.18s ease,
-    margin-top 0.18s ease;
+    margin-top 0.18s ease,
+    visibility 0s 0.18s;
 }
 .process.is-open .process-body-clip {
   grid-template-rows: 1fr;
   margin-top: 8px;
+  visibility: visible;
+  /* Reveal instantly on expand — only the collapse delays visibility. */
+  transition:
+    grid-template-rows 0.18s ease,
+    margin-top 0.18s ease,
+    visibility 0s;
 }
 .process-body {
   min-height: 0;
@@ -2245,16 +2258,27 @@ button:focus-visible {
   margin-top: 4px;
   overflow: hidden;
   opacity: 1;
+  visibility: visible;
   transition:
     grid-template-rows 0.2s ease,
     margin-top 0.2s ease,
-    opacity 0.16s ease;
+    opacity 0.16s ease,
+    visibility 0s;
 }
 .review-panel.is-collapsed .review-body-clip {
   grid-template-rows: 0fr;
   margin-top: 0;
   opacity: 0;
   pointer-events: none;
+  /* Same copy-leak guard as .process-body-clip (#575): opacity 0 fades the
+     collapsed body but its text still lands in a select-copy — only
+     visibility excludes it. Delayed so the fold animation keeps its content. */
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.2s ease,
+    margin-top 0.2s ease,
+    opacity 0.16s ease,
+    visibility 0s 0.2s;
 }
 .review-body {
   display: grid;
