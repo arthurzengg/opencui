@@ -23,6 +23,17 @@ describe("reducer abort flow", () => {
     expect(msg.error).toBeUndefined()
   })
 
+  it("aborted after sessionIdle (Stop raced completion) is a no-op — no wedge, no badge (#579)", () => {
+    const idle = reducer(pendingAssistant("a1"), { type: "sessionIdle" })
+    expect(idle.busy).toBe(false)
+    const after = reducer(idle, { type: "aborted" })
+    // Entering aborting here would stick forever: the already-idle session
+    // emits no further sessionIdle to clear it.
+    expect(after).toBe(idle)
+    expect(after.aborting).toBe(false)
+    expect(after.messages.find((m) => m.id === "a1")!.stopped).toBeUndefined()
+  })
+
   it("sessionIdle after aborted: clears both busy and aborting", () => {
     const before = pendingAssistant()
     const aborted = reducer(before, { type: "aborted" })

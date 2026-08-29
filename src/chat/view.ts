@@ -135,6 +135,17 @@ export class ChatView implements vscode.WebviewViewProvider {
    * mutate the already-stopped message with leftover content.
    */
   private aborting = false
+  /**
+   * True while a turn is in flight from the webview's point of view: set when
+   * a turn starts (send / builtin / SSE user-assistant-busy events), cleared
+   * exactly where `sessionIdle` is posted (postIdle). A continuation defer
+   * keeps it true — the webview is still busy and Stop must reach the abort
+   * path. Guards `abortCurrent` against the Stop-races-turn-completion
+   * deadlock (#579): aborting an already-idle session emits no new
+   * session.idle, so entering the aborting state then would wedge both sides
+   * forever.
+   */
+  private turnActive = false
   private taskStoreUnsub?: vscode.Disposable
   /**
    * Owns the per-turn main-task lifecycle in the AgentTaskStore and
@@ -237,8 +248,18 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.activeQuestions.clear()
     this.syncAttention()
     this.subagentDispatch.clearMainTaskID()
-    this.post({ type: "sessionIdle" })
+    this.postIdle()
     void this.manager.flushPersist()
+  }
+
+  /**
+   * The ONLY way to tell the webview the session is idle. Clearing
+   * `turnActive` and posting `sessionIdle` must never diverge — a post
+   * without the clear re-opens the #579 late-Stop deadlock.
+   */
+  private postIdle() {
+    this.turnActive = false
+    this.post({ type: "sessionIdle" })
   }
 
   private postAgentsStatus(tasks: AgentTask[]) {
@@ -403,6 +424,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription?.abort()
     this.subscription = undefined
     this.aborting = false
+    this.turnActive = false
     this.clearPendingDeltas()
     if (this.reviewSyncTimer) {
       clearTimeout(this.reviewSyncTimer)
@@ -595,6 +617,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription?.abort()
     this.subscription = undefined
     this.aborting = false
+    this.turnActive = false
     this.sessionID = undefined
     this.clearPendingDeltas()
     this.messageMap.clear()
@@ -1362,6 +1385,15 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async abortCurrent() {
     if (!this.sessionID) return
+    if (!this.turnActive) {
+      // Late Stop: the click raced the turn's own completion — sessionIdle
+      // was already posted, there is nothing to abort, and an already-idle
+      // session emits no new session.idle to ever clear an aborting state.
+      // The webview showed a clickable Stop, so it holds a stale busy
+      // belief; settle it instead of wedging both sides (#579).
+      this.postIdle()
+      return
+    }
     const sessionID = this.sessionID
     this.aborting = true
     this.pendingUserBackendID = undefined
@@ -1450,6 +1482,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     // A new turn supersedes any in-flight abort drain from a prior Stop so it
     // can't abort the session tree the new turn is about to (re)use.
     this.abortGen++
+    this.turnActive = true
     this.redoStack = [] // a new turn diverges the history; nothing to redo
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
@@ -1690,7 +1723,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private failTurnUnstick(message: string, toastTitle: string) {
     const classified = classifyTerminal(message)
     void this.subagentDispatch.recordMainTaskFinish(classified.status, classified.error)
-    this.post({ type: "sessionIdle" })
+    this.postIdle()
     if (classified.status === "error") {
       this.surfaceToast({ variant: "error", title: toastTitle, message })
     }
@@ -1734,6 +1767,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       await this.handleBuiltinCommand(command)
       return
     }
+    this.turnActive = true
     this.redoStack = [] // a custom-command turn diverges the history
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
@@ -1849,6 +1883,7 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   /** Post the typed-invocation bubble and key the Agents popover for a built-in turn. */
   private async beginBuiltinTurn(display: string) {
+    this.turnActive = true
     this.redoStack = [] // a /compact or /init turn diverges the history
     const ctx = getEditorContext()
     const userMessageID = "u_" + Date.now()
@@ -1939,6 +1974,10 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.subscription?.abort()
     const subscription = subscribeSession(backend, sessionID, {
       onUserMessage: (mid) => {
+        // A user message on the stream means a turn is running, whichever
+        // client started it (this panel, the TUI on a shared session, a
+        // reattach replay).
+        this.turnActive = true
         const targetID = this.pendingUserBackendID
         if (!targetID) return
         const target = this.messages.find((m) => m.id === targetID)
@@ -1947,6 +1986,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.post({ type: "userMessageBackendID", id: targetID, backendID: mid })
       },
       onAssistantStart: (mid) => {
+        this.turnActive = true
         // A new assistant turn means any deferred idle is moot — clear it
         // so the timer doesn't accidentally fire mid-stream and clear busy.
         this.continuationState.finishPending()
@@ -2086,6 +2126,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         }
       },
       onSessionBusy: () => {
+        this.turnActive = true
         // A new busy state means continuation (if any) took over — cancel
         // any pending idle so we don't accidentally clear busy later.
         this.continuationState.finishPending()
@@ -2111,7 +2152,7 @@ export class ChatView implements vscode.WebviewViewProvider {
             }
           }
           this.subagentDispatch.clearMainTaskID()
-          this.post({ type: "sessionIdle" })
+          this.postIdle()
           void this.manager.flushPersist()
           return
         }
@@ -2164,7 +2205,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.subscription = undefined
         this.aborting = false
         this.continuationState.finishPending()
-        this.post({ type: "sessionIdle" })
+        this.postIdle()
         void this.reattachAfterStreamLoss()
       },
     })

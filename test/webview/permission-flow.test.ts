@@ -24,7 +24,8 @@ describe("reducer — permission flow", () => {
   })
 
   it("ignores a permission raised while aborting", () => {
-    const aborting = reducer(initialChatState, { type: "aborted" })
+    // Seed a running turn: `aborted` at idle is a no-op by design (#579).
+    const aborting = reducer({ ...initialChatState, busy: true }, { type: "aborted" })
     const after = reducer(aborting, { type: "permission", id: "perm_1", title: "Edit file" })
     expect(after.pendingPermission).toBeUndefined()
   })
