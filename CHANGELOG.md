@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.5] - 2026-08-28
+
+### Fixed
+- Copying the transcript no longer includes text hidden inside collapsed panels. A process panel's body stays mounted after it collapses (the fold animation needs content to clip), and that clipped-but-invisible text rode along in a select-copy — most visibly a reasoning model's full thinking, glued to the answer with no separator. Collapsed process, compaction, and review-panel bodies are now excluded from selection; the fold animation still shows its content while collapsing (#575, #576).
+
 ## [1.13.4] - 2026-08-28
 
 ### Fixed
