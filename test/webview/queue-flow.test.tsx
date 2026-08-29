@@ -39,7 +39,8 @@ describe("reducer queue transitions", () => {
   })
 
   it("aborted clears the queue — Stop must not auto-restart work via a queued follow-up", () => {
-    const state = reducer(initialChatState, { type: "queueMessage", message: q("q1") })
+    // Queueing only happens while busy; `aborted` at idle is a no-op (#579).
+    const state = reducer({ ...initialChatState, busy: true }, { type: "queueMessage", message: q("q1") })
     expect(reducer(state, { type: "aborted" }).queued).toEqual([])
   })
 

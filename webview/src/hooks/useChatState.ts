@@ -362,6 +362,14 @@ export function reducer(state: ChatState, action: Action): ChatState {
         messages: upsertMessage(state.messages, action.id, { pending: false, usage: action.usage }),
       }
     case "aborted": {
+      // A Stop can race the turn's own completion: if sessionIdle was already
+      // processed there is no turn left to stop, and no further sessionIdle
+      // will arrive to clear `aborting` — entering the aborting state here
+      // would wedge the composer at "Stopping…" forever (#579). The host
+      // guards this too (turnActive); this is defense in depth.
+      if (!state.busy && !state.messages.some((m) => m.role === "assistant" && m.pending)) {
+        return state
+      }
       // Stay busy (Send button must NOT re-enable yet) and enter aborting mode
       // until opencode sends sessionIdle. One abort = one Stopped badge: a
       // turn can contain multiple assistant messages (subtasks etc.), only the

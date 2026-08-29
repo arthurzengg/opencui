@@ -57,6 +57,7 @@ function fakeTaskStore() {
 type ChatViewInternals = {
   sessionID?: string
   aborting: boolean
+  turnActive: boolean
   view: unknown
   subagentTracker?: unknown
   subagentDispatch: { recordMainTaskStart: (text: string) => Promise<void> }
@@ -107,6 +108,7 @@ describe("Stop flow (webview abort → ChatView → opencode HTTP)", () => {
 
     const { chat } = makeChatView(server)
     internals(chat).sessionID = "ses_main"
+    internals(chat).turnActive = true
 
     await stop(chat)
 
@@ -127,6 +129,7 @@ describe("Stop flow (webview abort → ChatView → opencode HTTP)", () => {
 
     const { chat } = makeChatView(server)
     internals(chat).sessionID = "ses_main"
+    internals(chat).turnActive = true
     const cancelForSession = vi.fn(async () => ["ses_orchestrator"])
     internals(chat).subagentTracker = { cancelForSession }
 
@@ -142,6 +145,7 @@ describe("Stop flow (webview abort → ChatView → opencode HTTP)", () => {
     server.setChildren("ses_main", ["ses_sub_a"])
     const { chat, posts } = makeChatView(server)
     internals(chat).sessionID = "ses_main"
+    internals(chat).turnActive = true
 
     const inFlight = stop(chat)
 
@@ -158,6 +162,7 @@ describe("Stop flow (webview abort → ChatView → opencode HTTP)", () => {
     const taskStore = fakeTaskStore()
     const { chat } = makeChatView(server, taskStore)
     internals(chat).sessionID = "ses_main"
+    internals(chat).turnActive = true
 
     // A turn is in flight: the Agents popover has a running Main row.
     await internals(chat).subagentDispatch.recordMainTaskStart("long prompt")
@@ -182,6 +187,7 @@ describe("Stop flow (webview abort → ChatView → opencode HTTP)", () => {
     server.setChildren("ses_main", [])
     const { chat } = makeChatView(server)
     internals(chat).sessionID = "ses_main"
+    internals(chat).turnActive = true
 
     await stop(chat)
     // The user sent another turn in the same session and pressed Stop again.
@@ -196,6 +202,22 @@ describe("Stop flow (webview abort → ChatView → opencode HTTP)", () => {
     await stop(chat)
 
     expect(posts).toEqual([])
+    expect(internals(chat).aborting).toBe(false)
+    expect(server.aborts).toEqual([])
+  })
+
+  it("Stop racing the turn's own completion re-idles the webview instead of wedging (#579)", async () => {
+    // The turn already settled (sessionIdle was posted, turnActive cleared)
+    // but the click landed before the webview rendered it. Aborting an idle
+    // session emits no new session.idle, so entering the aborting state here
+    // would leave the composer at "Stopping…" forever.
+    const { chat, posts } = makeChatView(server)
+    internals(chat).sessionID = "ses_main"
+
+    await stop(chat)
+
+    expect(posts).toContainEqual({ type: "sessionIdle" })
+    expect(posts).not.toContainEqual({ type: "aborted" })
     expect(internals(chat).aborting).toBe(false)
     expect(server.aborts).toEqual([])
   })
