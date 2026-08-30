@@ -37,6 +37,8 @@ export class ServerManager {
   private server: ServerHandle | undefined
   private client: OpencodeClient | undefined
   private starting: Promise<Backend> | undefined
+  /** Cancels the in-flight start attempt so restart/dispose mid-startup is not a no-op (#581). */
+  private startAbort: AbortController | undefined
   /** Workspace root captured at start time so subsequent `ensure()` calls return a stable Backend. */
   private workspace: WorkspaceRoot | undefined
   private configMode: OpencodeConfigMode = "isolated"
@@ -48,13 +50,21 @@ export class ServerManager {
       return this.toBackend(this.server, this.client)
     }
     if (this.starting) return this.starting
-    this.starting = this.startInternal().finally(() => {
-      this.starting = undefined
+    const abort = new AbortController()
+    const attempt = this.startInternal(abort.signal).finally(() => {
+      // dispose() may have already detached this attempt and a successor may
+      // be starting — only clear the slots that still belong to it.
+      if (this.starting === attempt) {
+        this.starting = undefined
+        this.startAbort = undefined
+      }
     })
-    return this.starting
+    this.starting = attempt
+    this.startAbort = abort
+    return attempt
   }
 
-  private async startInternal(): Promise<Backend> {
+  private async startInternal(signal: AbortSignal): Promise<Backend> {
     const config = vscode.workspace.getConfiguration("opencui")
     const port = config.get<number>("serverPort") ?? 0
     const configuredBinaryPath = config.get<string>("binaryPath") || "opencode"
@@ -78,6 +88,7 @@ export class ServerManager {
         timeout: SERVER_START_TIMEOUT_MS,
         cwd: workspace?.fsPath,
         configMode,
+        signal,
         // Registered at spawn, not at ready: an extension host killed during
         // the 60s startup window must still leave a reapable record.
         onSpawn: (pid) => {
@@ -123,6 +134,20 @@ export class ServerManager {
   }
 
   async dispose() {
+    const starting = this.starting
+    if (starting) {
+      // A start is still in flight: abort it (killing the spawned child via
+      // the startOpencodeServer fail path) and wait for it to settle. If it
+      // wins the photo-finish and installs itself instead, the settle
+      // happens-before the block below, which tears it down normally.
+      // Without this, restart() mid-startup returned the OLD in-flight
+      // attempt with the old settings (#581).
+      log("cancelling in-flight opencode server start")
+      this.startAbort?.abort()
+      this.starting = undefined
+      this.startAbort = undefined
+      await starting.catch(() => {})
+    }
     if (this.server) {
       log("stopping opencode server")
       this.server.close()
@@ -260,8 +285,13 @@ export function startOpencodeServer(
     configMode: OpencodeConfigMode
     /** Fired with the child pid immediately after spawn. */
     onSpawn?: (pid: number) => void
+    /** Aborting rejects the startup promise and kills the spawned child. */
+    signal?: AbortSignal
   },
 ): Promise<ServerHandle> {
+  if (options.signal?.aborted) {
+    return Promise.reject(new Error("opencode server start cancelled"))
+  }
   // `isolated` keeps the historical behavior: hand opencode an empty config so
   // the user's `~/.config/opencode` and any local config/plugins are ignored —
   // gives the extension predictable defaults. `user` opts back in to the
@@ -299,6 +329,12 @@ export function startOpencodeServer(
       closeProcess(proc)
       reject(error)
     }
+
+    options.signal?.addEventListener(
+      "abort",
+      () => fail(new Error("opencode server start cancelled")),
+      { once: true },
+    )
 
     proc.stdout.on("data", (chunk) => {
       if (settled) return

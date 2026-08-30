@@ -44,4 +44,52 @@ describe("startOpencodeServer exit notification", () => {
       }),
     ).rejects.toThrow(/exited with code 7/)
   })
+
+  it("aborting the signal mid-startup rejects AND kills the spawned process (#581)", async () => {
+    // `exec` so the sh pid IS the sleep pid — the kill check below targets
+    // the process the handle actually manages.
+    const bin = fakeBinary("exec sleep 30")
+    const abort = new AbortController()
+    let pid: number | undefined
+    const attempt = startOpencodeServer(bin, {
+      hostname: "127.0.0.1",
+      port: 43212,
+      timeout: 5000,
+      configMode: "isolated",
+      onSpawn: (p) => (pid = p),
+      signal: abort.signal,
+    })
+    abort.abort()
+    await expect(attempt).rejects.toThrow(/cancelled/)
+    expect(pid).toBeDefined()
+    const gone = async () => {
+      for (let i = 0; i < 30; i++) {
+        try {
+          process.kill(pid!, 0)
+        } catch {
+          return true
+        }
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      return false
+    }
+    expect(await gone()).toBe(true)
+  })
+
+  it("an already-aborted signal rejects without spawning at all", async () => {
+    const abort = new AbortController()
+    abort.abort()
+    let spawned = false
+    await expect(
+      startOpencodeServer("/nonexistent/opencode", {
+        hostname: "127.0.0.1",
+        port: 43213,
+        timeout: 5000,
+        configMode: "isolated",
+        onSpawn: () => (spawned = true),
+        signal: abort.signal,
+      }),
+    ).rejects.toThrow(/cancelled/)
+    expect(spawned).toBe(false)
+  })
 })
