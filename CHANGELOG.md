@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.6] - 2026-08-31
+
+### Fixed
+- Clicking Stop just as a response finishes no longer freezes the conversation at "Stopping…". When the click raced the turn's own completion, the extension aborted an already-idle session — which never emits the idle event that clears the stopping state — leaving the composer stuck until you switched conversations. A settled turn now answers a late Stop by confirming idle instead of entering the unclearable stopping state (#579, #580).
+- "Restart Server" issued while the server is still starting up now actually restarts it. Previously the restart silently returned the old in-flight startup with the old settings — so fixing `opencui.binaryPath` or the config mode precisely because startup was hanging appeared to do nothing until the 60-second timeout. The in-flight startup is now cancelled (its process killed) and a fresh one boots from the current settings; closing the window mid-startup also cleans up the spawning process instead of leaking it (#581, #582).
+
 ## [1.13.5] - 2026-08-28
 
 ### Fixed
