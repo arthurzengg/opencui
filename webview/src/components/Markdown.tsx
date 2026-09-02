@@ -52,18 +52,36 @@ const ENVELOPE_LABELS: Record<string, string> = {
   next_steps: "Next steps",
 }
 
-export function normalizeAgentEnvelopes(input: string): string {
-  const out: string[] = []
-  const fence = /```[\s\S]*?```|~~~[\s\S]*?~~~/g
+// An unclosed fence runs to the end of input, matching CommonMark and what
+// remark will do with the same text. Mid-stream the block is still being
+// typed; treating its body as prose rewrote `$1`, `\(…\)`, and envelope tags
+// inside code until the closer arrived (#587).
+const FENCE = /```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/g
+
+type Segment = { code: boolean; text: string }
+
+function splitFences(input: string): Segment[] {
+  const out: Segment[] = []
+  const fence = new RegExp(FENCE.source, "g")
   let last = 0
   let m: RegExpExecArray | null
   while ((m = fence.exec(input)) !== null) {
-    out.push(rewriteEnvelopesOutsideCode(input.slice(last, m.index)))
-    out.push(m[0])
+    if (m.index > last) out.push({ code: false, text: input.slice(last, m.index) })
+    out.push({ code: true, text: m[0] })
     last = m.index + m[0].length
   }
-  out.push(rewriteEnvelopesOutsideCode(input.slice(last)))
-  return out.join("")
+  out.push({ code: false, text: input.slice(last) })
+  return out
+}
+
+function mapProse(input: string, fn: (prose: string) => string): string {
+  return splitFences(input)
+    .map((s) => (s.code ? s.text : fn(s.text)))
+    .join("")
+}
+
+export function normalizeAgentEnvelopes(input: string): string {
+  return mapProse(input, rewriteEnvelopesOutsideCode)
 }
 
 function rewriteEnvelopesOutsideCode(s: string): string {
@@ -105,17 +123,36 @@ function rewriteEnvelopesOutsideCode(s: string): string {
  * variables and `\(…\)`, not bare numeric kernels.
  */
 export function normalizeMath(input: string): string {
-  const out: string[] = []
-  const fence = /```[\s\S]*?```|~~~[\s\S]*?~~~/g
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = fence.exec(input)) !== null) {
-    out.push(rewriteOutsideCode(input.slice(last, m.index)))
-    out.push(m[0])
-    last = m.index + m[0].length
-  }
-  out.push(rewriteOutsideCode(input.slice(last)))
-  return out.join("")
+  return mapProse(input, rewriteOutsideCode)
+}
+
+// Math is comparatively expensive: normalizeMath's regex passes, the
+// remark-math tokenizer, and the rehype-katex tree walk all re-run on every
+// render of a streaming message. Most chat messages contain no math, so detect
+// the delimiters once and skip the whole math pipeline when there are none.
+// Covers `$…$` / `$$…$$` plus the `\(…\)` / `\[…\]` forms normalizeMath would
+// convert into dollar math. Currency like `$5` trips this too — intentional:
+// the pipeline then escapes it correctly, exactly as before.
+const MATH_HINT = /\$|\\\(|\\\[/
+
+/**
+ * The component's single pre-parse pass: envelope rewrite, math detection,
+ * and math rewrite, each restricted to prose. `hasMath` reflects prose only —
+ * a `$` inside a code block (a shell variable, say) used to switch on
+ * remark-math + katex for the whole segment.
+ */
+export function prepareMarkdown(input: string): { source: string; hasMath: boolean } {
+  let hasMath = false
+  const source = splitFences(input)
+    .map((s) => {
+      if (s.code) return s.text
+      const prose = rewriteEnvelopesOutsideCode(s.text)
+      if (!MATH_HINT.test(prose)) return prose
+      hasMath = true
+      return rewriteOutsideCode(prose)
+    })
+    .join("")
+  return { source, hasMath }
 }
 
 function rewriteOutsideCode(s: string): string {
@@ -186,22 +223,9 @@ function flattenChildren(node: ReactNode): string {
 // as faint red text and keeps going.
 const katexOptions = { strict: "ignore", throwOnError: false } as const
 
-// Math is comparatively expensive: normalizeMath's regex passes, the
-// remark-math tokenizer, and the rehype-katex tree walk all re-run on every
-// render of a streaming message. Most chat messages contain no math, so detect
-// the delimiters once and skip the whole math pipeline when there are none.
-// Covers `$…$` / `$$…$$` plus the `\(…\)` / `\[…\]` forms normalizeMath would
-// convert into dollar math. Currency like `$5` trips this too — intentional:
-// the pipeline then escapes it correctly, exactly as before.
-const MATH_HINT = /\$|\\\(|\\\[/
-
 function MarkdownImpl({ text, streaming = false }: Props) {
   const sampled = useThrottledValue(text, streaming ? STREAM_PARSE_MS : 0)
-  const { source, hasMath } = useMemo(() => {
-    const enveloped = normalizeAgentEnvelopes(sampled)
-    const math = MATH_HINT.test(enveloped)
-    return { source: math ? normalizeMath(enveloped) : enveloped, hasMath: math }
-  }, [sampled])
+  const { source, hasMath } = useMemo(() => prepareMarkdown(sampled), [sampled])
   return (
     <div className="md">
       <ReactMarkdown
