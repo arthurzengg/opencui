@@ -66,3 +66,69 @@ describe("subscribeSession message.part.delta guard", () => {
     expect(textDeltas).toEqual(["hello"])
   })
 })
+
+// opencode publishes a reasoning part's deltas with `field: "text"` (the
+// property name on the ReasoningPart), so the delta alone cannot say whether
+// it is thinking or answer. The part's type is known from the
+// `message.part.updated` opencode sends when it creates the part, before the
+// first delta (#591).
+describe("subscribeSession routes part deltas by the announced part type", () => {
+  const part = (id: string, type: "text" | "reasoning", text: string) => ({
+    type: "message.part.updated",
+    part: { id, messageID: "msg_a", sessionID: "ses_test", type, text },
+  })
+  const delta = (partID: string, delta: string) => ({
+    type: "message.part.delta",
+    sessionID: "ses_test",
+    messageID: "msg_a",
+    partID,
+    field: "text",
+    delta,
+  })
+
+  async function subscribe() {
+    const text: string[] = []
+    const reasoning: string[] = []
+    const subscription = subscribeSession(
+      makeBackend(),
+      "ses_test",
+      {
+        onTextDelta: (_id, d) => text.push(d),
+        onReasoningDelta: (_id, d) => reasoning.push(d),
+      },
+      { watchdogMs: 10_000 },
+    )
+    await subscription.ready
+    await server.awaitClient()
+    return { subscription, text, reasoning }
+  }
+
+  it("a reasoning part's deltas reach onReasoningDelta and the text part's reach onTextDelta", async () => {
+    const { subscription, text, reasoning } = await subscribe()
+
+    server.push(part("p_think", "reasoning", ""))
+    server.push(delta("p_think", "Let me "))
+    server.push(delta("p_think", "think."))
+    // reasoning-end: the full-text snapshot must not re-emit what streamed.
+    server.push(part("p_think", "reasoning", "Let me think."))
+    server.push(part("p_text", "text", ""))
+    server.push(delta("p_text", "Hello"))
+    server.push(part("p_text", "text", "Hello"))
+    await wait(30)
+    subscription.abort()
+
+    expect(reasoning).toEqual(["Let me ", "think."])
+    expect(text).toEqual(["Hello"])
+  })
+
+  it("a delta for a part this subscription never saw announced is treated as answer text", async () => {
+    const { subscription, text, reasoning } = await subscribe()
+
+    server.push(delta("p_unknown", "tail"))
+    await wait(30)
+    subscription.abort()
+
+    expect(text).toEqual(["tail"])
+    expect(reasoning).toEqual([])
+  })
+})

@@ -142,3 +142,43 @@ describe("subscribeSession re-attach with shared SessionStreamState", () => {
     expect(log.ends).toEqual(["msg_a"])
   })
 })
+
+describe("subscribeSession re-attach keeps the part-type map", () => {
+  it("deltas of a reasoning part that began before the drop still route as reasoning", async () => {
+    const state = createSessionStreamState(SESSION)
+    const text: string[] = []
+    const reasoning: string[] = []
+    const handlers: StreamHandlers = {
+      onTextDelta: (_mid, d) => text.push(d),
+      onReasoningDelta: (_mid, d) => reasoning.push(d),
+    }
+    const think = (body: string) => ({
+      type: "message.part.updated",
+      part: { id: "part_r", messageID: "msg_a", sessionID: SESSION, type: "reasoning", text: body },
+    })
+    const delta = (d: string) => ({
+      type: "message.part.delta",
+      sessionID: SESSION,
+      messageID: "msg_a",
+      partID: "part_r",
+      field: "text",
+      delta: d,
+    })
+
+    await subscribe(handlers, state)
+    server.push(think(""))
+    server.push(delta("Let me "))
+    await wait(30)
+
+    server.dropClients()
+    await wait(30)
+    const second = await subscribe(handlers, state)
+    server.push(delta("think."))
+    server.push(think("Let me think."))
+    await wait(30)
+    second.abort()
+
+    expect(reasoning).toEqual(["Let me ", "think."])
+    expect(text).toEqual([])
+  })
+})

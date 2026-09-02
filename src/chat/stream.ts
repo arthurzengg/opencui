@@ -217,6 +217,13 @@ export type SessionStreamState = {
   sessionID: string
   /** partID → characters already emitted as deltas. */
   seenLen: Map<string, number>
+  /**
+   * partID → part type, recorded from the `message.part.updated` opencode
+   * publishes when it creates the part. A `message.part.delta`'s `field` is
+   * the property name on the part (`"text"` for reasoning parts too), so the
+   * delta alone cannot say whether it is thinking or answer.
+   */
+  partKinds: Map<string, "text" | "reasoning">
   seenAssistantMessages: Set<string>
   summaryFlagged: Set<string>
   seenUserMessages: Set<string>
@@ -246,6 +253,7 @@ export function createSessionStreamState(sessionID: string): SessionStreamState 
   return {
     sessionID,
     seenLen: new Map(),
+    partKinds: new Map(),
     seenAssistantMessages: new Set(),
     summaryFlagged: new Set(),
     seenUserMessages: new Set(),
@@ -284,6 +292,7 @@ export function subscribeSession(
 
   const {
     seenLen,
+    partKinds,
     seenAssistantMessages,
     summaryFlagged,
     seenUserMessages,
@@ -726,18 +735,11 @@ export function subscribeSession(
       handlers.onAssistantStart?.(messageID)
     }
     const partID = part.id as string | undefined
-    if (part.type === "text" && typeof part.text === "string" && partID) {
+    if ((part.type === "text" || part.type === "reasoning") && typeof part.text === "string" && partID) {
+      partKinds.set(partID, part.type)
       const seen = seenLen.get(partID) ?? 0
       if (part.text.length > seen) {
-        handlers.onTextDelta(messageID, part.text.slice(seen))
-        seenLen.set(partID, part.text.length)
-      }
-      return
-    }
-    if (part.type === "reasoning" && typeof part.text === "string" && partID) {
-      const seen = seenLen.get(partID) ?? 0
-      if (part.text.length > seen) {
-        handlers.onReasoningDelta?.(messageID, part.text.slice(seen))
+        emitDelta(messageID, part.type, part.text.slice(seen))
         seenLen.set(partID, part.text.length)
       }
       return
@@ -800,13 +802,16 @@ export function subscribeSession(
     // part.text): a malformed/empty delta would otherwise throw on
     // `p.delta.length`, propagate out of the SSE reader loop, and tear down the
     // live subscription mid-turn.
-    if (p.field === "text" && typeof p.delta === "string") {
-      handlers.onTextDelta(messageID, p.delta)
-      seenLen.set(partID, (seenLen.get(partID) ?? 0) + p.delta.length)
-    } else if (p.field === "reasoning" && typeof p.delta === "string") {
-      handlers.onReasoningDelta?.(messageID, p.delta)
-      seenLen.set(partID, (seenLen.get(partID) ?? 0) + p.delta.length)
-    }
+    if (p.field !== "text" || typeof p.delta !== "string") return
+    // A part whose creation event this subscription never saw (it started
+    // before a reload) can only be assumed to be answer text.
+    emitDelta(messageID, partKinds.get(partID) ?? "text", p.delta)
+    seenLen.set(partID, (seenLen.get(partID) ?? 0) + p.delta.length)
+  }
+
+  function emitDelta(messageID: string, kind: "text" | "reasoning", delta: string) {
+    if (kind === "reasoning") handlers.onReasoningDelta?.(messageID, delta)
+    else handlers.onTextDelta(messageID, delta)
   }
 
   function onPermissionUpdated(p: any) {
