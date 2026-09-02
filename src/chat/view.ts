@@ -9,6 +9,8 @@ import {
   type Subscription,
   type Toast,
   type ToolUpdate,
+  createSessionStreamState,
+  type SessionStreamState,
 } from "./stream"
 import { getEditorContext, formatContextHeader } from "../context"
 import { searchWorkspaceFiles, listWorkspaceDir } from "../file-search"
@@ -105,6 +107,8 @@ export class ChatView implements vscode.WebviewViewProvider {
   private continuationState: ContinuationState
   /** opencode messageID → webview-side id used in UI */
   private messageMap = new Map<string, string>()
+  /** Stream dedup/offset state, shared across re-attaches of the same session (#585). */
+  private streamState?: SessionStreamState
   /**
    * Tails removed by `/undo`, newest last, so `/redo` can re-append them. Purely
    * in-memory: it does not survive a reload, and any new turn or conversation
@@ -621,6 +625,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.sessionID = undefined
     this.clearPendingDeltas()
     this.messageMap.clear()
+    this.streamState = undefined
     this.redoStack = []
     this.activePermissions.clear()
     this.activeQuestions.clear()
@@ -885,6 +890,10 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.saveActive()
         return
       case "assistantStart":
+        // The stream can re-announce a message the transcript already holds
+        // (re-attach, trailing bookkeeping after a reload); a second row with
+        // the same id is never right (#585).
+        if (this.messages.some((m) => m.id === msg.id)) return
         this.messages = [...this.messages, { id: msg.id, role: "assistant", blocks: [], pending: true }]
         this.saveActive()
         return
@@ -1972,6 +1981,10 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   private async attachSubscription(backend: Backend, sessionID: string) {
     this.subscription?.abort()
+    // A re-attach after stream loss must resume at the dead stream's offsets:
+    // fresh state re-announces the in-flight message and re-emits the full
+    // text of any part opencode re-delivers (#585).
+    if (this.streamState?.sessionID !== sessionID) this.streamState = createSessionStreamState(sessionID)
     const subscription = subscribeSession(backend, sessionID, {
       onUserMessage: (mid) => {
         // A user message on the stream means a turn is running, whichever
@@ -2208,7 +2221,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.postIdle()
         void this.reattachAfterStreamLoss()
       },
-    })
+    }, { state: this.streamState })
     this.subscription = subscription
     if (this.taskStore) {
       this.subagentTracker = new SubagentTracker({

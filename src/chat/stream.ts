@@ -196,6 +196,66 @@ export type SubscriptionOptions = {
    * Defaults to 30 s; tests pass shorter values.
    */
   watchdogMs?: number
+  /**
+   * Dedup/offset state for the session, owned by the caller so a re-attach
+   * after stream loss resumes where the dead subscription left off. A fresh
+   * subscription with empty state treats the in-flight assistant message as
+   * new (duplicate `onAssistantStart`) and re-emits the full text of any
+   * part opencode re-delivers (#585). Omit for a one-shot subscription.
+   */
+  state?: SessionStreamState
+}
+
+/**
+ * Everything `subscribeSession` remembers about a session in order to turn
+ * opencode's at-least-once, full-snapshot events into exactly-once deltas.
+ * Keyed by ids that are unique across sessions, so sharing one object across
+ * re-subscriptions of the same session is safe; sharing across sessions is
+ * merely wasteful.
+ */
+export type SessionStreamState = {
+  sessionID: string
+  /** partID → characters already emitted as deltas. */
+  seenLen: Map<string, number>
+  seenAssistantMessages: Set<string>
+  summaryFlagged: Set<string>
+  seenUserMessages: Set<string>
+  assistantFinished: Set<string>
+  seenPatches: Set<string>
+  /**
+   * messageID → tool part IDs still pending/running. Defers per-message
+   * `assistantEnd` until every tool call terminates: some providers return
+   * `finish: "stop"` while the message still has running tool parts, so the
+   * finish reason alone isn't sufficient.
+   */
+  activeToolParts: Map<string, Set<string>>
+  /** messageID → payload waiting on tool-part completion before assistantEnd fires. */
+  pendingFinish: Map<string, { finish: string; usage?: MessageUsage }>
+  /**
+   * Sessions we additionally route lifecycle events for (subagent
+   * children). Distinct from the parent `sessionID` because parent routing
+   * has rich per-message handlers; child routing only needs the small
+   * `ChildSessionEvent` surface.
+   */
+  childSessions: Set<string>
+  /** assistantEnd dedup for child sessions (parent has its own set). */
+  childAssistantFinished: Set<string>
+}
+
+export function createSessionStreamState(sessionID: string): SessionStreamState {
+  return {
+    sessionID,
+    seenLen: new Map(),
+    seenAssistantMessages: new Set(),
+    summaryFlagged: new Set(),
+    seenUserMessages: new Set(),
+    assistantFinished: new Set(),
+    seenPatches: new Set(),
+    activeToolParts: new Map(),
+    pendingFinish: new Map(),
+    childSessions: new Set(),
+    childAssistantFinished: new Set(),
+  }
 }
 
 const DEFAULT_WATCHDOG_MS = 30_000
@@ -222,30 +282,18 @@ export function subscribeSession(
   const controller = new AbortController()
   const watchdogMs = options.watchdogMs ?? DEFAULT_WATCHDOG_MS
 
-  const seenLen = new Map<string, number>()
-  const seenAssistantMessages = new Set<string>()
-  const summaryFlagged = new Set<string>()
-  const seenUserMessages = new Set<string>()
-  const assistantFinished = new Set<string>()
-  const toolStatus = new Map<string, string>()
-  const seenPatches = new Set<string>()
-  /**
-   * Sessions we additionally route lifecycle events for (subagent
-   * children). Distinct from the parent `sessionID` because parent
-   * routing has rich per-message handlers; child routing only needs
-   * the small `ChildSessionEvent` surface.
-   */
-  const childSessions = new Set<string>()
-  /** assistantEnd dedup for child sessions (parent has its own set). */
-  const childAssistantFinished = new Set<string>()
-
-  // messageID → set of tool part IDs that are still pending/running.
-  // Used to defer per-message `assistantEnd` until all tool calls terminate:
-  // some providers return `finish: "stop"` while the message still has
-  // running tool parts, so the finish reason alone isn't sufficient.
-  const activeToolParts = new Map<string, Set<string>>()
-  // messageID → payload waiting on tool-part completion before assistantEnd fires.
-  const pendingFinish = new Map<string, { finish: string; usage?: MessageUsage }>()
+  const {
+    seenLen,
+    seenAssistantMessages,
+    summaryFlagged,
+    seenUserMessages,
+    assistantFinished,
+    seenPatches,
+    activeToolParts,
+    pendingFinish,
+    childSessions,
+    childAssistantFinished,
+  } = options.state ?? createSessionStreamState(sessionID)
 
   let watchdogTimer: ReturnType<typeof setTimeout> | null = null
   let busyTracked = false
@@ -697,7 +745,6 @@ export function subscribeSession(
     if (part.type === "tool" && part.callID && part.tool && part.state) {
       const key = part.callID as string
       const curr = part.state.status as ToolUpdate["status"]
-      toolStatus.set(key, curr)
       // Track unfinished tool parts per message; flush a deferred
       // assistantEnd once everything settles.
       const partKey = (part.id as string | undefined) ?? key

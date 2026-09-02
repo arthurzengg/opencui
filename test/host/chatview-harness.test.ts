@@ -266,6 +266,46 @@ describe("ChatView harness: send round-trip", () => {
   })
 })
 
+describe("ChatView harness: SSE re-attach mid-turn", () => {
+  it("resumes the in-flight message in place: one row, text once, and that is what persists (#585)", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "hello there" })
+
+    server.push({ type: "message.updated", info: { id: "usr_1", role: "user", sessionID: SESSION_ID } })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID } })
+    server.push({
+      type: "message.part.updated",
+      part: { id: "part_1", messageID: "msg_a", sessionID: SESSION_ID, type: "text", text: "Hi" },
+    })
+    await until(() => harness.posted.some((m) => m.type === "textDelta"))
+
+    // Transport drop: the view unsticks the composer and re-attaches to the
+    // same (still running) session.
+    server.dropClients()
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+    await server.awaitClient()
+
+    // opencode's end-of-part snapshot re-delivers the whole text; before
+    // #585 the fresh subscription re-announced msg_a (second row, same id)
+    // and re-emitted "Hi there" in full into both rows.
+    server.push({
+      type: "message.part.updated",
+      part: { id: "part_1", messageID: "msg_a", sessionID: SESSION_ID, type: "text", text: "Hi there" },
+    })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID, finish: "stop" } })
+    await until(() => harness.posted.some((m) => m.type === "assistantDone" && m.id === "a_msg_a"))
+
+    expect(harness.posted.filter((m) => m.type === "assistantStart" && m.id === "a_msg_a")).toHaveLength(1)
+    const deltas = harness.posted.flatMap((m) => (m.type === "textDelta" ? [m.delta] : []))
+    expect(deltas.join("")).toBe("Hi there")
+
+    await harness.chatView.flushPersist()
+    const assistants = savedConversations()[0]!.messages.filter((m) => m.role === "assistant")
+    expect(assistants).toHaveLength(1)
+    expect(assistants[0]!.blocks).toEqual([{ type: "text", text: "Hi there" }])
+  })
+})
+
 describe("ChatView harness: Stop mid-stream", () => {
   it("posts aborted, aborts the session subtree, drops late deltas, and persists the Stopped state", async () => {
     await harness.send({ type: "mounted" })

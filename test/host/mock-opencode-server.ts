@@ -31,6 +31,8 @@ export type MockOpencodeServer = {
   push: (event: ScriptedEvent) => void
   /** Resolves once at least one SSE client connects. */
   awaitClient: () => Promise<void>
+  /** End every open SSE response (a transport drop) while the server stays up. */
+  dropClients: () => void
   /** Records of every prompt the SDK pushed to the server. */
   prompts: Array<{ sessionID: string; body: unknown }>
   /** Records of every revert call. */
@@ -458,6 +460,11 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       return new Promise<void>((resolve) => {
         clientResolver = resolve
       })
+    },
+    dropClients() {
+      // Splice first so a push racing the client's own close never writes to
+      // an ended response.
+      for (const c of sseClients.splice(0)) c.end()
     },
     prompts,
     reverts,
