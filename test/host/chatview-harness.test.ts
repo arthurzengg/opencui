@@ -778,7 +778,8 @@ describe("ChatView harness: host-side delta coalescing", () => {
     for (const ch of ["a", "b", "c", "d", "e"]) {
       server.push({ type: "message.part.delta", sessionID: SESSION_ID, messageID: "msg_a", partID: "p1", field: "text", delta: ch })
     }
-    server.push({ type: "message.part.delta", sessionID: SESSION_ID, messageID: "msg_a", partID: "p2", field: "reasoning", delta: "R" })
+    server.push({ type: "message.part.updated", part: { id: "p2", messageID: "msg_a", sessionID: SESSION_ID, type: "reasoning", text: "" } })
+    server.push({ type: "message.part.delta", sessionID: SESSION_ID, messageID: "msg_a", partID: "p2", field: "text", delta: "R" })
     server.push({ type: "session.idle", sessionID: SESSION_ID })
     await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
 
@@ -799,6 +800,7 @@ describe("ChatView harness: host-side delta coalescing", () => {
     const [active] = savedConversations()
     const assistant = active!.messages[1]!
     expect(assistant.blocks).toContainEqual({ type: "text", text: "abcde" })
+    expect(assistant.blocks).toContainEqual({ type: "reasoning", text: "R" })
   })
 
   it("no longer logs a line per token delta", async () => {
@@ -1320,5 +1322,49 @@ describe("ChatView harness: hidden-panel attention", () => {
 
     await harness.send({ type: "abort" })
     expect(harness.badge()).toBeUndefined()
+  })
+})
+
+describe("ChatView harness: reasoning parts stay out of the answer (#591)", () => {
+  it("a DeepSeek-shaped turn persists thinking and answer as separate blocks", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "think first" })
+    server.push({ type: "message.updated", info: { id: "usr_1", role: "user", sessionID: SESSION_ID } })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID } })
+    const part = (id: string, type: "text" | "reasoning", text: string) => ({
+      type: "message.part.updated",
+      part: { id, messageID: "msg_a", sessionID: SESSION_ID, type, text },
+    })
+    const delta = (partID: string, delta: string) => ({
+      type: "message.part.delta",
+      sessionID: SESSION_ID,
+      messageID: "msg_a",
+      partID,
+      field: "text",
+      delta,
+    })
+    server.push(part("p_think", "reasoning", ""))
+    server.push(delta("p_think", "Let me "))
+    server.push(delta("p_think", "think."))
+    server.push(part("p_think", "reasoning", "Let me think."))
+    server.push(part("p_text", "text", ""))
+    server.push(delta("p_text", "Hel"))
+    server.push(delta("p_text", "lo"))
+    server.push(part("p_text", "text", "Hello"))
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID, finish: "stop" } })
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+
+    const joined = (type: "textDelta" | "reasoningDelta") =>
+      harness.posted.filter((m) => m.type === type).map((d) => ("delta" in d ? d.delta : "")).join("")
+    expect(joined("reasoningDelta")).toBe("Let me think.")
+    expect(joined("textDelta")).toBe("Hello")
+
+    await harness.chatView.flushPersist()
+    const [active] = savedConversations()
+    expect(active!.messages[1]!.blocks).toEqual([
+      { type: "reasoning", text: "Let me think." },
+      { type: "text", text: "Hello" },
+    ])
   })
 })
