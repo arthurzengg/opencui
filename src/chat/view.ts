@@ -464,21 +464,26 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   /**
    * Host-side token coalescing: streamed text/reasoning deltas buffer here
-   * for up to DELTA_FLUSH_MS and go out as one post per (kind, message)
-   * pair. Every delta used to cost its own webview IPC message plus an
-   * applyLocal pass (message-array rebuild + conversation snapshot); at fast
-   * token rates that work now happens ~40×/s instead of per token. The
-   * webview's own per-frame coalescer sits downstream, unchanged.
+   * for up to DELTA_FLUSH_MS and go out as one post per run of same-kind
+   * deltas to one message, in arrival order. Every delta used to cost its
+   * own webview IPC message plus an applyLocal pass (message-array rebuild +
+   * conversation snapshot); at fast token rates that work now happens
+   * ~40×/s instead of per token. The webview's own per-frame coalescer sits
+   * downstream, unchanged.
+   *
+   * An ordered run list, not a (kind, message) map: the map merged a
+   * reasoning/text/reasoning interleave into one reasoning post ahead of
+   * the text, and both block builders append by kind, so the second
+   * thinking block landed before the answer it followed (#595).
    */
-  private pendingDeltas = new Map<string, { type: "textDelta" | "reasoningDelta"; id: string; delta: string }>()
+  private pendingDeltas: { type: "textDelta" | "reasoningDelta"; id: string; delta: string }[] = []
   private deltaFlushTimer?: ReturnType<typeof setTimeout>
   private static readonly DELTA_FLUSH_MS = 25
 
   private queueDelta(type: "textDelta" | "reasoningDelta", id: string, delta: string) {
-    const key = `${type}:${id}`
-    const pending = this.pendingDeltas.get(key)
-    if (pending) pending.delta += delta
-    else this.pendingDeltas.set(key, { type, id, delta })
+    const last = this.pendingDeltas[this.pendingDeltas.length - 1]
+    if (last && last.type === type && last.id === id) last.delta += delta
+    else this.pendingDeltas.push({ type, id, delta })
     this.deltaFlushTimer ??= setTimeout(() => this.flushDeltas(), ChatView.DELTA_FLUSH_MS)
   }
 
@@ -487,9 +492,9 @@ export class ChatView implements vscode.WebviewViewProvider {
       clearTimeout(this.deltaFlushTimer)
       this.deltaFlushTimer = undefined
     }
-    if (!this.pendingDeltas.size) return
-    const batch = [...this.pendingDeltas.values()]
-    this.pendingDeltas.clear()
+    if (!this.pendingDeltas.length) return
+    const batch = this.pendingDeltas
+    this.pendingDeltas = []
     for (const d of batch) this.post({ type: d.type, id: d.id, delta: d.delta })
   }
 
@@ -500,7 +505,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       clearTimeout(this.deltaFlushTimer)
       this.deltaFlushTimer = undefined
     }
-    this.pendingDeltas.clear()
+    this.pendingDeltas = []
   }
 
   private sendConversationState() {

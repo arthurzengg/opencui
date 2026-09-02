@@ -803,6 +803,54 @@ describe("ChatView harness: host-side delta coalescing", () => {
     expect(assistant.blocks).toContainEqual({ type: "reasoning", text: "R" })
   })
 
+  it("keeps a reasoning/text/reasoning interleave in arrival order inside one flush window (#595)", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "interleave" })
+    server.push({ type: "message.updated", info: { id: "usr_1", role: "user", sessionID: SESSION_ID } })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID } })
+    const part = (id: string, type: "text" | "reasoning", text: string) => ({
+      type: "message.part.updated",
+      part: { id, messageID: "msg_a", sessionID: SESSION_ID, type, text },
+    })
+    const delta = (partID: string, delta: string) => ({
+      type: "message.part.delta",
+      sessionID: SESSION_ID,
+      messageID: "msg_a",
+      partID,
+      field: "text",
+      delta,
+    })
+    // Part announcements and end-of-part snapshots post nothing, so the
+    // three deltas share one buffer window with no flush between them.
+    server.push(part("p_r1", "reasoning", ""))
+    server.push(delta("p_r1", "a"))
+    server.push(part("p_r1", "reasoning", "a"))
+    server.push(part("p_t", "text", ""))
+    server.push(delta("p_t", "b"))
+    server.push(part("p_t", "text", "b"))
+    server.push(part("p_r2", "reasoning", ""))
+    server.push(delta("p_r2", "c"))
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+
+    const deltas = harness.posted
+      .filter((m) => m.type === "textDelta" || m.type === "reasoningDelta")
+      .map((m) => [m.type, "delta" in m ? m.delta : ""])
+    expect(deltas).toEqual([
+      ["reasoningDelta", "a"],
+      ["textDelta", "b"],
+      ["reasoningDelta", "c"],
+    ])
+
+    await harness.chatView.flushPersist()
+    const [active] = savedConversations()
+    expect(active!.messages[1]!.blocks).toEqual([
+      { type: "reasoning", text: "a" },
+      { type: "text", text: "b" },
+      { type: "reasoning", text: "c" },
+    ])
+  })
+
   it("no longer logs a line per token delta", async () => {
     const appendLine = getOutputChannel().appendLine as unknown as ReturnType<typeof vi.fn>
     await harness.send({ type: "mounted" })
