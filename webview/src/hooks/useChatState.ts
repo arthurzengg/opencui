@@ -293,6 +293,9 @@ export function reducer(state: ChatState, action: Action): ChatState {
       // after Stop must not append a fresh pending assistant bubble (it would
       // render with no Stopped badge once sessionIdle clears its pending flag).
       if (state.aborting) return state
+      // A re-announced id (SSE re-attach mid-turn, trailing bookkeeping after
+      // a reload) must not mint a second row with the same id (#585).
+      if (state.messages.some((m) => m.id === action.id)) return state
       return {
         ...state,
         busy: true,
