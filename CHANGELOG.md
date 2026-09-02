@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.7] - 2026-08-31
+
+### Fixed
+- A dropped SSE connection mid-turn no longer duplicates the streaming reply. After the automatic re-attach, the fresh subscription treated the in-flight assistant message as new and re-emitted the text it had already delivered, so the bubble appeared twice with its text repeated, and that is what got saved. The re-attach now resumes exactly where the dead stream left off, and a message the transcript already holds is never added a second time — which also covers a window reload followed by opencode's trailing bookkeeping for an already-saved message (#585, #586).
+- Code blocks are no longer mangled while they are still streaming in. The Markdown pre-processors required a closing fence before they would skip a block, so an open block's body was treated as prose: `$1` showed as `\$1`, `\(x\)` turned into math, and envelope tags inside code became bold headings until the closing fence arrived. An unclosed fence now runs to the end of the text, matching the parser, and a dollar sign inside code no longer switches on the math pipeline for the whole message (#587, #588).
+
 ## [1.13.6] - 2026-08-31
 
 ### Fixed
