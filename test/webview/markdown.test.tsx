@@ -4,9 +4,46 @@ import {
   Markdown,
   normalizeMath,
   normalizeAgentEnvelopes,
+  prepareMarkdown,
 } from "../../webview/src/components/Markdown"
 
 afterEach(cleanup)
+
+describe("unclosed fence (a code block still streaming in, #587)", () => {
+  it("normalizeMath leaves the body of an unclosed fence alone but still rewrites the prose before it", () => {
+    const out = normalizeMath("Price \\(p\\)\n\n```bash\necho $1 \\(x\\)")
+    expect(out).toMatch(/\$p\$/)
+    expect(out).toContain("echo $1 \\(x\\)")
+  })
+
+  it("normalizeAgentEnvelopes leaves envelope tags inside an unclosed fence alone", () => {
+    const out = normalizeAgentEnvelopes("<answer>done</answer>\n\n```xml\n<analysis>raw</analysis>")
+    expect(out).toContain("**Answer**")
+    expect(out).toContain("<analysis>raw</analysis>")
+    expect(out).not.toContain("**Analysis**")
+  })
+
+  it("a closed fence followed by an unclosed one skips both", () => {
+    const out = normalizeMath("```\n$1\n```\ntext \\(a\\)\n```\n$2")
+    expect(out).toContain("$1\n```")
+    expect(out).toMatch(/\$a\$/)
+    expect(out.endsWith("```\n$2")).toBe(true)
+    expect(out).not.toContain("\\$")
+  })
+
+  it("prepareMarkdown counts math in prose only, whether the fence is closed or not", () => {
+    expect(prepareMarkdown("```sh\necho $HOME\n```").hasMath).toBe(false)
+    expect(prepareMarkdown("```sh\necho $HOME").hasMath).toBe(false)
+    expect(prepareMarkdown("cost $x$ here").hasMath).toBe(true)
+    expect(prepareMarkdown("<answer>\\(a\\)</answer>").source).toMatch(/\$a\$/)
+  })
+
+  it("renders a streaming code block's `$1` literally while the fence is still open", () => {
+    const { container } = render(<Markdown text={"```bash\nkill $1"} streaming />)
+    expect(container.textContent).toContain("kill $1")
+    expect(container.textContent).not.toContain("\\$1")
+  })
+})
 
 describe("normalizeMath", () => {
   it("rewrites display math \\[ ... \\] to $$ ... $$", () => {
