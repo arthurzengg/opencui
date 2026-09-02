@@ -1,5 +1,5 @@
 import { isValidElement, memo, useMemo, type ReactNode } from "react"
-import ReactMarkdown, { type Components } from "react-markdown"
+import ReactMarkdown, { type Components, type Options } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
 import remarkMath from "remark-math"
@@ -223,20 +223,30 @@ function flattenChildren(node: ReactNode): string {
 // as faint red text and keeps going.
 const katexOptions = { strict: "ignore", throwOnError: false } as const
 
+const PROSE_REMARK: NonNullable<Options["remarkPlugins"]> = [remarkGfm, remarkBreaks]
+const MATH_REMARK: NonNullable<Options["remarkPlugins"]> = [remarkGfm, remarkBreaks, remarkMath]
+const MATH_REHYPE: NonNullable<Options["rehypePlugins"]> = [[rehypeKatex, katexOptions]]
+const NO_REHYPE: NonNullable<Options["rehypePlugins"]> = []
+
 function MarkdownImpl({ text, streaming = false }: Props) {
   const sampled = useThrottledValue(text, streaming ? STREAM_PARSE_MS : 0)
-  const { source, hasMath } = useMemo(() => prepareMarkdown(sampled), [sampled])
-  return (
-    <div className="md">
+  // react-markdown parses inside render, and this component re-renders on
+  // every frame the growing `text` prop arrives on. Memoizing the element,
+  // not just the pre-parse, is what lets React skip that render while the
+  // sample is unchanged; a fresh element re-parsed on every frame (#597).
+  const body = useMemo(() => {
+    const { source, hasMath } = prepareMarkdown(sampled)
+    return (
       <ReactMarkdown
-        remarkPlugins={hasMath ? [remarkGfm, remarkBreaks, remarkMath] : [remarkGfm, remarkBreaks]}
-        rehypePlugins={hasMath ? [[rehypeKatex, katexOptions]] : []}
+        remarkPlugins={hasMath ? MATH_REMARK : PROSE_REMARK}
+        rehypePlugins={hasMath ? MATH_REHYPE : NO_REHYPE}
         components={components}
       >
         {source}
       </ReactMarkdown>
-    </div>
-  )
+    )
+  }, [sampled])
+  return <div className="md">{body}</div>
 }
 
 // Memoized on `text` (its only prop): every settled segment above the one
