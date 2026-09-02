@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.13.8] - 2026-09-01
+
+### Fixed
+- A reasoning model's thinking no longer appears inside the final answer. opencode streams reasoning tokens under the same `text` field as answer tokens (the field names the property on the part, not the part's type), so every streamed thought was appended to the answer block and the bubble showed the thinking glued to the reply with no separator. Most visible with DeepSeek, but the same path carried gpt-5 reasoning summaries too. Each part's type is now taken from the announcement opencode sends before its first token, so thinking folds into the collapsed process panel above the answer, and a reconnect mid-turn keeps that routing (#591, #592).
+
 ## [1.13.7] - 2026-08-31
 
 ### Fixed
