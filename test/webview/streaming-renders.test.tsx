@@ -5,6 +5,22 @@ import { Markdown } from "../../webview/src/components/Markdown"
 import { useThrottledValue } from "../../webview/src/hooks/useThrottledValue"
 import type { Message } from "../../webview/src/hooks/useChatState"
 
+// react-markdown is installed only under webview/, so the spy is registered
+// by file path: a bare specifier would resolve from the root and never match
+// the component's import. `Markdown` is hook-free, so wrapping the call
+// counts parses exactly.
+const parses = vi.hoisted(() => ({ count: 0 }))
+vi.mock(new URL("../../webview/node_modules/react-markdown/index.js", import.meta.url).pathname, async (importOriginal) => {
+  const mod = await importOriginal<{ default: (options: object) => unknown }>()
+  return {
+    ...mod,
+    default: (options: object) => {
+      parses.count++
+      return mod.default(options)
+    },
+  }
+})
+
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
@@ -47,6 +63,23 @@ describe("Markdown streaming throttle", () => {
       vi.advanceTimersByTime(60)
     })
     expect(container.textContent).toContain("world")
+  })
+
+  it("parses the sample once per throttle window, not once per frame (#597)", () => {
+    vi.useFakeTimers()
+    parses.count = 0
+    const { rerender } = render(<Markdown text="hello" streaming />)
+    expect(parses.count).toBe(1)
+    for (const text of ["hello w", "hello wo", "hello wor", "hello world"]) {
+      rerender(<Markdown text={text} streaming />)
+    }
+    // Four frames inside one window leave the sample unchanged, and the
+    // memoized element keeps React from re-rendering react-markdown.
+    expect(parses.count).toBe(1)
+    act(() => {
+      vi.advanceTimersByTime(60)
+    })
+    expect(parses.count).toBe(2)
   })
 
   it("renders settled (non-streaming) text updates immediately", () => {
