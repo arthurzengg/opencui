@@ -23,8 +23,13 @@ export type ActiveSnapshot = {
   reviewHunks: Record<string, ReviewHunkState>
 }
 
-/** Debounce window for the streaming hot path's disk writes. */
-const PERSIST_DEBOUNCE_MS = 300
+/**
+ * Debounce window for the streaming hot path's memento writes. Turn end and
+ * every conversation boundary flush explicitly, so this only bounds what a
+ * hard crash mid-stream loses; each write reserializes the whole extension
+ * memento, so the window is kept coarse (#599).
+ */
+const PERSIST_DEBOUNCE_MS = 1000
 
 /**
  * Workspace-state-backed list of saved conversations. Owns the
@@ -37,12 +42,21 @@ const PERSIST_DEBOUNCE_MS = 300
 export class ConversationManager {
   private conversations: SavedConversation[]
   private activeID: string
+  /**
+   * What workspaceState last read or wrote for each key. Every mutation
+   * replaces `conversations`, so reference equality is its dirty check.
+   */
+  private persistedConversations: SavedConversation[] | undefined
+  private persistedActiveID: string
   private pendingPersist?: ReturnType<typeof setTimeout>
   private disposed = false
 
   constructor(private context: vscode.ExtensionContext) {
-    this.conversations = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY) ?? []
+    const stored = context.workspaceState.get<SavedConversation[]>(CONVERSATIONS_KEY)
+    this.conversations = stored ?? []
+    this.persistedConversations = stored
     this.activeID = context.workspaceState.get<string>(ACTIVE_CONVERSATION_KEY) ?? ""
+    this.persistedActiveID = this.activeID
     if (!this.conversations.length) this.add("New conversation")
     if (!this.conversations.some((c) => c.id === this.activeID)) {
       this.activeID = this.conversations[0]!.id
@@ -214,15 +228,31 @@ export class ConversationManager {
     return true
   }
 
+  /**
+   * Every workspaceState.update reserializes the extension's whole memento,
+   * every key included, so a key is written only when its value changed
+   * since it was last read or written. A stream then costs one write per
+   * tick instead of two, and a flush with nothing new writes nothing. The
+   * marker moves only after the write resolved, so a rejected write is
+   * retried by the next persist (#599).
+   */
   async persist(): Promise<void> {
-    // Store-backed attachments persist as a storageID reference only; the
-    // inline base64 stays in memory for previews but never reaches
-    // workspaceState (it's what made streaming persists cost ~100 ms+).
-    await this.context.workspaceState.update(
-      CONVERSATIONS_KEY,
-      stripAttachmentDataForPersist(this.conversations),
-    )
-    await this.context.workspaceState.update(ACTIVE_CONVERSATION_KEY, this.activeID)
+    const conversations = this.conversations
+    if (conversations !== this.persistedConversations) {
+      // Store-backed attachments persist as a storageID reference only; the
+      // inline base64 stays in memory for previews but never reaches
+      // workspaceState (it's what made streaming persists cost ~100 ms+).
+      await this.context.workspaceState.update(
+        CONVERSATIONS_KEY,
+        stripAttachmentDataForPersist(conversations),
+      )
+      this.persistedConversations = conversations
+    }
+    const activeID = this.activeID
+    if (activeID !== this.persistedActiveID) {
+      await this.context.workspaceState.update(ACTIVE_CONVERSATION_KEY, activeID)
+      this.persistedActiveID = activeID
+    }
   }
 
   /**

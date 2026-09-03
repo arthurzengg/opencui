@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { ConversationManager } from "../../src/chat/conversation-manager"
-import { CONVERSATIONS_KEY } from "../../src/chat/conversation-store"
+import { ACTIVE_CONVERSATION_KEY, CONVERSATIONS_KEY } from "../../src/chat/conversation-store"
 
 type Store = Map<string, unknown>
 
@@ -58,9 +58,10 @@ describe("ConversationManager debounced persistence", () => {
     // Nothing hits disk until the debounce window elapses.
     expect(update).not.toHaveBeenCalled()
 
-    await vi.advanceTimersByTimeAsync(300)
+    await vi.advanceTimersByTimeAsync(1000)
 
-    // One persist == two workspaceState.update calls (conversations + active id).
+    // The first persist writes both keys: construction added a conversation
+    // and made it active, so both changed since they were read.
     expect(update).toHaveBeenCalledTimes(2)
     // The single coalesced write holds the latest state, not a stale prefix.
     const messages = activeMessages(store)
@@ -93,18 +94,18 @@ describe("ConversationManager debounced persistence", () => {
     expect(update).not.toHaveBeenCalled()
   })
 
-  it("a re-schedule mid-window does not push the 300ms deadline out", async () => {
+  it("a re-schedule mid-window does not push the 1 s deadline out", async () => {
     const { context, update } = fakeContext()
     const manager = new ConversationManager(context)
 
     manager.saveActiveSnapshot(snap(1))
     manager.schedulePersist()
-    await vi.advanceTimersByTimeAsync(200)
+    await vi.advanceTimersByTimeAsync(700)
     manager.saveActiveSnapshot(snap(2))
     manager.schedulePersist() // non-resetting: must not delay the original deadline
     expect(update).not.toHaveBeenCalled()
 
-    await vi.advanceTimersByTimeAsync(100) // now 300ms after the first schedule
+    await vi.advanceTimersByTimeAsync(300) // now 1 s after the first schedule
     expect(update).toHaveBeenCalledTimes(2)
   })
 
@@ -123,5 +124,86 @@ describe("ConversationManager debounced persistence", () => {
     const restored = reloaded.loadActiveSnapshot()
     expect(restored.messages.map((m) => m.id)).toEqual(["m0", "m1", "m2", "m3", "m4"])
     expect(restored.messages.every((m) => m.pending === false)).toBe(true)
+  })
+})
+
+// Every workspaceState.update reserializes the whole memento, so persist()
+// writes a key only when its value changed since it was last read or written
+// (#599).
+describe("ConversationManager persist writes only changed keys", () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  function conversation(id: string) {
+    return { id, title: id, createdAt: 1, updatedAt: 1, messages: [], reviewHunks: {} }
+  }
+
+  function writtenKeys(update: ReturnType<typeof fakeContext>["update"]) {
+    return update.mock.calls.map((c) => c[0])
+  }
+
+  it("a stream costs one write per tick once the active id is on disk", async () => {
+    const { context, update } = fakeContext()
+    const manager = new ConversationManager(context)
+    await manager.flushPersist()
+    update.mockClear()
+
+    for (let i = 1; i <= 10; i++) {
+      manager.saveActiveSnapshot(snap(i))
+      manager.schedulePersist()
+    }
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(writtenKeys(update)).toEqual([CONVERSATIONS_KEY])
+  })
+
+  it("a flush with nothing changed writes nothing", async () => {
+    const { context, update } = fakeContext()
+    const manager = new ConversationManager(context)
+    await manager.flushPersist()
+    update.mockClear()
+
+    await manager.flushPersist()
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it("constructing over an intact store makes the first persist a no-op", async () => {
+    const { context, store, update } = fakeContext()
+    store.set(CONVERSATIONS_KEY, [conversation("c1"), conversation("c2")])
+    store.set(ACTIVE_CONVERSATION_KEY, "c1")
+    const manager = new ConversationManager(context)
+
+    await manager.persist()
+    expect(update).not.toHaveBeenCalled()
+  })
+
+  it("only the active id is written when only it changed", async () => {
+    const { context, store, update } = fakeContext()
+    store.set(CONVERSATIONS_KEY, [conversation("c1"), conversation("c2")])
+    store.set(ACTIVE_CONVERSATION_KEY, "c1")
+    const manager = new ConversationManager(context)
+
+    manager.setActiveID("c2")
+    await manager.flushPersist()
+    expect(update.mock.calls).toEqual([[ACTIVE_CONVERSATION_KEY, "c2"]])
+
+    // A stale stored id is corrected on the first persist the same way.
+    const other = fakeContext()
+    other.store.set(CONVERSATIONS_KEY, [conversation("c1")])
+    other.store.set(ACTIVE_CONVERSATION_KEY, "gone")
+    await new ConversationManager(other.context).persist()
+    expect(other.update.mock.calls).toEqual([[ACTIVE_CONVERSATION_KEY, "c1"]])
+  })
+
+  it("a rejected write is retried by the next persist", async () => {
+    const { context, store, update } = fakeContext()
+    const manager = new ConversationManager(context)
+    update.mockRejectedValueOnce(new Error("disk"))
+
+    await expect(manager.persist()).rejects.toThrow("disk")
+    expect(store.has(CONVERSATIONS_KEY)).toBe(false)
+
+    await manager.persist()
+    expect(store.has(CONVERSATIONS_KEY)).toBe(true)
+    expect(store.get(ACTIVE_CONVERSATION_KEY)).toBe(manager.getActiveID())
   })
 })
