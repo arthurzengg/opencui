@@ -470,17 +470,27 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   const answer = message.blocks.slice(start)
   const answerHasText = answer.some((b) => b.type === "text" && b.text.trim().length > 0)
 
-  if (!answerHasText) {
-    // Ends on activity/reasoning (or is empty) — no distinct answer to surface.
-    if (!hasProcessBlocks(message.blocks)) return renderBlocks(message.blocks, false, onReviewFile, pending)
-    return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+  // One shape for every phase of the turn: the panel slot, then the answer
+  // slot. The boundary moves on every tool call, and alternating between a
+  // bare panel and a fragment at this slot made React remount the panel
+  // (and re-parse and re-highlight everything open inside it) at each flip.
+  // A null panel keeps the slot, so a text-only reply still has none (#601).
+  let panel: ReactNode = null
+  let answerBlocks = answer
+  if (answerHasText) {
+    if (hasProcessBlocks(process)) {
+      panel = <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}-${start}`} defaultOpen={false} onReviewFile={onReviewFile} />
+    }
+  } else if (hasProcessBlocks(message.blocks)) {
+    // Ends on activity/reasoning — no distinct answer to surface yet, so the
+    // whole message is the live process.
+    panel = <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+    answerBlocks = []
   }
-
-  if (!hasProcessBlocks(process)) return renderBlocks(answer, false, onReviewFile, pending)
   return (
     <>
-      <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}-${start}`} defaultOpen={false} onReviewFile={onReviewFile} />
-      {renderBlocks(answer, false, onReviewFile, pending)}
+      {panel}
+      {renderBlocks(answerBlocks, false, onReviewFile, pending)}
     </>
   )
 }

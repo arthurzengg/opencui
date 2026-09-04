@@ -3,7 +3,7 @@ import { render, renderHook, screen, cleanup, fireEvent, act } from "@testing-li
 import { MessageView } from "../../webview/src/components/MessageView"
 import { Markdown } from "../../webview/src/components/Markdown"
 import { useThrottledValue } from "../../webview/src/hooks/useThrottledValue"
-import type { Message } from "../../webview/src/hooks/useChatState"
+import type { Block, Message } from "../../webview/src/hooks/useChatState"
 
 // react-markdown is installed only under webview/, so the spy is registered
 // by file path: a bare specifier would resolve from the root and never match
@@ -117,5 +117,60 @@ describe("ProcessPanel lazy body", () => {
     fireEvent.click(head)
     expect(container.querySelector(".process")!.classList.contains("is-open")).toBe(false)
     expect(body.childNodes.length).toBeGreaterThan(0)
+  })
+})
+
+// The answer boundary moves on every tool call; the bubble must keep one
+// tree shape across it or React remounts the panel and everything rendered
+// inside it (#601).
+describe("assistant bubble keeps its process panel across answer boundaries", () => {
+  const tool = (callID: string): Block => ({
+    type: "tool",
+    update: { callID, tool: "read", status: "completed", input: { filePath: "src/foo.ts" } },
+  } as Block)
+  const text = (t: string): Block => ({ type: "text", text: t })
+  const message = (blocks: Block[]): Message => ({ id: "a1", role: "assistant", blocks, pending: true } as Message)
+  // A first-person line so textTitle() leaves it as a paragraph, not a title.
+  const thinking = text("I need to read the file first.")
+
+  it("the panel node and a paragraph inside it survive text, tool, text, tool", () => {
+    const { container, rerender } = render(
+      <MessageView message={message([thinking, tool("c1")])} processOpen processOnly={false} />,
+    )
+    const panel = container.querySelector(".process")!
+    expect(panel.classList.contains("is-open")).toBe(true)
+    const paragraph = panel.querySelector(".process-body p")!
+    expect(paragraph.textContent).toBe("I need to read the file first.")
+
+    // Answer text after the tool: the same panel, now the collapsed final one.
+    rerender(
+      <MessageView message={message([thinking, tool("c1"), text("Found it.")])} processOpen processOnly={false} />,
+    )
+    expect(container.querySelector(".process")).toBe(panel)
+    expect(panel.querySelector(".process-body p")).toBe(paragraph)
+    expect(panel.classList.contains("is-open")).toBe(false)
+    expect(screen.getByText("Found it.")).toBeInTheDocument()
+
+    // The next tool folds that text back into the live process: same panel,
+    // open again, and the answer slot is empty.
+    rerender(
+      <MessageView
+        message={message([thinking, tool("c1"), text("Found it."), tool("c2")])}
+        processOpen
+        processOnly={false}
+      />,
+    )
+    expect(container.querySelector(".process")).toBe(panel)
+    expect(panel.querySelector(".process-body p")).toBe(paragraph)
+    expect(panel.classList.contains("is-open")).toBe(true)
+    expect(container.querySelectorAll(".process")).toHaveLength(1)
+  })
+
+  it("a text-only reply still renders no panel", () => {
+    const { container } = render(
+      <MessageView message={message([text("Just an answer.")])} processOpen processOnly={false} />,
+    )
+    expect(container.querySelector(".process")).toBeNull()
+    expect(screen.getByText("Just an answer.")).toBeInTheDocument()
   })
 })
