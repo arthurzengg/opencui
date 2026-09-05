@@ -55,7 +55,7 @@ function createMessage(id: string, opts: { filePath: string; content: string }):
 describe("ReviewPanel", () => {
   it("renders nothing when there are no pending changes", () => {
     const { container } = render(
-      <ReviewPanel messages={[]} reviewedHunks={{}} />,
+      <ReviewPanel reviewRevision={0} messages={[]} reviewedHunks={{}} />,
     )
     expect(container.firstChild).toBeNull()
   })
@@ -69,7 +69,7 @@ describe("ReviewPanel", () => {
         deletions: 1,
       }),
     ]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect(screen.getByText("Review")).toBeInTheDocument()
     // The single-file card is one row: the filename shows once (no duplicate
     // body row), with inline Keep/Undo in the header.
@@ -84,7 +84,7 @@ describe("ReviewPanel", () => {
       editMessage("m2", { filePath: "b.ts", patch: "@@ -1 +1 @@\n+b", additions: 1, deletions: 0 }),
       editMessage("m3", { filePath: "c.ts", patch: "@@ -1 +1 @@\n+c", additions: 1, deletions: 0 }),
     ]
-    render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect(screen.getByText(/Review changes/)).toBeInTheDocument()
     expect(screen.getByText(/3 files/)).toBeInTheDocument()
   })
@@ -94,7 +94,7 @@ describe("ReviewPanel", () => {
       editMessage("m1", { filePath: "foo.ts", patch: "@@\n+a\n+b\n+c", additions: 3, deletions: 0, callID: "edit-1" }),
       editMessage("m2", { filePath: "foo.ts", patch: "@@\n+d\n-e", additions: 1, deletions: 1, callID: "edit-2" }),
     ]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     // Single row (path collapsed) but stats aggregated across the two records
     expect(screen.getAllByRole("button", { name: /Keep changes in foo.ts/ })).toHaveLength(1)
     // Header shows combined stats
@@ -104,7 +104,7 @@ describe("ReviewPanel", () => {
 
   it("applies the kind-created class for a new file", () => {
     const messages = [createMessage("m1", { filePath: "new.ts", content: "line1\nline2\nline3" })]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect(container.querySelector(".kind-created")).not.toBeNull()
   })
 
@@ -113,7 +113,7 @@ describe("ReviewPanel", () => {
       editMessage("m1", { filePath: "views/index.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
       editMessage("m2", { filePath: "admin/index.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
     ]
-    render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect(screen.getByText("views/index.ts")).toBeInTheDocument()
     expect(screen.getByText("admin/index.ts")).toBeInTheDocument()
   })
@@ -126,6 +126,7 @@ describe("ReviewPanel", () => {
     ]
     render(
       <ReviewPanel
+        reviewRevision={0}
         messages={messages}
         reviewedHunks={{}}
         onReviewAllInChange={onReviewAllInChange}
@@ -144,6 +145,7 @@ describe("ReviewPanel", () => {
     ]
     render(
       <ReviewPanel
+        reviewRevision={0}
         messages={messages}
         reviewedHunks={{}}
         onReviewAllInChange={onReviewAllInChange}
@@ -162,6 +164,7 @@ describe("ReviewPanel", () => {
     ]
     const { container } = render(
       <ReviewPanel
+        reviewRevision={0}
         messages={messages}
         reviewedHunks={{}}
         onSelectPath={onSelectPath}
@@ -182,7 +185,7 @@ describe("ReviewPanel", () => {
     // splitDiff produces hunk id = "0-@@ -1,1 +1,1 @@"
     const reviewedHunks = { "c-m1:foo.ts:0-@@ -1,1 +1,1 @@": "accepted" as const }
     const { container } = render(
-      <ReviewPanel messages={messages} reviewedHunks={reviewedHunks} />,
+      <ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={reviewedHunks} />,
     )
     // No pending → panel returns null
     expect(container.firstChild).toBeNull()
@@ -194,7 +197,7 @@ describe("ReviewPanel", () => {
       editMessage("m1", { filePath: "a.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
       editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
     ]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     const header = container.querySelector(".review-head") as HTMLButtonElement
     expect(header.getAttribute("aria-expanded")).toBe("true")
     await user.click(header)
@@ -206,7 +209,7 @@ describe("ReviewPanel", () => {
       editMessage("m1", { filePath: "a.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
       editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
     ]
-    render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect(screen.getByRole("button", { name: /Keep all/i })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Undo all/i })).toBeInTheDocument()
   })
@@ -219,7 +222,7 @@ describe("ReviewPanel", () => {
       editMessage("m1", { filePath: "a.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
       editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
     ]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect([...container.querySelectorAll(".review-bulk-label")].map((n) => n.textContent)).toEqual([
       "Keep all",
       "Undo all",
@@ -234,7 +237,7 @@ describe("ReviewPanel", () => {
     const messages = [
       editMessage("m1", { filePath: "only.ts", patch: "@@\n+a", additions: 1, deletions: 0 }),
     ]
-    render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect(screen.queryByRole("button", { name: /Keep all/i })).toBeNull()
     expect(screen.queryByRole("button", { name: /Undo all/i })).toBeNull()
   })
@@ -248,6 +251,7 @@ describe("ReviewPanel", () => {
     ]
     render(
       <ReviewPanel
+        reviewRevision={0}
         messages={messages}
         reviewedHunks={{}}
         onReviewAllInChange={onReviewAllInChange}
@@ -268,6 +272,7 @@ describe("ReviewPanel", () => {
     ]
     render(
       <ReviewPanel
+        reviewRevision={0}
         messages={messages}
         reviewedHunks={{}}
         onReviewAllInChange={onReviewAllInChange}
@@ -285,7 +290,7 @@ describe("ReviewPanel", () => {
       editMessage("m2", { filePath: "b.ts", patch: "@@\n+b", additions: 1, deletions: 0 }),
     ]
     const { container } = render(
-      <ReviewPanel messages={messages} reviewedHunks={{}} onReviewAllInChange={vi.fn()} />,
+      <ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} onReviewAllInChange={vi.fn()} />,
     )
     const header = container.querySelector(".review-head") as HTMLButtonElement
     expect(header.getAttribute("aria-expanded")).toBe("true")
@@ -298,7 +303,7 @@ describe("ReviewPanel", () => {
       createMessage("m1", { filePath: "new.ts", content: "line1\nline2" }),
       editMessage("m2", { filePath: "new.ts", patch: "@@\n+x", additions: 1, deletions: 0 }),
     ]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect(container.querySelector(".kind-created")).not.toBeNull()
     expect(container.querySelector(".kind-updated")).toBeNull()
   })

@@ -75,6 +75,14 @@ export type ChatState = {
   context?: EditorContextRef
   messages: Message[]
   reviewHunks: Record<string, ReviewHunkState>
+  /**
+   * Bumped only by the arms that can change what the Review panel extracts
+   * from `messages`: completed tools, patches, restore, removal, clear.
+   * Streamed deltas replace `messages` on every frame, so the panel keys its
+   * extraction on this instead (#603). Monotonic across clear/reset for the
+   * same reason as `idleNonce`.
+   */
+  reviewRevision: number
   pendingPermission?: { id: string; title: string; pattern?: string | string[] }
   pendingQuestion?: { id: string; questions: QuestionInfo[] }
   indexStatus?: IndexStatusInfo
@@ -116,6 +124,7 @@ const initial: ChatState = {
   commands: [],
   messages: [],
   reviewHunks: {},
+  reviewRevision: 0,
   queued: [],
   idleNonce: 0,
 }
@@ -187,7 +196,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "reset":
       // idleNonce is monotonic for the webview's lifetime — resetting it to 0
       // would desync the flush hook's last-seen ref.
-      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce }
+      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce, reviewRevision: state.reviewRevision + 1 }
     case "ready":
       return { ...state, connected: action.connected, selection: action.selection }
     case "connected":
@@ -228,6 +237,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
         conversationID: action.conversationID,
         messages: action.messages,
         reviewHunks: action.reviewHunks ?? {},
+        reviewRevision: state.reviewRevision + 1,
         pendingPermission: undefined,
         // The host drops the old session's activeQuestions without posting
         // questionResolved on switch, so a question left open here would
@@ -328,12 +338,19 @@ export function reducer(state: ChatState, action: Action): ChatState {
       ) {
         return state
       }
-      return { ...state, messages: upsertTool(state.messages, action.id, action.update, action.actor) }
+      return {
+        ...state,
+        messages: upsertTool(state.messages, action.id, action.update, action.actor),
+        // Extraction reads only completed tool blocks, so running/pending
+        // churn (streamed bash output) leaves the review set unchanged.
+        reviewRevision: action.update.status === "completed" ? state.reviewRevision + 1 : state.reviewRevision,
+      }
     case "patch":
       // Patches describe disk mutations that already happened; hiding them
       // while aborting only desyncs the Review panel from reality.
       return {
         ...state,
+        reviewRevision: state.reviewRevision + 1,
         messages: state.messages.map((m) =>
           m.id === action.id
             ? { ...m, blocks: [...m.blocks, { type: "patch", files: action.files, diff: action.diff, actor: action.actor }] }
@@ -457,14 +474,14 @@ export function reducer(state: ChatState, action: Action): ChatState {
       const next = state.messages.filter((m) => m.id !== action.id)
       if (next.length === state.messages.length) return state
       const anyPending = next.some((m) => m.pending)
-      return { ...state, messages: next, busy: state.busy && anyPending }
+      return { ...state, messages: next, busy: state.busy && anyPending, reviewRevision: state.reviewRevision + 1 }
     }
     case "queueMessage":
       return { ...state, queued: [...state.queued, action.message] }
     case "unqueueMessage":
       return { ...state, queued: state.queued.filter((q) => q.id !== action.id) }
     case "clear":
-      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce }
+      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce, reviewRevision: state.reviewRevision + 1 }
     default:
       return state
   }
