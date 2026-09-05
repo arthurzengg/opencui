@@ -46,7 +46,7 @@ describe("ReviewPanel: subagent attribution stays on the tooltip", () => {
         }),
       ]),
     ]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     // No `.review-file-actor` element — the old badge is gone.
     expect(container.querySelector(".review-file-actor")).toBeNull()
     // The row title tooltip still carries the attribution so power users can hover.
@@ -64,7 +64,7 @@ describe("ReviewPanel: subagent attribution stays on the tooltip", () => {
         }),
       ]),
     ]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect(container.querySelector(".review-file-actor")).toBeNull()
     const head = container.querySelector(".review-head") as HTMLElement
     expect(head.title).toBe("src/foo.ts")
@@ -87,7 +87,7 @@ describe("ReviewPanel: subagent attribution stays on the tooltip", () => {
         }),
       ]),
     ]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     const head = container.querySelector(".review-head") as HTMLElement
     expect(head.title).toContain("explore")
     expect(head.title).toContain("hephaestus")
@@ -110,7 +110,7 @@ describe("ReviewPanel: subagent attribution stays on the tooltip", () => {
         }),
       ]),
     ]
-    const { container } = render(<ReviewPanel messages={messages} reviewedHunks={{}} />)
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
     expect(container.querySelectorAll(".review-head")).toHaveLength(1)
     expect(container.querySelector(".review-file-actor")).toBeNull()
     const head = container.querySelector(".review-head") as HTMLElement

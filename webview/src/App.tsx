@@ -383,6 +383,7 @@ export default function App() {
         )}
         <ReviewPanel
           messages={state.messages}
+          reviewRevision={state.reviewRevision}
           selectedPath={reviewRequest?.path}
           selectedKey={reviewRequest?.key}
           reviewedHunks={state.reviewHunks}

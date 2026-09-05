@@ -15,6 +15,7 @@ type DiffHunk = {
 
 export function ReviewPanel({
   messages,
+  reviewRevision,
   selectedPath,
   selectedKey,
   reviewedHunks,
@@ -23,6 +24,7 @@ export function ReviewPanel({
   onReviewAllInChange,
 }: {
   messages: Message[]
+  reviewRevision: number
   selectedPath?: string
   selectedKey?: number
   reviewedHunks: Record<string, ReviewHunkState>
@@ -30,7 +32,11 @@ export function ReviewPanel({
   onOpenReviewChange?: (change: ReviewChange) => void
   onReviewAllInChange?: (source: string, path: string, action: ReviewHunkState) => void
 }) {
-  const changes = useMemo(() => turnChanges(messages), [messages])
+  // `messages` is a new array on every streamed delta, and extraction walks
+  // every block of every message and splits every patch. Only the reducer
+  // arms that can change the review set bump `reviewRevision`, so the memo
+  // keys on that and reads `messages` as of the bump (#603).
+  const changes = useMemo(() => turnChanges(messages), [reviewRevision])
   const pendingChanges = useMemo(
     () => changes.map((change) => ({ change, diff: splitDiff(change.patch) }))
       .filter(({ change, diff }) => (
