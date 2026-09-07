@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-09-07
+
+### Changed
+- Long replies stream with less work per token. The Markdown renderer memoizes its rendered element on the throttled sample it already used for parsing, so the frames that land inside one 50 ms window no longer re-render and re-parse the whole message; only the leading and trailing samples of a window do (#597, #598).
+- The process panel is no longer rebuilt every time a reply alternates between answer text and tool calls. A message that ended on activity rendered a bare panel and a message with answer text after it rendered a different tree in the same slot, so React remounted the panel at every flip, twice per tool call during an agentic turn, and an open panel redid every Markdown parse and syntax highlight inside it. The panel now persists across that boundary; as a side effect its collapse and reopen at the boundary animate through the existing fold transition instead of snapping (#601, #602).
+- The Review panel no longer re-extracts every diff on every streamed frame. It walked every block of every message and re-split every patch once per delta, a cost that grew with the diffs of all prior turns. Extraction now runs only when the review set can actually change: a tool completes, a patch arrives, a message is removed, or a conversation is restored or cleared (#603, #604).
+- Persisting a conversation mid-stream now writes only the workspace-state keys whose value changed, one write per tick instead of two, and a flush with nothing new writes nothing; opening a workspace over an intact store no longer rewrites it. The streaming write is debounced 1 s instead of 300 ms. Turn end, conversation switches, and window shutdown still flush immediately, so the wider window only bounds what a hard crash mid-stream can lose (#599, #600).
+
+### Fixed
+- A thought that follows part of an answer is no longer persisted ahead of it. The extension coalesces streamed deltas over a 25 ms window and buffered them per kind, so a reasoning, text, reasoning sequence inside one window flushed as a single reasoning post before the text, and the transcript showed the second thinking block before the answer segment it came after. Deltas now flush in arrival order, merging only consecutive deltas of the same kind, matching how the panel batches them per frame (#595, #596).
+
 ## [1.13.8] - 2026-09-01
 
 ### Fixed
