@@ -40,14 +40,15 @@
 
 ## Highlights
 
-- **Streaming chat** with reasoning blocks and an inline tool-call trace.
-- **`@file` mentions** — fuzzy picker with chip-styled tokens; recently-opened files boosted.
-- **Image / PDF attachments** — paperclip + clipboard paste; images render as preview thumbnails.
-- **Edit + regenerate** — click any past user message; the conversation rewinds via opencode's `session.revert`.
-- **Review Changes** card per file with `Keep` / `Undo` (per row + Keep / Undo all).
-- **Inline edit** with `Cmd+K` / `Ctrl+K` — rewrite selection with natural language.
-- **Model · Agent · Effort picker** — one in-panel popover: search models, set the effort / reasoning budget for models that expose variants (gpt-5.5, claude-opus, etc.), and switch opencode agents.
-- **Math, tables, lists** render properly in assistant messages (LaTeX, GFM, KaTeX).
+- **`@file` and `@chat` mentions** — fuzzy file picker with chip-styled tokens and recently-opened files boosted; `@chat` pulls a past conversation into the prompt as context.
+- **Image, PDF, and text attachments** — paperclip or clipboard paste; images render as preview thumbnails, and about fifty code and plain-text extensions are accepted alongside images and PDFs.
+- **Review Changes** card per file with `Keep` / `Undo` per row and for all, SCM-style status badges, and attribution when a subagent made the edit. Undo locates each hunk by its line anchor before touching the file.
+- **Edit + regenerate** — click any past user message; the conversation rewinds via opencode's `session.revert`. A stopped reply offers Retry.
+- **Model · Agent · Effort picker** — one in-panel popover: search models grouped by provider, fold providers you do not use, pick from recent models, set the effort / reasoning budget for models that expose variants (gpt-5.5, claude-opus, etc.), and switch opencode agents.
+- **Slash commands** — `/compact`, `/init`, `/undo`, `/redo`, `/fork`, `/new`, `/share`, and your workspace's custom opencode commands, from a picker that opens on `/`.
+- **MCP servers and AI providers** managed from the panel — `/mcp` adds local or remote servers and connects or authenticates them; `/provider` connects any provider opencode supports by API key or OAuth, and the model picker reflects the change on next open.
+- **Chat history per workspace**, including sessions started from the opencode TUI or another client in the same project; opening one makes it a regular conversation with edit and rewind.
+- **Context-window usage ring** in the composer — amber at 85%, red at 95%, hover for the token count against the model's limit.
 
 ## Setup
 
