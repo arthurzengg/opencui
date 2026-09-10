@@ -3,6 +3,7 @@ import * as path from "path"
 import * as fs from "fs"
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk"
+import { createOpencodeClient as createOpencodeClientV2, type OpencodeClient as OpencodeClientV2 } from "@opencode-ai/sdk/v2"
 import { log } from "./output"
 import { primaryWorkspaceRoot, type WorkspaceRoot } from "./workspace-root"
 import { recordServer, registryPath, releaseServer } from "./server-registry"
@@ -22,6 +23,11 @@ type ServerHandle = {
 export type Backend = {
   url: string
   client: OpencodeClient
+  /**
+   * The v1 client is a frozen snapshot and never gained the permission and
+   * question reply routes; those go through the v2 client (#609).
+   */
+  clientV2: OpencodeClientV2
   directory: string
   /**
    * Workspace root the server was bound to at start time. Undefined when no
@@ -36,6 +42,7 @@ export type Backend = {
 export class ServerManager {
   private server: ServerHandle | undefined
   private client: OpencodeClient | undefined
+  private clientV2: OpencodeClientV2 | undefined
   private starting: Promise<Backend> | undefined
   /** Cancels the in-flight start attempt so restart/dispose mid-startup is not a no-op (#581). */
   private startAbort: AbortController | undefined
@@ -46,8 +53,8 @@ export class ServerManager {
   constructor(private context: vscode.ExtensionContext) {}
 
   async ensure(): Promise<Backend> {
-    if (this.server && this.client) {
-      return this.toBackend(this.server, this.client)
+    if (this.server && this.client && this.clientV2) {
+      return this.toBackend(this.server, this.client, this.clientV2)
     }
     if (this.starting) return this.starting
     const abort = new AbortController()
@@ -106,12 +113,12 @@ export class ServerManager {
       throw e
     }
     log("opencode server ready at", server.url)
-    const client = createOpencodeClient({
-      baseUrl: server.url,
-      directory: workspace?.fsPath ?? process.cwd(),
-    })
+    const directory = workspace?.fsPath ?? process.cwd()
+    const client = createOpencodeClient({ baseUrl: server.url, directory })
+    const clientV2 = createOpencodeClientV2({ baseUrl: server.url, directory })
     this.server = server
     this.client = client
+    this.clientV2 = clientV2
     this.workspace = workspace
     this.configMode = configMode
     server.onExit(() => {
@@ -123,9 +130,10 @@ export class ServerManager {
       if (server.pid !== undefined) this.updateRegistry((file) => releaseServer(file, server.pid!))
       this.server = undefined
       this.client = undefined
+      this.clientV2 = undefined
       this.workspace = undefined
     })
-    return this.toBackend(server, client)
+    return this.toBackend(server, client, clientV2)
   }
 
   async restart(): Promise<Backend> {
@@ -157,6 +165,7 @@ export class ServerManager {
       }
       this.server = undefined
       this.client = undefined
+      this.clientV2 = undefined
       this.workspace = undefined
     }
   }
@@ -183,14 +192,15 @@ export class ServerManager {
    * switch) that should stay silent rather than cold-start a server.
    */
   currentBackend(): Backend | undefined {
-    if (!this.server || !this.client) return undefined
-    return this.toBackend(this.server, this.client)
+    if (!this.server || !this.client || !this.clientV2) return undefined
+    return this.toBackend(this.server, this.client, this.clientV2)
   }
 
-  private toBackend(server: ServerHandle, client: OpencodeClient): Backend {
+  private toBackend(server: ServerHandle, client: OpencodeClient, clientV2: OpencodeClientV2): Backend {
     return {
       url: server.url,
       client,
+      clientV2,
       directory: this.workspace?.fsPath ?? process.cwd(),
       workspace: this.workspace,
       configMode: this.configMode,
