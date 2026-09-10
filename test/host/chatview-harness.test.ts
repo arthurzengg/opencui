@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import * as vscode from "vscode"
 import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { ChatView } from "../../src/chat/view"
 import {
@@ -115,7 +116,8 @@ let harness: {
 beforeEach(async () => {
   server = await startMockOpencode()
   const client = createOpencodeClient({ baseUrl: server.url })
-  const backend = { url: server.url, client, directory: "/ws" } as unknown as Backend
+  const clientV2 = createOpencodeClientV2({ baseUrl: server.url })
+  const backend = { url: server.url, client, clientV2, directory: "/ws" } as unknown as Backend
   const servers = {
     ensure: vi.fn(async () => backend),
     currentWorkspace: vi.fn(() => undefined),
@@ -1414,5 +1416,49 @@ describe("ChatView harness: reasoning parts stay out of the answer (#591)", () =
       { type: "reasoning", text: "Let me think." },
       { type: "text", text: "Hello" },
     ])
+  })
+})
+
+describe("ChatView harness: replies go through the v2 routes (#609)", () => {
+  it("a permission reply posts to /permission/{requestID}/reply with the reply and directory", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "guarded edit" })
+    server.push({ type: "permission.asked", id: "perm_v2", sessionID: SESSION_ID, title: "Edit file" })
+    await until(() => harness.posted.some((m) => m.type === "permission" && m.id === "perm_v2"))
+
+    await harness.send({ type: "permissionReply", id: "perm_v2", response: "always" })
+    await until(() => server.permissionReplies.length === 1)
+    expect(server.permissionReplies[0]).toEqual({ requestID: "perm_v2", body: { reply: "always" }, directory: "/ws" })
+    // The per-session route is deprecated on opencode 1.18.30.
+    expect(server.legacyPermissionResponds).toEqual([])
+  })
+
+  it("question reply and reject post to /question/{requestID}/reply and /reject with the directory", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "ask me" })
+    const ask = (id: string) =>
+      server.push({
+        type: "question.asked",
+        id,
+        sessionID: SESSION_ID,
+        questions: [{ question: "Which flavor?", options: [{ label: "a" }, { label: "b" }] }],
+      })
+
+    ask("q_reply")
+    await until(() => harness.posted.some((m) => m.type === "question" && m.id === "q_reply"))
+    await harness.send({ type: "questionReply", id: "q_reply", answers: [["a"]] })
+    await until(() => server.questionReplies.length === 1)
+    expect(server.questionReplies[0]).toEqual({
+      requestID: "q_reply",
+      action: "reply",
+      body: { answers: [["a"]] },
+      directory: "/ws",
+    })
+
+    ask("q_reject")
+    await until(() => harness.posted.some((m) => m.type === "question" && m.id === "q_reject"))
+    await harness.send({ type: "questionReject", id: "q_reject" })
+    await until(() => server.questionReplies.length === 2)
+    expect(server.questionReplies[1]).toMatchObject({ requestID: "q_reject", action: "reject", directory: "/ws" })
   })
 })

@@ -1262,10 +1262,12 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (!this.sessionID) return
         try {
           const backend = await this.servers.ensure()
-          await backend.client.postSessionIdPermissionsPermissionId({
-            path: { id: this.sessionID, permissionID: msg.id },
-            body: { response: msg.response },
+          const res = await backend.clientV2.permission.reply({
+            requestID: msg.id,
+            reply: msg.response,
+            directory: backend.directory,
           })
+          if (res.error) log("permission reply failed", res.error)
         } catch (e) {
           log("permission reply failed", e)
         }
@@ -1293,48 +1295,31 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   /**
-   * POST the user's answers to opencode's question API. The installed SDK
-   * (1.14.33) doesn't yet expose typed question methods — those landed in
-   * the binary at 1.14.41 — so we use raw fetch against the backend URL.
-   *
-   * The reply / reject endpoints apply `WorkspaceRoutingMiddleware`, which
-   * reads an optional `directory` query parameter to pick the right
-   * workspace's pending-questions map. Without it, opencode falls back to
-   * a different workspace, fails to find the pending request, logs
-   * "reply for unknown request", and the original `Question.ask` Effect
-   * stays blocked forever — exactly the "stuck after submit" symptom.
+   * The reply / reject routes apply `WorkspaceRoutingMiddleware`, which reads
+   * an optional `directory` query parameter to pick the right workspace's
+   * pending-questions map. Without it, opencode falls back to a different
+   * workspace, fails to find the pending request, logs "reply for unknown
+   * request", and the original `Question.ask` Effect stays blocked forever,
+   * exactly the "stuck after submit" symptom. The v2 client only rewrites the
+   * directory header into the query for GET requests, so it is passed here.
    */
   private async replyQuestion(requestID: string, answers: string[][]) {
-    await this.postQuestionEndpoint(requestID, "reply", { answers })
+    try {
+      const backend = await this.servers.ensure()
+      const res = await backend.clientV2.question.reply({ requestID, answers, directory: backend.directory })
+      if (res.error) log("question reply failed", res.error)
+    } catch (e) {
+      log("question reply threw", e)
+    }
   }
 
   private async rejectQuestion(requestID: string) {
-    await this.postQuestionEndpoint(requestID, "reject")
-  }
-
-  private async postQuestionEndpoint(
-    requestID: string,
-    action: "reply" | "reject",
-    body?: Record<string, unknown>,
-  ) {
     try {
       const backend = await this.servers.ensure()
-      const url = new URL(`${backend.url}/question/${encodeURIComponent(requestID)}/${action}`)
-      if (backend.directory) url.searchParams.set("directory", backend.directory)
-      log(`question ${action} POST`, url.toString(), body ?? {})
-      const res = await fetch(url.toString(), {
-        method: "POST",
-        headers: body ? { "Content-Type": "application/json" } : {},
-        body: body ? JSON.stringify(body) : undefined,
-      })
-      const text = await res.text().catch(() => "")
-      if (!res.ok) {
-        log(`question ${action} failed`, res.status, text)
-      } else {
-        log(`question ${action} ok`, res.status, text || "(no body)")
-      }
+      const res = await backend.clientV2.question.reject({ requestID, directory: backend.directory })
+      if (res.error) log("question reject failed", res.error)
     } catch (e) {
-      log(`question ${action} threw`, e)
+      log("question reject threw", e)
     }
   }
 

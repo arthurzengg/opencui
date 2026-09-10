@@ -109,6 +109,12 @@ export type MockOpencodeServer = {
   setAuthRemoveSupported: (v: boolean) => void
   /** Configure what GET /mcp returns. */
   setMcpStatus: (map: Record<string, { status: string; error?: string }>) => void
+  /** Records of every v2 permission reply (POST /permission/{requestID}/reply). */
+  permissionReplies: Array<{ requestID: string; body: unknown; directory: string | null }>
+  /** Records of every v2 question reply or reject. */
+  questionReplies: Array<{ requestID: string; action: "reply" | "reject"; body: unknown; directory: string | null }>
+  /** Records of every call to the deprecated per-session permission route. */
+  legacyPermissionResponds: Array<{ sessionID: string; permissionID: string; body: unknown }>
   close: () => Promise<void>
 }
 
@@ -128,6 +134,9 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const aborts: string[] = []
   const childrenByParent = new Map<string, string[]>()
   const commandCalls: Array<{ sessionID: string; body: unknown }> = []
+  const permissionReplies: Array<{ requestID: string; body: unknown; directory: string | null }> = []
+  const questionReplies: Array<{ requestID: string; action: "reply" | "reject"; body: unknown; directory: string | null }> = []
+  const legacyPermissionResponds: Array<{ sessionID: string; permissionID: string; body: unknown }> = []
   let commands: Array<Record<string, unknown>> = []
   let providers: Array<Record<string, unknown>> = []
   let sessions: Array<Record<string, unknown>> = []
@@ -421,6 +430,44 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       return
     }
 
+    // v2 reply routes (#609). The deprecated per-session permission route is
+    // recorded separately so a test can assert it is never used.
+    const permissionReplyMatch = path.match(/^\/permission\/([^/]+)\/reply$/)
+    if (permissionReplyMatch && req.method === "POST") {
+      const body = await readBody(req)
+      permissionReplies.push({
+        requestID: decodeURIComponent(permissionReplyMatch[1]!),
+        body,
+        directory: url.searchParams.get("directory"),
+      })
+      reply(res, 200, true)
+      return
+    }
+    const questionReplyMatch = path.match(/^\/question\/([^/]+)\/(reply|reject)$/)
+    if (questionReplyMatch && req.method === "POST") {
+      const action = questionReplyMatch[2] as "reply" | "reject"
+      const body = action === "reply" ? await readBody(req) : undefined
+      questionReplies.push({
+        requestID: decodeURIComponent(questionReplyMatch[1]!),
+        action,
+        body,
+        directory: url.searchParams.get("directory"),
+      })
+      reply(res, 200, true)
+      return
+    }
+    const legacyPermissionMatch = path.match(/^\/session\/([^/]+)\/permissions\/([^/]+)$/)
+    if (legacyPermissionMatch && req.method === "POST") {
+      const body = await readBody(req)
+      legacyPermissionResponds.push({
+        sessionID: legacyPermissionMatch[1]!,
+        permissionID: legacyPermissionMatch[2]!,
+        body,
+      })
+      reply(res, 200, true)
+      return
+    }
+
     // Health (used by some SDK clients before connecting)
     if (path === "/" && req.method === "GET") {
       reply(res, 200, { ok: true })
@@ -468,6 +515,9 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     prompts,
     reverts,
+    permissionReplies,
+    questionReplies,
+    legacyPermissionResponds,
     setRevertStatus(status) {
       revertStatus = status
     },
