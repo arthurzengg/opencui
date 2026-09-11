@@ -1493,3 +1493,18 @@ describe("ChatView harness: catalog.updated refreshes the model catalog (#613)",
     expect(server.providerFetches() - fetches).toBe(1)
   })
 })
+
+
+describe("ChatView.onDidUserActivity (#615)", () => {
+  it("fires when the view becomes visible and when a prompt is sent, not when hidden", async () => {
+    let fired = 0
+    harness.chatView.onDidUserActivity(() => fired++)
+    await harness.send({ type: "mounted" })
+    harness.setVisible(false)
+    expect(fired).toBe(0)
+    harness.setVisible(true)
+    expect(fired).toBe(1)
+    await harness.send({ type: "send", text: "hi" })
+    expect(fired).toBe(2)
+  })
+})

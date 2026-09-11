@@ -43,6 +43,10 @@ export class ServerManager {
   private server: ServerHandle | undefined
   private client: OpencodeClient | undefined
   private clientV2: OpencodeClientV2 | undefined
+  /** Resolved path the running server was spawned from. */
+  private binaryPath: string | undefined
+  /** Version the running server's health route reported (#615). */
+  private version: string | undefined
   private starting: Promise<Backend> | undefined
   /** Cancels the in-flight start attempt so restart/dispose mid-startup is not a no-op (#581). */
   private startAbort: AbortController | undefined
@@ -121,6 +125,20 @@ export class ServerManager {
     this.clientV2 = clientV2
     this.workspace = workspace
     this.configMode = configMode
+    this.binaryPath = binaryPath
+    this.version = undefined
+    // The drift check compares the binary on disk against this. An older
+    // server without the health route leaves it unset and the check stays
+    // silent.
+    void clientV2.global.health().then(
+      (res) => {
+        if (this.server !== server) return
+        const version = res.data?.version
+        if (typeof version === "string") this.version = version
+        else log("opencode health reported no version", res.error)
+      },
+      (e) => log("opencode health failed", e),
+    )
     server.onExit(() => {
       // Only invalidate if this handle is still the active one — a crash
       // notification from a server we already replaced (restart/dispose)
@@ -132,6 +150,8 @@ export class ServerManager {
       this.client = undefined
       this.clientV2 = undefined
       this.workspace = undefined
+      this.binaryPath = undefined
+      this.version = undefined
     })
     return this.toBackend(server, client, clientV2)
   }
@@ -167,6 +187,8 @@ export class ServerManager {
       this.client = undefined
       this.clientV2 = undefined
       this.workspace = undefined
+      this.binaryPath = undefined
+      this.version = undefined
     }
   }
 
@@ -184,6 +206,16 @@ export class ServerManager {
   /** Workspace the running server is bound to, or undefined if not started yet. */
   currentWorkspace(): WorkspaceRoot | undefined {
     return this.workspace
+  }
+
+  /** Version the running server reported, or undefined before health answered or without a server. */
+  currentVersion(): string | undefined {
+    return this.server ? this.version : undefined
+  }
+
+  /** Resolved binary path the running server was spawned from, or undefined without a server. */
+  currentBinaryPath(): string | undefined {
+    return this.server ? this.binaryPath : undefined
   }
 
   /**

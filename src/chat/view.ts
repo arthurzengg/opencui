@@ -86,6 +86,9 @@ export class ChatView implements vscode.WebviewViewProvider {
    */
   private serverSessions: SessionInfo[] = []
   private activeQuestions = new Map<string, QuestionRequest>()
+  private readonly activityEmitter = new vscode.EventEmitter<void>()
+  /** Fires when the view becomes visible and when a prompt is sent; drives the binary drift check (#615). */
+  readonly onDidUserActivity = this.activityEmitter.event
   /**
    * Last (text + variant) pair we surfaced as a toast plus its timestamp.
    * opencode can fire identical `tui.toast.show` events dozens of times
@@ -347,7 +350,10 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     view.webview.onDidReceiveMessage((msg: Inbound) => this.onMessage(msg))
     view.onDidDispose(() => this.dispose())
-    view.onDidChangeVisibility(() => this.syncAttention())
+    view.onDidChangeVisibility(() => {
+      this.syncAttention()
+      if (view.visible) this.activityEmitter.fire()
+    })
 
     vscode.window.onDidChangeActiveTextEditor(() => {
       this.pushContext()
@@ -440,6 +446,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
+    this.activityEmitter.dispose()
     // Write any debounced tail before the view (and its context) goes away,
     // then stop accepting further debounced writes so a late timer can't fire
     // after teardown.
@@ -1166,6 +1173,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       }
       case "send":
+        this.activityEmitter.fire()
         await this.handleSend(msg.text, msg.mentions, msg.attachments, msg.conversationMentions)
         return
       case "runCommand":
