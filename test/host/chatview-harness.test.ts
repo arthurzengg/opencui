@@ -1308,6 +1308,37 @@ describe("ChatView harness: external session interop", () => {
       ),
     )
   })
+
+  it("asks for top-level sessions only, capped, and forwards the search query (#617)", async () => {
+    server.setSessions([
+      { id: "ses_a", title: "Alpha refactor", time: { updated: 30 } },
+      { id: "ses_kid", parentID: "ses_a", title: "Alpha subagent", time: { updated: 40 } },
+      { id: "ses_b", title: "Beta cleanup", time: { updated: 20 } },
+    ])
+    await harness.send({ type: "mounted" })
+    await until(() => server.sessionListQueries.length >= 1)
+    expect(server.sessionListQueries[0]).toMatchObject({ directory: "/ws", roots: "true", limit: "50" })
+    expect(server.sessionListQueries[0]).not.toHaveProperty("search")
+
+    await harness.send({ type: "refreshSessions", search: "beta" })
+    await until(() => server.sessionListQueries.length >= 2)
+    expect(server.sessionListQueries.at(-1)).toMatchObject({ roots: "true", limit: "50", search: "beta" })
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "conversations" && (m.external ?? []).map((s) => s.id).join() === "ses_b",
+      ),
+    )
+
+    // Clearing the query drops the parameter and restores the full page.
+    await harness.send({ type: "refreshSessions" })
+    await until(() => server.sessionListQueries.length >= 3)
+    expect(server.sessionListQueries.at(-1)).not.toHaveProperty("search")
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "conversations" && (m.external ?? []).map((s) => s.id).join() === "ses_a,ses_b",
+      ),
+    )
+  })
 })
 
 describe("ChatView harness: hidden-panel attention", () => {

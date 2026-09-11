@@ -85,6 +85,8 @@ export type MockOpencodeServer = {
   setAgents: (agents: Array<Record<string, unknown>>) => void
   /** Configure what GET /session (session.list) returns (default: none). */
   setSessions: (sessions: Array<Record<string, unknown>>) => void
+  /** Query string of every GET /session call, in call order. */
+  sessionListQueries: Array<Record<string, string>>
   /** Configure what GET /session/{id}/message (session.messages) returns for one session. */
   setSessionMessages: (sessionID: string, items: Array<Record<string, unknown>>) => void
   /**
@@ -143,6 +145,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   let providers: Array<Record<string, unknown>> = []
   let providerFetches = 0
   let sessions: Array<Record<string, unknown>> = []
+  const sessionListQueries: Array<Record<string, string>> = []
   const sessionMessages = new Map<string, Array<Record<string, unknown>>>()
   let agents: Array<Record<string, unknown>> = [
     {
@@ -235,9 +238,20 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       return
     }
 
-    // Session list (session.list)
+    // Session list (session.list). Honours the query the way the real
+    // server does: roots drops child sessions, search is a title substring
+    // match, limit caps the page.
     if (path === "/session" && req.method === "GET") {
-      reply(res, 200, sessions)
+      const query = Object.fromEntries(url.searchParams)
+      sessionListQueries.push(query)
+      let rows = sessions
+      if (query.roots === "true") rows = rows.filter((s) => !s.parentID)
+      if (query.search) {
+        const needle = query.search.toLowerCase()
+        rows = rows.filter((s) => String(s.title ?? "").toLowerCase().includes(needle))
+      }
+      if (query.limit) rows = rows.slice(0, Number(query.limit))
+      reply(res, 200, rows)
       return
     }
 
@@ -520,6 +534,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     prompts,
     reverts,
     permissionReplies,
+    sessionListQueries,
     questionReplies,
     legacyPermissionResponds,
     setRevertStatus(status) {
