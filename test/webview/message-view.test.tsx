@@ -336,6 +336,35 @@ describe("MessageView (assistant role)", () => {
     expect(screen.getByText("thinking")).toBeInTheDocument()
   })
 
+  it("the thinking placeholder breathes alone and goes quiet beside the Agents pill (#621)", () => {
+    const pending = assistantMessage("", { pending: true })
+    const { container, rerender } = render(<MessageView message={pending} processOpen={false} processOnly={false} />)
+    const line = () => container.querySelector(".thinking-dots") as HTMLElement
+    expect(line().className).toContain("live-breathe")
+    expect(line().style.animationDelay).toMatch(/^-?\d+ms$/)
+
+    const status = {
+      running: 1,
+      waiting: 0,
+      error: 0,
+      total: 1,
+      tasks: [
+        {
+          id: "main:c:s",
+          kind: "main" as const,
+          title: "Explain this file",
+          status: "running" as const,
+          startedAt: Date.now() - 1000,
+          updatedAt: Date.now(),
+        },
+      ],
+    }
+    rerender(<MessageView message={pending} processOpen={false} processOnly={false} agentActivity={status} />)
+    expect(container.querySelector(".agent-activity-dot")?.className).toContain("live-breathe")
+    expect(line().className).not.toContain("live-breathe")
+    expect(line().style.animationDelay).toBe("")
+  })
+
   it("renders error text when message has error", () => {
     const msg = { ...assistantMessage(""), error: "AI error happened" } as Message
     render(<MessageView message={msg} processOpen={false} processOnly={false} />)

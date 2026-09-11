@@ -16,6 +16,16 @@ describe("StatusIndicator", () => {
     expect(container.querySelector(`.status-indicator-dot.${expectedClass}`)).not.toBeNull()
   })
 
+  it("breathes on the shared clock only while pending (#621)", () => {
+    const { container, rerender } = render(<StatusIndicator kind="pending" />)
+    const dot = container.querySelector(".status-indicator-dot") as HTMLElement
+    expect(dot.className).toContain("live-breathe")
+    expect(dot.style.animationDelay).toMatch(/^-?\d+ms$/)
+    rerender(<StatusIndicator kind="ok" />)
+    expect(dot.className).not.toContain("live-breathe")
+    expect(dot.style.animationDelay).toBe("")
+  })
+
   it("renders the dot alone, with no status text", () => {
     const { container } = render(<StatusIndicator kind="warn" title="connecting…" />)
     expect(container.querySelector(".status-indicator-dot")).not.toBeNull()

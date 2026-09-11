@@ -429,6 +429,20 @@ describe("AgentActivity", () => {
     expect(pill.className).toContain("is-running")
   })
 
+  it("breathes only the dot while running, on the shared clock (#621)", () => {
+    const { container, rerender } = render(<AgentActivity status={baseStatus} />)
+    const dot = container.querySelector(".agent-activity-dot") as HTMLElement
+    expect(dot.className).toContain("live-breathe")
+    expect(dot.style.animationDelay).toMatch(/^-?\d+ms$/)
+    const pill = screen.getByRole("button", { name: /open agents/i }) as HTMLElement
+    expect(pill.className).not.toContain("live-breathe")
+    expect(pill.style.animationDelay).toBe("")
+
+    rerender(<AgentActivity status={{ ...baseStatus, running: 0, waiting: 1 }} />)
+    expect(dot.className).not.toContain("live-breathe")
+    expect(dot.style.animationDelay).toBe("")
+  })
+
   it("uses static is-error class when only error tasks remain", () => {
     render(
       <AgentActivity

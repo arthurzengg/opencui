@@ -28,6 +28,8 @@
   --radius:      6px;
   --radius-lg:   10px;
   --radius-pill: 50%;
+  /* One clock for every running-state indicator (#621); see useLivePhase. */
+  --live-breathe-period: 1.6s;
 
   /* === Z-index tiers ===
      Mirrored in `design-tokens.ts` as `Z.*` for JSX consumers. */
@@ -186,14 +188,22 @@ button:focus-visible {
 .status-indicator-dot.err     { background: var(--color-status-err); }
 .status-indicator-dot.pending {
   background: var(--color-status-pending);
-  animation: dot-pulse 1.4s ease-in-out infinite;
 }
-@keyframes dot-pulse {
+/* ===== Shared breathing clock (#621) =====
+   Every running-state indicator uses this one period and keyframe, and
+   joins the cycle at the current phase through an inline animation-delay
+   from useLivePhase, so dots that appear at different times breathe in
+   step. Only dots and the "thinking" placeholder carry the class; labels
+   and colours stay still. */
+.live-breathe {
+  animation: live-breathe var(--live-breathe-period) ease-in-out infinite;
+}
+@keyframes live-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .status-indicator-dot.pending { animation: none; }
+  .live-breathe { animation: none; }
 }
 /* ===== AgentActivity =====
    Message-flow activity surface for live main-agent + subagent work. It
@@ -261,7 +271,6 @@ button:focus-visible {
 }
 .agents-pill.is-running {
   color: var(--color-agent-running);
-  animation: agents-breathe 1.6s ease-in-out infinite;
 }
 .agents-pill.is-running .agent-activity-dot {
   background: var(--color-agent-running);
@@ -278,14 +287,6 @@ button:focus-visible {
 .agents-pill.is-waiting .agent-activity-dot {
   background: var(--color-warn);
 }
-@keyframes agents-breathe {
-  0%, 100% { opacity: 1; color: var(--color-agent-running); }
-  50%      { opacity: 0.55; color: #39d353; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .agents-pill.is-running { animation: none; }
-}
-
 .agents-popover {
   position: absolute;
   /* Same surface vocabulary as the header popovers, but anchored to the
@@ -1472,6 +1473,9 @@ button:focus-visible {
 }
 
 
+/* Quiet by default: while the Agents pill is in the same bubble its dot is
+   the one thing breathing. The placeholder only takes .live-breathe when it
+   is alone (#621). */
 .thinking-dots {
   display: inline-block;
   /* Reserve one line so the bubble doesn't nudge when the dots are replaced by
@@ -1480,17 +1484,7 @@ button:focus-visible {
   padding: 6px 2px;
   color: var(--vscode-foreground);
   font-style: italic;
-  animation: thinking-breathe 1.8s ease-in-out infinite;
-}
-@keyframes thinking-breathe {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .thinking-dots {
-    animation: none;
-    opacity: 0.7;
-  }
+  opacity: 0.7;
 }
 /* Provider retry opencode is waiting on, shown where the thinking dots were (#611). */
 .retry-status {
@@ -3346,7 +3340,7 @@ button:focus-visible {
    readable against both dark and light theme backgrounds without fading
    the button's own icon. Pauses on hover and when disabled. */
 .btn.danger.icon:not(:disabled):not(:hover) {
-  animation: send-icon-pulse 1.6s ease-in-out infinite;
+  animation: send-icon-pulse var(--live-breathe-period) ease-in-out infinite;
 }
 @keyframes send-icon-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(204, 204, 204, 0.35); }
