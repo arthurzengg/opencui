@@ -1851,3 +1851,15 @@ describe("PromptBox / queueing while busy", () => {
     expect(attach().disabled).toBe(true)
   })
 })
+
+describe("PromptBox Stop ring clock (#621)", () => {
+  it("puts the Stop button on the shared breathing clock while busy", () => {
+    const { container, rerender } = render(<PromptBox busy={true} onSend={vi.fn()} onAbort={vi.fn()} />)
+    const stop = container.querySelector('button[aria-label="Stop"]') as HTMLElement
+    expect(stop.style.animationDelay).toMatch(/^-?\d+ms$/)
+    // Stopping… is disabled and does not animate, so it carries no phase.
+    rerender(<PromptBox busy={true} aborting={true} onSend={vi.fn()} onAbort={vi.fn()} />)
+    const stopping = container.querySelector('button[aria-label="Stopping…"]') as HTMLElement
+    expect(stopping.style.animationDelay).toBe("")
+  })
+})

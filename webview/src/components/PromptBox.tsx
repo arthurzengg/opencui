@@ -11,6 +11,7 @@ import {
 import { parseCommandInput } from "../command-tokens"
 import { clipboardHasImage, readPastedImages } from "../paste-attachments"
 import { usePromptText } from "../hooks/usePromptText"
+import { useLivePhase } from "../hooks/useLivePhase"
 import { useImageAttachments } from "../hooks/useImageAttachments"
 import { useMentionPicker } from "../hooks/useMentionPicker"
 import { useCommandPicker } from "../hooks/useCommandPicker"
@@ -136,6 +137,8 @@ function buildInitialConversations(initial: Props["initial"]): Map<string, strin
 
 export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, history, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject, onOpenLink }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
+  // The Stop ring joins the shared breathing clock (#621).
+  const stopPhase = useLivePhase(busy && !aborting)
   // The Send button renders a disabled "Stopping…" while aborting, but Enter
   // routes through submit() — both must honor the same block, or a prompt
   // races the in-flight abort and gets its early events dropped. With onQueue
@@ -1077,6 +1080,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
               onClick={onAbort}
               aria-label="Stop"
               title="Stop (Esc)"
+              style={stopPhase}
             >
               <StopIcon />
             </button>

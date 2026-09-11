@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { RetryStatus } from "./RetryStatus"
+import { useLivePhase } from "../hooks/useLivePhase"
 import type { Block, Message } from "../hooks/useChatState"
 import type { AgentsStatusInfo, Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit, SessionRetryInfo } from "../protocol"
 import { findTokenRanges, makeAttachmentLabel } from "../mention-tokens"
@@ -132,7 +133,7 @@ function MessageViewComponent({
       <AgentActivity status={agentActivity} />
       {retry && message.pending && <RetryStatus retry={retry} onOpenLink={onOpenLink} />}
       {!retry && message.pending && message.blocks.length === 0 && (
-        <div className="thinking-dots" role="status" aria-label="Thinking">thinking</div>
+        <ThinkingLine quiet={(agentActivity?.total ?? 0) > 0} />
       )}
       {(() => {
         // Stopped state overrides error: a message can carry both
@@ -555,6 +556,20 @@ function ProcessPanel({
  * ProcessPanel there is no openKey/defaultOpen churn: it starts collapsed
  * and stays wherever the user toggled it.
  */
+/**
+ * The pre-token placeholder. Quiet beside the Agents pill, whose dot is
+ * already breathing for this turn; on its own it breathes on the shared
+ * clock (#621).
+ */
+function ThinkingLine({ quiet }: { quiet: boolean }) {
+  const phase = useLivePhase(!quiet)
+  return (
+    <div className={`thinking-dots${quiet ? "" : " live-breathe"}`} style={phase} role="status" aria-label="Thinking">
+      thinking
+    </div>
+  )
+}
+
 function CompactionMarker({ message, onReviewFile }: { message: Message; onReviewFile?: (path: string) => void }) {
   const [open, setOpen] = useState(false)
   // Same lazy-mount latch as ProcessPanel: the summary body only renders

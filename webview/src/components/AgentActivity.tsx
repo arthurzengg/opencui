@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react"
 import type { AgentsStatusInfo, AgentsTaskInfo } from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
+import { useLivePhase } from "../hooks/useLivePhase"
 import { formatAgent, formatModel } from "./StatusBar"
 
 export function AgentActivity({ status }: { status?: AgentsStatusInfo }) {
   const { toggle, ref, open } = useDismissableMenu()
+  const running = (status?.running ?? 0) > 0
+  // Only the dot breathes; the label and colour stay still (#621).
+  const dotPhase = useLivePhase(running)
 
   if (!status || status.total === 0) return null
 
-  const running = status.running > 0
   const errorOnly = !running && status.error > 0
   const waitingOnly = !running && !errorOnly && status.waiting > 0
   const className =
@@ -35,7 +38,7 @@ export function AgentActivity({ status }: { status?: AgentsStatusInfo }) {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <span className="agent-activity-dot" aria-hidden="true" />
+        <span className={`agent-activity-dot${running ? " live-breathe" : ""}`} style={dotPhase} aria-hidden="true" />
         <span className="agent-activity-name">Agents</span>
         <span className="agent-activity-summary">{activitySummary(status)}</span>
       </button>
