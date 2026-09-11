@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
-import type { ConversationSummary, ExternalSessionSummary, ModelCatalogInfo, Selection } from "../protocol"
+import type {
+  ConversationSummary,
+  ExternalSessionSummary,
+  ModelCatalogInfo,
+  PermissionRuleInfo,
+  Selection,
+} from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
 import { ModelPicker } from "./ModelPicker"
 
-export type HeaderPopoverID = "selector" | "history"
+export type HeaderPopoverID = "selector" | "history" | "permissions"
 type HeaderPopoverSetter = Dispatch<SetStateAction<HeaderPopoverID | null>>
 
 const EXTERNAL_SEARCH_DEBOUNCE_MS = 250
@@ -17,6 +23,7 @@ type Props = {
   modelCatalog?: ModelCatalogInfo
   conversations: ConversationSummary[]
   externalSessions?: ExternalSessionSummary[]
+  permissionRules?: PermissionRuleInfo[]
   activeConversationID?: string
   activePopover?: HeaderPopoverID | null
   onActivePopoverChange?: HeaderPopoverSetter
@@ -30,6 +37,8 @@ type Props = {
   onRefreshSessions?: (search?: string) => void
   onRenameConversation: (id: string, title: string) => void
   onDeleteConversation: (id: string) => void
+  onRemovePermissionRule?: (id: string) => void
+  onClearPermissionRules?: () => void
 }
 
 export function StatusBar({
@@ -40,6 +49,7 @@ export function StatusBar({
   modelCatalog,
   conversations,
   externalSessions,
+  permissionRules,
   activeConversationID,
   activePopover,
   onActivePopoverChange,
@@ -53,6 +63,8 @@ export function StatusBar({
   onRefreshSessions,
   onRenameConversation,
   onDeleteConversation,
+  onRemovePermissionRule,
+  onClearPermissionRules,
 }: Props) {
   const active = conversations.find((c) => c.id === activeConversationID)
   const [localActivePopover, setLocalActivePopover] = useState<HeaderPopoverID | null>(null)
@@ -90,6 +102,15 @@ export function StatusBar({
         onSetProviderCollapsed={onSetProviderCollapsed}
         onRefreshModels={onRefreshModels}
       />
+      {permissionRules && permissionRules.length > 0 && onRemovePermissionRule && (
+        <PermissionRulesMenu
+          rules={permissionRules}
+          open={currentPopover === "permissions"}
+          onOpenChange={(open) => setPopoverOpen("permissions", open)}
+          onRemove={onRemovePermissionRule}
+          onClear={onClearPermissionRules}
+        />
+      )}
       <button
         type="button"
         className="new-chat-trigger"
@@ -342,6 +363,73 @@ function ChatHistoryMenu({
                 ))}
               </>
             )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The panel's saved "Allow always" rules (#619). Rendered only while rules
+ * exist, so the bar stays as it was for anyone who never answered "always".
+ */
+function PermissionRulesMenu({
+  rules,
+  open,
+  onOpenChange,
+  onRemove,
+  onClear,
+}: {
+  rules: PermissionRuleInfo[]
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onRemove: (id: string) => void
+  onClear?: () => void
+}) {
+  const { toggle, ref } = useDismissableMenu({ open, onOpenChange })
+  const label = `Saved permission rules (${rules.length})`
+  return (
+    <div className="history-menu permission-rules-menu" ref={ref}>
+      <button
+        type="button"
+        className={`history-trigger ${open ? "is-open" : ""}`}
+        onClick={toggle}
+        aria-label={label}
+        aria-expanded={open}
+        title={label}
+      >
+        <span className="codicon codicon-shield" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="history-popover permission-rules-popover" role="dialog" aria-label="Saved permission rules">
+          <div className="history-popover-header">
+            <div className="history-popover-title">Saved permission rules</div>
+            {onClear && (
+              <button type="button" className="permission-rules-clear" onClick={onClear}>
+                Remove all
+              </button>
+            )}
+          </div>
+          <div className="history-list">
+            {rules.map((rule) => (
+              <div className="history-item permission-rule" key={rule.id}>
+                <div className="permission-rule-label" title={`${rule.permission}: ${rule.pattern}`}>
+                  <span className="permission-rule-permission">{rule.permission}</span>
+                  <code className="permission-rule-pattern">{rule.pattern}</code>
+                </div>
+                <span className="history-date">{formatUpdated(rule.createdAt)}</span>
+                <button
+                  type="button"
+                  className="history-action danger"
+                  onClick={() => onRemove(rule.id)}
+                  title="Remove this rule"
+                  aria-label={`Remove rule ${rule.permission} ${rule.pattern}`}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}

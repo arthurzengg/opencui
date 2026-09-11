@@ -151,6 +151,19 @@ export type ExternalSessionSummary = {
 }
 
 /**
+ * An "Allow always" answer the panel keeps for itself (#619). opencode's
+ * prompt path stores its own always-approvals in memory with no route to
+ * list or remove them, so the host answers "once" to the server and applies
+ * these rules to later asks instead.
+ */
+export type PermissionRuleInfo = {
+  id: string
+  permission: string
+  pattern: string
+  createdAt: number
+}
+
+/**
  * A past-conversation @-mention: the chip label exactly as it appears in the
  * message text, bound to the conversation it references. Carried as a pair
  * end to end so the edit flow restores label→id bindings by lookup —
@@ -516,13 +529,16 @@ export type Outbound =
    * (continuation took over) or `sessionIdle` (defer timed out).
    */
   | { type: "continuationPending"; pending: boolean }
-  | { type: "permission"; id: string; title: string; pattern?: string | string[] }
+  /** `always` is what an "Allow always" answer would save as rules (#619). */
+  | { type: "permission"; id: string; title: string; pattern?: string | string[]; always?: string[] }
   /**
    * A permission was answered. Also fires for our own reply (opencode echoes
    * `permission.replied` back), which the webview has already acted on — the
    * point of the event is the answer that came from somewhere else.
    */
   | { type: "permissionResolved"; id: string }
+  /** The full saved-rule list; sent on mount and after every change (#619). */
+  | { type: "permissionRules"; rules: PermissionRuleInfo[] }
   | { type: "question"; id: string; questions: QuestionInfo[] }
   | { type: "questionResolved"; id: string }
   | { type: "messageRemoved"; id: string }
@@ -575,6 +591,8 @@ export type Inbound =
   | { type: "listDir"; requestID: number; path: string }
   | { type: "attachFile"; requestID: number }
   | { type: "permissionReply"; id: string; response: "once" | "always" | "reject" }
+  | { type: "removePermissionRule"; id: string }
+  | { type: "clearPermissionRules" }
   | { type: "questionReply"; id: string; answers: string[][] }
   | { type: "questionReject"; id: string }
   | { type: "startIndex" }

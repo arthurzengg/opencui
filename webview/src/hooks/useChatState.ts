@@ -11,6 +11,7 @@ import type {
   ConversationMention,
   ConversationSummary,
   ExternalSessionSummary,
+  PermissionRuleInfo,
   DirEntry,
   EditorContextRef,
   FileSearchHit,
@@ -90,7 +91,9 @@ export type ChatState = {
    * same reason as `idleNonce`.
    */
   reviewRevision: number
-  pendingPermission?: { id: string; title: string; pattern?: string | string[] }
+  pendingPermission?: { id: string; title: string; pattern?: string | string[]; always?: string[] }
+  /** Workspace-level, not per conversation: survives `reset` and `clear` (#619). */
+  permissionRules: PermissionRuleInfo[]
   pendingQuestion?: { id: string; questions: QuestionInfo[] }
   indexStatus?: IndexStatusInfo
   agentsStatus?: AgentsStatusInfo
@@ -128,6 +131,7 @@ const initial: ChatState = {
   selection: {},
   conversations: [],
   externalSessions: [],
+  permissionRules: [],
   commands: [],
   messages: [],
   reviewHunks: {},
@@ -203,7 +207,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "reset":
       // idleNonce is monotonic for the webview's lifetime — resetting it to 0
       // would desync the flush hook's last-seen ref.
-      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce, reviewRevision: state.reviewRevision + 1 }
+      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, permissionRules: state.permissionRules, idleNonce: state.idleNonce, reviewRevision: state.reviewRevision + 1 }
     case "ready":
       return { ...state, connected: action.connected, selection: action.selection }
     case "connected":
@@ -455,7 +459,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
       if (state.aborting) return state
       return {
         ...state,
-        pendingPermission: { id: action.id, title: action.title, pattern: action.pattern },
+        pendingPermission: { id: action.id, title: action.title, pattern: action.pattern, always: action.always },
       }
     case "permissionResolved":
     case "clearPermission":
@@ -465,6 +469,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return state.pendingPermission?.id === action.id
         ? { ...state, pendingPermission: undefined }
         : state
+    case "permissionRules":
+      return { ...state, permissionRules: action.rules }
     case "question":
       if (state.aborting) return state
       return {
@@ -496,7 +502,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "unqueueMessage":
       return { ...state, queued: state.queued.filter((q) => q.id !== action.id) }
     case "clear":
-      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, idleNonce: state.idleNonce, reviewRevision: state.reviewRevision + 1 }
+      return { ...initial, selection: state.selection, modelCatalog: state.modelCatalog, context: state.context, connected: state.connected, commands: state.commands, permissionRules: state.permissionRules, idleNonce: state.idleNonce, reviewRevision: state.reviewRevision + 1 }
     default:
       return state
   }
@@ -653,6 +659,12 @@ export function useChatState() {
     replyPermission(id: string, response: "once" | "always" | "reject") {
       vscode.post({ type: "permissionReply", id, response })
       dispatch({ type: "clearPermission", id })
+    },
+    removePermissionRule(id: string) {
+      vscode.post({ type: "removePermissionRule", id })
+    },
+    clearPermissionRules() {
+      vscode.post({ type: "clearPermissionRules" })
     },
     replyQuestion(id: string, answers: string[][]) {
       vscode.post({ type: "questionReply", id, answers })

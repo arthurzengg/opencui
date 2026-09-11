@@ -23,6 +23,18 @@ describe("PermissionDialog", () => {
     expect(container.querySelector(".permission-pattern")).toBeNull()
   })
 
+  it("names the patterns an Allow always answer would save (#619)", () => {
+    render(
+      <PermissionDialog id="p1" title="Run a command" pattern={["git status"]} always={["git *"]} onReply={() => {}} />,
+    )
+    expect(screen.getByRole("button", { name: "Allow always" })).toHaveAttribute("title", "Saves a rule for: git *")
+  })
+
+  it("has no tooltip on Allow always when the request names nothing to save", () => {
+    render(<PermissionDialog id="p1" title="Run a command" onReply={() => {}} />)
+    expect(screen.getByRole("button", { name: "Allow always" })).not.toHaveAttribute("title")
+  })
+
   it.each([
     ["Reject", "reject"],
     ["Allow once", "once"],
