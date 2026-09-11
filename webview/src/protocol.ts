@@ -348,6 +348,19 @@ export type AgentsTaskInfo = {
 }
 
 /**
+ * opencode's `session.status` retry variant: the provider call failed with a
+ * retryable error and the server is waiting to try again. `next` is the
+ * epoch-ms time of the next attempt; `action` is an optional call to action
+ * the server attaches to account limits (#611).
+ */
+export type SessionRetryInfo = {
+  attempt: number
+  message: string
+  next: number
+  action?: { title: string; message: string; label: string; link?: string }
+}
+
+/**
  * Snapshot of live main-agent + subagent activity for the currently-active
  * conversation, driven by the host-side AgentTaskStore. The webview header
  * renders an `Agents` pill that is hidden when `total === 0` and breathes
@@ -491,6 +504,8 @@ export type Outbound =
   | { type: "assistantDone"; id: string; usage?: UsageDelta }
   | { type: "aborted" }
   | { type: "sessionBusy" }
+  /** opencode is waiting to retry a failed provider call; no `retry` means it moved on (#611). */
+  | { type: "sessionRetry"; retry?: SessionRetryInfo }
   | { type: "sessionIdle" }
   /**
    * Sent when the host is deferring a `sessionIdle` because a continuation

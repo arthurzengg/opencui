@@ -1492,6 +1492,23 @@ button:focus-visible {
     opacity: 0.7;
   }
 }
+/* Provider retry opencode is waiting on, shown where the thinking dots were (#611). */
+.retry-status {
+  min-height: 1.5em;
+  padding: 6px 2px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.5;
+}
+.retry-status-next {
+  opacity: 0.8;
+}
+.retry-status-action {
+  margin-top: 2px;
+  color: var(--vscode-foreground);
+}
+.retry-status-action a {
+  color: var(--vscode-textLink-foreground);
+}
 
 /* ===== Process block ===== */
 .process {
