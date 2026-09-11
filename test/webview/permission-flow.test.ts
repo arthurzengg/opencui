@@ -23,6 +23,27 @@ describe("reducer — permission flow", () => {
     expect(closed.pendingPermission).toBeUndefined()
   })
 
+  it("permission carries the always patterns for the dialog tooltip (#619)", () => {
+    const state = reducer(initialChatState, {
+      type: "permission",
+      id: "p",
+      title: "Run",
+      pattern: ["git status"],
+      always: ["git *"],
+    })
+    expect(state.pendingPermission).toEqual({ id: "p", title: "Run", pattern: ["git status"], always: ["git *"] })
+  })
+
+  it("permissionRules replaces the list and survives reset and clear (#619)", () => {
+    const rules = [{ id: "r1", permission: "bash", pattern: "git *", createdAt: 1 }]
+    const withRules = reducer(initialChatState, { type: "permissionRules", rules })
+    expect(withRules.permissionRules).toEqual(rules)
+    // Rules are workspace-level, not per conversation.
+    expect(reducer(withRules, { type: "reset" }).permissionRules).toEqual(rules)
+    expect(reducer(withRules, { type: "clear" }).permissionRules).toEqual(rules)
+    expect(reducer(withRules, { type: "permissionRules", rules: [] }).permissionRules).toEqual([])
+  })
+
   it("ignores a permission raised while aborting", () => {
     // Seed a running turn: `aborted` at idle is a no-op by design (#579).
     const aborting = reducer({ ...initialChatState, busy: true }, { type: "aborted" })

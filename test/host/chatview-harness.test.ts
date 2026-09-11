@@ -10,6 +10,8 @@ import {
   type SavedConversation,
 } from "../../src/chat/conversation-store"
 import { getOutputChannel } from "../../src/output"
+import { PERMISSION_RULES_KEY } from "../../src/chat/permission-rules"
+import type { PermissionRuleInfo } from "../../src/protocol"
 import { AgentTaskStore } from "../../src/agents/task-store"
 import type { Backend, ServerManager } from "../../src/server"
 import type { Preferences } from "../../src/preferences"
@@ -1457,9 +1459,11 @@ describe("ChatView harness: replies go through the v2 routes (#609)", () => {
     server.push({ type: "permission.asked", id: "perm_v2", sessionID: SESSION_ID, title: "Edit file" })
     await until(() => harness.posted.some((m) => m.type === "permission" && m.id === "perm_v2"))
 
-    await harness.send({ type: "permissionReply", id: "perm_v2", response: "always" })
+    // "always" is kept by the panel and reaches the server as "once" (#619);
+    // the other answers are forwarded as given.
+    await harness.send({ type: "permissionReply", id: "perm_v2", response: "reject" })
     await until(() => server.permissionReplies.length === 1)
-    expect(server.permissionReplies[0]).toEqual({ requestID: "perm_v2", body: { reply: "always" }, directory: "/ws" })
+    expect(server.permissionReplies[0]).toEqual({ requestID: "perm_v2", body: { reply: "reject" }, directory: "/ws" })
     // The per-session route is deprecated on opencode 1.18.30.
     expect(server.legacyPermissionResponds).toEqual([])
   })
@@ -1491,6 +1495,110 @@ describe("ChatView harness: replies go through the v2 routes (#609)", () => {
     await harness.send({ type: "questionReject", id: "q_reject" })
     await until(() => server.questionReplies.length === 2)
     expect(server.questionReplies[1]).toMatchObject({ requestID: "q_reject", action: "reject", directory: "/ws" })
+  })
+})
+
+describe("ChatView harness: saved permission rules (#619)", () => {
+  const ask = (id: string, permission: string, patterns: string[], always: string[]) =>
+    server.push({ type: "permission.asked", id, sessionID: SESSION_ID, permission, patterns, always, metadata: {} })
+  const asked = (id: string) => harness.posted.some((m) => m.type === "permission" && m.id === id)
+  const rulesPosts = () =>
+    harness.posted.filter((m): m is Extract<Outbound, { type: "permissionRules" }> => m.type === "permissionRules")
+  const savedRules = () => (harness.workspaceState.get(PERMISSION_RULES_KEY) ?? []) as PermissionRuleInfo[]
+
+  it("Allow always keeps the rule in the panel, tells the server once, and answers the next covered ask", async () => {
+    await harness.send({ type: "mounted" })
+    // The mount handshake reports the (empty) rule list.
+    expect(rulesPosts().at(-1)).toEqual({ type: "permissionRules", rules: [] })
+    await harness.send({ type: "send", text: "run git" })
+
+    ask("perm_1", "bash", ["git status"], ["git *"])
+    await until(() => asked("perm_1"))
+    expect(harness.posted.find((m) => m.type === "permission" && m.id === "perm_1")).toMatchObject({
+      pattern: ["git status"],
+      always: ["git *"],
+    })
+
+    await harness.send({ type: "permissionReply", id: "perm_1", response: "always" })
+    await until(() => server.permissionReplies.length === 1)
+    expect(server.permissionReplies[0]).toMatchObject({ requestID: "perm_1", body: { reply: "once" } })
+    expect(savedRules()).toMatchObject([{ permission: "bash", pattern: "git *" }])
+    expect(rulesPosts().at(-1)!.rules).toMatchObject([{ permission: "bash", pattern: "git *" }])
+
+    // The next ask the rule covers is answered without a dialog.
+    ask("perm_2", "bash", ["git log --oneline"], ["git *"])
+    await until(() => server.permissionReplies.length === 2)
+    expect(server.permissionReplies[1]).toMatchObject({ requestID: "perm_2", body: { reply: "once" } })
+    expect(asked("perm_2")).toBe(false)
+
+    // Other permissions and uncovered patterns still ask.
+    ask("perm_3", "edit", ["*"], ["*"])
+    await until(() => asked("perm_3"))
+    ask("perm_4", "bash", ["rm -rf dist"], ["rm *"])
+    await until(() => asked("perm_4"))
+    expect(server.permissionReplies).toHaveLength(2)
+  })
+
+  it("removing a rule surfaces the ask again", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "run git" })
+    ask("perm_1", "bash", ["git status"], ["git *"])
+    await until(() => asked("perm_1"))
+    await harness.send({ type: "permissionReply", id: "perm_1", response: "always" })
+    await until(() => savedRules().length === 1)
+
+    await harness.send({ type: "removePermissionRule", id: savedRules()[0]!.id })
+    expect(savedRules()).toEqual([])
+    expect(rulesPosts().at(-1)!.rules).toEqual([])
+
+    ask("perm_2", "bash", ["git status"], ["git *"])
+    await until(() => asked("perm_2"))
+  })
+
+  it("a new rule answers the other asks already waiting that it covers", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "run git" })
+    ask("perm_a", "bash", ["git status"], ["git *"])
+    ask("perm_b", "bash", ["git diff"], ["git *"])
+    ask("perm_c", "edit", ["*"], ["*"])
+    await until(() => asked("perm_a") && asked("perm_b") && asked("perm_c"))
+
+    await harness.send({ type: "permissionReply", id: "perm_a", response: "always" })
+    await until(() => server.permissionReplies.length === 2)
+    expect(server.permissionReplies.map((r) => r.requestID).sort()).toEqual(["perm_a", "perm_b"])
+    expect(server.permissionReplies.every((r) => (r.body as { reply: string }).reply === "once")).toBe(true)
+    expect(harness.posted.some((m) => m.type === "permissionResolved" && m.id === "perm_b")).toBe(true)
+    // The edit ask is still waiting for the user.
+    expect(harness.posted.some((m) => m.type === "permissionResolved" && m.id === "perm_c")).toBe(false)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(server.permissionReplies).toHaveLength(2)
+  })
+
+  it("an ask without always saves its literal pattern, and clearPermissionRules empties the list", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "legacy" })
+    // opencode <=1.17 shape: a `pattern` string and no `always`.
+    server.push({
+      type: "permission.updated",
+      id: "perm_old",
+      sessionID: SESSION_ID,
+      permission: "external_directory",
+      pattern: "/tmp/*",
+      title: "Access /tmp",
+    })
+    await until(() => asked("perm_old"))
+    expect(harness.posted.find((m) => m.type === "permission" && m.id === "perm_old")).toMatchObject({
+      pattern: "/tmp/*",
+      always: ["/tmp/*"],
+    })
+    await harness.send({ type: "permissionReply", id: "perm_old", response: "always" })
+    await until(() => savedRules().length === 1)
+    expect(savedRules()[0]).toMatchObject({ permission: "external_directory", pattern: "/tmp/*" })
+    expect(server.permissionReplies[0]).toMatchObject({ requestID: "perm_old", body: { reply: "once" } })
+
+    await harness.send({ type: "clearPermissionRules" })
+    expect(savedRules()).toEqual([])
+    expect(rulesPosts().at(-1)!.rules).toEqual([])
   })
 })
 

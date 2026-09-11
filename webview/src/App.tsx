@@ -33,6 +33,8 @@ export default function App() {
     setProviderCollapsed,
     refreshModels,
     replyPermission,
+    removePermissionRule,
+    clearPermissionRules,
     replyQuestion,
     rejectQuestion,
     openReviewChange,
@@ -251,6 +253,7 @@ export default function App() {
         modelCatalog={state.modelCatalog}
         conversations={state.conversations}
         externalSessions={state.externalSessions}
+        permissionRules={state.permissionRules}
         activeConversationID={state.conversationID}
         activePopover={activeHeaderPopover}
         onActivePopoverChange={setActiveHeaderPopover}
@@ -264,6 +267,8 @@ export default function App() {
         onRefreshSessions={refreshSessions}
         onRenameConversation={renameConversation}
         onDeleteConversation={deleteConversation}
+        onRemovePermissionRule={removePermissionRule}
+        onClearPermissionRules={clearPermissionRules}
       />
       {state.indexStatus && state.indexStatus.state !== "disabled" && (
         <div className="index-status-wrap">
@@ -372,6 +377,7 @@ export default function App() {
             id={state.pendingPermission.id}
             title={state.pendingPermission.title}
             pattern={state.pendingPermission.pattern}
+            always={state.pendingPermission.always}
             onReply={replyPermission}
           />
         )}

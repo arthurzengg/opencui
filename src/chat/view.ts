@@ -40,6 +40,7 @@ import { BuiltinRunners } from "./builtin-runners"
 import { readContextUsage } from "./context-usage"
 import { adoptStorageIDs, migrateConversationsToWorkspace } from "./conversation-store"
 import { MAX_EXTERNAL_SESSIONS, externalSessionSummaries, importedMessages, type SessionInfo } from "./import-session"
+import { PermissionRuleStore } from "./permission-rules"
 import { ConversationManager } from "./conversation-manager"
 import { ContinuationState, isContinuationToast } from "./continuation-state"
 import { sweepAbortTree, drainAbortTree } from "./abort-tree"
@@ -72,6 +73,15 @@ import {
   reviewPathExists,
 } from "./fs-ops"
 
+/**
+ * What "Allow always" saves. Tools name the broader pattern in `always`
+ * (`git *` for `git status`); older servers send none, so the literal
+ * patterns are the fallback.
+ */
+function alwaysPatterns(perm: PermissionRequest): string[] {
+  return perm.always.length > 0 ? perm.always : perm.patterns
+}
+
 export class ChatView implements vscode.WebviewViewProvider {
   static viewType = "opencui.chat"
 
@@ -79,6 +89,8 @@ export class ChatView implements vscode.WebviewViewProvider {
   private sessionID?: string
   private subscription?: Subscription
   private activePermissions = new Map<string, PermissionRequest>()
+  private permissionRules: PermissionRuleStore
+  private permissionRulesUnsub?: vscode.Disposable
   /**
    * Raw top-level sessions from the last `session.list` fetch. Kept unfiltered
    * so binding a session locally (import, fork) removes it from the popover's
@@ -191,6 +203,10 @@ export class ChatView implements vscode.WebviewViewProvider {
     // logged (and the migration-done flag stays unset, retrying next launch).
     void migrateConversationsToWorkspace(context).catch((e) => log("migrateConversations failed", e))
     this.manager = new ConversationManager(context)
+    this.permissionRules = new PermissionRuleStore(context.workspaceState)
+    this.permissionRulesUnsub = this.permissionRules.onDidChange((rules) =>
+      this.post({ type: "permissionRules", rules }),
+    )
     this.attachmentStore = new AttachmentStore(context.storageUri ?? context.globalStorageUri)
     this.subagentDispatch = new SubagentDispatch({
       taskStore: this.taskStore,
@@ -447,6 +463,9 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
     this.activityEmitter.dispose()
+    this.permissionRulesUnsub?.dispose()
+    this.permissionRulesUnsub = undefined
+    this.permissionRules.dispose()
     // Write any debounced tail before the view (and its context) goes away,
     // then stop accepting further debounced writes so a late timer can't fire
     // after teardown.
@@ -554,6 +573,31 @@ export class ChatView implements vscode.WebviewViewProvider {
    * workspaceState, not on the server, so without this fetch the asymmetry
    * reads as lost data to anyone running the TUI alongside.
    */
+  /** Answers a permission through the v2 route. "always" never reaches the server; see #619. */
+  private async replyPermission(requestID: string, reply: "once" | "reject") {
+    try {
+      const backend = await this.servers.ensure()
+      const res = await backend.clientV2.permission.reply({ requestID, reply, directory: backend.directory })
+      if (res.error) log("permission reply failed", res.error)
+    } catch (e) {
+      log("permission reply failed", e)
+    }
+  }
+
+  /**
+   * After a rule is saved, answer the other asks still waiting that it now
+   * covers, mirroring the batch approval the server did for its own list.
+   */
+  private async answerCoveredPermissions() {
+    for (const [id, perm] of [...this.activePermissions]) {
+      if (!this.permissionRules.allows(perm.permission, perm.patterns)) continue
+      this.activePermissions.delete(id)
+      this.post({ type: "permissionResolved", id })
+      await this.replyPermission(id, "once")
+    }
+    this.syncAgentWaitState()
+  }
+
   private async refreshExternalSessions(backend?: Backend, search?: string) {
     try {
       const activeBackend = backend ?? (await this.servers.ensure())
@@ -1159,6 +1203,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         })
         await this.prepareStoredAttachments()
         this.sendConversationState()
+        this.post({ type: "permissionRules", rules: this.permissionRules.list() })
         this.pushContext()
         this.indexManager.onStatusChange((status) => {
           this.post({ type: "indexStatus", status })
@@ -1292,22 +1337,42 @@ export class ChatView implements vscode.WebviewViewProvider {
         await this.prefs.setProviderCollapsed(msg.providerID, msg.collapsed)
         return
       case "permissionReply": {
+        const perm = this.activePermissions.get(msg.id)
         this.activePermissions.delete(msg.id)
         this.syncAgentWaitState()
         if (!this.sessionID) return
-        try {
-          const backend = await this.servers.ensure()
-          const res = await backend.clientV2.permission.reply({
-            requestID: msg.id,
-            reply: msg.response,
-            directory: backend.directory,
-          })
-          if (res.error) log("permission reply failed", res.error)
-        } catch (e) {
-          log("permission reply failed", e)
+        if (msg.response !== "always") {
+          await this.replyPermission(msg.id, msg.response)
+          return
         }
+        // The server's own always-list is in-memory, instance-wide, and has
+        // no list or remove route (#619), so the panel keeps the rule and the
+        // server only ever sees "once".
+        if (perm?.permission) {
+          try {
+            await this.permissionRules.add(perm.permission, alwaysPatterns(perm))
+          } catch (e) {
+            log("permission rule save failed", e)
+          }
+        }
+        await this.replyPermission(msg.id, "once")
+        await this.answerCoveredPermissions()
         return
       }
+      case "removePermissionRule":
+        try {
+          await this.permissionRules.remove(msg.id)
+        } catch (e) {
+          log("permission rule remove failed", e)
+        }
+        return
+      case "clearPermissionRules":
+        try {
+          await this.permissionRules.clear()
+        } catch (e) {
+          log("permission rules clear failed", e)
+        }
+        return
       case "questionReply": {
         this.activeQuestions.delete(msg.id)
         this.syncAgentWaitState()
@@ -2103,6 +2168,11 @@ export class ChatView implements vscode.WebviewViewProvider {
         // nothing will ever answer it, so no `permission.replied` is coming to
         // clear the dialog either.
         if (this.aborting) return
+        // A saved "Allow always" rule answers before the dialog shows (#619).
+        if (this.permissionRules.allows(perm.permission, perm.patterns)) {
+          void this.replyPermission(perm.id, "once")
+          return
+        }
         this.activePermissions.set(perm.id, perm)
         this.syncAgentWaitState()
         this.maybeNotifyHidden(`OpenCode Panel is waiting for permission: ${perm.title}`)
@@ -2111,6 +2181,7 @@ export class ChatView implements vscode.WebviewViewProvider {
           id: perm.id,
           title: perm.title,
           pattern: perm.pattern,
+          always: alwaysPatterns(perm),
         })
       },
       onPermissionResolved: (id) => {

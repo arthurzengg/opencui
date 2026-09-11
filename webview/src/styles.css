@@ -2679,6 +2679,47 @@ button:focus-visible {
 .bottom-dock > .question {
   pointer-events: auto;
 }
+
+/* ===== Saved permission rules popover (#619) =====
+   Shares the history popover's frame and row grid; only the row content
+   and the header action are its own. */
+.permission-rules-clear {
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.permission-rules-clear:hover {
+  background: var(--vscode-inputValidation-errorBackground, rgba(248, 81, 73, 0.18));
+  color: var(--color-error);
+}
+.permission-rule-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 0;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.permission-rule-permission {
+  flex: 0 0 auto;
+  color: var(--vscode-descriptionForeground);
+}
+.permission-rule-pattern {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--vscode-editor-font-family);
+}
 .bottom-composer {
   padding: var(--composer-edge-gap) 12px var(--composer-edge-gap);
   background: transparent;

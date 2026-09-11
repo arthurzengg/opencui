@@ -17,7 +17,16 @@ export type PermissionRequest = {
   id: string
   title: string
   pattern?: string | string[]
-  type?: string
+  /** The permission key (`bash`, `edit`, `external_directory`, ...) and the patterns asked for. */
+  permission: string
+  patterns: string[]
+  /** What an "always" answer covers, chosen by the tool: `git *` for `git status`. */
+  always: string[]
+}
+
+function stringList(value: unknown): string[] {
+  if (typeof value === "string") return [value]
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
 }
 
 export type QuestionOption = {
@@ -861,11 +870,15 @@ export function subscribeSession(
 
   function onPermissionUpdated(p: any) {
     if (!p || p.sessionID !== sessionID) return
+    const permission = typeof p.permission === "string" ? p.permission : typeof p.type === "string" ? p.type : ""
+    const pattern = p.pattern ?? p.patterns
     handlers.onPermissionNeeded?.({
       id: p.id,
-      title: p.title ?? `Permission needed: ${p.permission ?? p.type ?? "unknown"}`,
-      pattern: p.pattern ?? p.patterns,
-      type: p.permission ?? p.type,
+      title: p.title ?? `Permission needed: ${permission || "unknown"}`,
+      pattern,
+      permission,
+      patterns: stringList(pattern),
+      always: stringList(p.always),
     })
   }
 
