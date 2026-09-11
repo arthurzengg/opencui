@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-09-11
+
+### Added
+- A provider retry now shows where the reply will appear. When opencode reports a `retry` session status, the pending bubble reads "Retrying (attempt N)" with the server's message, a live countdown to the next attempt, and, for account limits, the provider's own title, explanation, and link. It clears as soon as the reply resumes, goes idle, or is stopped. Before, the whole wait collapsed to "Working…" (#611, #612).
+- The model catalog refreshes when opencode reports `catalog.updated`, debounced to one fetch per burst, so a provider connected from the TUI or through a config edit shows up in the picker without a restart (#613, #614).
+- When the opencode binary on disk is newer than the server the panel started, a notification offers "Restart Server". The check compares `opencode --version` with the running server's reported version when the panel becomes visible or a prompt is sent, at most every five minutes, and offers once per installed version (#615, #616).
+- "Allow always" answers are kept by the panel. opencode's prompt path stores its own always-approvals in memory, instance-wide, with no route to list or remove them, so an answer given by mistake stayed in force until the server exited and one given on purpose was lost on restart. The panel now saves one rule per pattern the tool named (`git *` for `git status`), answers later asks the rules cover before the dialog shows, and persists them per workspace. A shield button in the status bar appears while rules exist and opens a popover with Remove and Remove all; the "Allow always" tooltip names what it would save (#619, #620).
+
+### Changed
+- The "Also in this project" list asks the server for top-level sessions only, capped at 50, so subagent child sessions no longer crowd out older top-level ones. The history popover forwards its search query to the server, debounced per keystroke, so a session beyond the first page can be found by title (#617, #618).
+- The running-state indicators share one clock. The header status dot, the Agents pill's dot, the Stop ring, and the "thinking" placeholder used four periods and started at four phases; they now use one period and join the cycle at the same phase whenever they appear. Only dots breathe: the Agents pill's label and colour stay still, and the placeholder is a quiet static line while the pill is in the same bubble (#621, #622).
+- README Highlights rewritten for the current feature set (#607, #608).
+
+### Fixed
+- Permission and question replies use the current opencode routes, `POST /permission/{requestID}/reply` and `/question/{requestID}/reply` and `/reject`, instead of the per-session permission route that 1.18.30 marks deprecated and the raw fetches used for questions. The SDK is pinned to 1.18.30 and a v2 client is created next to the frozen v1 one for the routes only it exposes (#609, #610).
+
 ## [1.14.0] - 2026-09-07
 
 ### Changed
