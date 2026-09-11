@@ -77,6 +77,8 @@ export type MockOpencodeServer = {
   commandCalls: Array<{ sessionID: string; body: unknown }>
   /** Configure what GET /command returns. */
   setCommands: (commands: Array<Record<string, unknown>>) => void
+  /** Number of GET /config/providers requests served so far. */
+  providerFetches: () => number
   /** Configure what GET /config/providers returns (default: none). */
   setProviders: (providers: Array<Record<string, unknown>>) => void
   /** Configure what GET /agent returns (default: one primary agent). */
@@ -139,6 +141,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   const legacyPermissionResponds: Array<{ sessionID: string; permissionID: string; body: unknown }> = []
   let commands: Array<Record<string, unknown>> = []
   let providers: Array<Record<string, unknown>> = []
+  let providerFetches = 0
   let sessions: Array<Record<string, unknown>> = []
   const sessionMessages = new Map<string, Array<Record<string, unknown>>>()
   let agents: Array<Record<string, unknown>> = [
@@ -221,6 +224,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
 
     // Providers
     if (path === "/config/providers" && req.method === "GET") {
+      providerFetches++
       reply(res, 200, { providers, default: {} })
       return
     }
@@ -543,6 +547,7 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     setCommands(next) {
       commands = next
     },
+    providerFetches: () => providerFetches,
     setProviders(next) {
       providers = next
     },
