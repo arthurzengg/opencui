@@ -434,6 +434,10 @@ export class ChatView implements vscode.WebviewViewProvider {
       clearTimeout(this.reviewSyncTimer)
       this.reviewSyncTimer = undefined
     }
+    if (this.catalogRefreshTimer) {
+      clearTimeout(this.catalogRefreshTimer)
+      this.catalogRefreshTimer = undefined
+    }
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
     // Write any debounced tail before the view (and its context) goes away,
@@ -1034,6 +1038,22 @@ export class ChatView implements vscode.WebviewViewProvider {
       }
     })()
     return this.modelCatalogFetch
+  }
+
+  private catalogRefreshTimer?: ReturnType<typeof setTimeout>
+  private static readonly CATALOG_REFRESH_MS = 300
+
+  /**
+   * opencode publishes `catalog.updated` once per catalog finalize, and a
+   * reload can finalize more than once in a row (integration reload, then
+   * catalog reload), so a burst is collapsed into one re-fetch (#613).
+   */
+  private scheduleCatalogRefresh(backend: Backend) {
+    if (this.catalogRefreshTimer) clearTimeout(this.catalogRefreshTimer)
+    this.catalogRefreshTimer = setTimeout(() => {
+      this.catalogRefreshTimer = undefined
+      void this.refreshModelCatalog(backend)
+    }, ChatView.CATALOG_REFRESH_MS)
   }
 
   private buildSelection(): Selection {
@@ -2139,6 +2159,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (this.aborting) return
         this.post({ type: "sessionRetry", retry })
       },
+      onCatalogUpdated: () => this.scheduleCatalogRefresh(backend),
       onSessionIdle: () => {
         const wasAborting = this.aborting
         this.aborting = false

@@ -1462,3 +1462,34 @@ describe("ChatView harness: replies go through the v2 routes (#609)", () => {
     expect(server.questionReplies[1]).toMatchObject({ requestID: "q_reject", action: "reject", directory: "/ws" })
   })
 })
+
+describe("ChatView harness: catalog.updated refreshes the model catalog (#613)", () => {
+  const PROVIDER = {
+    id: "openai",
+    name: "OpenAI",
+    models: { "gpt-5.5": { variants: { low: {}, high: {} } } },
+  }
+  const catalogs = () => harness.posted.filter((m) => m.type === "modelCatalog")
+
+  it("re-fetches the providers once for a burst of catalog.updated events", async () => {
+    await harness.send({ type: "mounted" })
+    await until(() => catalogs().length > 0)
+    // The subscription that carries server events opens on the first send.
+    await harness.send({ type: "send", text: "hello" })
+    await server.awaitClient()
+    await new Promise((r) => setTimeout(r, 100))
+    const fetches = server.providerFetches()
+
+    server.setProviders([PROVIDER])
+    server.push({ type: "catalog.updated" })
+    server.push({ type: "catalog.updated" })
+    server.push({ type: "catalog.updated" })
+    await until(() =>
+      catalogs().some(
+        (m) => m.type === "modelCatalog" && m.catalog.models.some((e) => e.modelID === "gpt-5.5"),
+      ),
+    )
+    await new Promise((r) => setTimeout(r, 400))
+    expect(server.providerFetches() - fetches).toBe(1)
+  })
+})

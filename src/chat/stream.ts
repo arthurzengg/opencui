@@ -97,6 +97,8 @@ export type StreamHandlers = {
    * and with undefined once the session shows progress again (#611).
    */
   onSessionRetry?: (retry: SessionRetryInfo | undefined) => void
+  /** opencode rebuilt its provider and model catalog (#613). */
+  onCatalogUpdated?: () => void
   /**
    * Fired exactly once when the SSE connection ends for any reason other
    * than a deliberate `Subscription.abort()` — transport error or the server
@@ -469,6 +471,10 @@ export function subscribeSession(
         }
         return
       }
+      case "catalog.updated":
+        // Not session-scoped: the server rebuilt its catalog for everyone.
+        handlers.onCatalogUpdated?.()
+        return
       case "server.connected":
       case "server.heartbeat":
       case "session.next.agent.switched":
