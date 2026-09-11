@@ -14,6 +14,7 @@ import { showAgentsQuickPick } from "./agents/quickpick"
 import { getOutputChannel, log } from "./output"
 import { initFileSearch } from "./file-search"
 import { reapOrphanServers, registryPath } from "./server-registry"
+import { BinaryUpdateWatch, readBinaryVersion } from "./binary-update"
 
 let servers: ServerManager | undefined
 let recentEdits: RecentEditsTracker | undefined
@@ -83,6 +84,27 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("opencui.showLogs", () => getOutputChannel().show()),
   )
+
+  // An opencode upgraded in a terminal leaves this server on the old binary
+  // until the window reloads; offer the restart instead (#615).
+  const binaryWatch = new BinaryUpdateWatch({
+    runningVersion: () => servers!.currentVersion(),
+    readVersion: () => {
+      const binaryPath = servers!.currentBinaryPath()
+      return binaryPath ? readBinaryVersion(binaryPath) : Promise.resolve(undefined)
+    },
+    offerRestart: async (installed, running) => {
+      const choice = await vscode.window.showInformationMessage(
+        `opencode ${installed} is installed, but OpenCode Panel is still running ${running}.`,
+        "Restart Server",
+      )
+      return choice === "Restart Server"
+    },
+    restart: async () => {
+      await vscode.commands.executeCommand("opencui.server.restart")
+    },
+  })
+  context.subscriptions.push(chat.onDidUserActivity(() => void binaryWatch.check()))
 
   servers
     .ensure()

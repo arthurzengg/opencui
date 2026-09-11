@@ -83,3 +83,44 @@ describe("ServerManager.restart", () => {
     expect(manager.currentBackend()).toBeUndefined()
   })
 })
+
+
+async function until(cond: () => boolean, ms = 4000) {
+  const start = Date.now()
+  while (!cond()) {
+    if (Date.now() - start > ms) throw new Error("condition not met in time")
+    await new Promise((r) => setTimeout(r, 10))
+  }
+}
+
+// A fake that also answers the health route, so the version the manager
+// records comes through the real client and not a stub.
+function healthServing(port: number, version: string): string {
+  const js = [
+    'const http=require("http")',
+    `const port=${port}`,
+    "http.createServer((req,res)=>{",
+    'if(req.url.startsWith("/global/health")){res.setHeader("content-type","application/json");',
+    `res.end(JSON.stringify({healthy:true,version:"${version}"}));return}`,
+    "res.statusCode=404;res.end()",
+    '}).listen(port,"127.0.0.1",()=>console.log("opencode server listening on http://127.0.0.1:"+port))',
+    "setTimeout(()=>process.exit(0),10000)",
+  ].join(";")
+  return fakeBinary(`exec node -e '${js}'`)
+}
+
+describe("ServerManager version and binary path (#615)", () => {
+  it("records the spawned binary path and the version the health route reports", async () => {
+    settings.binaryPath = healthServing(43295, "9.9.9")
+    expect(manager.currentVersion()).toBeUndefined()
+    expect(manager.currentBinaryPath()).toBeUndefined()
+
+    await manager.ensure()
+    expect(manager.currentBinaryPath()).toBe(settings.binaryPath)
+    await until(() => manager.currentVersion() === "9.9.9")
+
+    await manager.dispose()
+    expect(manager.currentVersion()).toBeUndefined()
+    expect(manager.currentBinaryPath()).toBeUndefined()
+  })
+})
