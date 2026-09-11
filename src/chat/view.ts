@@ -39,7 +39,7 @@ import { BUILTIN_COMMAND_NAMES, withBuiltinCommands } from "./builtin-commands"
 import { BuiltinRunners } from "./builtin-runners"
 import { readContextUsage } from "./context-usage"
 import { adoptStorageIDs, migrateConversationsToWorkspace } from "./conversation-store"
-import { externalSessionSummaries, importedMessages, type SessionInfo } from "./import-session"
+import { MAX_EXTERNAL_SESSIONS, externalSessionSummaries, importedMessages, type SessionInfo } from "./import-session"
 import { ConversationManager } from "./conversation-manager"
 import { ContinuationState, isContinuationToast } from "./continuation-state"
 import { sweepAbortTree, drainAbortTree } from "./abort-tree"
@@ -554,10 +554,17 @@ export class ChatView implements vscode.WebviewViewProvider {
    * workspaceState, not on the server, so without this fetch the asymmetry
    * reads as lost data to anyone running the TUI alongside.
    */
-  private async refreshExternalSessions(backend?: Backend) {
+  private async refreshExternalSessions(backend?: Backend, search?: string) {
     try {
       const activeBackend = backend ?? (await this.servers.ensure())
-      const res = await activeBackend.client.session.list({ query: { directory: activeBackend.directory } })
+      // roots, limit, and search exist only on the v2 client (#617): the v1
+      // client is a frozen snapshot that can pass nothing but directory.
+      const res = await activeBackend.clientV2.session.list({
+        directory: activeBackend.directory,
+        roots: true,
+        limit: MAX_EXTERNAL_SESSIONS,
+        search: search || undefined,
+      })
       if (res.error || !res.data) {
         log("session list failed", res.error)
         return
@@ -1232,7 +1239,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         await this.importSession(msg.sessionID)
         return
       case "refreshSessions":
-        void this.refreshExternalSessions()
+        void this.refreshExternalSessions(undefined, msg.search)
         return
       case "renameConversation":
         await this.renameConversation(msg.id, msg.title)

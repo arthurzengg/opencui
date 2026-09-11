@@ -548,7 +548,7 @@ export type Inbound =
   /** Adopt an opencode session (from the TUI/web) into a saved conversation and open it. */
   | { type: "importSession"; sessionID: string }
   /** Re-fetch the server's session list (history popover opening). */
-  | { type: "refreshSessions" }
+  | { type: "refreshSessions"; search?: string }
   | { type: "renameConversation"; id: string; title: string }
   | { type: "deleteConversation"; id: string }
   | { type: "apply"; code: string; language?: string }

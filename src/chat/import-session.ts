@@ -40,12 +40,14 @@ type ServerPart = {
   files?: unknown[]
 }
 
-const MAX_EXTERNAL_SESSIONS = 50
+export const MAX_EXTERNAL_SESSIONS = 50
 
 /**
  * Sessions worth offering in the history popover: top-level (subagent child
  * sessions carry a `parentID`) and not already bound to a saved conversation.
  * Newest first, capped so a long-lived project doesn't flood the popover.
+ * The fetch already asks the server for `roots` and `limit` (#617); the filter
+ * and cap here are the fallback for servers that ignore those parameters.
  */
 export function externalSessionSummaries(
   sessions: SessionInfo[],

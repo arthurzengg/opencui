@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { fireEvent, render, screen, cleanup } from "@testing-library/react"
+import { fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { StatusBar } from "../../webview/src/components/StatusBar"
 import { AgentActivity } from "../../webview/src/components/AgentActivity"
@@ -772,6 +772,38 @@ describe("StatusBar: external sessions in the history popover", () => {
     await user.type(search, "Panel")
     expect(screen.queryByText("Also in this project")).not.toBeInTheDocument()
     expect(screen.getByText("Panel chat one")).toBeInTheDocument()
+  })
+
+  it("forwards the search query to the session refresh, debounced (#617)", async () => {
+    const user = userEvent.setup()
+    const onRefreshSessions = vi.fn()
+    const manyLocal = [
+      { id: "c1", title: "Panel chat one", updatedAt: Date.now() },
+      { id: "c2", title: "Panel chat two", updatedAt: Date.now() },
+      { id: "c3", title: "Panel chat three", updatedAt: Date.now() },
+    ]
+    render(
+      <StatusBar
+        {...baseProps}
+        conversations={manyLocal}
+        externalSessions={external}
+        onImportSession={vi.fn()}
+        onRefreshSessions={onRefreshSessions}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    expect(onRefreshSessions).toHaveBeenCalledTimes(1)
+
+    const search = screen.getByPlaceholderText("Search chats…")
+    await user.type(search, "TUI")
+    await waitFor(() => expect(onRefreshSessions).toHaveBeenLastCalledWith("TUI"))
+    // One fetch for the whole word, not one per keystroke, and the opening
+    // fetch carried no query.
+    expect(onRefreshSessions.mock.calls.map((call) => call[0])).toEqual([undefined, "TUI"])
+
+    await user.clear(search)
+    await waitFor(() => expect(onRefreshSessions).toHaveBeenCalledTimes(3))
+    expect(onRefreshSessions).toHaveBeenLastCalledWith(undefined)
   })
 
   it("hides the section when there are no external sessions", async () => {

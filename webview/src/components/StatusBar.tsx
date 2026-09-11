@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
 import type { ConversationSummary, ExternalSessionSummary, ModelCatalogInfo, Selection } from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
@@ -6,6 +6,8 @@ import { ModelPicker } from "./ModelPicker"
 
 export type HeaderPopoverID = "selector" | "history"
 type HeaderPopoverSetter = Dispatch<SetStateAction<HeaderPopoverID | null>>
+
+const EXTERNAL_SEARCH_DEBOUNCE_MS = 250
 
 type Props = {
   connected: boolean
@@ -25,7 +27,7 @@ type Props = {
   onCreateConversation: () => void
   onOpenConversation: (id: string) => void
   onImportSession?: (sessionID: string) => void
-  onRefreshSessions?: () => void
+  onRefreshSessions?: (search?: string) => void
   onRenameConversation: (id: string, title: string) => void
   onDeleteConversation: (id: string) => void
 }
@@ -138,7 +140,7 @@ function ChatHistoryMenu({
   onCreate: () => void
   onOpen: (id: string) => void
   onImport?: (sessionID: string) => void
-  onRefreshExternal?: () => void
+  onRefreshExternal?: (search?: string) => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
 }) {
@@ -147,6 +149,7 @@ function ChatHistoryMenu({
   const [renamingTitle, setRenamingTitle] = useState("")
   const [confirmDeleteID, setConfirmDeleteID] = useState<string>()
   const [query, setQuery] = useState("")
+  const lastSearch = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     if (!open) {
@@ -157,8 +160,22 @@ function ChatHistoryMenu({
     // Stale-while-revalidate: the last known external list renders instantly,
     // and opening the popover re-fetches so TUI sessions started since the
     // panel mounted show up.
+    lastSearch.current = undefined
     onRefreshExternal?.()
   }, [open])
+
+  // The local filter below answers instantly from the last fetch; the server
+  // search finds sessions beyond that page (#617). Debounced per keystroke.
+  useEffect(() => {
+    if (!open) return
+    const search = query.trim() || undefined
+    if (search === lastSearch.current) return
+    const handle = window.setTimeout(() => {
+      lastSearch.current = search
+      onRefreshExternal?.(search)
+    }, EXTERNAL_SEARCH_DEBOUNCE_MS)
+    return () => window.clearTimeout(handle)
+  }, [open, query])
 
   useEffect(() => {
     if (!confirmDeleteID) return

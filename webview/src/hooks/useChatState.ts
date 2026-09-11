@@ -617,8 +617,8 @@ export function useChatState() {
     importSession(sessionID: string) {
       vscode.post({ type: "importSession", sessionID })
     },
-    refreshSessions() {
-      vscode.post({ type: "refreshSessions" })
+    refreshSessions(search?: string) {
+      vscode.post(search ? { type: "refreshSessions", search } : { type: "refreshSessions" })
     },
     renameConversation(id: string, title: string) {
       vscode.post({ type: "renameConversation", id, title })
