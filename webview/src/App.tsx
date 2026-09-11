@@ -359,6 +359,8 @@ export default function App() {
                 onEditMessage={editMessage}
                 onRetry={handleRetry}
                 agentActivity={m.id === agentActivityMessageID ? state.agentsStatus : undefined}
+                retry={m.id === activeProcessID ? state.retry : undefined}
+                onOpenLink={openLink}
               />
             ))}
           </div>

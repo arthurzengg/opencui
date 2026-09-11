@@ -2135,6 +2135,10 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.continuationState.finishPending()
         this.post({ type: "sessionBusy" })
       },
+      onSessionRetry: (retry) => {
+        if (this.aborting) return
+        this.post({ type: "sessionRetry", retry })
+      },
       onSessionIdle: () => {
         const wasAborting = this.aborting
         this.aborting = false

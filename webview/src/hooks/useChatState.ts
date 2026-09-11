@@ -23,6 +23,7 @@ import type {
   ReviewHunkState,
   Selection,
   ToolUpdate,
+  SessionRetryInfo,
 } from "../protocol"
 
 export type Block = ChatBlock
@@ -58,6 +59,12 @@ export type ChatState = {
    * Busy stays true; the StatusBar surfaces a "Continuing…" indicator.
    */
   continuationPending: boolean
+  /**
+   * opencode is waiting to retry a failed provider call. Set by
+   * `sessionRetry`; the host clears it once the session shows progress,
+   * and the reducer clears it on idle, Stop, and restore (#611).
+   */
+  retry?: SessionRetryInfo
   error?: string
   selection: Selection
   /**
@@ -238,6 +245,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
         messages: action.messages,
         reviewHunks: action.reviewHunks ?? {},
         reviewRevision: state.reviewRevision + 1,
+        retry: undefined,
         pendingPermission: undefined,
         // The host drops the old session's activeQuestions without posting
         // questionResolved on switch, so a question left open here would
@@ -402,6 +410,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
         ...state,
         busy: true,
         aborting: true,
+        retry: undefined,
         pendingPermission: undefined,
         pendingQuestion: undefined,
         // Stop means stop: a queued follow-up auto-firing right after the
@@ -417,6 +426,11 @@ export function reducer(state: ChatState, action: Action): ChatState {
     }
     case "sessionBusy":
       return { ...state, busy: true, continuationPending: false }
+    case "sessionRetry":
+      // Nothing will retry a turn the user just stopped; the aborted arm
+      // already cleared the banner.
+      if (state.aborting) return state
+      return { ...state, retry: action.retry }
     case "sessionIdle":
       // Opencode finished draining its in-flight LLM call. Clear both flags so
       // the Send button comes back; ALSO clear `aborting` regardless of how we
@@ -426,6 +440,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
         busy: false,
         aborting: false,
         continuationPending: false,
+        retry: undefined,
         idleNonce: state.idleNonce + 1,
         messages: state.messages.map((m) =>
           m.role === "assistant" && m.pending ? { ...m, pending: false } : m,

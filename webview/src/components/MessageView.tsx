@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { RetryStatus } from "./RetryStatus"
 import type { Block, Message } from "../hooks/useChatState"
-import type { AgentsStatusInfo, Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
+import type { AgentsStatusInfo, Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit, SessionRetryInfo } from "../protocol"
 import { findTokenRanges, makeAttachmentLabel } from "../mention-tokens"
 import {
   answerStartIndex,
@@ -47,6 +48,8 @@ type MessageViewProps = {
   onEndEdit?: (id: string) => void
   onRetry?: (assistantID: string) => void
   agentActivity?: AgentsStatusInfo
+  /** Provider retry opencode is waiting on; rendered in place of the thinking indicator (#611). */
+  retry?: SessionRetryInfo
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   listDir?: (path: string) => Promise<DirEntry[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
@@ -71,6 +74,7 @@ export function sameMessageViewProps(prev: MessageViewProps, next: MessageViewPr
     prev.processOnly === next.processOnly &&
     prev.busy === next.busy &&
     prev.agentActivity === next.agentActivity &&
+    prev.retry === next.retry &&
     prev.conversations === next.conversations &&
     prev.activeConversationID === next.activeConversationID
   )
@@ -89,6 +93,7 @@ function MessageViewComponent({
   onEndEdit,
   onRetry,
   agentActivity,
+  retry,
   searchFiles,
   listDir,
   attachFile,
@@ -125,7 +130,8 @@ function MessageViewComponent({
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
       {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
       <AgentActivity status={agentActivity} />
-      {message.pending && message.blocks.length === 0 && (
+      {retry && message.pending && <RetryStatus retry={retry} onOpenLink={onOpenLink} />}
+      {!retry && message.pending && message.blocks.length === 0 && (
         <div className="thinking-dots" role="status" aria-label="Thinking">thinking</div>
       )}
       {(() => {

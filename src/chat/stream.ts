@@ -1,4 +1,5 @@
 import type { Backend } from "../server"
+import type { SessionRetryInfo } from "../protocol"
 import { log } from "../output"
 
 export type ToolUpdate = {
@@ -91,6 +92,11 @@ export type StreamHandlers = {
   onSessionError?: (message: string) => void
   onSessionIdle?: () => void
   onSessionBusy?: () => void
+  /**
+   * Fired with the details when opencode reports a `retry` session status,
+   * and with undefined once the session shows progress again (#611).
+   */
+  onSessionRetry?: (retry: SessionRetryInfo | undefined) => void
   /**
    * Fired exactly once when the SSE connection ends for any reason other
    * than a deliberate `Subscription.abort()` — transport error or the server
@@ -268,6 +274,24 @@ export function createSessionStreamState(sessionID: string): SessionStreamState 
 
 const DEFAULT_WATCHDOG_MS = 30_000
 
+function retryInfo(status: any): SessionRetryInfo {
+  const action = status?.action
+  return {
+    attempt: typeof status?.attempt === "number" ? status.attempt : 0,
+    message: typeof status?.message === "string" ? status.message : "",
+    next: typeof status?.next === "number" ? status.next : 0,
+    action:
+      action && typeof action === "object" && typeof action.title === "string"
+        ? {
+            title: action.title,
+            message: typeof action.message === "string" ? action.message : "",
+            label: typeof action.label === "string" ? action.label : "",
+            link: typeof action.link === "string" ? action.link : undefined,
+          }
+        : undefined,
+  }
+}
+
 /**
  * Long-lived subscription to session events. Does NOT close on message finish —
  * stays open until abort() is called. This lets the UI capture follow-up
@@ -421,6 +445,12 @@ export function subscribeSession(
         if (props?.sessionID !== sessionID) return
         if (props?.status?.type === "idle") {
           markIdle()
+        } else if (props?.status?.type === "retry") {
+          handlers.onSessionBusy?.()
+          // markActivity clears a pending retry, so the flag is set after it.
+          markActivity(sessionID)
+          retryPending = true
+          handlers.onSessionRetry?.(retryInfo(props.status))
         } else if (props?.status?.type) {
           handlers.onSessionBusy?.()
           markActivity(sessionID)
@@ -591,17 +621,26 @@ export function subscribeSession(
    * "idle" into the running turn.
    */
   let activityGen = 0
+  let retryPending = false
 
   function markActivity(eventSessionID: string | undefined) {
     if (eventSessionID !== sessionID) return
     activityGen++
     busyTracked = true
+    clearRetry()
     armWatchdog()
+  }
+
+  function clearRetry() {
+    if (!retryPending) return
+    retryPending = false
+    handlers.onSessionRetry?.(undefined)
   }
 
   function markIdle() {
     busyTracked = false
     clearWatchdog()
+    clearRetry()
     handlers.onSessionIdle?.()
   }
 
