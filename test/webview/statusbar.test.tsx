@@ -124,6 +124,32 @@ describe("StatusBar", () => {
     expect(screen.getByRole("listbox", { name: "Models" })).toBeInTheDocument()
   })
 
+  it("clicking a model row in the picker sets the model and keeps the popover open", async () => {
+    const user = userEvent.setup()
+    const onSetModel = vi.fn()
+    render(
+      <StatusBar
+        {...baseProps}
+        modelCatalog={{
+          models: [
+            { providerID: "openai", modelID: "gpt-5.5", providerName: "OpenAI", variants: ["low", "high"] },
+          ],
+          recents: [],
+        }}
+        onSetModel={onSetModel}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
+    await user.click(screen.getByRole("option", { name: /gpt-5.5/ }))
+    expect(onSetModel).toHaveBeenCalledWith("openai", "gpt-5.5", undefined)
+    // The effort chips only exist for the current model, so the pick must not
+    // close the popover before they can be tuned; Escape still closes it.
+    expect(screen.getByRole("listbox", { name: "Models" })).toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "Effort" })).toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    expect(screen.queryByRole("listbox", { name: "Models" })).not.toBeInTheDocument()
+  })
+
   it("renders the variant text in the trigger when modelVariant is set", () => {
     render(
       <StatusBar

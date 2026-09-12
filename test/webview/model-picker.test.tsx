@@ -39,7 +39,6 @@ const baseProps = {
   onSetAgent: vi.fn(),
   onSetProviderCollapsed: vi.fn(),
   onRefresh: vi.fn(),
-  onClose: vi.fn(),
 }
 
 const noFolds: ReadonlySet<string> = new Set()
@@ -139,15 +138,64 @@ describe("ModelPicker", () => {
     expect(onRefresh).toHaveBeenCalledOnce()
   })
 
-  it("clicking a model row selects it WITH its remembered variant and closes", async () => {
+  it("clicking a model row selects it WITH its remembered variant and marks it current before the host echo", async () => {
     const user = userEvent.setup()
     const onSetModel = vi.fn()
-    const onClose = vi.fn()
-    render(<ModelPicker {...baseProps} onSetModel={onSetModel} onClose={onClose} />)
+    render(<ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} onSetModel={onSetModel} />)
     // Second recent row: sonnet, whose lastVariant is "max".
-    await user.click(screen.getAllByRole("option")[1]!)
+    const rows = screen.getAllByRole("option")
+    await user.click(rows[1]!)
     expect(onSetModel).toHaveBeenCalledWith("anthropic", "claude-sonnet-4-6", "max")
-    expect(onClose).toHaveBeenCalledOnce()
+    expect(rows[1]!.querySelector(".codicon-check")).toBeTruthy()
+    expect(rows[0]!.querySelector(".codicon-check")).toBeNull()
+    expect(rows[1]!.getAttribute("aria-selected")).toBe("true")
+    // The effort chips switch to the picked model with its remembered variant.
+    expect(effortChips().getByRole("button", { name: "max" }).className).toContain("is-active")
+    // Focus returns to the search input so keyboard flow continues.
+    expect(screen.getByRole("textbox", { name: "Search models" })).toHaveFocus()
+  })
+
+  it("the host's selection echo wins over the optimistic model pick if they disagree", () => {
+    const { rerender } = render(<ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} />)
+    fireEvent.click(screen.getAllByRole("option")[1]!)
+    expect(screen.getAllByRole("option")[1]!.querySelector(".codicon-check")).toBeTruthy()
+    rerender(<ModelPicker {...baseProps} selection={{ model: "google/gemini-3-pro" }} />)
+    const rows = screen.getAllByRole("option")
+    expect(rows[1]!.querySelector(".codicon-check")).toBeNull()
+    const gemini = rows.find((r) => r.querySelector(".model-picker-name")?.textContent === "gemini-3-pro")!
+    expect(gemini.querySelector(".codicon-check")).toBeTruthy()
+  })
+
+  it("keeps the Recent order seen at open when the catalog echo moves the pick to the top", () => {
+    const { rerender } = render(<ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} />)
+    fireEvent.click(screen.getAllByRole("option")[1]!)
+    // The host answers a pick with the selection and a catalog whose Recent
+    // now leads with the picked model.
+    const echoed = { ...catalog, recents: ["anthropic/claude-sonnet-4-6", "openai/gpt-5.5"] }
+    rerender(
+      <ModelPicker
+        {...baseProps}
+        catalog={echoed}
+        selection={{ model: "anthropic/claude-sonnet-4-6", modelVariant: "max" }}
+      />,
+    )
+    expect(rowNames().slice(0, 2)).toEqual(["gpt-5.5", "claude-sonnet-4-6"])
+    expect(screen.getAllByRole("option")[1]!.querySelector(".codicon-check")).toBeTruthy()
+    // A fresh open reads the new order.
+    cleanup()
+    render(<ModelPicker {...baseProps} catalog={echoed} selection={{ model: "anthropic/claude-sonnet-4-6" }} />)
+    expect(rowNames().slice(0, 2)).toEqual(["claude-sonnet-4-6", "gpt-5.5"])
+  })
+
+  it("keeps the highlight on the provider row the user clicked when the catalog echo arrives", () => {
+    const { rerender } = render(<ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} />)
+    // gpt-5.5 has two rows: the Recent copy and the OpenAI group copy.
+    const providerRow = () =>
+      screen.getAllByRole("option").filter((r) => r.querySelector(".model-picker-name")?.textContent === "gpt-5.5")[1]!
+    fireEvent.click(providerRow())
+    expect(providerRow().getAttribute("aria-selected")).toBe("true")
+    rerender(<ModelPicker {...baseProps} catalog={{ ...catalog }} selection={{ model: "openai/gpt-5.5" }} />)
+    expect(providerRow().getAttribute("aria-selected")).toBe("true")
   })
 
   it("clicking the default row resets to the opencode default model", async () => {
@@ -168,25 +216,21 @@ describe("ModelPicker", () => {
     expect(rows[0]!.getAttribute("aria-selected")).toBe("true")
   })
 
-  it("a chip click re-picks with that variant, stays open, and moves the active chip optimistically", async () => {
+  it("a chip click re-picks with that variant and moves the active chip optimistically", async () => {
     const user = userEvent.setup()
     const onSetModel = vi.fn()
-    const onClose = vi.fn()
     render(
       <ModelPicker
         {...baseProps}
         selection={{ model: "openai/gpt-5.5", modelVariant: "high" }}
         onSetModel={onSetModel}
-        onClose={onClose}
       />,
     )
     const high = screen.getByRole("button", { name: "high" })
     expect(high.className).toContain("is-active")
     await user.click(screen.getByRole("button", { name: "medium" }))
     expect(onSetModel).toHaveBeenCalledWith("openai", "gpt-5.5", "medium")
-    // Effort tuning is iterative — the popover must survive the click, and
-    // the active chip must not wait for the host's selection echo.
-    expect(onClose).not.toHaveBeenCalled()
+    // The active chip must not wait for the host's selection echo.
     expect(screen.getByRole("button", { name: "medium" }).className).toContain("is-active")
     expect(high.className).not.toContain("is-active")
     // Focus returns to the search input so keyboard flow continues.
@@ -206,21 +250,18 @@ describe("ModelPicker", () => {
     expect(screen.getByRole("button", { name: "medium" }).className).not.toContain("is-active")
   })
 
-  it("the default chip clears the variant for the current model without closing", async () => {
+  it("the default chip clears the variant for the current model", async () => {
     const user = userEvent.setup()
     const onSetModel = vi.fn()
-    const onClose = vi.fn()
     render(
       <ModelPicker
         {...baseProps}
         selection={{ model: "openai/gpt-5.5", modelVariant: "high" }}
         onSetModel={onSetModel}
-        onClose={onClose}
       />,
     )
     await user.click(effortChips().getByRole("button", { name: "default" }))
     expect(onSetModel).toHaveBeenCalledWith("openai", "gpt-5.5", undefined)
-    expect(onClose).not.toHaveBeenCalled()
     expect(effortChips().getByRole("button", { name: "default" }).className).toContain("is-active")
   })
 
@@ -302,35 +343,27 @@ describe("ModelPicker", () => {
     expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument()
   })
 
-  it("an agent chip picks that agent, stays open, and moves the active chip optimistically", async () => {
+  it("an agent chip picks that agent and moves the active chip optimistically", async () => {
     const user = userEvent.setup()
     const onSetAgent = vi.fn()
-    const onClose = vi.fn()
-    render(
-      <ModelPicker {...baseProps} selection={{ agent: "build" }} onSetAgent={onSetAgent} onClose={onClose} />,
-    )
+    render(<ModelPicker {...baseProps} selection={{ agent: "build" }} onSetAgent={onSetAgent} />)
     const build = agentChips().getByRole("button", { name: "build" })
     expect(build.className).toContain("is-active")
     await user.click(agentChips().getByRole("button", { name: "plan" }))
     expect(onSetAgent).toHaveBeenCalledWith("plan")
-    // Same stay-open contract as the effort chips — the popover survives the
-    // click and the active chip moves before the host's selection echo.
-    expect(onClose).not.toHaveBeenCalled()
+    // Same contract as the effort chips: the active chip moves before the
+    // host's selection echo.
     expect(agentChips().getByRole("button", { name: "plan" }).className).toContain("is-active")
     expect(build.className).not.toContain("is-active")
     expect(screen.getByRole("textbox", { name: "Search models" })).toHaveFocus()
   })
 
-  it("the default agent chip resets to the opencode default without closing", async () => {
+  it("the default agent chip resets to the opencode default", async () => {
     const user = userEvent.setup()
     const onSetAgent = vi.fn()
-    const onClose = vi.fn()
-    render(
-      <ModelPicker {...baseProps} selection={{ agent: "build" }} onSetAgent={onSetAgent} onClose={onClose} />,
-    )
+    render(<ModelPicker {...baseProps} selection={{ agent: "build" }} onSetAgent={onSetAgent} />)
     await user.click(agentChips().getByRole("button", { name: "default" }))
     expect(onSetAgent).toHaveBeenCalledWith(undefined)
-    expect(onClose).not.toHaveBeenCalled()
     expect(agentChips().getByRole("button", { name: "default" }).className).toContain("is-active")
   })
 
