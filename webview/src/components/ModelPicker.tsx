@@ -198,7 +198,6 @@ type Props = {
   onSetProviderCollapsed: (providerID: string, collapsed: boolean) => void
   /** Posted on mount so a freshly opened picker re-syncs the catalog. */
   onRefresh: () => void
-  onClose: () => void
 }
 
 export function ModelPicker({
@@ -208,7 +207,6 @@ export function ModelPicker({
   onSetAgent,
   onSetProviderCollapsed,
   onRefresh,
-  onClose,
 }: Props) {
   const [query, setQuery] = useState("")
   // Fold state: the host-pushed catalog seeds it; after the first toggle the
@@ -229,17 +227,37 @@ export function ModelPicker({
     // leaving search doesn't trigger a redundant render.
     if (!inSearch) setSearchFolds((prev) => (prev.size ? new Set() : prev))
   }, [inSearch])
+  // The host re-posts the catalog after every pick with the picked model moved
+  // to the top of Recent. A pick leaves the popover open, so taking that order
+  // live would shuffle the rows under the pointer; the order seen at open holds
+  // until the popover closes and the next mount reads the new one.
+  const [openRecents, setOpenRecents] = useState(catalog?.recents)
+  useEffect(() => {
+    if (catalog && !openRecents) setOpenRecents(catalog.recents)
+  }, [catalog, openRecents])
+  const pickerCatalog = useMemo(
+    () => (catalog && openRecents ? { ...catalog, recents: openRecents } : catalog),
+    [catalog, openRecents],
+  )
   const sections = useMemo(
-    () => buildPickerSections(catalog, query, inSearch ? searchFolds : folds),
-    [catalog, query, inSearch, searchFolds, folds],
+    () => buildPickerSections(pickerCatalog, query, inSearch ? searchFolds : folds),
+    [pickerCatalog, query, inSearch, searchFolds, folds],
   )
   const items = useMemo(() => sections.flatMap((s) => (s.collapsed ? [] : s.rows)), [sections])
   const indexOfItem = useMemo(() => new Map(items.map((item, i) => [item, i])), [items])
-  const currentKey = selection.model
+  // A pick moves the check, the effort chips, and the active row before the
+  // host's selection echo confirms it; the echo wins if it ever disagrees.
+  const [pendingModel, setPendingModel] = useState<{ key?: string } | null>(null)
+  useEffect(() => {
+    setPendingModel(null)
+  }, [selection.model])
+  const currentKey = pendingModel ? pendingModel.key : selection.model
   const current = useMemo(
     () => (currentKey ? catalog?.models.find((m) => modelKey(m) === currentKey) : undefined),
     [catalog, currentKey],
   )
+  const isCurrentItem = (item: PickerItem | undefined) =>
+    item !== undefined && (item.kind === "default" ? !currentKey : modelKey(item.entry) === currentKey)
   const [activeIndex, setActiveIndex] = useState(0)
 
   // Stale-while-revalidate: render the pushed catalog immediately, ask the
@@ -250,16 +268,19 @@ export function ModelPicker({
   }, [])
 
   // Start on the current model so Enter with no arrows is a no-op re-pick,
-  // and the first ArrowDown moves to a neighbor instead of the list top.
+  // and the first ArrowDown moves to a neighbor instead of the list top. An
+  // already-current active row stays put: a model in Recent and in its
+  // provider group has two rows, and the catalog echo after a pick must not
+  // hop the highlight from the row the user clicked to the other copy.
   useEffect(() => {
-    if (query) {
-      setActiveIndex(0)
-      return
-    }
-    const idx = items.findIndex(
-      (item) => item.kind === "model" && modelKey(item.entry) === currentKey,
-    )
-    setActiveIndex(idx >= 0 ? idx : 0)
+    setActiveIndex((i) => {
+      if (isCurrentItem(items[i])) return i
+      if (query) return 0
+      const idx = items.findIndex(
+        (item) => item.kind === "model" && modelKey(item.entry) === currentKey,
+      )
+      return idx >= 0 ? idx : 0
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, catalog])
 
@@ -294,21 +315,15 @@ export function ModelPicker({
     }
   }, [activeIndex])
 
-  const selectItem = (item: PickerItem) => {
-    if (item.kind === "default") onSetModel(undefined, undefined, undefined)
-    else onSetModel(item.entry.providerID, item.entry.modelID, item.entry.lastVariant)
-    onClose()
-  }
-
   // Folding the tail group can strand the active index past the new end.
   useEffect(() => {
     setActiveIndex((i) => Math.min(i, Math.max(0, items.length - 1)))
   }, [items.length])
 
-  // Effort and agent are iterative tweaks — try one, glance at the result,
-  // adjust — so unlike a model pick (the terminal action) a chip click leaves
-  // the popover open. The active chip moves optimistically; the host's
-  // selection echo then confirms it, and wins if it ever disagrees.
+  // Every pick leaves the popover open: model, effort, and agent are tuned
+  // together (the effort chips only exist for the current model), and Escape
+  // or a click outside closes it. Each active marker moves optimistically;
+  // the host's selection echo then confirms it, and wins if it ever disagrees.
   const [pendingVariant, setPendingVariant] = useState<{ variant?: string } | null>(null)
   useEffect(() => {
     setPendingVariant(null)
@@ -323,6 +338,19 @@ export function ModelPicker({
   const agents = catalog?.agents ?? []
 
   const searchRef = useRef<HTMLInputElement | null>(null)
+  const selectItem = (item: PickerItem) => {
+    setActiveIndex(indexOfItem.get(item) ?? 0)
+    if (item.kind === "default") {
+      setPendingModel({ key: undefined })
+      setPendingVariant({ variant: undefined })
+      onSetModel(undefined, undefined, undefined)
+    } else {
+      setPendingModel({ key: modelKey(item.entry) })
+      setPendingVariant({ variant: item.entry.lastVariant })
+      onSetModel(item.entry.providerID, item.entry.modelID, item.entry.lastVariant)
+    }
+    searchRef.current?.focus()
+  }
   const pickVariant = (variant?: string) => {
     if (!current) return
     setPendingVariant({ variant })

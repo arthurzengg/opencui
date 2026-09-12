@@ -483,7 +483,7 @@ function SelectorMenu({
   onSetProviderCollapsed: (providerID: string, collapsed: boolean) => void
   onRefreshModels: () => void
 }) {
-  const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
+  const { toggle, ref } = useDismissableMenu({ open, onOpenChange })
 
   const agent = selection.agent ?? "default"
   const model = selection.model ?? "default"
@@ -519,7 +519,6 @@ function SelectorMenu({
             onSetAgent={onSetAgent}
             onSetProviderCollapsed={onSetProviderCollapsed}
             onRefresh={onRefreshModels}
-            onClose={close}
           />
         </div>
       )}
