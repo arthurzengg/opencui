@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-09-12
+
+### Changed
+- The Model / Agent / Effort picker stays open after a model pick, as it already did after an effort or agent chip; Escape and a click outside still close it. The effort chips only exist for the current model, so tuning a freshly picked model no longer takes a second open. The check mark, the effort chips, and the highlighted row move to the picked model before the host's selection echo, and the Recent order seen at open holds until the popover closes, so the catalog echo that moves the pick to the top of Recent does not shuffle the rows under the pointer (#625, #626).
+
 ## [1.15.0] - 2026-09-11
 
 ### Added
