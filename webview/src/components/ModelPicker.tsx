@@ -470,8 +470,10 @@ export function ModelPicker({
                       onClick={() => selectItem(item)}
                       title="Use opencode's configured default model"
                     >
+                      <span className="model-picker-check" aria-hidden="true">
+                        {!currentKey && <span className="codicon codicon-check" />}
+                      </span>
                       <span className="model-picker-name">opencode default</span>
-                      {!currentKey && <span className="codicon codicon-check" aria-hidden="true" />}
                     </button>
                   )
                 }
@@ -494,6 +496,9 @@ export function ModelPicker({
                     onClick={() => selectItem(item)}
                     title={tooltip}
                   >
+                    <span className="model-picker-check" aria-hidden="true">
+                      {isCurrent && <span className="codicon codicon-check" />}
+                    </span>
                     {/* Raw model id, not the prettified label: the picker is where
                         date-suffix and point-release differences matter. */}
                     <span className="model-picker-name">{entry.modelID}</span>
@@ -505,7 +510,6 @@ export function ModelPicker({
                         {entry.providerName ?? entry.providerID}
                       </span>
                     )}
-                    {isCurrent && <span className="codicon codicon-check" aria-hidden="true" />}
                   </button>
                 )
               })}

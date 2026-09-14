@@ -691,8 +691,15 @@ button:focus-visible {
   color: inherit;
   opacity: 0.75;
 }
-.model-picker-row .codicon-check {
+/* Leading slot on every row, filled only on the current one, so names stay
+   aligned whichever row holds the check. */
+.model-picker-check {
   flex: 0 0 auto;
+  display: inline-flex;
+  justify-content: center;
+  width: 14px;
+}
+.model-picker-row .codicon-check {
   font-size: 14px;
   color: var(--vscode-textLink-foreground);
 }
