@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.2] - 2026-09-14
+
+### Changed
+- The current-model check in the Model / Agent / Effort picker moves from the right end of the row to a leading slot before the name. Every row reserves the slot and only the current row fills it, so names stay aligned whichever row is current (#629, #630).
+
 ## [1.15.1] - 2026-09-12
 
 ### Changed
