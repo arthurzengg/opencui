@@ -214,6 +214,11 @@ describe("ModelPicker", () => {
     // First recent row is gpt-5.5 — current, checked, and the active row.
     expect(rows[0]!.querySelector(".codicon-check")).toBeTruthy()
     expect(rows[0]!.getAttribute("aria-selected")).toBe("true")
+    // The check sits in a leading slot that every row renders, so names stay
+    // aligned whichever row is current.
+    for (const row of rows) expect(row.firstElementChild!.className).toBe("model-picker-check")
+    expect(rows[0]!.firstElementChild!.querySelector(".codicon-check")).toBeTruthy()
+    expect(rows[1]!.firstElementChild!.querySelector(".codicon-check")).toBeNull()
   })
 
   it("a chip click re-picks with that variant and moves the active chip optimistically", async () => {
