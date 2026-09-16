@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import type { ModelCatalogEntry, ModelCatalogInfo, Selection } from "../protocol"
+import type { AgentCatalogEntry, ModelCatalogEntry, ModelCatalogInfo, Selection } from "../protocol"
 
 /**
  * In-panel model + effort picker (issue #512). Replaces the old handoff to
@@ -10,12 +10,19 @@ import type { ModelCatalogEntry, ModelCatalogInfo, Selection } from "../protocol
  * Selecting a model sends its `lastVariant` along (per-model effort memory,
  * maintained host-side), so switching away and back restores the effort the
  * user last ran that model with.
+ *
+ * Agents are rows in the same list (#633), in an Agent section after the
+ * model sections. Their names are long and open-ended, which the wrapped
+ * chip row they replaced could not hold without blank track showing.
  */
 
 export type PickerItem =
   | { kind: "model"; entry: ModelCatalogEntry; section: string }
   /** Reset to the opencode default model. */
   | { kind: "default"; section: string }
+  | { kind: "agent"; entry: AgentCatalogEntry; section: string }
+  /** Reset to the opencode default agent. */
+  | { kind: "agentDefault"; section: string }
 
 export function modelKey(entry: ModelCatalogEntry): string {
   return `${entry.providerID}/${entry.modelID}`
@@ -102,6 +109,33 @@ export function buildPickerSections(
 }
 
 /**
+ * The Agent section, appended after the model sections. Built apart from
+ * them so the picker's empty state can key off the model sections alone: a
+ * catalog with agents but no models still says so. Filtering matches the
+ * agent name only — prose descriptions make one-letter queries noisy — and,
+ * like the model default row, the default agent row leaves during a search.
+ */
+export function buildAgentSection(
+  catalog: ModelCatalogInfo | undefined,
+  query: string,
+): PickerSection | undefined {
+  if (!catalog || catalog.agents.length === 0) return undefined
+  const q = query.trim().toLowerCase()
+  const rows: PickerItem[] = []
+  if (q) {
+    const tokens = q.split(/\s+/)
+    for (const entry of catalog.agents) {
+      const hay = entry.name.toLowerCase()
+      if (tokens.every((t) => hay.includes(t))) rows.push({ kind: "agent", entry, section: "Agent" })
+    }
+  } else {
+    rows.push({ kind: "agentDefault", section: "Agent" })
+    for (const entry of catalog.agents) rows.push({ kind: "agent", entry, section: "Agent" })
+  }
+  return rows.length ? { title: "Agent", collapsed: false, rows } : undefined
+}
+
+/**
  * Flat row list for keyboard navigation — folded groups contribute no rows,
  * so the active index can never point at a row the list isn't showing.
  */
@@ -110,19 +144,19 @@ export function buildPickerItems(
   query: string,
   collapsedProviders: ReadonlySet<string>,
 ): PickerItem[] {
-  return buildPickerSections(catalog, query, collapsedProviders).flatMap((s) =>
-    s.collapsed ? [] : s.rows,
-  )
+  const agents = buildAgentSection(catalog, query)
+  const sections = buildPickerSections(catalog, query, collapsedProviders)
+  return (agents ? [...sections, agents] : sections).flatMap((s) => (s.collapsed ? [] : s.rows))
 }
 
 type ChipOption = { key: string; label: string; title?: string }
 
 /**
- * Segmented chip control with the sliding thumb (#516), shared by the
- * Effort and Agent rows. Segment widths vary with their labels, so the
- * thumb is measured off the active chip instead of derived from an index.
- * Layout effect so the thumb lands before paint — opening the picker must
- * not animate; only an in-picker change does.
+ * Segmented chip control with the sliding thumb (#516) for the Effort row.
+ * Segment widths vary with their labels, so the thumb is measured off the
+ * active chip instead of derived from an index. Layout effect so the thumb
+ * lands before paint — opening the picker must not animate; only an
+ * in-picker change does.
  */
 function ChipGroup({
   groupLabel,
@@ -239,14 +273,20 @@ export function ModelPicker({
     () => (catalog && openRecents ? { ...catalog, recents: openRecents } : catalog),
     [catalog, openRecents],
   )
-  const sections = useMemo(
+  const modelSections = useMemo(
     () => buildPickerSections(pickerCatalog, query, inSearch ? searchFolds : folds),
     [pickerCatalog, query, inSearch, searchFolds, folds],
   )
+  const agentSection = useMemo(() => buildAgentSection(pickerCatalog, query), [pickerCatalog, query])
+  const sections = useMemo(
+    () => (agentSection ? [...modelSections, agentSection] : modelSections),
+    [modelSections, agentSection],
+  )
   const items = useMemo(() => sections.flatMap((s) => (s.collapsed ? [] : s.rows)), [sections])
   const indexOfItem = useMemo(() => new Map(items.map((item, i) => [item, i])), [items])
-  // A pick moves the check, the effort chips, and the active row before the
-  // host's selection echo confirms it; the echo wins if it ever disagrees.
+  // A pick moves its check (model or agent), the effort chips, and the active
+  // row before the host's selection echo confirms it; the echo wins if it
+  // ever disagrees.
   const [pendingModel, setPendingModel] = useState<{ key?: string } | null>(null)
   useEffect(() => {
     setPendingModel(null)
@@ -256,8 +296,24 @@ export function ModelPicker({
     () => (currentKey ? catalog?.models.find((m) => modelKey(m) === currentKey) : undefined),
     [catalog, currentKey],
   )
-  const isCurrentItem = (item: PickerItem | undefined) =>
-    item !== undefined && (item.kind === "default" ? !currentKey : modelKey(item.entry) === currentKey)
+  const [pendingAgent, setPendingAgent] = useState<{ name?: string } | null>(null)
+  useEffect(() => {
+    setPendingAgent(null)
+  }, [selection.agent])
+  const activeAgent = pendingAgent ? pendingAgent.name : selection.agent
+  const isCurrentItem = (item: PickerItem | undefined): boolean => {
+    if (!item) return false
+    switch (item.kind) {
+      case "model":
+        return modelKey(item.entry) === currentKey
+      case "default":
+        return !currentKey
+      case "agent":
+        return item.entry.name === activeAgent
+      case "agentDefault":
+        return !activeAgent
+    }
+  }
   const [activeIndex, setActiveIndex] = useState(0)
 
   // Stale-while-revalidate: render the pushed catalog immediately, ask the
@@ -330,24 +386,28 @@ export function ModelPicker({
   }, [selection.modelVariant, selection.model])
   const activeVariant = pendingVariant ? pendingVariant.variant : selection.modelVariant
 
-  const [pendingAgent, setPendingAgent] = useState<{ name?: string } | null>(null)
-  useEffect(() => {
-    setPendingAgent(null)
-  }, [selection.agent])
-  const activeAgent = pendingAgent ? pendingAgent.name : selection.agent
-  const agents = catalog?.agents ?? []
-
   const searchRef = useRef<HTMLInputElement | null>(null)
   const selectItem = (item: PickerItem) => {
     setActiveIndex(indexOfItem.get(item) ?? 0)
-    if (item.kind === "default") {
-      setPendingModel({ key: undefined })
-      setPendingVariant({ variant: undefined })
-      onSetModel(undefined, undefined, undefined)
-    } else {
-      setPendingModel({ key: modelKey(item.entry) })
-      setPendingVariant({ variant: item.entry.lastVariant })
-      onSetModel(item.entry.providerID, item.entry.modelID, item.entry.lastVariant)
+    switch (item.kind) {
+      case "default":
+        setPendingModel({ key: undefined })
+        setPendingVariant({ variant: undefined })
+        onSetModel(undefined, undefined, undefined)
+        break
+      case "model":
+        setPendingModel({ key: modelKey(item.entry) })
+        setPendingVariant({ variant: item.entry.lastVariant })
+        onSetModel(item.entry.providerID, item.entry.modelID, item.entry.lastVariant)
+        break
+      case "agent":
+        setPendingAgent({ name: item.entry.name })
+        onSetAgent(item.entry.name)
+        break
+      case "agentDefault":
+        setPendingAgent({ name: undefined })
+        onSetAgent(undefined)
+        break
     }
     searchRef.current?.focus()
   }
@@ -357,11 +417,6 @@ export function ModelPicker({
     onSetModel(current.providerID, current.modelID, variant)
     // The click parked focus on the chip; hand it back so arrows and typing
     // keep working without another click.
-    searchRef.current?.focus()
-  }
-  const pickAgent = (name?: string) => {
-    setPendingAgent({ name })
-    onSetAgent(name)
     searchRef.current?.focus()
   }
   const toggleProvider = (providerID: string) => {
@@ -406,6 +461,28 @@ export function ModelPicker({
     }
   }
 
+  const renderRow = (item: PickerItem, key: string, title: string | undefined, body: React.ReactNode) => {
+    const i = indexOfItem.get(item)!
+    const isCurrent = isCurrentItem(item)
+    return (
+      <button
+        key={key}
+        type="button"
+        role="option"
+        aria-selected={i === activeIndex}
+        className={`model-picker-row ${i === activeIndex ? "active" : ""} ${isCurrent ? "is-current" : ""}`}
+        onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
+        onClick={() => selectItem(item)}
+        title={title}
+      >
+        <span className="model-picker-check" aria-hidden="true">
+          {isCurrent && <span className="codicon codicon-check" />}
+        </span>
+        {body}
+      </button>
+    )
+  }
+
   return (
     <div className="model-picker">
       <div className="model-picker-search-wrap">
@@ -414,8 +491,8 @@ export function ModelPicker({
           ref={searchRef}
           className="model-picker-search"
           type="text"
-          placeholder="Search models…"
-          aria-label="Search models"
+          placeholder="Search models and agents…"
+          aria-label="Search models and agents"
           value={query}
           autoFocus
           onChange={(e) => setQuery(e.target.value)}
@@ -426,13 +503,13 @@ export function ModelPicker({
         className="model-picker-list"
         ref={listRef}
         role="listbox"
-        aria-label="Models"
+        aria-label="Models and agents"
         onMouseMove={onListMouseMove}
       >
         {!catalog && <div className="model-picker-empty">Waiting for the model list…</div>}
         {/* Keyed off sections, not items: matches hidden behind a collapsed
             header are still matches, not an empty result. */}
-        {catalog && sections.length === 0 && (
+        {catalog && modelSections.length === 0 && (
           <div className="model-picker-empty">
             {query ? `No models match “${query.trim()}”` : "No models reported by opencode"}
           </div>
@@ -457,61 +534,61 @@ export function ModelPicker({
             )}
             {!section.collapsed &&
               section.rows.map((item) => {
-                const i = indexOfItem.get(item)!
-                if (item.kind === "default") {
-                  return (
-                    <button
-                      key={`${item.section}:__default`}
-                      type="button"
-                      role="option"
-                      aria-selected={i === activeIndex}
-                      className={`model-picker-row ${i === activeIndex ? "active" : ""} ${currentKey ? "" : "is-current"}`}
-                      onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
-                      onClick={() => selectItem(item)}
-                      title="Use opencode's configured default model"
-                    >
-                      <span className="model-picker-check" aria-hidden="true">
-                        {!currentKey && <span className="codicon codicon-check" />}
-                      </span>
-                      <span className="model-picker-name">opencode default</span>
-                    </button>
-                  )
+                switch (item.kind) {
+                  case "default":
+                    return renderRow(
+                      item,
+                      `${item.section}:__default`,
+                      "Use opencode's configured default model",
+                      <span className="model-picker-name">opencode default</span>,
+                    )
+                  case "agentDefault":
+                    return renderRow(
+                      item,
+                      `${item.section}:__default`,
+                      "Use the opencode default agent",
+                      <span className="model-picker-name">default</span>,
+                    )
+                  case "agent":
+                    return renderRow(
+                      item,
+                      `${item.section}:${item.entry.name}`,
+                      item.entry.description,
+                      <>
+                        <span className="model-picker-name">{item.entry.name}</span>
+                        {item.entry.description && (
+                          <span className="model-picker-desc">{item.entry.description}</span>
+                        )}
+                      </>,
+                    )
+                  case "model": {
+                    const entry = item.entry
+                    const key = modelKey(entry)
+                    const tooltip = entry.lastVariant ? `${key} · ${entry.lastVariant}` : key
+                    // Inside a provider group the header already names the provider;
+                    // repeating it per row is noise. Only Recent mixes providers,
+                    // so only there the label disambiguates.
+                    const showProvider = item.section === "Recent"
+                    return renderRow(
+                      item,
+                      `${item.section}:${key}`,
+                      tooltip,
+                      <>
+                        {/* Raw model id, not the prettified label: the picker is where
+                            date-suffix and point-release differences matter. */}
+                        <span className="model-picker-name">{entry.modelID}</span>
+                        {entry.lastVariant && (
+                          <span className="model-picker-last-variant">{entry.lastVariant}</span>
+                        )}
+                        {showProvider && (
+                          <span className="model-picker-provider">
+                            {entry.providerName ?? entry.providerID}
+                          </span>
+                        )}
+                      </>,
+                    )
+                  }
                 }
-                const entry = item.entry
-                const key = modelKey(entry)
-                const isCurrent = key === currentKey
-                const tooltip = entry.lastVariant ? `${key} · ${entry.lastVariant}` : key
-                // Inside a provider group the header already names the provider;
-                // repeating it per row is noise. Only Recent mixes providers,
-                // so only there the label disambiguates.
-                const showProvider = item.section === "Recent"
-                return (
-                  <button
-                    key={`${item.section}:${key}`}
-                    type="button"
-                    role="option"
-                    aria-selected={i === activeIndex}
-                    className={`model-picker-row ${i === activeIndex ? "active" : ""} ${isCurrent ? "is-current" : ""}`}
-                    onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
-                    onClick={() => selectItem(item)}
-                    title={tooltip}
-                  >
-                    <span className="model-picker-check" aria-hidden="true">
-                      {isCurrent && <span className="codicon codicon-check" />}
-                    </span>
-                    {/* Raw model id, not the prettified label: the picker is where
-                        date-suffix and point-release differences matter. */}
-                    <span className="model-picker-name">{entry.modelID}</span>
-                    {entry.lastVariant && (
-                      <span className="model-picker-last-variant">{entry.lastVariant}</span>
-                    )}
-                    {showProvider && (
-                      <span className="model-picker-provider">
-                        {entry.providerName ?? entry.providerID}
-                      </span>
-                    )}
-                  </button>
-                )
               })}
           </Fragment>
         ))}
@@ -525,18 +602,6 @@ export function ModelPicker({
             activeKey={activeVariant}
             defaultTitle="Use the model's default effort"
             onPick={pickVariant}
-          />
-        </div>
-      )}
-      {agents.length > 0 && (
-        <div className="model-picker-agents">
-          <span className="model-picker-chip-label">Agent</span>
-          <ChipGroup
-            groupLabel="Agent"
-            options={agents.map((a) => ({ key: a.name, label: a.name, title: a.description }))}
-            activeKey={activeAgent}
-            defaultTitle="Use the opencode default agent"
-            onPick={pickAgent}
           />
         </div>
       )}

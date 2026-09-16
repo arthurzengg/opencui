@@ -238,7 +238,7 @@ export type ModelCatalogEntry = {
 /** One selectable agent for the picker's Agent chips. */
 export type AgentCatalogEntry = {
   name: string
-  /** Shown as the chip tooltip. */
+  /** Shown muted after the name on the picker row, and as its tooltip. */
   description?: string
 }
 

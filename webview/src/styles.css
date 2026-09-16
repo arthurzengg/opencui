@@ -494,22 +494,16 @@ button:focus-visible {
 .model-picker-search::placeholder {
   color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
 }
-/* Both chip rows sit below the list as a divider-anchored footer (the agent
-   row replaced the old footer handoff into the native QuickPick; effort
-   joined it in #551). One divider opens the footer; the rows inside share
-   it rather than each drawing their own. */
-.model-picker-effort,
-.model-picker-agents {
+/* The effort chips sit below the list as a divider-anchored footer (#551).
+   Agents shared it as a second chip row until #633 made them list rows, so
+   the footer holds this one row. */
+.model-picker-effort {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
   padding: 8px 12px;
   border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-}
-.model-picker-effort + .model-picker-agents {
-  border-top: 0;
-  padding-top: 0;
 }
 .model-picker-chip-label {
   color: var(--vscode-descriptionForeground);
@@ -538,9 +532,8 @@ button:focus-visible {
   padding: 2px 9px;
   border: 0;
   border-radius: 5px;
-  /* Faint per-chip fill: multi-word agent names ("Hephaestus - Deep Agent")
-     have internal spaces, so without a fill adjacent chips read as one
-     continuous run of text and the segment boundaries disappear. */
+  /* Faint per-chip fill so the segment boundaries stay visible: without it
+     the labels read as one run of words along the track. */
   background: color-mix(in srgb, var(--vscode-foreground) 5%, transparent);
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
@@ -688,6 +681,22 @@ button:focus-visible {
   font-size: 11px;
 }
 .model-picker-row.active .model-picker-provider {
+  color: inherit;
+  opacity: 0.75;
+}
+/* Agent description: trailing and muted like the provider label. It gives
+   way first — the large shrink factor lets a long description ellipsize
+   before the name loses a character. */
+.model-picker-desc {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+}
+.model-picker-row.active .model-picker-desc {
   color: inherit;
   opacity: 0.75;
 }
