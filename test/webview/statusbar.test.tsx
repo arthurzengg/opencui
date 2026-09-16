@@ -96,18 +96,19 @@ describe("StatusBar", () => {
             { providerID: "anthropic", modelID: "claude-opus-4-7", providerName: "Anthropic", variants: [] },
           ],
           recents: [],
+          agents: [],
         }}
         onRefreshModels={onRefreshModels}
       />,
     )
     const trigger = screen.getByRole("button", { name: /change agent, model, and effort/i })
     await user.click(trigger)
-    expect(screen.getByRole("listbox", { name: "Models" })).toBeInTheDocument()
+    expect(screen.getByRole("listbox", { name: "Models and agents" })).toBeInTheDocument()
     // Opening asks the host for a fresh catalog (stale-while-revalidate).
     expect(onRefreshModels).toHaveBeenCalledOnce()
   })
 
-  it("clicking an agent chip in the picker sets the agent and keeps the popover open", async () => {
+  it("clicking an agent row in the picker sets the agent and keeps the popover open", async () => {
     const user = userEvent.setup()
     const onSetAgent = vi.fn()
     render(
@@ -118,10 +119,10 @@ describe("StatusBar", () => {
       />,
     )
     await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
-    await user.click(screen.getByRole("button", { name: "plan" }))
+    await user.click(screen.getByRole("option", { name: "plan" }))
     expect(onSetAgent).toHaveBeenCalledWith("plan")
     // Picking in place replaced the old close-into-QuickPick footer handoff.
-    expect(screen.getByRole("listbox", { name: "Models" })).toBeInTheDocument()
+    expect(screen.getByRole("listbox", { name: "Models and agents" })).toBeInTheDocument()
   })
 
   it("clicking a model row in the picker sets the model and keeps the popover open", async () => {
@@ -135,6 +136,7 @@ describe("StatusBar", () => {
             { providerID: "openai", modelID: "gpt-5.5", providerName: "OpenAI", variants: ["low", "high"] },
           ],
           recents: [],
+          agents: [],
         }}
         onSetModel={onSetModel}
       />,
@@ -144,10 +146,10 @@ describe("StatusBar", () => {
     expect(onSetModel).toHaveBeenCalledWith("openai", "gpt-5.5", undefined)
     // The effort chips only exist for the current model, so the pick must not
     // close the popover before they can be tuned; Escape still closes it.
-    expect(screen.getByRole("listbox", { name: "Models" })).toBeInTheDocument()
+    expect(screen.getByRole("listbox", { name: "Models and agents" })).toBeInTheDocument()
     expect(screen.getByRole("group", { name: "Effort" })).toBeInTheDocument()
     await user.keyboard("{Escape}")
-    expect(screen.queryByRole("listbox", { name: "Models" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("listbox", { name: "Models and agents" })).not.toBeInTheDocument()
   })
 
   it("renders the variant text in the trigger when modelVariant is set", () => {
@@ -171,6 +173,7 @@ describe("StatusBar", () => {
             { providerID: "openai", modelID: "gpt-5.5", providerName: "OpenAI", variants: ["low", "high"] },
           ],
           recents: [],
+          agents: [],
         }}
       />,
     )
