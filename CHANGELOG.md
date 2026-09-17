@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.4] - 2026-09-17
+
+### Changed
+
+- Agents in the Model / Agent / Effort picker are chips again, replacing the list rows from 1.15.3. The Agent row now sits above the Effort row, and each footer row draws its own divider, so the seam between the model list and Agent matches the one between Agent and Effort (#639, #640).
+
 ## [1.15.3] - 2026-09-17
 
 ### Changed
