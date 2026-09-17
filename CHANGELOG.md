@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.3] - 2026-09-17
+
+### Changed
+
+- Agents in the Model / Agent / Effort picker are rows in the list instead of a wrapped chip row. An Agent section follows the model sections and sits above the Effort footer; every row carries the leading check slot, the name, and the description trailing muted with the full text in the tooltip. Agent rows join the keyboard list and the search, which matches agent names only, and a pick keeps the popover open (#633, #634).
+
 ## [1.15.2] - 2026-09-14
 
 ### Changed
