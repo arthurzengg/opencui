@@ -1,13 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { fireEvent, render, screen, cleanup, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import {
-  ModelPicker,
-  buildAgentSection,
-  buildPickerItems,
-  buildPickerSections,
-  type PickerItem,
-} from "../../webview/src/components/ModelPicker"
+import { ModelPicker, buildPickerItems, buildPickerSections } from "../../webview/src/components/ModelPicker"
 import { reducer, initialChatState } from "../../webview/src/hooks/useChatState"
 import type { ModelCatalogInfo } from "../../webview/src/protocol"
 
@@ -52,24 +46,18 @@ const noFolds: ReadonlySet<string> = new Set()
 function effortChips() {
   return within(screen.getByRole("group", { name: "Effort" }))
 }
+function agentChips() {
+  return within(screen.getByRole("group", { name: "Agent" }))
+}
 
 function rowNames(): string[] {
   return screen.getAllByRole("option").map((r) => r.querySelector(".model-picker-name")!.textContent!)
 }
-/** First row whose name matches; agent names never collide with model ids here. */
-function rowNamed(name: string): HTMLElement {
-  return screen.getAllByRole("option").find((r) => r.querySelector(".model-picker-name")?.textContent === name)!
-}
-function itemLabel(i: PickerItem): string {
-  if (i.kind === "model") return `${i.section}:${i.entry.modelID}`
-  if (i.kind === "agent") return `${i.section}:${i.entry.name}`
-  return i.kind
-}
 
 describe("buildPickerItems", () => {
-  it("orders recents first (host order), then provider groups, the default row, then the agents", () => {
+  it("orders recents first (host order), then provider groups, then the default row", () => {
     const items = buildPickerItems(catalog, "", noFolds)
-    expect(items.map(itemLabel)).toEqual([
+    expect(items.map((i) => (i.kind === "model" ? `${i.section}:${i.entry.modelID}` : i.kind))).toEqual([
       "Recent:gpt-5.5",
       "Recent:claude-sonnet-4-6",
       "Anthropic:claude-sonnet-4-6",
@@ -77,9 +65,6 @@ describe("buildPickerItems", () => {
       "OpenAI:gpt-5.5",
       "Google:gemini-3-pro",
       "default",
-      "agentDefault",
-      "Agent:build",
-      "Agent:plan",
     ])
   })
 
@@ -114,17 +99,14 @@ describe("buildPickerItems", () => {
     expect(buildPickerItems(undefined, "", noFolds)).toEqual([])
   })
 
-  it("a folded provider's rows leave the flat list; Recent, Default, and Agent stay", () => {
+  it("a folded provider's rows leave the flat list; Recent and Default stay", () => {
     const items = buildPickerItems(catalog, "", new Set(["anthropic"]))
-    expect(items.map(itemLabel)).toEqual([
+    expect(items.map((i) => (i.kind === "model" ? `${i.section}:${i.entry.modelID}` : i.kind))).toEqual([
       "Recent:gpt-5.5",
       "Recent:claude-sonnet-4-6",
       "OpenAI:gpt-5.5",
       "Google:gemini-3-pro",
       "default",
-      "agentDefault",
-      "Agent:build",
-      "Agent:plan",
     ])
   })
 
@@ -149,27 +131,6 @@ describe("buildPickerItems", () => {
   })
 })
 
-describe("buildAgentSection", () => {
-  it("leads with the default row, then the agents in catalog order", () => {
-    const section = buildAgentSection(catalog, "")!
-    expect(section.title).toBe("Agent")
-    expect(section.collapsed).toBe(false)
-    expect(section.rows.map(itemLabel)).toEqual(["agentDefault", "Agent:build", "Agent:plan"])
-  })
-
-  it("filters by name only, dropping the default row while searching", () => {
-    expect(buildAgentSection(catalog, "plan")!.rows.map(itemLabel)).toEqual(["Agent:plan"])
-    // "changes" is in build's description, which is prose, not identity.
-    expect(buildAgentSection(catalog, "changes")).toBeUndefined()
-    expect(buildAgentSection(catalog, "b")!.rows.map(itemLabel)).toEqual(["Agent:build"])
-  })
-
-  it("is absent without a catalog or without agents", () => {
-    expect(buildAgentSection(undefined, "")).toBeUndefined()
-    expect(buildAgentSection({ ...catalog, agents: [] }, "")).toBeUndefined()
-  })
-})
-
 describe("ModelPicker", () => {
   it("asks the host for a fresh catalog on mount", () => {
     const onRefresh = vi.fn()
@@ -191,7 +152,7 @@ describe("ModelPicker", () => {
     // The effort chips switch to the picked model with its remembered variant.
     expect(effortChips().getByRole("button", { name: "max" }).className).toContain("is-active")
     // Focus returns to the search input so keyboard flow continues.
-    expect(screen.getByRole("textbox", { name: "Search models and agents" })).toHaveFocus()
+    expect(screen.getByRole("textbox", { name: "Search models" })).toHaveFocus()
   })
 
   it("the host's selection echo wins over the optimistic model pick if they disagree", () => {
@@ -278,7 +239,7 @@ describe("ModelPicker", () => {
     expect(screen.getByRole("button", { name: "medium" }).className).toContain("is-active")
     expect(high.className).not.toContain("is-active")
     // Focus returns to the search input so keyboard flow continues.
-    expect(screen.getByRole("textbox", { name: "Search models and agents" })).toHaveFocus()
+    expect(screen.getByRole("textbox", { name: "Search models" })).toHaveFocus()
   })
 
   it("the host's selection echo wins over the optimistic chip if they disagree", () => {
@@ -309,13 +270,14 @@ describe("ModelPicker", () => {
     expect(effortChips().getByRole("button", { name: "default" }).className).toContain("is-active")
   })
 
-  it("renders a sliding thumb in the Effort group (decorative, hidden from a11y)", () => {
+  it("renders a sliding thumb per chip group (decorative, hidden from a11y)", () => {
     const { container } = render(
       <ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} />,
     )
     const thumbs = container.querySelectorAll(".model-picker-chip-thumb")
-    expect(thumbs).toHaveLength(1)
-    expect(thumbs[0]!.getAttribute("aria-hidden")).toBe("true")
+    // One in the Effort group, one in the Agent group.
+    expect(thumbs).toHaveLength(2)
+    for (const thumb of thumbs) expect(thumb.getAttribute("aria-hidden")).toBe("true")
   })
 
   it("hides the effort chips when the current model has no variants", () => {
@@ -323,22 +285,23 @@ describe("ModelPicker", () => {
     expect(screen.queryByText("Effort")).not.toBeInTheDocument()
   })
 
-  it("lists agents as the last section, inside the list and above the Effort footer", () => {
+  it("renders the chip rows as a footer: list first, then Agent, then Effort", () => {
     render(<ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} />)
-    const list = screen.getByRole("listbox", { name: "Models and agents" })
-    const header = screen.getByText("Agent")
+    const list = screen.getByRole("listbox", { name: "Models" })
+    const agent = screen.getByRole("group", { name: "Agent" })
     const effort = screen.getByRole("group", { name: "Effort" })
-    expect(list.contains(header)).toBe(true)
-    expect(header.className).toBe("model-picker-section")
-    expect(screen.getByText("Default").compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(list.compareDocumentPosition(effort) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(rowNames().slice(-3)).toEqual(["default", "build", "plan"])
+    expect(list.compareDocumentPosition(agent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(agent.compareDocumentPosition(effort) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Each row is its own bordered block (the divider CSS keys on these), so
+    // the list/Agent and Agent/Effort seams draw the same line.
+    expect(agent.parentElement!.className).toBe("model-picker-agents")
+    expect(effort.parentElement!.className).toBe("model-picker-effort")
   })
 
   it("typing filters the list; Enter picks the active match", () => {
     const onSetModel = vi.fn()
     render(<ModelPicker {...baseProps} onSetModel={onSetModel} />)
-    const input = screen.getByRole("textbox", { name: "Search models and agents" })
+    const input = screen.getByRole("textbox", { name: "Search models" })
     fireEvent.change(input, { target: { value: "haiku" } })
     expect(rowNames()).toEqual(["claude-haiku-4-5"])
     fireEvent.keyDown(input, { key: "Enter" })
@@ -348,9 +311,9 @@ describe("ModelPicker", () => {
   it("ArrowDown/ArrowUp move the active row and wrap; Enter selects it", () => {
     const onSetModel = vi.fn()
     render(<ModelPicker {...baseProps} onSetModel={onSetModel} />)
-    const input = screen.getByRole("textbox", { name: "Search models and agents" })
-    fireEvent.keyDown(input, { key: "ArrowUp" }) // wraps from 0 to the last row (the last agent)
-    expect(rowNamed("plan").getAttribute("aria-selected")).toBe("true")
+    const input = screen.getByRole("textbox", { name: "Search models" })
+    fireEvent.keyDown(input, { key: "ArrowUp" }) // wraps from 0 to the last row (default)
+    expect(screen.getByRole("option", { name: /opencode default/ }).getAttribute("aria-selected")).toBe("true")
     fireEvent.keyDown(input, { key: "ArrowDown" })
     fireEvent.keyDown(input, { key: "ArrowDown" })
     fireEvent.keyDown(input, { key: "Enter" })
@@ -360,7 +323,7 @@ describe("ModelPicker", () => {
   it("ignores Enter and arrows during IME composition", () => {
     const onSetModel = vi.fn()
     render(<ModelPicker {...baseProps} onSetModel={onSetModel} />)
-    const input = screen.getByRole("textbox", { name: "Search models and agents" })
+    const input = screen.getByRole("textbox", { name: "Search models" })
     fireEvent.keyDown(input, { key: "Enter", keyCode: 229 })
     fireEvent.keyDown(input, { key: "ArrowDown", keyCode: 229 })
     expect(onSetModel).not.toHaveBeenCalled()
@@ -369,7 +332,7 @@ describe("ModelPicker", () => {
 
   it("a bare mouseenter is ignored after arrow-keying; real pointer movement re-enables hover", () => {
     render(<ModelPicker {...baseProps} />)
-    const input = screen.getByRole("textbox", { name: "Search models and agents" })
+    const input = screen.getByRole("textbox", { name: "Search models" })
     fireEvent.keyDown(input, { key: "ArrowDown" })
     const rows = screen.getAllByRole("option")
     expect(rows[1]!.getAttribute("aria-selected")).toBe("true")
@@ -377,103 +340,57 @@ describe("ModelPicker", () => {
     fireEvent.mouseEnter(rows[3]!)
     expect(rows[1]!.getAttribute("aria-selected")).toBe("true")
     // Real movement: mousemove with changed coordinates, then enter.
-    const list = screen.getByRole("listbox", { name: "Models and agents" })
+    const list = screen.getByRole("listbox", { name: "Models" })
     fireEvent.mouseMove(list, { clientX: 10, clientY: 20 })
     fireEvent.mouseEnter(rows[3]!)
     expect(rows[3]!.getAttribute("aria-selected")).toBe("true")
   })
 
-  it("shows a waiting state before the catalog arrives (agent rows wait with it)", () => {
+  it("shows a waiting state before the catalog arrives (agent chips wait with it)", () => {
     render(<ModelPicker {...baseProps} catalog={undefined} />)
     expect(screen.getByText(/Waiting for the model list/)).toBeInTheDocument()
-    expect(screen.queryByText("Agent")).toBeNull()
+    expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument()
   })
 
-  it("clicking an agent row picks that agent and moves the check before the host echo", async () => {
-    const user = userEvent.setup()
-    const onSetAgent = vi.fn()
-    const onSetModel = vi.fn()
-    render(
-      <ModelPicker {...baseProps} selection={{ agent: "build" }} onSetAgent={onSetAgent} onSetModel={onSetModel} />,
-    )
-    expect(rowNamed("build").querySelector(".codicon-check")).toBeTruthy()
-    expect(rowNamed("build").className).toContain("is-current")
-    await user.click(rowNamed("plan"))
-    expect(onSetAgent).toHaveBeenCalledWith("plan")
-    expect(onSetModel).not.toHaveBeenCalled()
-    // Same contract as a model row: the check and the highlight move before
-    // the host's selection echo.
-    expect(rowNamed("plan").querySelector(".codicon-check")).toBeTruthy()
-    expect(rowNamed("plan").getAttribute("aria-selected")).toBe("true")
-    expect(rowNamed("build").querySelector(".codicon-check")).toBeNull()
-    expect(screen.getByRole("textbox", { name: "Search models and agents" })).toHaveFocus()
-  })
-
-  it("the default agent row resets to the opencode default", async () => {
+  it("an agent chip picks that agent and moves the active chip optimistically", async () => {
     const user = userEvent.setup()
     const onSetAgent = vi.fn()
     render(<ModelPicker {...baseProps} selection={{ agent: "build" }} onSetAgent={onSetAgent} />)
-    const row = rowNamed("default")
-    expect(row.getAttribute("title")).toBe("Use the opencode default agent")
-    await user.click(row)
-    expect(onSetAgent).toHaveBeenCalledWith(undefined)
-    expect(rowNamed("default").querySelector(".codicon-check")).toBeTruthy()
-    expect(rowNamed("build").querySelector(".codicon-check")).toBeNull()
+    const build = agentChips().getByRole("button", { name: "build" })
+    expect(build.className).toContain("is-active")
+    await user.click(agentChips().getByRole("button", { name: "plan" }))
+    expect(onSetAgent).toHaveBeenCalledWith("plan")
+    // Same contract as the effort chips: the active chip moves before the
+    // host's selection echo.
+    expect(agentChips().getByRole("button", { name: "plan" }).className).toContain("is-active")
+    expect(build.className).not.toContain("is-active")
+    expect(screen.getByRole("textbox", { name: "Search models" })).toHaveFocus()
   })
 
-  it("the host's selection echo wins over the optimistic agent pick if they disagree", () => {
+  it("the default agent chip resets to the opencode default", async () => {
+    const user = userEvent.setup()
+    const onSetAgent = vi.fn()
+    render(<ModelPicker {...baseProps} selection={{ agent: "build" }} onSetAgent={onSetAgent} />)
+    await user.click(agentChips().getByRole("button", { name: "default" }))
+    expect(onSetAgent).toHaveBeenCalledWith(undefined)
+    expect(agentChips().getByRole("button", { name: "default" }).className).toContain("is-active")
+  })
+
+  it("the host's selection echo wins over the optimistic agent chip if they disagree", () => {
     const { rerender } = render(<ModelPicker {...baseProps} selection={{ agent: "build" }} />)
-    fireEvent.click(rowNamed("plan"))
-    expect(rowNamed("plan").querySelector(".codicon-check")).toBeTruthy()
+    fireEvent.click(agentChips().getByRole("button", { name: "plan" }))
+    expect(agentChips().getByRole("button", { name: "plan" }).className).toContain("is-active")
     rerender(<ModelPicker {...baseProps} selection={{ agent: "build" }} />)
     // Same agent echoed back — the optimistic pick stands until told otherwise.
-    expect(rowNamed("plan").querySelector(".codicon-check")).toBeTruthy()
+    expect(agentChips().getByRole("button", { name: "plan" }).className).toContain("is-active")
     rerender(<ModelPicker {...baseProps} selection={{}} />)
-    expect(rowNamed("default").querySelector(".codicon-check")).toBeTruthy()
-    expect(rowNamed("plan").querySelector(".codicon-check")).toBeNull()
+    expect(agentChips().getByRole("button", { name: "default" }).className).toContain("is-active")
+    expect(agentChips().getByRole("button", { name: "plan" }).className).not.toContain("is-active")
   })
 
-  it("Enter on an agent row reached by arrow keys picks it", () => {
-    const onSetAgent = vi.fn()
-    const onSetModel = vi.fn()
-    render(<ModelPicker {...baseProps} onSetAgent={onSetAgent} onSetModel={onSetModel} />)
-    const input = screen.getByRole("textbox", { name: "Search models and agents" })
-    fireEvent.keyDown(input, { key: "ArrowUp" })
-    fireEvent.keyDown(input, { key: "ArrowUp" })
-    expect(rowNamed("build").getAttribute("aria-selected")).toBe("true")
-    fireEvent.keyDown(input, { key: "Enter" })
-    expect(onSetAgent).toHaveBeenCalledWith("build")
-    expect(onSetModel).not.toHaveBeenCalled()
-  })
-
-  it("shows the agent description muted after the name and as the row tooltip", () => {
-    render(<ModelPicker {...baseProps} />)
-    const build = rowNamed("build")
-    expect(build.querySelector(".model-picker-desc")!.textContent).toBe("makes changes")
-    expect(build.getAttribute("title")).toBe("makes changes")
-    // The check slot leads every agent row too, so names align with the models.
-    expect(build.firstElementChild!.className).toBe("model-picker-check")
-    expect(rowNamed("plan").querySelector(".model-picker-desc")).toBeNull()
-  })
-
-  it("a search matches agent names but not descriptions; the default agent row leaves with it", () => {
-    render(<ModelPicker {...baseProps} />)
-    const input = screen.getByRole("textbox", { name: "Search models and agents" })
-    fireEvent.change(input, { target: { value: "plan" } })
-    // No model matches, and that still shows — the agent match renders below it.
-    expect(screen.getByText(/No models match/)).toBeInTheDocument()
-    expect(rowNames()).toEqual(["plan"])
-    fireEvent.change(input, { target: { value: "changes" } })
-    expect(screen.queryAllByRole("option")).toHaveLength(0)
-    expect(screen.queryByText("Agent")).toBeNull()
-    fireEvent.change(input, { target: { value: "" } })
-    expect(rowNames().slice(-3)).toEqual(["default", "build", "plan"])
-  })
-
-  it("renders no Agent section when the catalog reports no agents", () => {
+  it("hides the agent chips when the catalog reports no agents", () => {
     render(<ModelPicker {...baseProps} catalog={{ ...catalog, agents: [] }} />)
-    expect(screen.queryByText("Agent")).toBeNull()
-    expect(rowNames()).not.toContain("default")
+    expect(screen.queryByRole("group", { name: "Agent" })).not.toBeInTheDocument()
   })
 })
 
@@ -488,18 +405,9 @@ describe("ModelPicker provider folding", () => {
     expect(onSetProviderCollapsed).toHaveBeenCalledWith("anthropic", true)
     expect(header.getAttribute("aria-expanded")).toBe("false")
     // Provider rows gone; the Recent copy of sonnet stays.
-    expect(rowNames()).toEqual([
-      "gpt-5.5",
-      "claude-sonnet-4-6",
-      "gpt-5.5",
-      "gemini-3-pro",
-      "opencode default",
-      "default",
-      "build",
-      "plan",
-    ])
+    expect(rowNames()).toEqual(["gpt-5.5", "claude-sonnet-4-6", "gpt-5.5", "gemini-3-pro", "opencode default"])
     // Focus handed back to the search line so arrows keep working (chip pattern).
-    expect(screen.getByRole("textbox", { name: "Search models and agents" })).toHaveFocus()
+    expect(screen.getByRole("textbox", { name: "Search models" })).toHaveFocus()
     await user.click(header)
     expect(onSetProviderCollapsed).toHaveBeenLastCalledWith("anthropic", false)
     expect(rowNames()).toContain("claude-haiku-4-5")
@@ -520,7 +428,7 @@ describe("ModelPicker provider folding", () => {
         catalog={{ ...catalog, collapsedProviders: ["anthropic"] }}
       />,
     )
-    const input = screen.getByRole("textbox", { name: "Search models and agents" })
+    const input = screen.getByRole("textbox", { name: "Search models" })
     fireEvent.change(input, { target: { value: "haiku" } })
     // The user typed a name to SEE it — the browse fold must not hide it.
     expect(rowNames()).toEqual(["claude-haiku-4-5"])
@@ -534,7 +442,7 @@ describe("ModelPicker provider folding", () => {
   it("folding mid-search is transient: local to the session, never persisted (#565)", () => {
     const onSetProviderCollapsed = vi.fn()
     render(<ModelPicker {...baseProps} onSetProviderCollapsed={onSetProviderCollapsed} />)
-    const input = screen.getByRole("textbox", { name: "Search models and agents" })
+    const input = screen.getByRole("textbox", { name: "Search models" })
     fireEvent.change(input, { target: { value: "g" } })
     expect(rowNames()).toEqual(["gpt-5.5", "gemini-3-pro"])
     const google = screen.getByRole("button", { name: "Google" })
@@ -562,9 +470,8 @@ describe("ModelPicker provider folding", () => {
   it("folding the tail group clamps the active index instead of stranding it", async () => {
     const user = userEvent.setup()
     const onSetModel = vi.fn()
-    // No agents, so the default model row is the list's tail.
-    render(<ModelPicker {...baseProps} catalog={{ ...catalog, agents: [] }} onSetModel={onSetModel} />)
-    const input = screen.getByRole("textbox", { name: "Search models and agents" })
+    render(<ModelPicker {...baseProps} onSetModel={onSetModel} />)
+    const input = screen.getByRole("textbox", { name: "Search models" })
     fireEvent.keyDown(input, { key: "ArrowUp" }) // wrap to the last row (default)
     await user.click(screen.getByRole("button", { name: "Google" }))
     fireEvent.keyDown(input, { key: "Enter" })
