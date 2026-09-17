@@ -3,15 +3,35 @@ name: Release
 on:
   release:
     types: [published]
+  # Publish an existing tag to one registry after the other already accepted
+  # the version: a registry outage must not leave a release half-published
+  # with no way back in.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, for example v1.15.3
+        required: true
+        type: string
+      target:
+        description: Registry to publish to
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - marketplace
+          - open-vsx
 
 jobs:
-  publish:
-    name: Publish to VS Code Marketplace
+  build:
+    name: Build and package
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
@@ -26,11 +46,13 @@ jobs:
         working-directory: webview
 
       - name: Verify tag matches package.json version
+        env:
+          TAG_NAME: ${{ inputs.tag || github.ref_name }}
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
+          TAG="${TAG_NAME#v}"
           PKG=$(node -p "require('./package.json').version")
           if [ "$TAG" != "$PKG" ]; then
-            echo "Tag $GITHUB_REF_NAME (=$TAG) does not match package.json version $PKG" >&2
+            echo "Tag $TAG_NAME (=$TAG) does not match package.json version $PKG" >&2
             exit 1
           fi
 
@@ -46,12 +68,55 @@ jobs:
       - name: Package .vsix
         run: bunx @vscode/vsce package --no-dependencies
 
-      - name: Publish to VS Code Marketplace
-        run: bunx @vscode/vsce publish --no-dependencies --pat "$VSCE_PAT"
+      - name: Upload .vsix
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: "*.vsix"
+          if-no-files-found: error
+
+  # One job per registry so `gh run rerun --failed` retries only the one that
+  # failed; the build job's artifact stays available to the rerun.
+  publish-marketplace:
+    name: Publish to VS Code Marketplace
+    needs: build
+    if: ${{ github.event_name == 'release' || inputs.target != 'open-vsx' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Download .vsix
+        uses: actions/download-artifact@v4
+        with:
+          name: vsix
+
+      - name: Publish
+        run: bunx @vscode/vsce publish --packagePath *.vsix --pat "$VSCE_PAT"
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
-      - name: Publish to Open VSX
+  publish-open-vsx:
+    name: Publish to Open VSX
+    needs: build
+    if: ${{ github.event_name == 'release' || inputs.target != 'marketplace' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Download .vsix
+        uses: actions/download-artifact@v4
+        with:
+          name: vsix
+
+      - name: Publish
         run: bunx ovsx publish *.vsix -p "$OVSX_PAT"
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
