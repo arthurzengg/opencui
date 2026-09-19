@@ -99,6 +99,11 @@
   --bubble-padding:      var(--space-1);
   --bubble-text-padding: var(--space-1);
   --composer-edge-gap:   var(--space-4);
+  /* Height of the blur ramp above the bottom dock. `.messages` reserves it on
+     top of the dock height and `.turn:last-child` subtracts it, so the newest
+     turn still lands at the top of the view with its last line clear of the
+     ramp. */
+  --bottom-dock-fade:    40px;
   /* Border width of `.msg.role-user`. Referenced by `.user-edit-layer` so the
      overlay's `top/left/right` offset and its own border-width stay in lock-
      step with the placeholder's resting border — bump this once and the
@@ -1054,7 +1059,9 @@ button:focus-visible {
      right. `scrollbar-gutter: stable` still reserves the right-edge gutter so a
      classic scrollbar doesn't reflow the text when it appears. */
   scrollbar-gutter: stable;
-  padding: 10px 12px calc(4px + var(--bottom-dock-height, 0px));
+  /* Bottom: the dock's measured height plus the blur ramp above it, so the
+     last line scrolls clear of the glass instead of dissolving under it. */
+  padding: 10px 12px calc(4px + var(--bottom-dock-fade) + var(--bottom-dock-height, 0px));
   /* Firefox: thin transparent scrollbar that brightens on hover. */
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -1076,9 +1083,10 @@ button:focus-visible {
    with the answer streaming into the space below. A short or cancelled answer
    simply leaves blank space here; a long answer outgrows this min-height and
    scrolls normally with the question sticky-pinned at the top. The height is
-   one scroll viewport minus the docked composer/cards, less a small top gap. */
+   one scroll viewport minus the docked composer/cards and the blur ramp
+   (`.messages` pads for both), less a small top gap. */
 .turn:last-child {
-  min-height: calc(var(--messages-height, 0px) - var(--bottom-dock-height, 0px) - 16px);
+  min-height: calc(var(--messages-height, 0px) - var(--bottom-dock-height, 0px) - var(--bottom-dock-fade) - 16px);
 }
 /* Chromium / WebKit (VS Code's webview): track blends with the chat background,
    thumb is invisible by default and appears only on hover or while scrolling. */
@@ -2675,6 +2683,56 @@ button:focus-visible {
 .bottom-dock > .permission,
 .bottom-dock > .question {
   pointer-events: auto;
+}
+
+/* ===== Progressive blur under the dock (#643) =====
+   The transcript dissolves into the composer instead of sliding sharp under
+   its padding. `.bottom-dock-glass` reaches `--bottom-dock-fade` above the
+   dock and stacks two backdrop-filter layers whose masks ramp in at different
+   depths, so the blur radius grows with depth; a single blurred layer fading
+   in over sharp text reads as a double image. The wrapper carries the panel
+   tint and nothing else: a mask, filter, opacity, or clip-path on it would
+   make it a backdrop root, and the layers would then sample the wrapper's own
+   empty painting instead of the transcript behind it. The effect would simply
+   vanish, with no error, which is why a test pins the wrapper's rule. */
+.bottom-dock-glass {
+  position: absolute;
+  top: calc(-1 * var(--bottom-dock-fade));
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Under the cards and the composer. The dock's own z-index makes it a
+     stacking context, which is what keeps -1 above the transcript. */
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--color-bg-panel) 70%, transparent) var(--bottom-dock-fade)
+  );
+}
+.bottom-dock-glass::before,
+.bottom-dock-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.bottom-dock-glass::before {
+  backdrop-filter: blur(4px);
+  mask-image: linear-gradient(to bottom, transparent, #000 calc(var(--bottom-dock-fade) * 0.7));
+}
+.bottom-dock-glass::after {
+  backdrop-filter: blur(12px);
+  mask-image: linear-gradient(to bottom, transparent calc(var(--bottom-dock-fade) * 0.35), #000 var(--bottom-dock-fade));
+}
+@media (prefers-reduced-transparency: reduce) {
+  .bottom-dock-glass {
+    background: linear-gradient(to bottom, transparent, var(--color-bg-panel) var(--bottom-dock-fade));
+  }
+  .bottom-dock-glass::before,
+  .bottom-dock-glass::after {
+    display: none;
+  }
 }
 
 /* ===== Saved permission rules popover (#619) =====
