@@ -2734,6 +2734,18 @@ button:focus-visible {
     display: none;
   }
 }
+/* The ramp is at full strength exactly at the dock's top edge, and when the
+   composer leads the dock its edge gap holds a fully blurred plateau before
+   the input box. A card leading the dock has no such gap, so the ramp would
+   run straight into its border at its steepest point (#645). Give the leading
+   card the same clearance; cards lower in the stack keep their spacing. The
+   glass is the dock's first child, so `+` picks exactly the leading card. */
+.bottom-dock > .bottom-dock-glass + .permission,
+.bottom-dock > .bottom-dock-glass + .question,
+.bottom-dock > .bottom-dock-glass + .review-panel,
+.bottom-dock > .bottom-dock-glass + .queued-messages {
+  margin-top: var(--composer-edge-gap);
+}
 
 /* ===== Saved permission rules popover (#619) =====
    Shares the history popover's frame and row grid; only the row content
