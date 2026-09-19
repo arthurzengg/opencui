@@ -46,6 +46,20 @@ describe("progressive blur under the bottom dock (#643)", () => {
     expect(ruleBody(".turn:last-child")).toMatch(/min-height:[^;]*- var\(--bottom-dock-fade\)/)
   })
 
+  // The ramp ends at the dock's top edge. The composer's edge gap then holds a
+  // fully blurred plateau before its box; a card leading the dock needs the
+  // same gap or the ramp runs straight into its border (#645).
+  it("gives a card that leads the dock the composer's edge gap above it", () => {
+    const leading = [
+      ".bottom-dock > .bottom-dock-glass + .permission",
+      ".bottom-dock > .bottom-dock-glass + .question",
+      ".bottom-dock > .bottom-dock-glass + .review-panel",
+      ".bottom-dock > .bottom-dock-glass + .queued-messages",
+    ].join(",\n")
+    expect(ruleBody(leading)).toMatch(/margin-top:\s*var\(--composer-edge-gap\);/)
+    expect(ruleBody(".bottom-composer")).toMatch(/padding:\s*var\(--composer-edge-gap\) 12px/)
+  })
+
   it("stays inside the dock's stacking context so z-index -1 sits above the transcript", () => {
     expect(ruleBody(".bottom-dock-glass")).toMatch(/z-index:\s*-1;/)
     expect(ruleBody(".bottom-dock")).toMatch(/z-index:\s*var\(--z-overlay\);/)
