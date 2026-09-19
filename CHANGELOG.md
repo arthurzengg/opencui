@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.5] - 2026-09-19
+
+### Added
+
+- The transcript fades into a progressive blur under the bottom dock. The composer and any card docked above it sit on a frosted, panel-tinted surface whose blur deepens toward the bottom edge instead of stopping at a hard line. The transcript reserves the height of the ramp, so the newest turn still lands at the top of the view with its last line clear of it. With reduced transparency enabled the blur is replaced by an opaque fade (#643, #644).
+
+### Fixed
+
+- A card that leads the bottom dock, such as Review changes, a permission prompt, a question, or the queued-messages strip, now clears the blur ramp by the same gap the composer keeps, so the ramp no longer runs straight into the card's top border (#645, #646).
+- The gap between a docked card and the composer is an open gutter showing the frosted surface, matching the gaps at the composer's sides and bottom. The opaque seam fill and the connector strip under the review card are gone, so the seam no longer reads as a hole against the glass (#647, #648).
+
 ## [1.15.4] - 2026-09-17
 
 ### Changed
