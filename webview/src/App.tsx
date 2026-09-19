@@ -372,9 +372,10 @@ export default function App() {
         ))}
       </div>
       <div className="bottom-dock" ref={dockRef}>
-        {/* First child on purpose: the seam-fill CSS keys on `.review-panel +
-            .bottom-composer` adjacency. Absolute, so it adds nothing to the
-            measured dock height. Gated like the docked composer below. */}
+        {/* First child on purpose: the leading-card clearance keys on
+            `.bottom-dock-glass + .review-panel` adjacency. Absolute, so it adds
+            nothing to the measured dock height. Gated like the docked composer
+            below. */}
         {state.messages.length > 0 && <div className="bottom-dock-glass" aria-hidden="true" />}
         {state.pendingPermission && (
           <PermissionDialog

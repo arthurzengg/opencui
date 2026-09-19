@@ -60,6 +60,15 @@ describe("progressive blur under the bottom dock (#643)", () => {
     expect(ruleBody(".bottom-composer")).toMatch(/padding:\s*var\(--composer-edge-gap\) 12px/)
   })
 
+  // The gap between a docked card and the composer is the composer's own edge
+  // gap and shows the glass. A seam-fill override or the old peek strip would
+  // put a flat band back between the two surfaces (#647).
+  it("leaves the gap under a docked card open to the glass", () => {
+    expect(css).not.toMatch(/\.review-panel \+ \.bottom-composer/)
+    expect(css).not.toMatch(/\.queued-messages \+ \.bottom-composer/)
+    expect(css).not.toMatch(/\n\.review-panel::after \{/)
+  })
+
   it("stays inside the dock's stacking context so z-index -1 sits above the transcript", () => {
     expect(ruleBody(".bottom-dock-glass")).toMatch(/z-index:\s*-1;/)
     expect(ruleBody(".bottom-dock")).toMatch(/z-index:\s*var\(--z-overlay\);/)
