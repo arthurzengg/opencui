@@ -2058,19 +2058,6 @@ button:focus-visible {
   background: var(--surface-input);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
-.review-panel::after {
-  content: "";
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: -4px;
-  height: 4px;
-  border-left: 1px solid var(--vscode-panel-border);
-  border-right: 1px solid var(--vscode-panel-border);
-  background: linear-gradient(180deg, var(--color-bg-input), transparent);
-  opacity: 0.48;
-  pointer-events: none;
-}
 .review-head-row {
   display: flex;
   align-items: center;
@@ -2792,18 +2779,11 @@ button:focus-visible {
   background: transparent;
   pointer-events: none;
 }
-/* A card stacked directly above the composer leaves only this 4px seam between
-   the two. Unlike the composer's wider edge gap — where the transcript sliding
-   behind reads as depth — a 4px slit shows nothing but the clipped tops of
-   glyphs, which looks like a paint fault. Fill exactly the seam (hard gradient
-   stop, so the rest of the composer's padding stays see-through) and the stack
-   reads as one surface. The review card's `::after` peek is a positioned
-   descendant, so it still paints over this. */
-.bottom-dock > .review-panel + .bottom-composer,
-.bottom-dock > .queued-messages + .bottom-composer {
-  padding-top: var(--space-1);
-  background: linear-gradient(var(--color-bg-panel) var(--space-1), transparent var(--space-1));
-}
+/* A card docked above the composer sits this same edge gap above it, and the
+   gap shows the glass like every other gap around the stack (#647). It used
+   to be a 4px seam with an opaque fill and a peek strip under the review card;
+   against the frosted surface a flat slit between two surfaces read as a hole,
+   which is why no seam-fill override lives here any more. */
 .bottom-composer > .promptbox {
   pointer-events: auto;
 }
