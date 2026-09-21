@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.6] - 2026-09-21
+
+### Changed
+
+- The extension icon is now the panel mark: a sidebar frame with a block cursor in the main area. The activity bar uses it as a single-colour mask that follows the theme foreground, and the Marketplace icon shows the same mark in white on a dark rounded tile with the cursor in amber, at 256 x 256 with transparent corners. It replaces a triangle glyph in the activity bar and opencode's own logo on the Marketplace (#651, #652).
+
 ## [1.15.5] - 2026-09-19
 
 ### Added
