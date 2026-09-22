@@ -544,7 +544,10 @@ export type Outbound =
   | { type: "messageRemoved"; id: string }
   // Host -> webview: replace the live composer's text (e.g. /undo restoring the
   // undone prompt, /redo clearing it). Applied to the bottom send composer only.
-  | { type: "setComposerText"; text: string }
+  // `mention` optionally pre-registers an @path label cited by the injected
+  // text (addSelectionToChat's `@path#L…`), so the composer renders it as a
+  // chip and attaches it as a file mention on send.
+  | { type: "setComposerText"; text: string; mention?: string }
   | { type: "indexStatus"; status: IndexStatusInfo }
   | { type: "agentsStatus"; status: AgentsStatusInfo }
   | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }

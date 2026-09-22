@@ -223,7 +223,7 @@ describe("ChatView harness: addSelectionToChat", () => {
       selection: { isEmpty: false, start: { line: 4 }, end: { line: 8 } },
     }
     await harness.chatView.addSelectionToChat()
-    expect(harness.posted).toContainEqual({ type: "setComposerText", text: "@src/foo.ts#L5-9 " })
+    expect(harness.posted).toContainEqual({ type: "setComposerText", text: "@src/foo.ts#L5-9 ", mention: "@src/foo.ts#L5-9" })
     win.activeTextEditor = undefined
   })
 

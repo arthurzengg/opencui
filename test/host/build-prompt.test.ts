@@ -113,6 +113,17 @@ describe("readMentions", () => {
     expect(matches).toHaveLength(1)
   })
 
+  it("strips the addSelectionToChat line-range suffix before reading", async () => {
+    vi.mocked(vscode.workspace.fs.readFile).mockResolvedValueOnce(
+      new TextEncoder().encode("export const x = 1\n"),
+    )
+    const out = await readMentions(["src/foo.ts#L5-9"])
+    expect(out.failed).toEqual([])
+    expect(out.block).toContain("@src/foo.ts")
+    expect(out.block).not.toContain("#L")
+    expect(out.bytes["src/foo.ts"]).toBeDefined()
+  })
+
   it("records failed reads in `failed`", async () => {
     vi.mocked(vscode.workspace.fs.readFile)
       .mockRejectedValueOnce(new Error("ENOENT"))

@@ -97,7 +97,11 @@ export async function readMentions(
   const capped: string[] = []
   const failed: string[] = []
   let totalBytes = 0
-  for (const rel of mentions) {
+  for (const mention of mentions) {
+    // addSelectionToChat injects `@path#L5` / `@path#L5-9` chips. The line
+    // suffix anchors the file reference in the composer; strip it here so the
+    // file read (and manifest label) resolve to the real path.
+    const rel = mention.replace(/#L\d+(-\d+)?$/, "")
     if (!rel || seen.has(rel)) continue
     seen.add(rel)
     if (blocks.length >= MENTION_MAX_FILES) {

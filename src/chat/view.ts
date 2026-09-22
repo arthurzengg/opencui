@@ -404,7 +404,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.focus()
     const label = formatContextHeader(ctx)
     if (!label) return
-    this.post({ type: "setComposerText", text: label + " " })
+    this.post({ type: "setComposerText", text: label + " ", mention: label })
   }
 
   private webviewMounted = false
