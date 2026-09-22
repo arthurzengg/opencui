@@ -392,6 +392,21 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.view?.show?.(true)
   }
 
+  /**
+   * "Add Selection to Chat" (Cmd/Ctrl+Shift+L): focus the panel and drop the
+   * active editor's context reference (e.g. `@src/foo.ts#L5-9`) into the
+   * composer. handleSend already attaches the focused editor's selection text
+   * to every prompt, so the reference is the anchor the user asked about;
+   * switching editors afterwards moves the context, as with any manual send.
+   */
+  async addSelectionToChat() {
+    const ctx = getEditorContext()
+    this.focus()
+    const label = formatContextHeader(ctx)
+    if (!label) return
+    this.post({ type: "setComposerText", text: label + " " })
+  }
+
   private webviewMounted = false
 
   /**

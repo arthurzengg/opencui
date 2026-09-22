@@ -210,6 +210,31 @@ describe("ChatView harness: openExternal", () => {
   })
 })
 
+describe("ChatView harness: addSelectionToChat", () => {
+  it("injects the context label into the composer", async () => {
+    vi.mocked(vscode.window.activeTextEditor, true)
+    const win = vscode.window as unknown as { activeTextEditor: unknown }
+    win.activeTextEditor = {
+      document: {
+        uri: vscode.Uri.file("/workspace/src/foo.ts"),
+        languageId: "ts",
+        getText: () => "x",
+      },
+      selection: { isEmpty: false, start: { line: 4 }, end: { line: 8 } },
+    }
+    await harness.chatView.addSelectionToChat()
+    expect(harness.posted).toContainEqual({ type: "setComposerText", text: "@src/foo.ts#L5-9 " })
+    win.activeTextEditor = undefined
+  })
+
+  it("does nothing without an editor context", async () => {
+    const win = vscode.window as unknown as { activeTextEditor: unknown }
+    win.activeTextEditor = undefined
+    await harness.chatView.addSelectionToChat()
+    expect(harness.posted.some((m) => m.type === "setComposerText")).toBe(false)
+  })
+})
+
 describe("ChatView harness: send round-trip", () => {
   it("creates a session, dispatches the prompt, streams the reply, and persists the turn", async () => {
     await harness.send({ type: "mounted" })
