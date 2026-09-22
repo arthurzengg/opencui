@@ -103,14 +103,6 @@ export type ChatState = {
    * `PromptBox` consumes it via an effect.
    */
   injectedText?: { text: string; nonce: number }
-  /**
-   * Companion to the latest `setComposerText`: an `@path` label to pre-register
-   * as a chip when the injected text cites one (e.g. addSelectionToChat's
-   * `@src/foo.ts#L5-9`). Registering makes the backdrop render the chip style
-   * and extractMentions attach it as a file mention on send. Cleared with the
-   * inject on send / restore / conversation switch (the reducer resets it
-   * wherever `injectedText` is cleared).
-   */
   injectedMention?: string
   /** Prompts submitted while busy, waiting for the session to go idle. */
   queued: QueuedMessage[]
