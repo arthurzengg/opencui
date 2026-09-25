@@ -22,6 +22,7 @@ import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace } from "./ToolCard"
 import { ICON_SIZE } from "../design-tokens"
+import { usageDetail, usageSummary } from "../usage-format"
 import { AgentActivity } from "./AgentActivity"
 
 /**
@@ -164,27 +165,34 @@ function MessageViewComponent({
         return null
       })()}
       {/*
-        Show the per-message `model · cost · tokens` line only when (a) the
-        chat is idle overall (`busy === false`) AND (b) this isn't an
-        intermediate sub-task panel (`processOnly === false`). Hephaestus-
-        style agents emit multi-step turns where every finished sub-task
-        carries its own usage; rendering them mid-flight makes "done"
-        artefacts sit next to the still-running ProcessPanel and the chat
-        looks both finished and working at the same time. Once the
-        conversation settles, the usage lines all appear at once for
-        review.
+        Show the per-message usage chip only when (a) the chat is idle
+        overall (`busy === false`) AND (b) this isn't an intermediate
+        sub-task panel (`processOnly === false`). Hephaestus-style agents
+        emit multi-step turns where every finished sub-task carries its own
+        usage; rendering them mid-flight makes "done" artefacts sit next to
+        the still-running ProcessPanel and the chat looks both finished and
+        working at the same time. Once the conversation settles, the chips
+        all appear at once for review.
       */}
-      {!busy && !processOnly && (message.usage?.model || message.usage?.cost || message.usage?.tokens) && (
-        <div className="msg-usage">
-          {message.usage.model ? <span>{message.usage.model}</span> : null}
-          {message.usage.model && (message.usage.cost || message.usage.tokens) ? " · " : null}
-          {message.usage.cost ? <>${message.usage.cost.toFixed(4)}</> : null}
-          {message.usage.cost && message.usage.tokens ? " · " : null}
-          {message.usage.tokens && (
-            <span>{message.usage.tokens.input + message.usage.tokens.output} tokens</span>
-          )}
-        </div>
-      )}
+      {!busy && !processOnly && message.usage && <UsageChip usage={message.usage} />}
+    </div>
+  )
+}
+
+/**
+ * One figure at rest, the full breakdown in an overlay on hover or focus.
+ * The detail is a tooltip rather than an inline expansion so the message
+ * never changes height under the pointer (#656).
+ */
+function UsageChip({ usage }: { usage: NonNullable<Message["usage"]> }) {
+  const summary = usageSummary(usage)
+  if (!summary) return null
+  const detail = usageDetail(usage)
+  return (
+    <div className="msg-usage-row">
+      <span className="msg-usage" role="note" tabIndex={0} aria-label={detail} data-tooltip={detail}>
+        {summary}
+      </span>
     </div>
   )
 }
