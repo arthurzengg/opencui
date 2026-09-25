@@ -392,6 +392,14 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.view?.show?.(true)
   }
 
+  async addSelectionToChat() {
+    const ctx = getEditorContext()
+    this.focus()
+    const label = formatContextHeader(ctx)
+    if (!label) return
+    this.post({ type: "setComposerText", text: label + " ", mention: label.replace(/^@/, "") })
+  }
+
   private webviewMounted = false
 
   /**

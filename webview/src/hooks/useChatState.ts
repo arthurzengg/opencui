@@ -103,6 +103,7 @@ export type ChatState = {
    * `PromptBox` consumes it via an effect.
    */
   injectedText?: { text: string; nonce: number }
+  injectedMention?: string
   /** Prompts submitted while busy, waiting for the session to go idle. */
   queued: QueuedMessage[]
   /**
@@ -221,7 +222,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "commands":
       return { ...state, commands: action.commands }
     case "setComposerText":
-      return { ...state, injectedText: { text: action.text, nonce: (state.injectedText?.nonce ?? 0) + 1 } }
+      return { ...state, injectedText: { text: action.text, nonce: (state.injectedText?.nonce ?? 0) + 1 }, injectedMention: action.mention }
     case "conversations":
       return {
         ...state,
@@ -256,6 +257,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
         // render forever in the new conversation's dock.
         pendingQuestion: undefined,
         injectedText: undefined,
+        injectedMention: undefined,
         // The queue is per-conversation: a switch (or /undo rewind) must not
         // fire the old conversation's follow-ups into the restored one.
         queued: [],
@@ -282,6 +284,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
         busy: true,
         // Sending makes any pending /undo-restore inject stale.
         injectedText: undefined,
+        injectedMention: undefined,
         messages: [
           ...state.messages,
           {

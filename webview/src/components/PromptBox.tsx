@@ -100,6 +100,7 @@ type Props = {
    * or conversation switch so a re-mounted composer never re-applies stale text.
    */
   inject?: { text: string; nonce: number }
+  injectMention?: string
   /** Open a highlighted URL (Cmd/Ctrl+Click in the textarea) externally. */
   onOpenLink?: (url: string) => void
 }
@@ -135,7 +136,7 @@ function buildInitialConversations(initial: Props["initial"]): Map<string, strin
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, history, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject, onOpenLink }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, history, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject, injectMention, onOpenLink }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   // The Stop ring joins the shared breathing clock (#621).
   const stopPhase = useLivePhase(busy && !aborting)
@@ -236,6 +237,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   // undone prompt). pendingCursor places the caret at the end after setText.
   useEffect(() => {
     if (!inject) return
+    if (injectMention) knownMentions.current.add(injectMention)
     setText(inject.text)
     pendingCursor.current = inject.text.length
     // The injected text replaces whatever was recalled, so the browse position

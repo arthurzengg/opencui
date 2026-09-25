@@ -97,7 +97,8 @@ export async function readMentions(
   const capped: string[] = []
   const failed: string[] = []
   let totalBytes = 0
-  for (const rel of mentions) {
+  for (const mention of mentions) {
+    const rel = mention.replace(/#L\d+(-\d+)?$/, "")
     if (!rel || seen.has(rel)) continue
     seen.add(rel)
     if (blocks.length >= MENTION_MAX_FILES) {

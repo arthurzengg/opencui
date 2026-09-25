@@ -65,6 +65,10 @@
         "title": "OpenCode Panel: New Chat"
       },
       {
+        "command": "opencui.chat.addSelection",
+        "title": "OpenCode Panel: Add Selection to Chat"
+      },
+      {
         "command": "opencui.conversation.select",
         "title": "OpenCode Panel: Select Conversation"
       },
@@ -104,6 +108,14 @@
         "mac": "cmd+l",
         "win": "ctrl+l",
         "linux": "ctrl+l"
+      },
+      {
+        "command": "opencui.chat.addSelection",
+        "key": "cmd+shift+l",
+        "mac": "cmd+shift+l",
+        "win": "ctrl+shift+l",
+        "linux": "ctrl+shift+l",
+        "when": "editorTextFocus"
       },
       {
         "command": "opencui.inlineEdit",
