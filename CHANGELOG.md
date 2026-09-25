@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.7] - 2026-09-25
+
+### Changed
+
+- The usage line under each finished reply is now a small chip on the right showing one figure: the cost, or the token total when the model reports no cost. Hovering or focusing the chip opens a tooltip with the model, the cost, and the tokens split into input, output, reasoning, and cache reads and writes. The tooltip is an overlay, so the message never changes height under the pointer (#656, #657).
+
 ## [1.15.6] - 2026-09-21
 
 ### Changed
