@@ -371,15 +371,37 @@ describe("MessageView (assistant role)", () => {
     expect(screen.getByText("AI error happened")).toBeInTheDocument()
   })
 
-  it("renders model + cost + token usage when present", () => {
+  it("shows only the cost at rest and keeps model and token split for the tooltip", () => {
     const msg = {
       ...assistantMessage("response"),
       usage: { model: "claude-opus-4-7", cost: 0.0025, tokens: { input: 100, output: 50, reasoning: 0 } },
     } as Message
-    render(<MessageView message={msg} processOpen={false} processOnly={false} />)
-    expect(screen.getByText("claude-opus-4-7")).toBeInTheDocument()
-    expect(screen.getByText(/0\.0025/)).toBeInTheDocument()
-    expect(screen.getByText(/150 tokens/)).toBeInTheDocument()
+    const { container } = render(<MessageView message={msg} processOpen={false} processOnly={false} />)
+    const chip = container.querySelector(".msg-usage") as HTMLElement
+    expect(chip.textContent).toBe("$0.0025")
+    expect(screen.queryByText("claude-opus-4-7")).toBeNull()
+    expect(screen.queryByText(/150 tokens/)).toBeNull()
+    expect(chip.getAttribute("data-tooltip")).toBe("claude-opus-4-7\n$0.0025 · 150 tokens\n100 in · 50 out")
+    expect(chip.getAttribute("aria-label")).toBe(chip.getAttribute("data-tooltip"))
+    expect(chip.tabIndex).toBe(0)
+  })
+
+  it("shows the token total at rest when the model reports no cost", () => {
+    const msg = {
+      ...assistantMessage("response"),
+      usage: { model: "local/llama", cost: 0, tokens: { input: 9000, output: 930, reasoning: 0 } },
+    } as Message
+    const { container } = render(<MessageView message={msg} processOpen={false} processOnly={false} />)
+    expect(container.querySelector(".msg-usage")?.textContent).toBe("9,930 tokens")
+  })
+
+  it("hides the usage chip while the chat is busy", () => {
+    const msg = {
+      ...assistantMessage("response"),
+      usage: { model: "claude-opus-4-7", cost: 0.0025, tokens: { input: 100, output: 50, reasoning: 0 } },
+    } as Message
+    const { container } = render(<MessageView message={msg} processOpen={false} processOnly={false} busy />)
+    expect(container.querySelector(".msg-usage")).toBeNull()
   })
 
   it("keeps the process panel body mounted (clipped) when collapsed", () => {

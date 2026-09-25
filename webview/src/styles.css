@@ -1433,16 +1433,68 @@ button:focus-visible {
   background: var(--vscode-button-secondaryHoverBackground);
 }
 
-.msg-usage {
-  font-size: 10px;
-  opacity: 0.5;
+.msg-usage-row {
+  display: flex;
+  justify-content: flex-end;
   margin-top: 6px;
-  /* Fade in on completion so the line settles in rather than popping. */
+  /* Fade in on completion so the chip settles in rather than popping. */
   animation: msg-usage-in 0.2s ease both;
 }
 @keyframes msg-usage-in {
   from { opacity: 0; }
-  to { opacity: 0.5; }
+  to { opacity: 1; }
+}
+.msg-usage {
+  position: relative;
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.6;
+  cursor: default;
+}
+.msg-usage:hover {
+  opacity: 1;
+  border-color: var(--vscode-editorWidget-border, var(--color-border));
+}
+.msg-usage:focus-visible {
+  opacity: 1;
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+/* The breakdown is an overlay, never an inline expansion: hovering must not
+   change the message height under the pointer (#656). Right-anchored and
+   opening upward so it stays inside the transcript and clear of the dock. */
+.msg-usage::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: var(--z-popover);
+  width: max-content;
+  max-width: min(320px, calc(100vw - 48px));
+  padding: 5px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-line;
+  text-align: left;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.msg-usage:hover::before,
+.msg-usage:focus-visible::before {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* Semantic-index status pill — sits in the status bar / header area. */
@@ -2419,8 +2471,11 @@ button:focus-visible {
   .process-body-clip {
     transition: none;
   }
-  .msg-usage {
+  .msg-usage-row {
     animation: none;
+  }
+  .msg-usage::before {
+    transition: none;
   }
 }
 /* ===== Prompt box ===== */
