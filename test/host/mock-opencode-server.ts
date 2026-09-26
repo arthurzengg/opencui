@@ -89,6 +89,14 @@ export type MockOpencodeServer = {
   sessionListQueries: Array<Record<string, string>>
   /** Configure what GET /session/{id}/message (session.messages) returns for one session. */
   setSessionMessages: (sessionID: string, items: Array<Record<string, unknown>>) => void
+  /** Session ids of every DELETE /session/{id} call, in call order. */
+  sessionDeletes: string[]
+  /**
+   * HTTP status DELETE /session/{id} replies with for a listed session
+   * (default 200, which also drops it from the list). 0 destroys the socket
+   * so the call throws. An unlisted session always answers 404.
+   */
+  setSessionDeleteStatus: (status: number) => void
   /**
    * Configure what GET /session/status returns. Pass `undefined` to clear
    * the entry. Tests use this to drive the watchdog's recovery path.
@@ -145,6 +153,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   let providers: Array<Record<string, unknown>> = []
   let providerFetches = 0
   let sessions: Array<Record<string, unknown>> = []
+  const sessionDeletes: string[] = []
+  let sessionDeleteStatus = 200
   const sessionListQueries: Array<Record<string, string>> = []
   const sessionMessages = new Map<string, Array<Record<string, unknown>>>()
   let agents: Array<Record<string, unknown>> = [
@@ -252,6 +262,29 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
       }
       if (query.limit) rows = rows.slice(0, Number(query.limit))
       reply(res, 200, rows)
+      return
+    }
+
+    // Session delete (#660): drops the row so a later GET /session no longer
+    // lists it, the way the real server behaves.
+    const deleteMatch = path.match(/^\/session\/([^/]+)$/)
+    if (deleteMatch && req.method === "DELETE") {
+      const id = deleteMatch[1]!
+      sessionDeletes.push(id)
+      if (sessionDeleteStatus === 0) {
+        req.socket.destroy()
+        return
+      }
+      if (!sessions.some((s) => s.id === id)) {
+        reply(res, 404, { error: "session not found" })
+        return
+      }
+      if (sessionDeleteStatus === 200) {
+        sessions = sessions.filter((s) => s.id !== id)
+        reply(res, 200, true)
+      } else {
+        reply(res, sessionDeleteStatus, { error: "scripted session.delete failure" })
+      }
       return
     }
 
@@ -571,6 +604,10 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     },
     setSessions(next) {
       sessions = next
+    },
+    sessionDeletes,
+    setSessionDeleteStatus(status) {
+      sessionDeleteStatus = status
     },
     setSessionMessages(sessionID, items) {
       sessionMessages.set(sessionID, items)

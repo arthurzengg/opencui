@@ -1647,3 +1647,87 @@ describe("ChatView.onDidUserActivity (#615)", () => {
     expect(fired).toBe(2)
   })
 })
+
+describe("ChatView harness: one history list (#660)", () => {
+  beforeEach(() => {
+    vi.mocked(vscode.window.showErrorMessage).mockClear()
+  })
+
+  async function boundConversation(): Promise<string> {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "hello" })
+    await until(() => server.prompts.length === 1)
+    const id = harness.chatView.activeConversationID()
+    expect(savedConversations().find((c) => c.id === id)?.sessionID).toBe(SESSION_ID)
+    return id
+  }
+
+  it("deletes a bound session on the server before dropping the conversation", async () => {
+    const id = await boundConversation()
+    // The mock's session.create does not list ses_test, and its delete route
+    // answers 404 for unlisted ids, so list it for the success path.
+    server.setSessions([{ id: SESSION_ID, title: "Test Session", time: { updated: 5 } }])
+
+    await harness.send({ type: "deleteConversation", id })
+
+    expect(server.sessionDeletes).toEqual([SESSION_ID])
+    expect(savedConversations().some((c) => c.id === id)).toBe(false)
+    // Neither list carries the session: the server dropped it and the host
+    // pruned its cached copy without waiting for a refetch.
+    const last = harness.posted.filter((m) => m.type === "conversations").at(-1)!
+    expect(last.type === "conversations" && last.external).toEqual([])
+    expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+  })
+
+  it("keeps the conversation and reports the failure when the server delete fails", async () => {
+    const id = await boundConversation()
+    server.setSessions([{ id: SESSION_ID, title: "Test Session", time: { updated: 5 } }])
+    server.setSessionDeleteStatus(500)
+
+    await harness.send({ type: "deleteConversation", id })
+
+    expect(server.sessionDeletes).toEqual([SESSION_ID])
+    expect(savedConversations().some((c) => c.id === id)).toBe(true)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("Nothing was removed"))
+  })
+
+  it("treats a session the server no longer has as deleted", async () => {
+    const id = await boundConversation()
+    // ses_test is unlisted, so DELETE answers 404.
+
+    await harness.send({ type: "deleteConversation", id })
+
+    expect(server.sessionDeletes).toEqual([SESSION_ID])
+    expect(savedConversations().some((c) => c.id === id)).toBe(false)
+    expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+  })
+
+  it("deletes an unopened server session and drops it from the list", async () => {
+    server.setSessions([{ id: "ses_tui", title: "TUI chat", time: { updated: 10 } }])
+    await harness.send({ type: "mounted" })
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "conversations" && (m.external ?? []).some((s) => s.id === "ses_tui"),
+      ),
+    )
+
+    await harness.send({ type: "deleteSession", sessionID: "ses_tui" })
+
+    expect(server.sessionDeletes).toEqual(["ses_tui"])
+    expect(savedConversations().some((c) => c.sessionID === "ses_tui")).toBe(false)
+    const last = harness.posted.filter((m) => m.type === "conversations").at(-1)!
+    expect(last.type === "conversations" && last.external).toEqual([])
+  })
+
+  it("names the missing session when a send hits one the server no longer has", async () => {
+    await boundConversation()
+    server.push({ type: "session.idle", sessionID: SESSION_ID })
+    await until(() => harness.posted.some((m) => m.type === "sessionIdle"))
+    server.setPromptStatus(404)
+
+    await harness.send({ type: "send", text: "again" })
+
+    expect(server.prompts).toHaveLength(2)
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("no longer exists"))
+  })
+})

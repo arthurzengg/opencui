@@ -142,6 +142,11 @@ export class ConversationManager {
     return this.conversations.find((c) => c.sessionID === sessionID)?.id
   }
 
+  /** The backend session a saved conversation is bound to, if any. */
+  sessionIDOf(id: string): string | undefined {
+    return this.conversations.find((c) => c.id === id)?.sessionID
+  }
+
   summaries(): ConversationSummary[] {
     return this.conversations
       .map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }))

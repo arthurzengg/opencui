@@ -37,6 +37,7 @@ type Props = {
   onRefreshSessions?: (search?: string) => void
   onRenameConversation: (id: string, title: string) => void
   onDeleteConversation: (id: string) => void
+  onDeleteSession?: (sessionID: string) => void
   onRemovePermissionRule?: (id: string) => void
   onClearPermissionRules?: () => void
 }
@@ -63,6 +64,7 @@ export function StatusBar({
   onRefreshSessions,
   onRenameConversation,
   onDeleteConversation,
+  onDeleteSession,
   onRemovePermissionRule,
   onClearPermissionRules,
 }: Props) {
@@ -133,9 +135,43 @@ export function StatusBar({
         onRefreshExternal={onRefreshSessions}
         onRename={onRenameConversation}
         onDelete={onDeleteConversation}
+        onDeleteSession={onDeleteSession}
       />
     </div>
   )
+}
+
+export type HistoryRow =
+  | { kind: "conversation"; key: string; title: string; updatedAt: number; conversation: ConversationSummary }
+  | { kind: "session"; key: string; title: string; updatedAt: number; session: ExternalSessionSummary }
+
+/**
+ * One list for the popover: saved conversations and unopened server sessions
+ * interleaved by last activity (#660). Where the record lives is not the
+ * user's concern; an unopened row imports on click and deletes on the server
+ * like any other.
+ */
+export function mergeHistoryRows(
+  conversations: ConversationSummary[],
+  external: ExternalSessionSummary[],
+): HistoryRow[] {
+  const rows: HistoryRow[] = [
+    ...conversations.map((c) => ({
+      kind: "conversation" as const,
+      key: `conv:${c.id}`,
+      title: c.title,
+      updatedAt: c.updatedAt,
+      conversation: c,
+    })),
+    ...external.map((s) => ({
+      kind: "session" as const,
+      key: `sess:${s.id}`,
+      title: s.title,
+      updatedAt: s.updatedAt,
+      session: s,
+    })),
+  ]
+  return rows.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 function ChatHistoryMenu({
@@ -151,6 +187,7 @@ function ChatHistoryMenu({
   onRefreshExternal,
   onRename,
   onDelete,
+  onDeleteSession,
 }: {
   conversations: ConversationSummary[]
   external: ExternalSessionSummary[]
@@ -164,6 +201,7 @@ function ChatHistoryMenu({
   onRefreshExternal?: (search?: string) => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
+  onDeleteSession?: (sessionID: string) => void
 }) {
   const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
   const [renamingID, setRenamingID] = useState<string>()
@@ -219,22 +257,20 @@ function ChatHistoryMenu({
     setRenamingTitle("")
   }
 
-  const handleDelete = (id: string) => {
-    if (confirmDeleteID === id) {
-      onDelete(id)
-      setConfirmDeleteID(undefined)
+  const handleDelete = (row: HistoryRow) => {
+    if (confirmDeleteID !== row.key) {
+      setConfirmDeleteID(row.key)
       return
     }
-    setConfirmDeleteID(id)
+    if (row.kind === "conversation") onDelete(row.conversation.id)
+    else onDeleteSession?.(row.session.id)
+    setConfirmDeleteID(undefined)
   }
 
-  const filtered = query.trim()
-    ? conversations.filter((c) => c.title.toLowerCase().includes(query.trim().toLowerCase()))
-    : conversations
-  const filteredExternal = query.trim()
-    ? external.filter((s) => s.title.toLowerCase().includes(query.trim().toLowerCase()))
-    : external
-  const showSearch = conversations.length + external.length >= 5
+  const rows = mergeHistoryRows(conversations, external)
+  const needle = query.trim().toLowerCase()
+  const filtered = needle ? rows.filter((row) => row.title.toLowerCase().includes(needle)) : rows
+  const showSearch = rows.length >= 5
 
   return (
     <div className="history-menu" ref={ref}>
@@ -272,17 +308,18 @@ function ChatHistoryMenu({
             />
           )}
           <div className="history-list">
-            {conversations.length === 0 && <div className="history-empty">No chats yet</div>}
-            {conversations.length > 0 && filtered.length === 0 && (
+            {rows.length === 0 && <div className="history-empty">No chats yet</div>}
+            {rows.length > 0 && filtered.length === 0 && (
               <div className="history-empty">No chats match “{query}”</div>
             )}
-            {filtered.map((conversation) => {
-              const isConfirming = conversation.id === confirmDeleteID
-              const isEditing = conversation.id === renamingID
+            {filtered.map((row) => {
+              const isConfirming = row.key === confirmDeleteID
+              const isEditing = row.kind === "conversation" && row.conversation.id === renamingID
+              const isActive = row.kind === "conversation" && row.conversation.id === activeID
               return (
                 <div
-                  className={`history-item ${conversation.id === activeID ? "is-active" : ""} ${isEditing ? "is-editing" : ""} ${isConfirming ? "is-confirming" : ""}`}
-                  key={conversation.id}
+                  className={`history-item ${isActive ? "is-active" : ""} ${isEditing ? "is-editing" : ""} ${isConfirming ? "is-confirming" : ""}`}
+                  key={row.key}
                 >
                   {isEditing ? (
                     <>
@@ -316,20 +353,31 @@ function ChatHistoryMenu({
                         className="history-open"
                         onClick={() => {
                           close()
-                          onOpen(conversation.id)
+                          if (row.kind === "conversation") onOpen(row.conversation.id)
+                          else onImport?.(row.session.id)
                         }}
-                        title={conversation.title}
+                        title={
+                          row.kind === "session"
+                            ? `${row.title} (opencode session from the TUI, web UI, or another client; opening saves it here)`
+                            : row.title
+                        }
                       >
-                        <span className="history-title">{conversation.title}</span>
-                        <span className="history-date">{formatUpdated(conversation.updatedAt)}</span>
+                        <span className="history-title">{row.title}</span>
+                        <span className="history-date">{formatUpdated(row.updatedAt)}</span>
                       </button>
-                      <button className="history-action" onClick={() => startRename(conversation)} title="Rename">
-                        Rename
-                      </button>
+                      {row.kind === "conversation" && (
+                        <button className="history-action" onClick={() => startRename(row.conversation)} title="Rename">
+                          Rename
+                        </button>
+                      )}
                       <button
                         className={`history-action danger ${isConfirming ? "is-confirming" : ""}`}
-                        onClick={() => handleDelete(conversation.id)}
-                        title={isConfirming ? "Click again to delete" : "Delete"}
+                        onClick={() => handleDelete(row)}
+                        title={
+                          isConfirming
+                            ? "Click again to delete from opencode and this panel"
+                            : "Delete from opencode and this panel"
+                        }
                       >
                         {isConfirming ? "Confirm" : "Delete"}
                       </button>
@@ -338,31 +386,6 @@ function ChatHistoryMenu({
                 </div>
               )
             })}
-            {filteredExternal.length > 0 && onImport && (
-              <>
-                <div
-                  className="history-section-label"
-                  title="opencode sessions in this project from the TUI, web UI, or another client. Opening one saves it as a conversation here."
-                >
-                  Also in this project
-                </div>
-                {filteredExternal.map((session) => (
-                  <div className="history-item is-external" key={session.id}>
-                    <button
-                      className="history-open"
-                      onClick={() => {
-                        close()
-                        onImport(session.id)
-                      }}
-                      title={session.title}
-                    >
-                      <span className="history-title">{session.title}</span>
-                      <span className="history-date">{formatUpdated(session.updatedAt)}</span>
-                    </button>
-                  </div>
-                ))}
-              </>
-            )}
           </div>
         </div>
       )}

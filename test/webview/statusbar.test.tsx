@@ -736,14 +736,14 @@ describe("AgentActivity", () => {
   })
 })
 
-describe("StatusBar: external sessions in the history popover", () => {
+describe("StatusBar: unopened sessions in the history popover", () => {
   const conversations = [{ id: "c1", title: "Panel chat", updatedAt: Date.now() }]
   const external = [
     { id: "ses_tui", title: "TUI refactor", updatedAt: Date.now() - 60_000 },
     { id: "ses_web", title: "Web session", updatedAt: Date.now() - 120_000 },
   ]
 
-  it("renders the section with import rows and no rename/delete actions", async () => {
+  it("lists unopened sessions as ordinary rows that import on click", async () => {
     const user = userEvent.setup()
     const onImportSession = vi.fn()
     render(
@@ -756,14 +756,14 @@ describe("StatusBar: external sessions in the history popover", () => {
       />,
     )
     await user.click(screen.getByRole("button", { name: /chat history/i }))
-    expect(screen.getByText("Also in this project")).toBeInTheDocument()
+    expect(screen.queryByText("Also in this project")).toBeNull()
     const row = screen.getByText("TUI refactor").closest("button")!
-    expect(row.closest(".history-item")?.querySelector(".history-action")).toBeNull()
+    expect(row.closest(".history-item")?.classList.contains("is-external")).toBe(false)
 
     await user.click(row)
     expect(onImportSession).toHaveBeenCalledWith("ses_tui")
     // Importing closes the popover, like opening a local conversation does.
-    expect(screen.queryByText("Also in this project")).not.toBeInTheDocument()
+    expect(screen.queryByText("TUI refactor")).not.toBeInTheDocument()
   })
 
   it("re-fetches the session list when the popover opens", async () => {
@@ -783,7 +783,7 @@ describe("StatusBar: external sessions in the history popover", () => {
     expect(onRefreshSessions).toHaveBeenCalledTimes(1)
   })
 
-  it("search filters external rows too, and the section hides when nothing matches", async () => {
+  it("search filters unopened rows like any other", async () => {
     const user = userEvent.setup()
     const manyLocal = [
       { id: "c1", title: "Panel chat one", updatedAt: Date.now() },
@@ -810,7 +810,7 @@ describe("StatusBar: external sessions in the history popover", () => {
 
     await user.clear(search)
     await user.type(search, "Panel")
-    expect(screen.queryByText("Also in this project")).not.toBeInTheDocument()
+    expect(screen.queryByText("TUI refactor")).not.toBeInTheDocument()
     expect(screen.getByText("Panel chat one")).toBeInTheDocument()
   })
 
@@ -846,7 +846,7 @@ describe("StatusBar: external sessions in the history popover", () => {
     expect(onRefreshSessions).toHaveBeenLastCalledWith(undefined)
   })
 
-  it("hides the section when there are no external sessions", async () => {
+  it("shows only the saved conversations when there are no unopened sessions", async () => {
     const user = userEvent.setup()
     render(
       <StatusBar
@@ -858,6 +858,74 @@ describe("StatusBar: external sessions in the history popover", () => {
       />,
     )
     await user.click(screen.getByRole("button", { name: /chat history/i }))
-    expect(screen.queryByText("Also in this project")).not.toBeInTheDocument()
+    expect(Array.from(document.querySelectorAll(".history-title")).map((el) => el.textContent)).toEqual(["Panel chat"])
+  })
+})
+
+describe("StatusBar: one history list (#660)", () => {
+  const conversations = [
+    { id: "c1", title: "Panel chat", updatedAt: 3000 },
+    { id: "c2", title: "Older panel chat", updatedAt: 1000 },
+  ]
+  const externalSessions = [{ id: "ses_tui", title: "TUI chat", updatedAt: 2000 }]
+  const titles = () => Array.from(document.querySelectorAll(".history-title")).map((el) => el.textContent)
+
+  it("interleaves unopened sessions with conversations by last activity, without a heading", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar {...baseProps} conversations={conversations} externalSessions={externalSessions} onImportSession={vi.fn()} />,
+    )
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    expect(titles()).toEqual(["Panel chat", "TUI chat", "Older panel chat"])
+    expect(screen.queryByText("Also in this project")).toBeNull()
+  })
+
+  it("opens an unopened session through onImportSession", async () => {
+    const user = userEvent.setup()
+    const onImportSession = vi.fn()
+    render(
+      <StatusBar {...baseProps} conversations={conversations} externalSessions={externalSessions} onImportSession={onImportSession} />,
+    )
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    await user.click(screen.getByText("TUI chat"))
+    expect(onImportSession).toHaveBeenCalledWith("ses_tui")
+  })
+
+  it("deletes an unopened session through onDeleteSession after the two-click confirm", async () => {
+    const user = userEvent.setup()
+    const onDeleteSession = vi.fn()
+    const onDeleteConversation = vi.fn()
+    render(
+      <StatusBar
+        {...baseProps}
+        conversations={[]}
+        externalSessions={externalSessions}
+        onDeleteSession={onDeleteSession}
+        onDeleteConversation={onDeleteConversation}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    await user.click(screen.getByRole("button", { name: /^Delete$/i }))
+    expect(onDeleteSession).not.toHaveBeenCalled()
+    await user.click(screen.getByRole("button", { name: /^Confirm$/i }))
+    expect(onDeleteSession).toHaveBeenCalledWith("ses_tui")
+    expect(onDeleteConversation).not.toHaveBeenCalled()
+  })
+
+  it("offers Delete but not Rename on an unopened session row", async () => {
+    const user = userEvent.setup()
+    render(<StatusBar {...baseProps} conversations={[]} externalSessions={externalSessions} />)
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    expect(screen.queryByRole("button", { name: /^Rename$/i })).toBeNull()
+    expect(screen.getByRole("button", { name: /^Delete$/i })).toBeInTheDocument()
+  })
+
+  it("filters both kinds of rows with the search box", async () => {
+    const user = userEvent.setup()
+    const many = [...conversations, { id: "c3", title: "Third", updatedAt: 500 }, { id: "c4", title: "Fourth", updatedAt: 400 }]
+    render(<StatusBar {...baseProps} conversations={many} externalSessions={externalSessions} />)
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    await user.type(screen.getByPlaceholderText("Search chats…"), "tui")
+    expect(titles()).toEqual(["TUI chat"])
   })
 })
