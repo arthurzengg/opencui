@@ -749,7 +749,17 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.postConversationsList()
   }
 
+  /**
+   * Delete a saved conversation and, when it is bound to a session, that
+   * session on the server first (#660). The history list is one set of
+   * sessions split only by whether the panel holds a record, so a local-only
+   * delete would bring the chat back as an unopened row on the next refresh.
+   * Server first: a failure there leaves the record in place, so the list
+   * never disagrees with the server.
+   */
   private async deleteConversation(id: string) {
+    const sessionID = this.manager.sessionIDOf(id)
+    if (sessionID && (await this.deleteServerSession(sessionID)) === "failed") return
     const wasActive = this.manager.getActiveID() === id
     const removedStorageIDs = this.manager.storageIDs(id)
     this.manager.remove(id)
@@ -781,6 +791,51 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     await this.manager.flushPersist()
     this.postConversationsList()
+  }
+
+  /**
+   * Delete a session on the opencode server. "missing" counts as done: the
+   * goal is that the session is gone, and this is also how a conversation
+   * whose session was deleted from the TUI or another window gets cleaned
+   * up. "failed" has already told the user and changed nothing.
+   */
+  private async deleteServerSession(sessionID: string): Promise<"deleted" | "missing" | "failed"> {
+    let outcome: "deleted" | "missing" | "failed"
+    try {
+      const backend = await this.servers.ensure()
+      const res = await backend.client.session.delete({
+        path: { id: sessionID },
+        query: { directory: backend.directory },
+      })
+      if (res.error) {
+        log("session.delete failed", res.response.status, res.error)
+        outcome = res.response.status === 404 ? "missing" : "failed"
+      } else {
+        outcome = "deleted"
+      }
+    } catch (e) {
+      log("session.delete threw", e)
+      outcome = "failed"
+    }
+    if (outcome === "failed") {
+      void vscode.window.showErrorMessage("Could not delete the chat from opencode. Nothing was removed.")
+      return outcome
+    }
+    // Prune the cached list too, or the session would show as an unopened
+    // row until the next fetch.
+    this.serverSessions = this.serverSessions.filter((s) => s.id !== sessionID)
+    return outcome
+  }
+
+  /** Delete an unopened server session from the history list (#660). */
+  private async deleteSession(sessionID: string) {
+    // Stale-popover race: something bound it since the list was fetched.
+    const existing = this.manager.findBySessionID(sessionID)
+    if (existing) {
+      await this.deleteConversation(existing)
+      return
+    }
+    if ((await this.deleteServerSession(sessionID)) !== "failed") this.postConversationsList()
   }
 
   private saveActive() {
@@ -1292,6 +1347,9 @@ export class ChatView implements vscode.WebviewViewProvider {
       case "deleteConversation":
         await this.deleteConversation(msg.id)
         return
+      case "deleteSession":
+        await this.deleteSession(msg.sessionID)
+        return
       case "apply":
         await applyCode(msg.code, msg.language)
         return
@@ -1797,8 +1855,15 @@ export class ChatView implements vscode.WebviewViewProvider {
         body,
       })
       if (res.error) {
-        log("prompt failed", res.error)
-        this.failSend("opencode rejected the prompt; see the output log for details.")
+        log("prompt failed", res.response.status, res.error)
+        // A session deleted from the TUI or another window leaves a bound
+        // conversation that can never send again; name that instead of the
+        // generic rejection so the user knows to delete it (#660).
+        this.failSend(
+          res.response.status === 404
+            ? "This chat's opencode session no longer exists; it may have been deleted from the TUI or another window. Delete this chat or start a new one."
+            : "opencode rejected the prompt; see the output log for details.",
+        )
       }
     } catch (e) {
       log("prompt call threw", e)

@@ -632,6 +632,9 @@ export function useChatState() {
     deleteConversation(id: string) {
       vscode.post({ type: "deleteConversation", id })
     },
+    deleteSession(sessionID: string) {
+      vscode.post({ type: "deleteSession", sessionID })
+    },
     apply(code: string, language?: string) {
       vscode.post({ type: "apply", code, language })
     },

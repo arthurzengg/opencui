@@ -28,6 +28,7 @@ export default function App() {
     refreshSessions,
     renameConversation,
     deleteConversation,
+    deleteSession,
     setAgent,
     setModel,
     setProviderCollapsed,
@@ -267,6 +268,7 @@ export default function App() {
         onRefreshSessions={refreshSessions}
         onRenameConversation={renameConversation}
         onDeleteConversation={deleteConversation}
+        onDeleteSession={deleteSession}
         onRemovePermissionRule={removePermissionRule}
         onClearPermissionRules={clearPermissionRules}
       />

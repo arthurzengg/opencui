@@ -567,6 +567,12 @@ export type Inbound =
   | { type: "refreshSessions"; search?: string }
   | { type: "renameConversation"; id: string; title: string }
   | { type: "deleteConversation"; id: string }
+  /**
+   * Delete an opencode session that has no saved conversation here (an
+   * unopened row in the history list). The host deletes it on the server and
+   * drops it from the list (#660).
+   */
+  | { type: "deleteSession"; sessionID: string }
   | { type: "apply"; code: string; language?: string }
   | { type: "openFile"; path: string }
   | { type: "openExternal"; url: string }
