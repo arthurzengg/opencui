@@ -38,6 +38,7 @@ type Props = {
   onRenameConversation: (id: string, title: string) => void
   onDeleteConversation: (id: string) => void
   onDeleteSession?: (sessionID: string) => void
+  onRenameSession?: (sessionID: string, title: string) => void
   onRemovePermissionRule?: (id: string) => void
   onClearPermissionRules?: () => void
 }
@@ -65,6 +66,7 @@ export function StatusBar({
   onRenameConversation,
   onDeleteConversation,
   onDeleteSession,
+  onRenameSession,
   onRemovePermissionRule,
   onClearPermissionRules,
 }: Props) {
@@ -136,6 +138,7 @@ export function StatusBar({
         onRename={onRenameConversation}
         onDelete={onDeleteConversation}
         onDeleteSession={onDeleteSession}
+        onRenameSession={onRenameSession}
       />
     </div>
   )
@@ -188,6 +191,7 @@ function ChatHistoryMenu({
   onRename,
   onDelete,
   onDeleteSession,
+  onRenameSession,
 }: {
   conversations: ConversationSummary[]
   external: ExternalSessionSummary[]
@@ -202,9 +206,10 @@ function ChatHistoryMenu({
   onRename: (id: string, title: string) => void
   onDelete: (id: string) => void
   onDeleteSession?: (sessionID: string) => void
+  onRenameSession?: (sessionID: string, title: string) => void
 }) {
   const { toggle, close, ref } = useDismissableMenu({ open, onOpenChange })
-  const [renamingID, setRenamingID] = useState<string>()
+  const [renaming, setRenaming] = useState<{ key: string; kind: HistoryRow["kind"]; id: string }>()
   const [renamingTitle, setRenamingTitle] = useState("")
   const [confirmDeleteID, setConfirmDeleteID] = useState<string>()
   const [query, setQuery] = useState("")
@@ -242,18 +247,19 @@ function ChatHistoryMenu({
     return () => window.clearTimeout(handle)
   }, [confirmDeleteID])
 
-  const startRename = (conversation: ConversationSummary) => {
-    setRenamingID(conversation.id)
-    setRenamingTitle(conversation.title)
+  const startRename = (row: HistoryRow) => {
+    setRenaming({ key: row.key, kind: row.kind, id: row.kind === "conversation" ? row.conversation.id : row.session.id })
+    setRenamingTitle(row.title)
     setConfirmDeleteID(undefined)
   }
 
   const commitRename = () => {
-    if (!renamingID) return
+    if (!renaming) return
     const title = renamingTitle.replace(/\s+/g, " ").trim()
     if (!title) return
-    onRename(renamingID, title.slice(0, 80))
-    setRenamingID(undefined)
+    if (renaming.kind === "conversation") onRename(renaming.id, title.slice(0, 80))
+    else onRenameSession?.(renaming.id, title.slice(0, 80))
+    setRenaming(undefined)
     setRenamingTitle("")
   }
 
@@ -314,7 +320,7 @@ function ChatHistoryMenu({
             )}
             {filtered.map((row) => {
               const isConfirming = row.key === confirmDeleteID
-              const isEditing = row.kind === "conversation" && row.conversation.id === renamingID
+              const isEditing = row.key === renaming?.key
               const isActive = row.kind === "conversation" && row.conversation.id === activeID
               return (
                 <div
@@ -336,14 +342,14 @@ function ChatHistoryMenu({
                           if (event.key === "Escape") {
                             // Consume so Esc-to-stop doesn't also abort the turn.
                             event.preventDefault()
-                            setRenamingID(undefined)
+                            setRenaming(undefined)
                           }
                         }}
                       />
                       <button className="history-action" onClick={commitRename}>
                         Save
                       </button>
-                      <button className="history-action" onClick={() => setRenamingID(undefined)}>
+                      <button className="history-action" onClick={() => setRenaming(undefined)}>
                         Cancel
                       </button>
                     </>
@@ -365,11 +371,9 @@ function ChatHistoryMenu({
                         <span className="history-title">{row.title}</span>
                         <span className="history-date">{formatUpdated(row.updatedAt)}</span>
                       </button>
-                      {row.kind === "conversation" && (
-                        <button className="history-action" onClick={() => startRename(row.conversation)} title="Rename">
-                          Rename
-                        </button>
-                      )}
+                      <button className="history-action" onClick={() => startRename(row)} title="Rename">
+                        Rename
+                      </button>
                       <button
                         className={`history-action danger ${isConfirming ? "is-confirming" : ""}`}
                         onClick={() => handleDelete(row)}

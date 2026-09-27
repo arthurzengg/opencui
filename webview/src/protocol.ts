@@ -573,6 +573,8 @@ export type Inbound =
    * drops it from the list (#660).
    */
   | { type: "deleteSession"; sessionID: string }
+  /** Rename an unopened session on the server; its server title is the only one it has (#662). */
+  | { type: "renameSession"; sessionID: string; title: string }
   | { type: "apply"; code: string; language?: string }
   | { type: "openFile"; path: string }
   | { type: "openExternal"; url: string }

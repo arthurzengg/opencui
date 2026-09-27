@@ -29,6 +29,7 @@ export default function App() {
     renameConversation,
     deleteConversation,
     deleteSession,
+    renameSession,
     setAgent,
     setModel,
     setProviderCollapsed,
@@ -269,6 +270,7 @@ export default function App() {
         onRenameConversation={renameConversation}
         onDeleteConversation={deleteConversation}
         onDeleteSession={deleteSession}
+        onRenameSession={renameSession}
         onRemovePermissionRule={removePermissionRule}
         onClearPermissionRules={clearPermissionRules}
       />

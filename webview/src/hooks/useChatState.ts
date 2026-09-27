@@ -635,6 +635,9 @@ export function useChatState() {
     deleteSession(sessionID: string) {
       vscode.post({ type: "deleteSession", sessionID })
     },
+    renameSession(sessionID: string, title: string) {
+      vscode.post({ type: "renameSession", sessionID, title })
+    },
     apply(code: string, language?: string) {
       vscode.post({ type: "apply", code, language })
     },

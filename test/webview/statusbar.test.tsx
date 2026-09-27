@@ -912,12 +912,37 @@ describe("StatusBar: one history list (#660)", () => {
     expect(onDeleteConversation).not.toHaveBeenCalled()
   })
 
-  it("offers Delete but not Rename on an unopened session row", async () => {
+  it("gives every row the same actions so the date column lines up (#662)", async () => {
     const user = userEvent.setup()
-    render(<StatusBar {...baseProps} conversations={[]} externalSessions={externalSessions} />)
+    render(<StatusBar {...baseProps} conversations={conversations} externalSessions={externalSessions} />)
     await user.click(screen.getByRole("button", { name: /chat history/i }))
-    expect(screen.queryByRole("button", { name: /^Rename$/i })).toBeNull()
-    expect(screen.getByRole("button", { name: /^Delete$/i })).toBeInTheDocument()
+    const rows = Array.from(document.querySelectorAll(".history-item"))
+    expect(rows).toHaveLength(3)
+    for (const row of rows) {
+      expect(Array.from(row.querySelectorAll(".history-action")).map((b) => b.textContent)).toEqual(["Rename", "Delete"])
+    }
+  })
+
+  it("renames an unopened session through onRenameSession", async () => {
+    const user = userEvent.setup()
+    const onRenameSession = vi.fn()
+    const onRenameConversation = vi.fn()
+    render(
+      <StatusBar
+        {...baseProps}
+        conversations={[]}
+        externalSessions={externalSessions}
+        onRenameSession={onRenameSession}
+        onRenameConversation={onRenameConversation}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    await user.click(screen.getByRole("button", { name: /^Rename$/i }))
+    const input = screen.getByDisplayValue("TUI chat")
+    await user.clear(input)
+    await user.type(input, "Renamed on the server{Enter}")
+    expect(onRenameSession).toHaveBeenCalledWith("ses_tui", "Renamed on the server")
+    expect(onRenameConversation).not.toHaveBeenCalled()
   })
 
   it("filters both kinds of rows with the search box", async () => {
