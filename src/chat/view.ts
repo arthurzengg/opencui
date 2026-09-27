@@ -747,6 +747,49 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.manager.rename(id, title)
     await this.manager.flushPersist()
     this.postConversationsList()
+    // Best-effort: the panel keeps its own title, so a server miss costs
+    // nothing here, but the TUI should show the same name when it can.
+    const sessionID = this.manager.sessionIDOf(id)
+    if (sessionID) void this.updateServerSessionTitle(sessionID, title)
+  }
+
+  /**
+   * Rename an unopened server session from the history list (#662). Unlike a
+   * saved conversation there is no local title to fall back on, so a server
+   * failure is reported and nothing changes.
+   */
+  private async renameSession(sessionID: string, title: string) {
+    // Stale-popover race: something bound it since the list was fetched.
+    const existing = this.manager.findBySessionID(sessionID)
+    if (existing) {
+      await this.renameConversation(existing, title)
+      return
+    }
+    if (await this.updateServerSessionTitle(sessionID, title)) {
+      this.postConversationsList()
+    } else {
+      void vscode.window.showErrorMessage("Could not rename the chat in opencode. The name is unchanged.")
+    }
+  }
+
+  private async updateServerSessionTitle(sessionID: string, title: string): Promise<boolean> {
+    try {
+      const backend = await this.servers.ensure()
+      const res = await backend.client.session.update({
+        path: { id: sessionID },
+        body: { title },
+        query: { directory: backend.directory },
+      })
+      if (res.error) {
+        log("session.update failed", res.response.status, res.error)
+        return false
+      }
+    } catch (e) {
+      log("session.update threw", e)
+      return false
+    }
+    this.serverSessions = this.serverSessions.map((s) => (s.id === sessionID ? { ...s, title } : s))
+    return true
   }
 
   /**
@@ -1349,6 +1392,9 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       case "deleteSession":
         await this.deleteSession(msg.sessionID)
+        return
+      case "renameSession":
+        await this.renameSession(msg.sessionID, msg.title)
         return
       case "apply":
         await applyCode(msg.code, msg.language)

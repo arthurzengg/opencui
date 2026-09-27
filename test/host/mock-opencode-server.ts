@@ -97,6 +97,14 @@ export type MockOpencodeServer = {
    * so the call throws. An unlisted session always answers 404.
    */
   setSessionDeleteStatus: (status: number) => void
+  /** Every PATCH /session/{id} call (session.update), in call order. */
+  sessionUpdates: Array<{ sessionID: string; body: unknown }>
+  /**
+   * HTTP status PATCH /session/{id} replies with for a listed session
+   * (default 200, which also applies the title). An unlisted session always
+   * answers 404.
+   */
+  setSessionUpdateStatus: (status: number) => void
   /**
    * Configure what GET /session/status returns. Pass `undefined` to clear
    * the entry. Tests use this to drive the watchdog's recovery path.
@@ -155,6 +163,8 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
   let sessions: Array<Record<string, unknown>> = []
   const sessionDeletes: string[] = []
   let sessionDeleteStatus = 200
+  const sessionUpdates: Array<{ sessionID: string; body: unknown }> = []
+  let sessionUpdateStatus = 200
   const sessionListQueries: Array<Record<string, string>> = []
   const sessionMessages = new Map<string, Array<Record<string, unknown>>>()
   let agents: Array<Record<string, unknown>> = [
@@ -284,6 +294,26 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
         reply(res, 200, true)
       } else {
         reply(res, sessionDeleteStatus, { error: "scripted session.delete failure" })
+      }
+      return
+    }
+
+    // Session update (#662): applies a title the way the real server does.
+    if (deleteMatch && req.method === "PATCH") {
+      const id = deleteMatch[1]!
+      const body = await readBody(req)
+      sessionUpdates.push({ sessionID: id, body })
+      const row = sessions.find((s) => s.id === id)
+      if (!row) {
+        reply(res, 404, { error: "session not found" })
+        return
+      }
+      if (sessionUpdateStatus === 200) {
+        const title = (body as { title?: unknown } | null)?.title
+        if (typeof title === "string") row.title = title
+        reply(res, 200, row)
+      } else {
+        reply(res, sessionUpdateStatus, { error: "scripted session.update failure" })
       }
       return
     }
@@ -608,6 +638,10 @@ export async function startMockOpencode(): Promise<MockOpencodeServer> {
     sessionDeletes,
     setSessionDeleteStatus(status) {
       sessionDeleteStatus = status
+    },
+    sessionUpdates,
+    setSessionUpdateStatus(status) {
+      sessionUpdateStatus = status
     },
     setSessionMessages(sessionID, items) {
       sessionMessages.set(sessionID, items)

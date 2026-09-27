@@ -1731,3 +1731,59 @@ describe("ChatView harness: one history list (#660)", () => {
     expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("no longer exists"))
   })
 })
+
+describe("ChatView harness: renaming across the one history list (#662)", () => {
+  beforeEach(() => {
+    vi.mocked(vscode.window.showErrorMessage).mockClear()
+  })
+
+  it("renames an unopened session on the server and in the list", async () => {
+    server.setSessions([{ id: "ses_tui", title: "TUI chat", time: { updated: 10 } }])
+    await harness.send({ type: "mounted" })
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "conversations" && (m.external ?? []).some((s) => s.id === "ses_tui"),
+      ),
+    )
+
+    await harness.send({ type: "renameSession", sessionID: "ses_tui", title: "Renamed" })
+
+    expect(server.sessionUpdates).toEqual([{ sessionID: "ses_tui", body: { title: "Renamed" } }])
+    const last = harness.posted.filter((m) => m.type === "conversations").at(-1)!
+    expect(last.type === "conversations" && last.external?.map((s) => s.title)).toEqual(["Renamed"])
+    expect(savedConversations().some((c) => c.sessionID === "ses_tui")).toBe(false)
+    expect(vscode.window.showErrorMessage).not.toHaveBeenCalled()
+  })
+
+  it("leaves the name and reports it when the server rename fails", async () => {
+    server.setSessions([{ id: "ses_tui", title: "TUI chat", time: { updated: 10 } }])
+    server.setSessionUpdateStatus(500)
+    await harness.send({ type: "mounted" })
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "conversations" && (m.external ?? []).some((s) => s.id === "ses_tui"),
+      ),
+    )
+
+    await harness.send({ type: "renameSession", sessionID: "ses_tui", title: "Renamed" })
+
+    expect(server.sessionUpdates).toHaveLength(1)
+    const last = harness.posted.filter((m) => m.type === "conversations").at(-1)!
+    expect(last.type === "conversations" && last.external?.map((s) => s.title)).toEqual(["TUI chat"])
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("name is unchanged"))
+  })
+
+  it("renaming a saved conversation also pushes the title to its bound session", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "hello" })
+    await until(() => server.prompts.length === 1)
+    server.setSessions([{ id: SESSION_ID, title: "Test Session", time: { updated: 5 } }])
+    const id = harness.chatView.activeConversationID()
+
+    await harness.send({ type: "renameConversation", id, title: "Local name" })
+
+    expect(savedConversations().find((c) => c.id === id)?.title).toBe("Local name")
+    await until(() => server.sessionUpdates.length === 1)
+    expect(server.sessionUpdates[0]).toEqual({ sessionID: SESSION_ID, body: { title: "Local name" } })
+  })
+})
