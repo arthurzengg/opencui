@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.8] - 2026-09-28
+
+### Changed
+
+- The chat history is one list. opencode sessions in the project that the panel has not opened, formerly an "Also in this project" section, now sit among the saved conversations in order of last activity, import on click as before, and carry the same Rename and Delete actions as every other row (#660, #661, #662, #663).
+- Delete removes the chat from opencode as well as from the panel. The server is asked first: if it cannot be reached nothing is removed and an error says so, and a session the server no longer has counts as deleted, which also cleans up chats whose session was deleted from the TUI or another window. The confirm step names the wider effect (#660, #661).
+- Renaming an unopened session renames it on the opencode server, and renaming a saved conversation also pushes the title to its bound session, so the TUI shows the same name (#662, #663).
+
+### Fixed
+
+- Dates in the chat history line up again. Rows for unopened sessions rendered one action fewer, and the hidden hover actions still reserved their columns, which pushed those rows' dates out of line (#662, #663).
+- A prompt sent to a chat whose opencode session no longer exists now fails with a message naming the missing session instead of the generic rejection (#660, #661).
+
 ## [1.15.7] - 2026-09-25
 
 ### Changed
