@@ -211,7 +211,7 @@ describe("ChatView harness: openExternal", () => {
 })
 
 describe("ChatView harness: addSelectionToChat", () => {
-  it("injects the context label into the composer", async () => {
+  it("injects the context label into the composer after mounted", async () => {
     const win = vscode.window as unknown as { activeTextEditor: unknown }
     win.activeTextEditor = {
       document: {
@@ -221,16 +221,19 @@ describe("ChatView harness: addSelectionToChat", () => {
       },
       selection: { isEmpty: false, start: { line: 4 }, end: { line: 8 } },
     }
-    await harness.chatView.addSelectionToChat()
-    expect(harness.posted).toContainEqual({ type: "setComposerText", text: "@src/foo.ts#L5-9 ", mention: "src/foo.ts#L5-9" })
+    const addPromise = harness.chatView.addSelectionToChat()
+    await harness.send({ type: "mounted" })
+    await addPromise
+    expect(harness.posted).toContainEqual({ type: "appendComposerText", text: "@src/foo.ts#L5-9 ", mention: "src/foo.ts#L5-9" })
     win.activeTextEditor = undefined
   })
 
   it("does nothing without an editor context", async () => {
     const win = vscode.window as unknown as { activeTextEditor: unknown }
     win.activeTextEditor = undefined
+    await harness.send({ type: "mounted" })
     await harness.chatView.addSelectionToChat()
-    expect(harness.posted.some((m) => m.type === "setComposerText")).toBe(false)
+    expect(harness.posted.some((m) => m.type === "appendComposerText")).toBe(false)
   })
 })
 

@@ -102,7 +102,7 @@ export type ChatState = {
    * undone prompt, `/redo` clearing it). The nonce makes identical text re-apply;
    * `PromptBox` consumes it via an effect.
    */
-  injectedText?: { text: string; nonce: number }
+  injectedText?: { text: string; nonce: number; mode?: "set" | "append" }
   injectedMention?: string
   /** Prompts submitted while busy, waiting for the session to go idle. */
   queued: QueuedMessage[]
@@ -222,7 +222,9 @@ export function reducer(state: ChatState, action: Action): ChatState {
     case "commands":
       return { ...state, commands: action.commands }
     case "setComposerText":
-      return { ...state, injectedText: { text: action.text, nonce: (state.injectedText?.nonce ?? 0) + 1 }, injectedMention: action.mention }
+      return { ...state, injectedText: { text: action.text, nonce: (state.injectedText?.nonce ?? 0) + 1, mode: "set" }, injectedMention: action.mention }
+    case "appendComposerText":
+      return { ...state, injectedText: { text: action.text, nonce: (state.injectedText?.nonce ?? 0) + 1, mode: "append" }, injectedMention: action.mention }
     case "conversations":
       return {
         ...state,

@@ -545,6 +545,7 @@ export type Outbound =
   // Host -> webview: replace the live composer's text (e.g. /undo restoring the
   // undone prompt, /redo clearing it). Applied to the bottom send composer only.
   | { type: "setComposerText"; text: string; mention?: string }
+  | { type: "appendComposerText"; text: string; mention?: string }
   | { type: "indexStatus"; status: IndexStatusInfo }
   | { type: "agentsStatus"; status: AgentsStatusInfo }
   | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }

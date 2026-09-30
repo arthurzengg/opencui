@@ -394,13 +394,25 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   async addSelectionToChat() {
     const ctx = getEditorContext()
+    if (!this.view) {
+      await vscode.commands.executeCommand("workbench.view.extension.opencui")
+    }
     this.focus()
     const label = formatContextHeader(ctx)
     if (!label) return
-    this.post({ type: "setComposerText", text: label + " ", mention: label.replace(/^@/, "") })
+    await this.whenMounted()
+    this.post({ type: "appendComposerText", text: label + " ", mention: label.replace(/^@/, "") })
   }
 
   private webviewMounted = false
+  private mountedWaiters: Array<() => void> = []
+
+  private whenMounted(): Promise<void> {
+    if (this.webviewMounted) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.mountedWaiters.push(resolve)
+    })
+  }
 
   /**
    * Test-facing snapshot exposed through the extension's `activate()` exports.
@@ -1204,6 +1216,8 @@ export class ChatView implements vscode.WebviewViewProvider {
     switch (msg.type) {
       case "mounted": {
         this.webviewMounted = true
+        for (const resolve of this.mountedWaiters) resolve()
+        this.mountedWaiters = []
         this.post({
           type: "ready",
           connected: false,

@@ -99,7 +99,7 @@ type Props = {
    * Only wired for the send composers; the parent reducer clears it after a send
    * or conversation switch so a re-mounted composer never re-applies stale text.
    */
-  inject?: { text: string; nonce: number }
+  inject?: { text: string; nonce: number; mode?: "set" | "append" }
   injectMention?: string
   /** Open a highlighted URL (Cmd/Ctrl+Click in the textarea) externally. */
   onOpenLink?: (url: string) => void
@@ -238,8 +238,16 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   useEffect(() => {
     if (!inject) return
     if (injectMention) knownMentions.current.add(injectMention)
-    setText(inject.text)
-    pendingCursor.current = inject.text.length
+    if (inject.mode === "append") {
+      setText((prev) => {
+        const next = prev ? (prev.endsWith(" ") ? prev + inject.text : prev + " " + inject.text) : inject.text
+        pendingCursor.current = next.length
+        return next
+      })
+    } else {
+      setText(inject.text)
+      pendingCursor.current = inject.text.length
+    }
     // The injected text replaces whatever was recalled, so the browse position
     // and its stashed draft no longer describe the box — leaving them set would
     // have the next Down restore a draft the user can no longer see.

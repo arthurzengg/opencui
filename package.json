@@ -110,14 +110,6 @@
         "linux": "ctrl+l"
       },
       {
-        "command": "opencui.chat.addSelection",
-        "key": "cmd+shift+l",
-        "mac": "cmd+shift+l",
-        "win": "ctrl+shift+l",
-        "linux": "ctrl+shift+l",
-        "when": "editorTextFocus"
-      },
-      {
         "command": "opencui.inlineEdit",
         "key": "cmd+k",
         "mac": "cmd+k",
