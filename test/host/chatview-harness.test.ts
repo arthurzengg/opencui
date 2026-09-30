@@ -270,6 +270,39 @@ describe("ChatView harness: send round-trip", () => {
   })
 })
 
+describe("ChatView harness: the typed text travels apart from injected context (#666)", () => {
+  it("sends the context as a synthetic part ahead of the user's own text", async () => {
+    const fsFiles = (vscode as unknown as { __fsFiles: Map<string, Uint8Array> }).__fsFiles
+    const key = vscode.Uri.file("/workspace/src/foo.ts").toString()
+    fsFiles.set(key, new TextEncoder().encode("export const x = 1\n"))
+    try {
+      await harness.send({ type: "mounted" })
+      await harness.send({ type: "send", text: "explain this", mentions: ["src/foo.ts"] })
+      await until(() => server.prompts.length === 1)
+
+      const body = server.prompts[0]!.body as { parts: Array<{ type: string; text?: string; synthetic?: boolean }> }
+      const texts = body.parts.filter((p) => p.type === "text")
+      expect(texts).toHaveLength(2)
+      expect(texts[0]!.synthetic).toBe(true)
+      expect(texts[0]!.text).toContain("Files attached:")
+      expect(texts[0]!.text).toContain("@src/foo.ts")
+      expect(texts[0]!.text).not.toContain("explain this")
+      expect(texts[1]).toEqual({ type: "text", text: "explain this" })
+    } finally {
+      fsFiles.delete(key)
+    }
+  })
+
+  it("sends only the user's text when nothing surrounds it", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "hello there" })
+    await until(() => server.prompts.length === 1)
+
+    const body = server.prompts[0]!.body as { parts: unknown[] }
+    expect(body.parts).toEqual([{ type: "text", text: "hello there" }])
+  })
+})
+
 describe("ChatView harness: SSE re-attach mid-turn", () => {
   it("resumes the in-flight message in place: one row, text once, and that is what persists (#585)", async () => {
     await harness.send({ type: "mounted" })

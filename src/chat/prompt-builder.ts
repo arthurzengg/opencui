@@ -17,13 +17,23 @@ const MENTION_MAX_FILES = 20
 const CONVERSATION_MESSAGE_MAX_FRACTION = 0.25
 const MESSAGE_TRUNCATED_MARKER = "\n[message truncated]"
 
+/**
+ * Everything the panel wraps around the user's words travels as its own
+ * synthetic part: opencode's clients hide synthetic parts and the session
+ * import skips them, while the model still receives both (#666).
+ */
+export type PromptText = {
+  context?: string
+  text: string
+}
+
 export function buildPrompt(
   userText: string,
   ctx: ReturnType<typeof getEditorContext>,
   mentionBlock?: string,
   workspace?: WorkspaceRoot,
   autoBlocks?: PromptContextBlock[],
-): string {
+): PromptText {
   const lines: string[] = []
   if (workspace) {
     lines.push("Workspace:")
@@ -62,8 +72,8 @@ export function buildPrompt(
       lines.push("")
     }
   }
-  lines.push(userText)
-  return lines.join("\n")
+  while (lines.length && lines[lines.length - 1] === "") lines.pop()
+  return { context: lines.length ? lines.join("\n") : undefined, text: userText }
 }
 
 export type MentionReadResult = {
