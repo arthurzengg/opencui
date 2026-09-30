@@ -111,6 +111,23 @@ describe("importedMessages", () => {
     expect(out[1]).toMatchObject({ error: "rate limit" })
   })
 
+  it("hides the panel's own context part, which precedes the typed text (#666)", () => {
+    const out = importedMessages(
+      [
+        {
+          info: { id: "msg_u1", role: "user" },
+          parts: [
+            { type: "text", text: "Workspace:\n- Name: repo\n\n## README.md\n```md\n# Repo\n```", synthetic: true },
+            { type: "text", text: "how hard is this project" },
+          ],
+        },
+      ],
+      "/ws",
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]!.blocks).toEqual([{ type: "text", text: "how hard is this project" }])
+  })
+
   it("keeps the compaction summary flag and skips empty messages", () => {
     const out = importedMessages(
       [

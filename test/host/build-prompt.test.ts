@@ -19,15 +19,15 @@ const FAKE_ROOT: WorkspaceRoot = {
 }
 
 describe("buildPrompt", () => {
-  it("returns the user text when there is no editor context or mentions", () => {
-    expect(buildPrompt("hello", {})).toBe("hello")
+  it("returns only the user text when there is no editor context or mentions", () => {
+    expect(buildPrompt("hello", {})).toEqual({ context: undefined, text: "hello" })
   })
 
-  it("prepends Context line for editor file with no selection", () => {
+  it("keeps the user text out of the context block", () => {
     const out = buildPrompt("describe", { relativePath: "src/foo.ts", language: "ts" })
-    expect(out).toContain("Context: src/foo.ts")
-    expect(out).toContain("describe")
-    expect(out.indexOf("Context: src/foo.ts")).toBeLessThan(out.indexOf("describe"))
+    expect(out.text).toBe("describe")
+    expect(out.context).toContain("Context: src/foo.ts")
+    expect(out.context).not.toContain("describe")
   })
 
   it("includes selection text in a fenced code block", () => {
@@ -35,31 +35,30 @@ describe("buildPrompt", () => {
       relativePath: "src/foo.ts",
       language: "ts",
       selection: { startLine: 3, endLine: 5, text: "const x = 1\nconst y = 2" },
-    })
+    }).context!
     expect(out).toContain("Selection (lines 3-5):")
     expect(out).toContain("```ts")
     expect(out).toContain("const x = 1")
     expect(out).toContain("```")
   })
 
-  it("prepends mentionBlock before editor context", () => {
+  it("puts the mentionBlock before the editor context", () => {
     const out = buildPrompt(
       "compare them",
       { relativePath: "src/foo.ts" },
       "Files attached:\n@src/bar.ts\n```ts\nfoo\n```",
-    )
+    ).context!
     expect(out.indexOf("Files attached:")).toBeLessThan(out.indexOf("Context: src/foo.ts"))
-    expect(out.indexOf("Context: src/foo.ts")).toBeLessThan(out.indexOf("compare them"))
   })
 
   it("works with mentions but no editor context", () => {
     const out = buildPrompt("explain", {}, "Files attached:\n@a.ts\n```ts\nx\n```")
-    expect(out).toContain("Files attached:")
-    expect(out).toContain("explain")
+    expect(out.context).toContain("Files attached:")
+    expect(out.text).toBe("explain")
   })
 
   it("prepends a workspace declaration when a root is provided", () => {
-    const out = buildPrompt("hi", { relativePath: "src/foo.ts" }, undefined, FAKE_ROOT)
+    const out = buildPrompt("hi", { relativePath: "src/foo.ts" }, undefined, FAKE_ROOT).context!
     expect(out.indexOf("Workspace:")).toBe(0)
     expect(out).toContain("- Name: repo")
     expect(out).toContain("- Root: /repo")
@@ -68,8 +67,22 @@ describe("buildPrompt", () => {
   })
 
   it("omits the workspace declaration when no root is provided", () => {
-    const out = buildPrompt("hi", { relativePath: "src/foo.ts" }, undefined, undefined)
+    const out = buildPrompt("hi", { relativePath: "src/foo.ts" }, undefined, undefined).context!
     expect(out).not.toContain("Workspace:")
+  })
+
+  it("renders auto-context blocks under their titles, lowest priority number first", () => {
+    const out = buildPrompt("hi", {}, undefined, FAKE_ROOT, [
+      { id: "b2", itemID: "i2", title: "Open Tabs", content: "src/a.ts", bytes: 8, priority: 5 },
+      { id: "b1", itemID: "i1", title: "README.md", path: "README.md", language: "md", content: "# Repo", bytes: 6, priority: 9 },
+    ]).context!
+    expect(out.indexOf("## Open Tabs")).toBeLessThan(out.indexOf("## README.md"))
+    expect(out).toContain("```md\n# Repo\n```")
+  })
+
+  it("ends the context block without a trailing blank line", () => {
+    const out = buildPrompt("hi", {}, undefined, FAKE_ROOT).context!
+    expect(out.endsWith("\n")).toBe(false)
   })
 })
 

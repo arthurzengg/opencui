@@ -1861,16 +1861,15 @@ export class ChatView implements vscode.WebviewViewProvider {
         })
       }
     }
-    parts.push({
-      type: "text",
-      text: buildPrompt(
-        text,
-        ctx,
-        [mentionResult.block, convResult.block].filter(Boolean).join("\n\n") || undefined,
-        backend.workspace,
-        auto.blocks,
-      ),
-    })
+    const prompt = buildPrompt(
+      text,
+      ctx,
+      [mentionResult.block, convResult.block].filter(Boolean).join("\n\n") || undefined,
+      backend.workspace,
+      auto.blocks,
+    )
+    if (prompt.context) parts.push({ type: "text", text: prompt.context, synthetic: true })
+    parts.push({ type: "text", text: prompt.text })
     type PromptBody = NonNullable<Parameters<typeof backend.client.session.prompt>[0]["body"]>
     const body: PromptBody = {
       parts: parts as PromptBody["parts"],
