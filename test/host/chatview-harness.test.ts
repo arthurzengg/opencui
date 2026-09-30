@@ -212,7 +212,6 @@ describe("ChatView harness: openExternal", () => {
 
 describe("ChatView harness: addSelectionToChat", () => {
   it("injects the context label into the composer", async () => {
-    vi.mocked(vscode.window.activeTextEditor, true)
     const win = vscode.window as unknown as { activeTextEditor: unknown }
     win.activeTextEditor = {
       document: {

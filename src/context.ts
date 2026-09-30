@@ -45,3 +45,19 @@ export function formatContextHeader(ctx: EditorContext): string {
   }
   return `@${ctx.relativePath}`
 }
+
+export type ParsedMention = {
+  raw: string
+  path: string
+  range?: string
+}
+
+export function parseMention(raw: string): ParsedMention {
+  const match = raw.match(/^(.*?)(?:#(L\d+(?:-\d+)?))?$/)
+  if (!match) return { raw, path: raw }
+  return {
+    raw,
+    path: match[1],
+    range: match[2],
+  }
+}

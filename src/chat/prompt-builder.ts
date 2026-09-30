@@ -1,6 +1,7 @@
 import * as vscode from "vscode"
 import * as path from "path"
-import type { getEditorContext } from "../context"
+import { parseMention, type ParsedMention, type getEditorContext } from "../context"
+export { parseMention, type ParsedMention }
 import type { ChatMessage, ConversationMention } from "../protocol"
 import type { WorkspaceRoot } from "../workspace-root"
 import type { PromptContextBlock } from "../workspace-context/types"
@@ -91,25 +92,27 @@ export async function readMentions(
   }
   const folders = vscode.workspace.workspaceFolders ?? []
   if (!folders.length) return { bytes: {}, capped: [], failed: [] }
-  const seen = new Set<string>()
+  const seenPaths = new Set<string>()
+  const seenRaw = new Set<string>()
   const blocks: string[] = []
   const bytes: Record<string, { included: number; original: number }> = {}
   const capped: string[] = []
   const failed: string[] = []
   let totalBytes = 0
-  for (const mention of mentions) {
-    const rel = mention.replace(/#L\d+(-\d+)?$/, "")
-    if (!rel || seen.has(rel)) continue
-    seen.add(rel)
+  for (const raw of mentions) {
+    if (!raw || seenRaw.has(raw)) continue
+    seenRaw.add(raw)
+    const { path: rel } = parseMention(raw)
+    if (!rel) continue
     if (blocks.length >= MENTION_MAX_FILES) {
-      capped.push(rel)
+      capped.push(raw)
       continue
     }
     try {
       const buf = await readFirstCandidate(rel, folders)
       const remaining = maxBytes - totalBytes
       if (remaining <= 0) {
-        capped.push(rel)
+        capped.push(raw)
         continue
       }
       const truncated = buf.byteLength > remaining
@@ -123,12 +126,15 @@ export async function readMentions(
       const included = Buffer.byteLength(content, "utf8")
       const lang = guessFenceLang(rel)
       const note = truncated ? ` (truncated to ${included} bytes)` : ""
-      blocks.push(`@${rel}${note}\n\`\`\`${lang}\n${content}\n\`\`\``)
-      bytes[rel] = { included, original: buf.byteLength }
+      if (!seenPaths.has(rel)) {
+        seenPaths.add(rel)
+        blocks.push(`@${rel}${note}\n\`\`\`${lang}\n${content}\n\`\`\``)
+      }
+      bytes[raw] = { included, original: buf.byteLength }
       totalBytes += included
     } catch (e) {
       log("readMentions: skipping", rel, e)
-      failed.push(rel)
+      failed.push(raw)
     }
   }
   const block = blocks.length > 0 ? ["Files attached:", ...blocks].join("\n") : undefined

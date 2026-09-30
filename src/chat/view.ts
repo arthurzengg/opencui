@@ -55,7 +55,7 @@ import {
   turnChanges,
 } from "../../webview/src/review-extract"
 import { reviewAllForPath } from "./review-actions"
-import { attachableConversationIDs, buildPrompt, readMentions, readConversationMentions } from "./prompt-builder"
+import { attachableConversationIDs, buildPrompt, readMentions, readConversationMentions, parseMention } from "./prompt-builder"
 import { buildManifest } from "../workspace-context/manifest"
 import { collectAutoContext } from "../workspace-context/collector"
 import { RecentEditsTracker } from "../workspace-context/recent-edits"
@@ -1685,7 +1685,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         source: "mention",
         kind: "file",
         label: rel,
-        path: rel,
+        path: parseMention(rel).path,
         reason: "Skipped: per-prompt mention cap exceeded",
         status: "skipped",
       })
@@ -1697,7 +1697,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         source: "mention",
         kind: "file",
         label: rel,
-        path: rel,
+        path: parseMention(rel).path,
         reason: "Skipped: file unreadable (ENOENT or permission denied)",
         status: "skipped",
       })
@@ -2596,7 +2596,9 @@ function collectSymbolFocus(activeRel: string | undefined, mentions: string[] | 
     out.push(p)
   }
   push(activeRel)
-  for (const m of mentions ?? []) push(m)
+  for (const m of mentions ?? []) {
+    push(parseMention(m).path)
+  }
   return out
 }
 

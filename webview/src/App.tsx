@@ -423,7 +423,7 @@ export default function App() {
               commands={state.commands}
               onRunCommand={runCommandAndPinTop}
               inject={state.injectedText}
-          injectMention={state.injectedMention}
+              injectMention={state.injectedMention}
               history={promptHistoryEntries}
               onOpenLink={openLink}
             />
