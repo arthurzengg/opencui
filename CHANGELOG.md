@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.9] - 2026-10-01
+
+### Fixed
+
+- A chat opened from the history list that came back from the opencode server no longer shows the panel's own context as the user's message. The workspace header, attached file contents, editor selection, and auto-context such as README excerpts were folded into the typed text, so the server held them as one message and both the import and opencode's TUI showed the whole block. The context now travels as a separate part marked synthetic, the same flag opencode uses for its own injected content: the model receives exactly what it did before, and the typed text stands alone. Chats sent before this change keep the text they were saved with (#666, #667).
+
 ## [1.15.8] - 2026-09-28
 
 ### Changed
