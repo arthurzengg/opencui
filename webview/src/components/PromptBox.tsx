@@ -273,6 +273,16 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   const showBrowse = !!mention && mentionCategory === "files" && !mention.query && !!listDir
   const showFileHits = !showBrowse && !!mention && hits.length > 0 && (mentionCategory === "files" || (mentionCategory === null && !!mention.query))
   const showChatList = !!mention && mentionCategory === "chats"
+  // The pickers are separate elements, so the first typed character or a
+  // picked category swaps one for another. Only the picker that opened plays
+  // the entrance (#670); replaying it on every swap reads as a flicker.
+  const picker = showCategoryMenu ? "categories" : showBrowse ? "browse" : showFileHits ? "files" : showChatList ? "chats" : command ? "commands" : null
+  const [prevPicker, setPrevPicker] = useState(picker)
+  const [enteringPicker, setEnteringPicker] = useState(picker)
+  if (picker !== prevPicker) {
+    setPrevPicker(picker)
+    setEnteringPicker(prevPicker === null ? picker : null)
+  }
 
   const {
     dir: browseDir,
@@ -884,7 +894,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
           }}
         />
         {showCategoryMenu && (
-          <ul className="mention-popover" role="listbox" aria-label="Categories">
+          <ul className={"mention-popover" + (enteringPicker === "categories" ? " popover-enter" : "")} role="listbox" aria-label="Categories">
             <li
               role="option"
               aria-selected={menuIndex === 0}
@@ -913,7 +923,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
           </ul>
         )}
         {showBrowse && (
-          <div className="mention-popover mention-browser">
+          <div className={"mention-popover mention-browser" + (enteringPicker === "browse" ? " popover-enter" : "")}>
             <div className="mention-breadcrumb">
               <button
                 type="button"
@@ -953,7 +963,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
           </div>
         )}
         {showFileHits && (
-          <ul className="mention-popover" role="listbox" aria-label="Files">
+          <ul className={"mention-popover" + (enteringPicker === "files" ? " popover-enter" : "")} role="listbox" aria-label="Files">
             {hits.map((hit, i) => (
               <li
                 key={hit.path}
@@ -974,7 +984,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
           </ul>
         )}
         {showChatList && (
-          <ul className="mention-popover" role="listbox" aria-label="Past Chats">
+          <ul className={"mention-popover" + (enteringPicker === "chats" ? " popover-enter" : "")} role="listbox" aria-label="Past Chats">
             {flatConversations.length > 0 ? chatGroups.map((group) => [
               <li key={`section:${group.label}`} className="mention-section" role="presentation">
                 {group.label}
@@ -1007,7 +1017,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
           </ul>
         )}
         {command && (
-          <ul className="mention-popover command-popover" role="listbox" aria-label="Commands">
+          <ul className={"mention-popover command-popover" + (enteringPicker === "commands" ? " popover-enter" : "")} role="listbox" aria-label="Commands">
             {commandHits.length > 0 ? commandHits.map((cmd, i) => (
               <li
                 key={cmd.name}

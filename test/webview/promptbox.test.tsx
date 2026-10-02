@@ -1863,3 +1863,46 @@ describe("PromptBox Stop ring clock (#621)", () => {
     expect(stopping.style.animationDelay).toBe("")
   })
 })
+
+describe("PromptBox / picker entrance (#670)", () => {
+  const isEntering = (el: HTMLElement) => el.classList.contains("popover-enter")
+
+  it("animates the picker that opened, not the ones it swaps to while open", async () => {
+    const user = userEvent.setup()
+    const searchFiles = vi.fn().mockResolvedValue([{ path: "src/foo.ts", name: "foo.ts" }])
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} searchFiles={searchFiles} />)
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
+
+    await user.type(textarea, "@")
+    expect(isEntering(await screen.findByRole("listbox", { name: "Categories" }))).toBe(true)
+    // With hits already loaded for the empty query, the first typed character
+    // swaps the category menu for the file list in the same frame. Typing
+    // before they arrive closes the picker until results land, and that
+    // reopening animates like any other.
+    await waitFor(() => expect(searchFiles).toHaveBeenCalledWith(""))
+
+    await user.type(textarea, "f")
+    expect(isEntering(await screen.findByRole("listbox", { name: "Files" }))).toBe(false)
+
+    await user.keyboard("{Backspace}")
+    expect(isEntering(await screen.findByRole("listbox", { name: "Categories" }))).toBe(false)
+
+    await user.clear(textarea)
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull())
+    await user.type(textarea, "@")
+    expect(isEntering(await screen.findByRole("listbox", { name: "Categories" }))).toBe(true)
+  })
+
+  it("animates the command picker when / opens it and keeps the class while filtering", async () => {
+    const user = userEvent.setup()
+    const commands = [
+      { name: "deploy", description: "Ship it", takesArguments: true },
+      { name: "compact", description: "Compact the session", takesArguments: false },
+    ]
+    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} commands={commands} onRunCommand={vi.fn()} />)
+    await user.type(screen.getByRole("textbox"), "/")
+    expect(isEntering(await screen.findByRole("listbox", { name: "Commands" }))).toBe(true)
+    await user.type(screen.getByRole("textbox"), "dep")
+    expect(isEntering(screen.getByRole("listbox", { name: "Commands" }))).toBe(true)
+  })
+})

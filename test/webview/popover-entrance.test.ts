@@ -54,4 +54,22 @@ describe("popover entrance (#670)", () => {
   it.each(HEADER_POPOVERS)("turns %s's entrance off under reduced motion", (selector) => {
     expect(animationOf(reducedMotion, selector)).toBe("none")
   })
+
+  // The composer's pickers are separate elements that replace one another as
+  // the query changes; an animation on the bare class would replay on each swap.
+  it("animates the composer pickers only through the opening class", () => {
+    expect(animationOf(rules, ".mention-popover")).toBeUndefined()
+    expect(animationOf(rules, ".mention-popover.popover-enter")).toBe("popover-in 0.12s ease-out")
+    expect(animationOf(reducedMotion, ".mention-popover.popover-enter")).toBe("none")
+  })
+
+  // Edit-in-place and the empty-chat composer flip the pickers below the
+  // textarea, so the slide direction travels with each placement rule.
+  it("slides the composer pickers away from the textarea in either placement", () => {
+    const fromOf = (selector: string) =>
+      rules.find((r) => r.selectors.includes(selector))?.body.match(/--popover-from:\s*([^;]+);/)?.[1]
+    expect(fromOf(".mention-popover")).toBe("4px")
+    expect(fromOf(".promptbox--edit .mention-popover")).toBe("-4px")
+    expect(fromOf(".promptbox--top .mention-popover")).toBe("-4px")
+  })
 })
