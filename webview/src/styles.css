@@ -210,6 +210,35 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .live-breathe { animation: none; }
 }
+/* ===== Popover entrance (#670) =====
+   Popovers fade in and slide 4px out of the control that opened them, in
+   the direction they open; a placement rule that opens upward sets
+   --popover-from. Entrance only; closing unmounts them, and holding them
+   mounted to animate out is not worth the extra state. */
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--popover-from, -4px));
+  }
+}
+.history-popover,
+.model-picker-popover,
+.agents-popover {
+  animation: popover-in 0.12s ease-out;
+}
+/* The composer's pickers swap elements as the query changes, so they animate
+   only through the class PromptBox puts on the one that opened. */
+.mention-popover.popover-enter {
+  animation: popover-in 0.12s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .history-popover,
+  .model-picker-popover,
+  .agents-popover,
+  .mention-popover.popover-enter {
+    animation: none;
+  }
+}
 /* ===== AgentActivity =====
    Message-flow activity surface for live main-agent + subagent work. It
    renders inside the active assistant message, next to the Process panel,
@@ -3144,6 +3173,7 @@ button:focus-visible {
 .mention-popover {
   position: absolute;
   bottom: calc(100% + 4px);
+  --popover-from: 4px;
   left: 8px;
   right: auto;
   width: min(240px, calc(100% - 16px));
@@ -3200,6 +3230,7 @@ button:focus-visible {
 .promptbox--top .mention-popover {
   bottom: auto;
   top: calc(100% + 4px);
+  --popover-from: -4px;
 }
 .promptbox--top .mention-popover {
   top: 26px;
