@@ -210,6 +210,28 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .live-breathe { animation: none; }
 }
+/* ===== Popover entrance (#670) =====
+   Popovers fade in and slide out of the control that opened them: down
+   from the header and the Agents pill. Entrance only; closing unmounts them,
+   and holding them mounted to animate out is not worth the extra state. */
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--popover-from, -4px));
+  }
+}
+.history-popover,
+.model-picker-popover,
+.agents-popover {
+  animation: popover-in 0.12s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .history-popover,
+  .model-picker-popover,
+  .agents-popover {
+    animation: none;
+  }
+}
 /* ===== AgentActivity =====
    Message-flow activity surface for live main-agent + subagent work. It
    renders inside the active assistant message, next to the Process panel,
