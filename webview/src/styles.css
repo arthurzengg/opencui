@@ -2743,6 +2743,28 @@ button:focus-visible {
 .bottom-dock > .question {
   pointer-events: auto;
 }
+/* Cards rise out of the composer as they join the dock (#672). Only the card
+   animates: opacity on `.bottom-dock` or its glass would make a backdrop root
+   and cut the blur off from the transcript. The review card stays out because
+   it remounts on prop changes, and an entrance would replay as a flash. */
+@keyframes dock-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.bottom-dock > .permission,
+.bottom-dock > .question,
+.bottom-dock > .queued-messages {
+  animation: dock-card-in 0.16s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bottom-dock > .permission,
+  .bottom-dock > .question,
+  .bottom-dock > .queued-messages {
+    animation: none;
+  }
+}
 
 /* ===== Progressive blur under the dock (#643) =====
    The transcript dissolves into the composer instead of sliding sharp under
