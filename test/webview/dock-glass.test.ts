@@ -74,3 +74,25 @@ describe("progressive blur under the bottom dock (#643)", () => {
     expect(ruleBody(".bottom-dock")).toMatch(/z-index:\s*var\(--z-overlay\);/)
   })
 })
+
+describe("cards joining the dock (#672)", () => {
+  const CARDS = [".bottom-dock > .permission", ".bottom-dock > .question", ".bottom-dock > .queued-messages"]
+
+  it("fades the permission, question, and queued cards in as they rise from the composer", () => {
+    expect(css).toMatch(/@keyframes dock-card-in \{\s*from \{\s*opacity: 0;\s*transform: translateY\(4px\);\s*\}\s*\}/)
+    expect(ruleBody(CARDS.join(",\n"))).toMatch(/animation:\s*dock-card-in 0\.16s ease-out;/)
+  })
+
+  it("turns the entrance off under reduced motion", () => {
+    const list = CARDS.map((c) => c.replace(/[.>]/g, (ch) => "\\" + ch)).join(",\\s*")
+    expect(css).toMatch(new RegExp(`@media \\(prefers-reduced-motion: reduce\\) \\{\\s*${list} \\{\\s*animation: none;`))
+  })
+
+  // An opacity animation on either would make a backdrop root, and the glass
+  // would blur nothing for as long as it ran.
+  it("never animates the dock or its glass", () => {
+    for (const selector of [".bottom-dock", ".bottom-dock-glass"]) {
+      expect(ruleBody(selector)).not.toMatch(/\b(animation|transition)\s*:/)
+    }
+  })
+})
