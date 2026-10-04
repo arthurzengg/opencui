@@ -4,6 +4,7 @@ import type { Message } from "./hooks/useChatState"
 import { useQueueFlush } from "./hooks/useQueueFlush"
 import { useEscapeToStop } from "./hooks/useEscapeToStop"
 import { useEntrance } from "./hooks/useEntrance"
+import { createBottomGlide, nestedScrollerTakesWheelUp, prefersReducedMotion } from "./bottom-glide"
 import type { Attachment } from "./protocol"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
@@ -82,7 +83,34 @@ export default function App() {
 
   const scrollToBottom = () => {
     if (!scrollRef.current) return
+    jumpNextFollow.current = false
     setProgrammaticScrollTop(scrollRef.current.scrollHeight - scrollRef.current.clientHeight)
+  }
+
+  // Following eases toward the bottom (#676). Everything else that places the
+  // view (sending, opening a conversation, the dock resizing) still jumps, and
+  // so does a gap larger than the viewport, which is a load, not a stream.
+  const jumpNextFollow = useRef(true)
+  const [glide] = useState(() =>
+    createBottomGlide({
+      box: () => (stickToBottom.current ? scrollRef.current : null),
+      write: (top) => setProgrammaticScrollTop(top),
+    }),
+  )
+  const followBottom = () => {
+    const el = scrollRef.current
+    if (!el) return
+    const gap = el.scrollHeight - el.clientHeight - el.scrollTop
+    if (jumpNextFollow.current || gap > el.clientHeight || prefersReducedMotion()) {
+      glide.stop()
+      scrollToBottom()
+      return
+    }
+    glide.start()
+  }
+  const stopFollowing = () => {
+    stickToBottom.current = false
+    glide.stop()
   }
 
   const captureScrollForLocalLayoutChange = () => {
@@ -97,10 +125,12 @@ export default function App() {
   // had scrolled up to read earlier messages.
   const sendAndPinTop = (...args: Parameters<typeof send>) => {
     stickToBottom.current = true
+    jumpNextFollow.current = true
     send(...args)
   }
   const runCommandAndPinTop = (...args: Parameters<typeof runCommand>) => {
     stickToBottom.current = true
+    jumpNextFollow.current = true
     runCommand(...args)
   }
   // Auto-send the oldest queued message when the session goes idle. Plain
@@ -183,13 +213,19 @@ export default function App() {
     if (editingMessageID) setActiveHeaderPopover(null)
   }, [editingMessageID])
 
+  // Opening a conversation lands at the bottom at once, not after a glide.
+  // Declared before the follow below so it is set by the time that runs.
+  useLayoutEffect(() => {
+    jumpNextFollow.current = true
+  }, [state.conversationID])
   // A layout effect, not a passive one: React runs passive effects after
   // paint, so each streamed chunk was painted at the old offset (visible
   // through the dock's glass) and the view caught up a frame later (#676).
   useLayoutEffect(() => {
     if (!stickToBottom.current) return
-    scrollToBottom()
+    followBottom()
   }, [state.messages])
+  useEffect(() => () => glide.stop(), [glide])
 
   // Height that changes without a message change (the Process box folding
   // between steps, the Agents pill) would otherwise wait for the next chunk
@@ -201,7 +237,7 @@ export default function App() {
     const last = scrollRef.current?.lastElementChild
     if (!busy || !last) return
     const observer = new ResizeObserver(() => {
-      if (stickToBottom.current) scrollToBottom()
+      if (stickToBottom.current) followBottom()
     })
     observer.observe(last)
     return () => observer.disconnect()
@@ -326,6 +362,20 @@ export default function App() {
       <div
         className="messages"
         ref={scrollRef}
+        // A glide writes scrollTop every frame, which would cancel the
+        // browser's own smooth wheel scroll and swallow the scroll event the
+        // handler below judges direction from. Gestures that mean "up" stop
+        // following before the browser scrolls.
+        onWheel={(e) => {
+          if (e.deltaY >= 0 || e.currentTarget.scrollTop <= 0) return
+          if (nestedScrollerTakesWheelUp(e.target, e.currentTarget)) return
+          stopFollowing()
+        }}
+        onPointerDown={(e) => {
+          const el = e.currentTarget
+          const onScrollbar = e.target === el && e.clientX - el.getBoundingClientRect().left >= el.clientWidth
+          if (onScrollbar) stopFollowing()
+        }}
         onScroll={(e) => {
           const el = e.currentTarget
           // Consume the synthetic onScroll fired by our own scrollTop= write
@@ -342,7 +392,7 @@ export default function App() {
           if (curr < prev) {
             // Any user-initiated upward movement breaks stick mode regardless
             // of distance to bottom — even one wheel notch.
-            stickToBottom.current = false
+            stopFollowing()
             return
           }
           // Downward (or no) movement: re-engage stick only when the user
