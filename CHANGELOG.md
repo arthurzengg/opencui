@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.10] - 2026-10-04
+
+### Added
+
+- Popovers fade in over 0.12s while sliding 4px out of the control that opened them: the history list, saved permission rules, model picker, and Agents popover from above, and the `@` and `/` pickers from the composer, in whichever direction they open. Switching from one composer picker to another while it stays open does not replay the entrance. Reduced motion turns it off (#670, #671).
+- The permission request, the assistant's question card, and the queued-messages strip fade in over 0.16s as they rise out of the composer. The dock and its frosted glass stay still, so the blur behind them is unaffected. Reduced motion turns it off (#672, #673).
+- The Agents pill fades in when agent work starts. It does not replay the fade as the reply moves through its steps, only when new work starts after the earlier work has finished. Reduced motion turns it off (#674, #675).
+
+### Fixed
+
+- A streaming reply is followed smoothly instead of in jumps. The view used to catch up a frame after new output was painted, missed height that changed without new text (the Process box folding between steps, the Agents pill appearing), and then moved by a whole line or tool card at once. It now follows before paint, follows those changes too, and glides to the bottom. Sending, opening a conversation, and reduced motion still jump at once. Scrolling up with the wheel or grabbing the scrollbar stops following immediately (#676, #677).
+
 ## [1.15.9] - 2026-10-01
 
 ### Fixed
