@@ -16,6 +16,7 @@ import { useImageAttachments } from "../hooks/useImageAttachments"
 import { useMentionPicker } from "../hooks/useMentionPicker"
 import { useCommandPicker } from "../hooks/useCommandPicker"
 import { useFileBrowser } from "../hooks/useFileBrowser"
+import { useEntrance } from "../hooks/useEntrance"
 import {
   conversationDisplayTitle,
   conversationMatchesQuery,
@@ -277,12 +278,7 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   // picked category swaps one for another. Only the picker that opened plays
   // the entrance (#670); replaying it on every swap reads as a flicker.
   const picker = showCategoryMenu ? "categories" : showBrowse ? "browse" : showFileHits ? "files" : showChatList ? "chats" : command ? "commands" : null
-  const [prevPicker, setPrevPicker] = useState(picker)
-  const [enteringPicker, setEnteringPicker] = useState(picker)
-  if (picker !== prevPicker) {
-    setPrevPicker(picker)
-    setEnteringPicker(prevPicker === null ? picker : null)
-  }
+  const enteringPicker = useEntrance(picker)
 
   const {
     dir: browseDir,
