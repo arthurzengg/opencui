@@ -183,10 +183,29 @@ export default function App() {
     if (editingMessageID) setActiveHeaderPopover(null)
   }, [editingMessageID])
 
-  useEffect(() => {
+  // A layout effect, not a passive one: React runs passive effects after
+  // paint, so each streamed chunk was painted at the old offset (visible
+  // through the dock's glass) and the view caught up a frame later (#676).
+  useLayoutEffect(() => {
     if (!stickToBottom.current) return
     scrollToBottom()
   }, [state.messages])
+
+  // Height that changes without a message change (the Process box folding
+  // between steps, the Agents pill) would otherwise wait for the next chunk
+  // and land as one jump. ResizeObserver reports after layout and before
+  // paint. Only while a turn is live: when idle, expanding a block near the
+  // bottom should grow downward, not push the transcript up.
+  const lastTurnKey = turns[turns.length - 1]?.key
+  useLayoutEffect(() => {
+    const last = scrollRef.current?.lastElementChild
+    if (!busy || !last) return
+    const observer = new ResizeObserver(() => {
+      if (stickToBottom.current) scrollToBottom()
+    })
+    observer.observe(last)
+    return () => observer.disconnect()
+  }, [lastTurnKey, busy])
 
   // The bottom dock (dialogs + review card + floating composer) is pinned over
   // the scroll area, so `.messages` reserves its height as bottom padding. The
