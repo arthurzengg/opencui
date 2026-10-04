@@ -50,6 +50,7 @@ type MessageViewProps = {
   onEndEdit?: (id: string) => void
   onRetry?: (assistantID: string) => void
   agentActivity?: AgentsStatusInfo
+  agentActivityEntering?: boolean
   /** Provider retry opencode is waiting on; rendered in place of the thinking indicator (#611). */
   retry?: SessionRetryInfo
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
@@ -76,6 +77,7 @@ export function sameMessageViewProps(prev: MessageViewProps, next: MessageViewPr
     prev.processOnly === next.processOnly &&
     prev.busy === next.busy &&
     prev.agentActivity === next.agentActivity &&
+    prev.agentActivityEntering === next.agentActivityEntering &&
     prev.retry === next.retry &&
     prev.conversations === next.conversations &&
     prev.activeConversationID === next.activeConversationID
@@ -95,6 +97,7 @@ function MessageViewComponent({
   onEndEdit,
   onRetry,
   agentActivity,
+  agentActivityEntering,
   retry,
   searchFiles,
   listDir,
@@ -131,7 +134,7 @@ function MessageViewComponent({
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
       {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
-      <AgentActivity status={agentActivity} />
+      <AgentActivity status={agentActivity} entering={agentActivityEntering} />
       {retry && message.pending && <RetryStatus retry={retry} onOpenLink={onOpenLink} />}
       {!retry && message.pending && message.blocks.length === 0 && (
         <ThinkingLine quiet={(agentActivity?.total ?? 0) > 0} />

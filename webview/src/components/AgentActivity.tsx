@@ -4,7 +4,7 @@ import { useDismissableMenu } from "../hooks/useDismissableMenu"
 import { useLivePhase } from "../hooks/useLivePhase"
 import { formatAgent, formatModel } from "./StatusBar"
 
-export function AgentActivity({ status }: { status?: AgentsStatusInfo }) {
+export function AgentActivity({ status, entering }: { status?: AgentsStatusInfo; entering?: boolean }) {
   const { toggle, ref, open } = useDismissableMenu()
   const running = (status?.running ?? 0) > 0
   // Only the dot breathes; the label and colour stay still (#621).
@@ -28,7 +28,7 @@ export function AgentActivity({ status }: { status?: AgentsStatusInfo }) {
   const sub = tasks.filter((t) => t.kind === "subagent")
 
   return (
-    <div className="agent-activity" ref={ref}>
+    <div className={"agent-activity" + (entering ? " is-entering" : "")} ref={ref}>
       <button
         type="button"
         className={className}

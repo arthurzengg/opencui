@@ -28,6 +28,12 @@ describe("sameMessageViewProps", () => {
     expect(sameMessageViewProps({ ...base, busy: false }, { ...base, busy: true })).toBe(false)
   })
 
+  it("returns false when agentActivityEntering flips (#674)", () => {
+    expect(
+      sameMessageViewProps({ ...base, agentActivityEntering: false }, { ...base, agentActivityEntering: true }),
+    ).toBe(false)
+  })
+
   it("returns false when agentActivity changes", () => {
     expect(
       sameMessageViewProps(

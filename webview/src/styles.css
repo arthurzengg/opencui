@@ -249,6 +249,17 @@ button:focus-visible {
   align-items: flex-start;
   margin: -4px 0 10px;
 }
+/* Only through the class: the pill remounts in each new assistant message
+   while work continues, and App marks just the one it appeared in (#674). */
+.agent-activity.is-entering {
+  animation: agent-activity-in 0.2s ease;
+}
+@keyframes agent-activity-in {
+  from { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-activity.is-entering { animation: none; }
+}
 .agents-pill {
   flex: 0 0 auto;
   display: inline-flex;

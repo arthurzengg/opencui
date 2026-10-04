@@ -3,6 +3,7 @@ import { useChatState } from "./hooks/useChatState"
 import type { Message } from "./hooks/useChatState"
 import { useQueueFlush } from "./hooks/useQueueFlush"
 import { useEscapeToStop } from "./hooks/useEscapeToStop"
+import { useEntrance } from "./hooks/useEntrance"
 import type { Attachment } from "./protocol"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
@@ -167,6 +168,9 @@ export default function App() {
       : undefined
     return { busy, activeProcessID, agentActivityMessageID }
   }, [state.messages, state.busy, state.agentsStatus?.total])
+  // The pill follows the active assistant message, so it remounts at every
+  // step of a turn; only the message it appeared in plays the entrance (#674).
+  const agentActivityEntering = useEntrance(agentActivityMessageID ?? null)
   // Rebuild the turn structure only when the message list actually changes,
   // not on every coalesced streaming frame.
   const turns = useMemo(() => groupTurns(state.messages), [state.messages])
@@ -368,6 +372,7 @@ export default function App() {
                 onEditMessage={editMessage}
                 onRetry={handleRetry}
                 agentActivity={m.id === agentActivityMessageID ? state.agentsStatus : undefined}
+                agentActivityEntering={m.id === agentActivityEntering}
                 retry={m.id === activeProcessID ? state.retry : undefined}
                 onOpenLink={openLink}
               />
