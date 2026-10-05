@@ -120,6 +120,15 @@ function buildAgentsTitle(status: AgentsStatusInfo): string {
   return lines.join("\n")
 }
 
+/**
+ * Every prompt records a Main row, so total is never 0 during a reply. The
+ * pill is for subagent work (#680), and settled rows never reach the wire, so
+ * any subagent row here is running, waiting, or in error.
+ */
+export function hasSubagentWork(status?: AgentsStatusInfo): boolean {
+  return !!status && status.tasks.some((task) => task.kind === "subagent")
+}
+
 export function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000))
   if (seconds < 60) return `${seconds}s`

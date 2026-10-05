@@ -1,21 +1,14 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { act, cleanup, render } from "@testing-library/react"
+import { cleanup, render } from "@testing-library/react"
 import App from "../../webview/src/App"
-import type { AgentsStatusInfo, Outbound } from "../../webview/src/protocol"
+import type { AgentsStatusInfo } from "../../webview/src/protocol"
+import { post } from "./host-messages"
 
 afterEach(cleanup)
 
 const css = readFileSync(path.resolve(__dirname, "../../webview/src/styles.css"), "utf8")
-
-/** Host messages reach the reducer in one batch per animation frame. */
-async function post(...messages: Outbound[]) {
-  await act(async () => {
-    for (const data of messages) window.dispatchEvent(new MessageEvent("message", { data }))
-    await new Promise((resolve) => requestAnimationFrame(resolve))
-  })
-}
 
 function status(total: number): AgentsStatusInfo {
   const tasks = Array.from({ length: total }, (_, i) => ({

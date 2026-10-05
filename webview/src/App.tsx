@@ -8,6 +8,7 @@ import { createBottomGlide, nestedScrollerTakesWheelUp, prefersReducedMotion } f
 import type { Attachment } from "./protocol"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
+import { hasSubagentWork } from "./components/AgentActivity"
 import { QueuedMessages } from "./components/QueuedMessages"
 import { StatusBar, type HeaderPopoverID } from "./components/StatusBar"
 import { PermissionDialog } from "./components/PermissionDialog"
@@ -190,14 +191,17 @@ export default function App() {
     }
   }
 
+  // Main-only turns get no pill and keep their breathing thinking line: the
+  // line goes quiet only in the message that hosts the pill.
+  const showAgentActivity = hasSubagentWork(state.agentsStatus)
   const { busy, activeProcessID, agentActivityMessageID } = useMemo(() => {
     const busy = state.busy || state.messages.some((m) => m.pending)
     const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
-    const agentActivityMessageID = (state.agentsStatus?.total ?? 0) > 0
+    const agentActivityMessageID = showAgentActivity
       ? activeProcessID ?? state.messages.findLast((m) => m.role === "assistant")?.id
       : undefined
     return { busy, activeProcessID, agentActivityMessageID }
-  }, [state.messages, state.busy, state.agentsStatus?.total])
+  }, [state.messages, state.busy, showAgentActivity])
   // The pill follows the active assistant message, so it remounts at every
   // step of a turn; only the message it appeared in plays the entrance (#674).
   const agentActivityEntering = useEntrance(agentActivityMessageID ?? null)
