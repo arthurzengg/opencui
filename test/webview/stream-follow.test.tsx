@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import App from "../../webview/src/App"
-import type { Outbound } from "../../webview/src/protocol"
+import { post } from "./host-messages"
 
 type Observed = { callback: ResizeObserverCallback; targets: Set<Element> }
 let observers: Observed[] = []
@@ -34,14 +34,6 @@ function reduceMotion() {
 
 async function frames(n: number) {
   for (let i = 0; i < n; i++) await new Promise((resolve) => requestAnimationFrame(resolve))
-}
-
-/** Host messages reach the reducer in one batch per animation frame. */
-async function post(...messages: Outbound[]) {
-  await act(async () => {
-    for (const data of messages) window.dispatchEvent(new MessageEvent("message", { data }))
-    await new Promise((resolve) => requestAnimationFrame(resolve))
-  })
 }
 
 /** App with a 400px transcript viewport whose content height the test sets. */
