@@ -55,6 +55,29 @@ describe("Agents pill visibility (#680)", () => {
     expect(t.thinking()?.classList.contains("live-breathe")).toBe(false)
   })
 
+  // Subagents come in waves with the main agent thinking between them.
+  it("keeps the pill once a subagent has run until the turn settles, then starts over", async () => {
+    const t = setup()
+    await post({ type: "userMessage", id: "u1", text: "go" }, { type: "assistantStart", id: "a1" })
+    await post({ type: "agentsStatus", status: status(main, sub(1)) })
+    expect(t.pill()).not.toBeNull()
+
+    await post({ type: "agentsStatus", status: status(main) })
+    expect(t.pill()).not.toBeNull()
+    await post({ type: "assistantDone", id: "a1" }, { type: "assistantStart", id: "a2" })
+    expect(t.pill()).not.toBeNull()
+    expect(t.thinking()?.classList.contains("live-breathe")).toBe(false)
+
+    await post({ type: "assistantDone", id: "a2" }, { type: "sessionIdle" })
+    await post({ type: "agentsStatus", status: status() })
+    expect(t.pill()).toBeNull()
+
+    await post({ type: "userMessage", id: "u2", text: "again" }, { type: "assistantStart", id: "a3" })
+    await post({ type: "agentsStatus", status: status(main) })
+    expect(t.pill()).toBeNull()
+    expect(t.thinking()?.classList.contains("live-breathe")).toBe(true)
+  })
+
   it("keeps the pill for an errored subagent after the turn settled", async () => {
     const t = setup()
     await post({ type: "userMessage", id: "u1", text: "go" }, { type: "assistantStart", id: "a1" })
