@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.11] - 2026-10-06
+
+### Changed
+
+- The Agents pill shows only when a subagent is involved. It used to appear on every reply, reading "1 running" for the main agent alone. A plain reply now shows no pill and its thinking line keeps breathing; the pill appears when the first subagent is dispatched and stays for the rest of the turn, including the pauses while the main agent thinks between waves. A subagent that ended in error keeps it up until the error clears. The popover and its count are unchanged (#680, #681).
+
 ## [1.15.10] - 2026-10-04
 
 ### Added
