@@ -207,6 +207,7 @@
   },
   "scripts": {
     "compile": "bun run build:webview && node esbuild.js",
+    "media": "bun run compile && node scripts/readme-media/generate.mjs",
     "watch": "node scripts/watch.mjs",
     "package": "bun run build:webview && node esbuild.js --production",
     "build:webview": "cd webview && bun install --frozen-lockfile --silent && bun run build",
