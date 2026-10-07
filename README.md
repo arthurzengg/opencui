@@ -8,21 +8,21 @@
 <table>
 <tr>
 <td width="50%" align="center">
-  <img src="media/screenshots/panel-overview.png" alt="Panel overview" width="340"><br>
+  <img src="media/screenshots/panel-overview.gif" alt="Panel overview" width="340"><br>
   <sub><b>Chat panel</b></sub>
 </td>
 <td width="50%" align="center">
-  <img src="media/screenshots/model-picker.png" alt="Model · Agent · Effort picker" width="340"><br>
+  <img src="media/screenshots/model-picker.gif" alt="Model · Agent · Effort picker" width="340"><br>
   <sub><b>Model · Agent · Effort picker</b></sub>
 </td>
 </tr>
 <tr>
 <td align="center">
-  <img src="media/screenshots/chat-history.png" alt="Chat history" width="340"><br>
+  <img src="media/screenshots/chat-history.gif" alt="Chat history" width="340"><br>
   <sub><b>Per-workspace chat history</b></sub>
 </td>
 <td align="center">
-  <img src="media/screenshots/slash-commands.png" alt="Slash-command picker" width="340"><br>
+  <img src="media/screenshots/slash-commands.gif" alt="Slash-command picker" width="340"><br>
   <sub><b>Slash commands</b></sub>
 </td>
 </tr>

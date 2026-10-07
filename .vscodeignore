@@ -9,6 +9,11 @@ webview/**
 **/*.test.*
 **/__tests__/**
 
+# README media. The Marketplace and Open VSX load README images from GitHub
+# (vsce rewrites the relative links), so the GIFs never need to ship.
+media/screenshots/**
+scripts/readme-media/**
+
 # Tests + test infra
 test/**
 .vscode-test/**
