@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.15.12] - 2026-10-07
+
+### Changed
+
+- The README's feature images are animated. The chat panel, model picker, slash commands, and chat history are GIFs recorded from the panel itself, and the context-usage still is refreshed. This release carries the new README to the Marketplace and Open VSX listings; the 1.15.11 listing linked to image files that are no longer in the repository, so four of its images were broken (#685, #686).
+
 ## [1.15.11] - 2026-10-06
 
 ### Changed
