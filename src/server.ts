@@ -4,6 +4,8 @@ import * as fs from "fs"
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk"
 import { createOpencodeClient as createOpencodeClientV2, type OpencodeClient as OpencodeClientV2 } from "@opencode-ai/sdk/v2"
+import type { BackendApi } from "./backend/api"
+import { createV1Api } from "./backend/v1"
 import { log } from "./output"
 import { primaryWorkspaceRoot, type WorkspaceRoot } from "./workspace-root"
 import { recordServer, registryPath, releaseServer } from "./server-registry"
@@ -22,6 +24,8 @@ type ServerHandle = {
 
 export type Backend = {
   url: string
+  /** Every call to opencode goes through here; see backend/api.ts. */
+  api: BackendApi
   client: OpencodeClient
   /**
    * The v1 client is a frozen snapshot and never gained the permission and
@@ -229,11 +233,13 @@ export class ServerManager {
   }
 
   private toBackend(server: ServerHandle, client: OpencodeClient, clientV2: OpencodeClientV2): Backend {
+    const directory = this.workspace?.fsPath ?? process.cwd()
     return {
       url: server.url,
+      api: createV1Api(client, clientV2, directory),
       client,
       clientV2,
-      directory: this.workspace?.fsPath ?? process.cwd(),
+      directory,
       workspace: this.workspace,
       configMode: this.configMode,
     }
