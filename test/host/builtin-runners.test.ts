@@ -4,7 +4,7 @@ import { BuiltinRunners, type BuiltinRunnerDeps } from "../../src/chat/builtin-r
 import type { Backend } from "../../src/server"
 import type { ChatMessage, Outbound, ReviewHunkState } from "../../src/protocol"
 
-// Drives BuiltinRunners against a stubbed SDK session client and a spy-backed
+// Drives BuiltinRunners against a stubbed backend session API and a spy-backed
 // deps closure (the same deps ChatView injects), so each command's server call
 // and local state mutations are asserted without constructing a ChatView.
 
@@ -27,7 +27,7 @@ function makeBackend(session: Record<string, ReturnType<typeof vi.fn>> = {}) {
   return {
     url: "http://127.0.0.1:1234",
     directory: "/ws",
-    client: { session },
+    api: { session },
   } as unknown as Backend
 }
 
@@ -115,10 +115,9 @@ describe("BuiltinRunners: /compact", () => {
     await runners.run("compact", backend)
     expect(deps.attachSubscription).not.toHaveBeenCalled()
     expect(deps.beginBuiltinTurn).toHaveBeenCalledWith("/compact")
-    expect(summarize).toHaveBeenCalledWith({
-      path: { id: "sess_1" },
-      query: { directory: "/ws" },
-      body: { providerID: "prov", modelID: "mod" },
+    expect(summarize).toHaveBeenCalledWith("sess_1", {
+      providerID: "prov",
+      modelID: "mod",
     })
   })
 
@@ -134,7 +133,7 @@ describe("BuiltinRunners: /compact", () => {
     const { runners } = makeHarness({ selection: {} })
     const summarize = vi.fn().mockResolvedValue({ data: {} })
     await runners.run("compact", makeBackend({ summarize }))
-    expect(summarize).toHaveBeenCalledWith(expect.objectContaining({ body: undefined }))
+    expect(summarize).toHaveBeenCalledWith("sess_1", undefined)
   })
 
   it("unbricks the turn when summarize reports an error", async () => {
@@ -175,7 +174,7 @@ describe("BuiltinRunners: /init", () => {
     expect(manager.flushPersist).toHaveBeenCalled()
     expect(deps.attachSubscription).toHaveBeenCalledWith(backend, "sess_new")
     expect(deps.beginBuiltinTurn).toHaveBeenCalledWith("/init")
-    const body = init.mock.calls[0]![0].body
+    const body = init.mock.calls[0]![1]
     expect(body.providerID).toBe("prov")
     expect(body.modelID).toBe("mod")
     expect(typeof body.messageID).toBe("string")
@@ -226,7 +225,7 @@ describe("BuiltinRunners: /init", () => {
     await runners.run("init", backend)
     expect(create).not.toHaveBeenCalled()
     expect(deps.attachSubscription).toHaveBeenCalledWith(backend, "sess_1")
-    expect(init).toHaveBeenCalledWith(expect.objectContaining({ path: { id: "sess_1" } }))
+    expect(init).toHaveBeenCalledWith("sess_1", expect.objectContaining({ providerID: "prov", modelID: "mod" }))
   })
 })
 
@@ -313,7 +312,7 @@ describe("BuiltinRunners: /undo", () => {
     })
     const revert = vi.fn().mockResolvedValue({ data: {} })
     await runners.run("undo", makeBackend({ revert }))
-    expect(revert).toHaveBeenCalledWith(expect.objectContaining({ body: { messageID: "b_u2" } }))
+    expect(revert).toHaveBeenCalledWith("sess_1", { messageID: "b_u2" })
     expect(state.messages.map((m) => m.id)).toEqual(["u1", "a1"])
     expect(state.redoStack).toHaveLength(1)
     expect(state.redoStack[0]!.map((m) => m.id)).toEqual(["u2", "a2"])
@@ -370,7 +369,7 @@ describe("BuiltinRunners: /redo", () => {
     const revert = vi.fn().mockResolvedValue({ data: {} })
     const unrevert = vi.fn()
     await runners.run("redo", makeBackend({ revert, unrevert }))
-    expect(revert).toHaveBeenCalledWith(expect.objectContaining({ body: { messageID: "b_u2" } }))
+    expect(revert).toHaveBeenCalledWith("sess_1", { messageID: "b_u2" })
     expect(unrevert).not.toHaveBeenCalled()
     expect(state.messages.map((m) => m.id)).toEqual(["u1", "u3", "a3"])
     expect(state.redoStack).toHaveLength(1)

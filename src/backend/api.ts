@@ -96,7 +96,7 @@ export interface BackendApi {
     abort(id: string): Promise<ApiResult<DataOf<SessionAbortResponses>>>
     revert(id: string, body: BodyOf<SessionRevertData>): Promise<ApiResult<DataOf<SessionRevertResponses>>>
     unrevert(id: string): Promise<ApiResult<DataOf<SessionUnrevertResponses>>>
-    summarize(id: string, body: BodyOf<SessionSummarizeData>): Promise<ApiResult<DataOf<SessionSummarizeResponses>>>
+    summarize(id: string, body?: BodyOf<SessionSummarizeData>): Promise<ApiResult<DataOf<SessionSummarizeResponses>>>
     share(id: string): Promise<ApiResult<DataOf<SessionShareResponses>>>
     unshare(id: string): Promise<ApiResult<DataOf<SessionUnshareResponses>>>
     init(id: string, body: BodyOf<SessionInitData>): Promise<ApiResult<DataOf<SessionInitResponses>>>

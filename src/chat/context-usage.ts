@@ -31,7 +31,7 @@ async function fetchProviders(backend: Backend): Promise<ContextUsageProvider[]>
   const now = Date.now()
   const cached = providersCache.get(backend.url)
   if (cached && now - cached.at < PROVIDERS_CACHE_MS) return cached.providers
-  const res = await backend.client.config.providers()
+  const res = await backend.api.config.providers()
   if (res.error) {
     if (cached) return cached.providers
     throw new Error(`config.providers failed: ${JSON.stringify(res.error)}`)
@@ -43,10 +43,7 @@ async function fetchProviders(backend: Backend): Promise<ContextUsageProvider[]>
 
 export async function readContextUsage(backend: Backend, sessionID: string): Promise<ContextUsage | undefined> {
   const [messagesRes, providers] = await Promise.all([
-    backend.client.session.messages({
-      path: { id: sessionID },
-      query: { directory: backend.directory, limit: 100 },
-    }),
+    backend.api.session.messages(sessionID, { limit: 100 }),
     fetchProviders(backend),
   ])
   if (messagesRes.error) throw new Error(`session.messages failed: ${JSON.stringify(messagesRes.error)}`)

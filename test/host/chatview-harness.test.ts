@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import * as vscode from "vscode"
 import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createV1Api } from "../../src/backend/v1"
 import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { ChatView } from "../../src/chat/view"
@@ -119,7 +120,7 @@ beforeEach(async () => {
   server = await startMockOpencode()
   const client = createOpencodeClient({ baseUrl: server.url })
   const clientV2 = createOpencodeClientV2({ baseUrl: server.url })
-  const backend = { url: server.url, client, clientV2, directory: "/ws" } as unknown as Backend
+  const backend = { url: server.url, api: createV1Api(client, clientV2, "/ws"), client, clientV2, directory: "/ws" } as unknown as Backend
   const servers = {
     ensure: vi.fn(async () => backend),
     currentWorkspace: vi.fn(() => undefined),

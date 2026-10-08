@@ -1,10 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
+import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { subscribeSession } from "../../src/chat/stream"
 import { sweepAbortTree, drainAbortTree } from "../../src/chat/abort-tree"
 
 let server: MockOpencodeServer
+
+/** The abort sweep takes the backend API, not a raw client. */
+const api = (client: ReturnType<typeof createOpencodeClient>) =>
+  createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/ws")
 
 beforeEach(async () => {
   server = await startMockOpencode()
@@ -84,7 +90,7 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     server.setChildren("ses_child_a", ["ses_grand_a1"])
 
     const state = { aborted: new Set<string>(), isLive: () => true }
-    const found = await sweepAbortTree(client, "ses_parent", [], state)
+    const found = await sweepAbortTree(api(client), "ses_parent", [], state)
 
     expect(found).toBe(4)
     expect(server.aborts[0]).toBe("ses_parent") // root settles before any child
@@ -98,7 +104,7 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     server.setChildren("ses_parent", ["ses_child_a"])
 
     const state = { aborted: new Set<string>(), isLive: () => true }
-    expect(await sweepAbortTree(client, "ses_parent", [], state)).toBe(2)
+    expect(await sweepAbortTree(api(client), "ses_parent", [], state)).toBe(2)
 
     // A new session appears under the root right after Stop: opencode's own
     // title/summary/compaction children, or follow-up work that doesn't bump
@@ -107,7 +113,7 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     // regression vs v1.4.3. Original semantics: traversal terminates at the
     // already-aborted root and the late session survives.
     server.setChildren("ses_parent", ["ses_child_a", "ses_post_stop"])
-    expect(await sweepAbortTree(client, "ses_parent", [], state)).toBe(0)
+    expect(await sweepAbortTree(api(client), "ses_parent", [], state)).toBe(0)
 
     expect(server.aborts).toEqual(["ses_parent", "ses_child_a"])
   })
@@ -120,9 +126,9 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     // with a cleared aborted-set, so the root must be aborted again — the old
     // ChatView-lifetime set made every Stop after the first a no-op.
     const stop1 = { aborted: new Set<string>(), isLive: () => true }
-    await sweepAbortTree(client, "ses_parent", [], stop1)
+    await sweepAbortTree(api(client), "ses_parent", [], stop1)
     const stop2 = { aborted: new Set<string>(), isLive: () => true }
-    expect(await sweepAbortTree(client, "ses_parent", [], stop2)).toBe(1)
+    expect(await sweepAbortTree(api(client), "ses_parent", [], stop2)).toBe(1)
 
     expect(server.aborts).toEqual(["ses_parent", "ses_parent"])
   })
@@ -132,13 +138,13 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     server.setChildren("ses_parent", [])
 
     const state = { aborted: new Set<string>(), isLive: () => true }
-    await sweepAbortTree(client, "ses_parent", [], state)
+    await sweepAbortTree(api(client), "ses_parent", [], state)
     expect(server.aborts).toEqual(["ses_parent"])
 
     // Stop is one volley: once the initial sweep covered the tree, the drain
     // must go quiet, not keep killing whatever spawns under the root next.
     server.setChildren("ses_parent", ["ses_late_dispatch"])
-    await drainAbortTree(client, "ses_parent", state, { passes: 3, intervalMs: 5 })
+    await drainAbortTree(api(client), "ses_parent", state, { passes: 3, intervalMs: 5 })
 
     expect(server.aborts).toEqual(["ses_parent"])
   })
@@ -150,7 +156,7 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     // Generation dies as soon as the root abort lands (the user sent a new
     // turn); the children must NOT be aborted out from under the new turn.
     const state = { aborted: new Set<string>(), isLive: () => server.aborts.length === 0 }
-    await sweepAbortTree(client, "ses_parent", [], state)
+    await sweepAbortTree(api(client), "ses_parent", [], state)
 
     expect(server.aborts).toEqual(["ses_parent"])
   })

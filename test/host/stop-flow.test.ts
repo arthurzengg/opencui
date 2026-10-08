@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
+import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { ChatView } from "../../src/chat/view"
 import type { ServerManager } from "../../src/server"
@@ -70,7 +72,8 @@ function internals(chat: ChatView): ChatViewInternals {
 
 function makeChatView(server: MockOpencodeServer, taskStore?: ReturnType<typeof fakeTaskStore>) {
   const client = createOpencodeClient({ baseUrl: server.url })
-  const backend = { url: server.url, client, directory: "/tmp" }
+  const clientV2 = createOpencodeClientV2({ baseUrl: server.url })
+  const backend = { url: server.url, api: createV1Api(client, clientV2, "/tmp"), client, directory: "/tmp" }
   const servers = { ensure: async () => backend } as unknown as ServerManager
   const prefs = { get: () => ({}) } as unknown as Preferences
   const context = {

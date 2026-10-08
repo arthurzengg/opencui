@@ -1,4 +1,4 @@
-import type { Backend } from "../server"
+import type { BackendApi } from "../backend/api"
 import { log } from "../output"
 
 /**
@@ -30,7 +30,7 @@ export interface AbortSweepState {
  * one volley, then silence.
  */
 export async function sweepAbortTree(
-  client: Backend["client"],
+  api: BackendApi,
   rootID: string,
   seed: string[],
   state: AbortSweepState,
@@ -44,12 +44,12 @@ export async function sweepAbortTree(
     state.aborted.add(id)
     newlyAborted++
     try {
-      await client.session.abort({ path: { id } })
+      await api.session.abort(id)
     } catch (e) {
       log("session.abort failed", id, e)
     }
     try {
-      const res = await client.session.children({ path: { id } })
+      const res = await api.session.children(id)
       for (const child of res.data ?? []) {
         if (child?.id && !state.aborted.has(child.id)) queue.push(child.id)
       }
@@ -69,7 +69,7 @@ export async function sweepAbortTree(
  * after Stop (see `sweepAbortTree`).
  */
 export async function drainAbortTree(
-  client: Backend["client"],
+  api: BackendApi,
   rootID: string,
   state: AbortSweepState,
   opts: { passes: number; intervalMs: number },
@@ -77,7 +77,7 @@ export async function drainAbortTree(
   for (let i = 0; i < opts.passes && state.isLive(); i++) {
     await delay(opts.intervalMs)
     if (!state.isLive()) return
-    const found = await sweepAbortTree(client, rootID, [], state)
+    const found = await sweepAbortTree(api, rootID, [], state)
     if (found === 0) return
     log(`[abort] drain pass ${i + 1} aborted ${found} late session(s)`)
   }
