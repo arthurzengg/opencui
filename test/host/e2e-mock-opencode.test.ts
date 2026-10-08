@@ -10,7 +10,7 @@ let server: MockOpencodeServer
 
 /** The abort sweep takes the backend API, not a raw client. */
 const api = (client: ReturnType<typeof createOpencodeClient>) =>
-  createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/ws")
+  createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/ws", server.url)
 
 beforeEach(async () => {
   server = await startMockOpencode()

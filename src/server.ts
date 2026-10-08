@@ -236,7 +236,7 @@ export class ServerManager {
     const directory = this.workspace?.fsPath ?? process.cwd()
     return {
       url: server.url,
-      api: createV1Api(client, clientV2, directory),
+      api: createV1Api(client, clientV2, directory, server.url),
       client,
       clientV2,
       directory,

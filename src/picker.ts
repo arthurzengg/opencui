@@ -28,7 +28,7 @@ export class Picker {
   async pickAgent() {
     try {
       const backend = await this.servers.ensure()
-      const res = await backend.client.app.agents()
+      const res = await backend.api.app.agents()
       if (res.error || !res.data) {
         vscode.window.showErrorMessage(`OpenCode Panel: failed to load agents`)
         return
@@ -73,7 +73,7 @@ export class Picker {
   async pickModel() {
     try {
       const backend = await this.servers.ensure()
-      const res = await backend.client.config.providers()
+      const res = await backend.api.config.providers()
       if (res.error || !res.data) {
         vscode.window.showErrorMessage(`OpenCode Panel: failed to load providers`)
         return
@@ -139,7 +139,7 @@ export class Picker {
         return
       }
       const backend = await this.servers.ensure()
-      const res = await backend.client.config.providers()
+      const res = await backend.api.config.providers()
       if (res.error || !res.data) {
         vscode.window.showErrorMessage(`OpenCode Panel: failed to load providers`)
         return

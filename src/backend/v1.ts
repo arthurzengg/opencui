@@ -1,6 +1,7 @@
 import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { OpencodeClient as OpencodeClientV2 } from "@opencode-ai/sdk/v2"
 import type { ApiResult, BackendApi } from "./api"
+import { refreshInstance, removeProviderAuth } from "../provider/provider-format"
 
 type SdkResult<T, E> = { data?: T; error?: E; response?: { status: number } }
 
@@ -19,7 +20,7 @@ const call = async <T, E>(p: Promise<SdkResult<T, E>>): Promise<ApiResult<T, E>>
  * gained the permission and question reply routes, session listing with
  * filters, or the health route; those go through the v2 client (#609).
  */
-export function createV1Api(client: OpencodeClient, clientV2: OpencodeClientV2, directory: string): BackendApi {
+export function createV1Api(client: OpencodeClient, clientV2: OpencodeClientV2, directory: string, url: string): BackendApi {
   const query = { directory }
   return {
     directory,
@@ -80,6 +81,11 @@ export function createV1Api(client: OpencodeClient, clientV2: OpencodeClientV2, 
     },
     auth: {
       set: (providerID, body) => call(client.auth.set({ path: { id: providerID }, query, body })),
+      // No published SDK exposes these two routes; they stay raw fetches.
+      remove: (providerID) => removeProviderAuth(url, providerID),
+    },
+    instance: {
+      refresh: () => refreshInstance(url, directory),
     },
     events: async (signal) => {
       const sse = await client.global.event({ signal })

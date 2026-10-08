@@ -1153,8 +1153,8 @@ export class ChatView implements vscode.WebviewViewProvider {
         // Agents failing must not take the model list down with it (and vice
         // versa) — the picker degrades to whichever half arrived.
         const [res, agentsRes] = await Promise.all([
-          activeBackend.client.config.providers(),
-          activeBackend.client.app.agents().catch((e: unknown) => {
+          activeBackend.api.config.providers(),
+          activeBackend.api.app.agents().catch((e: unknown) => {
             log("model catalog: app.agents threw", e)
             return undefined
           }),
@@ -1257,9 +1257,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async refreshCommands(backend?: Backend) {
     try {
       const activeBackend = backend ?? (await this.servers.ensure())
-      const res = await activeBackend.client.command.list({
-        query: { directory: activeBackend.directory },
-      })
+      const res = await activeBackend.api.command.list()
       if (res.error || !res.data) {
         log("command.list failed", res.error)
         return

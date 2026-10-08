@@ -73,7 +73,7 @@ function internals(chat: ChatView): ChatViewInternals {
 function makeChatView(server: MockOpencodeServer, taskStore?: ReturnType<typeof fakeTaskStore>) {
   const client = createOpencodeClient({ baseUrl: server.url })
   const clientV2 = createOpencodeClientV2({ baseUrl: server.url })
-  const backend = { url: server.url, api: createV1Api(client, clientV2, "/tmp"), client, directory: "/tmp" }
+  const backend = { url: server.url, api: createV1Api(client, clientV2, "/tmp", server.url), client, directory: "/tmp" }
   const servers = { ensure: async () => backend } as unknown as ServerManager
   const prefs = { get: () => ({}) } as unknown as Preferences
   const context = {

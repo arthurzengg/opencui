@@ -40,12 +40,11 @@ function makeMcp(overrides: Partial<McpStub> = {}): McpStub {
 }
 
 function makeManager(mcp: McpStub) {
-  const backend = { url: "http://127.0.0.1:1", directory: "/ws", client: { mcp }, configMode: "isolated" }
+  const backend = { url: "http://127.0.0.1:1", directory: "/ws", api: { mcp }, configMode: "isolated" }
   const servers = { ensure: vi.fn().mockResolvedValue(backend) } as unknown as ServerManager
   return new McpManager(servers)
 }
 
-const Q = { directory: "/ws" }
 
 beforeEach(() => {
   // Clear history + queued once-values for the prompt fns (leave withProgress's
@@ -74,7 +73,7 @@ describe("McpManager.run", () => {
       .mockResolvedValueOnce({ action: "disconnect" })
       .mockResolvedValueOnce(undefined)
     await makeManager(mcp).run()
-    expect(mcp.disconnect).toHaveBeenCalledWith({ path: { name: "github" }, query: Q })
+    expect(mcp.disconnect).toHaveBeenCalledWith("github")
     expect(mcp.status).toHaveBeenCalledTimes(2) // initial open + after the action
   })
 
@@ -85,7 +84,7 @@ describe("McpManager.run", () => {
       .mockResolvedValueOnce({ action: "authenticate" })
       .mockResolvedValueOnce(undefined)
     await makeManager(mcp).run()
-    expect(mcp.auth.authenticate).toHaveBeenCalledWith({ path: { name: "linear" }, query: Q })
+    expect(mcp.auth.authenticate).toHaveBeenCalledWith("linear")
     expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("connected"))
   })
 
@@ -96,7 +95,7 @@ describe("McpManager.run", () => {
       .mockResolvedValueOnce({ action: "signout" })
       .mockResolvedValueOnce(undefined)
     await makeManager(mcp).run()
-    expect(mcp.auth.remove).toHaveBeenCalledWith({ path: { name: "linear" }, query: Q })
+    expect(mcp.auth.remove).toHaveBeenCalledWith("linear")
   })
 
   it("adds a local server, splitting the command into argv", async () => {
@@ -110,8 +109,8 @@ describe("McpManager.run", () => {
       .mockResolvedValueOnce(undefined) // main reopens -> Esc
     await makeManager(mcp).run()
     expect(mcp.add).toHaveBeenCalledWith({
-      body: { name: "gh", config: { type: "local", command: ["npx", "-y", "server-github"], enabled: true } },
-      query: Q,
+      name: "gh",
+      config: { type: "local", command: ["npx", "-y", "server-github"], enabled: true },
     })
     expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("permanent"))
   })
@@ -127,8 +126,8 @@ describe("McpManager.run", () => {
       .mockResolvedValueOnce(undefined)
     await makeManager(mcp).run()
     expect(mcp.add).toHaveBeenCalledWith({
-      body: { name: "remote1", config: { type: "remote", url: "https://example.com/mcp", enabled: true } },
-      query: Q,
+      name: "remote1",
+      config: { type: "remote", url: "https://example.com/mcp", enabled: true },
     })
   })
 

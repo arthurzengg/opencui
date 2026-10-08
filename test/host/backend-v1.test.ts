@@ -18,6 +18,7 @@ function api(directory = "/ws") {
     createOpencodeClient({ baseUrl: server.url, directory }),
     createOpencodeClientV2({ baseUrl: server.url, directory }),
     directory,
+    server.url,
   )
 }
 

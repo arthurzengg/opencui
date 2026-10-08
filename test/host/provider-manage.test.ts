@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import * as vscode from "vscode"
 import { ProviderManager } from "../../src/provider/manage"
+import { refreshInstance, removeProviderAuth } from "../../src/provider/provider-format"
 import type { ServerManager } from "../../src/server"
 import type { Preferences } from "../../src/preferences"
 
@@ -34,7 +35,7 @@ function makeBackend(opts: BackendOpts = {}) {
     url: "http://127.0.0.1:1234",
     directory: "/ws",
     configMode: "isolated",
-    client: {
+    api: {
       provider: {
         list: vi.fn().mockResolvedValue({ data: { connected: opts.connected ?? [], all: opts.all ?? [], default: {} } }),
         auth: vi.fn().mockResolvedValue({ data: opts.auth ?? {} }),
@@ -44,7 +45,12 @@ function makeBackend(opts: BackendOpts = {}) {
         },
       },
       config: { providers: vi.fn().mockResolvedValue({ data: { providers: opts.providers ?? [], default: {} } }) },
-      auth: { set: vi.fn().mockResolvedValue({ data: true }) },
+      // The two raw-fetch routes stay real so the stubbed global fetch sees them.
+      auth: {
+        set: vi.fn().mockResolvedValue({ data: true }),
+        remove: (id: string) => removeProviderAuth("http://127.0.0.1:1234", id),
+      },
+      instance: { refresh: () => refreshInstance("http://127.0.0.1:1234", "/ws") },
     },
   }
 }
@@ -62,8 +68,6 @@ const choice = (id: string, name: string, methods: Array<{ type: string; label: 
   connected: false,
   methods,
 })
-const Q = { query: { directory: "/ws" } }
-const QD = { directory: "/ws" }
 let fetchMock: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
@@ -87,7 +91,7 @@ describe("ProviderManager.run — listing & disconnect", () => {
     const backend = makeBackend({ connected: ["anthropic"], providers: [{ id: "anthropic", name: "Anthropic", source: "config" }] })
     win.showQuickPick.mockResolvedValueOnce(undefined)
     await makeManager(backend).run()
-    expect(backend.client.provider.list).toHaveBeenCalledWith(Q)
+    expect(backend.api.provider.list).toHaveBeenCalledWith()
     const items = win.showQuickPick.mock.calls[0]![0] as Array<{ label: string }>
     expect(items[0]!.label).toContain("Connect a provider")
     expect(items.map((i) => i.label)).toContain("$(key) Anthropic")
@@ -102,7 +106,7 @@ describe("ProviderManager.run — listing & disconnect", () => {
     await makeManager(backend).run()
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:1234/auth/anthropic", { method: "DELETE" })
     expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("removed credentials"))
-    expect(backend.client.provider.list).toHaveBeenCalledTimes(2)
+    expect(backend.api.provider.list).toHaveBeenCalledTimes(2)
   })
 
   it("does nothing when the confirm modal is dismissed", async () => {
@@ -142,7 +146,7 @@ describe("ProviderManager.run — listing & disconnect", () => {
 
   it("surfaces a provider-fetch failure and stops before showing a picker", async () => {
     const backend = makeBackend()
-    backend.client.provider.list = vi.fn().mockResolvedValue({ error: { message: "boom" } })
+    backend.api.provider.list = vi.fn().mockResolvedValue({ error: { message: "boom" } })
     await makeManager(backend).run()
     expect(win.showErrorMessage).toHaveBeenCalled()
     expect(win.showQuickPick).not.toHaveBeenCalled()
@@ -158,11 +162,7 @@ describe("ProviderManager.run — connect", () => {
       .mockResolvedValueOnce(undefined) // main reopens -> Esc
     win.showInputBox.mockResolvedValueOnce("sk-test-123")
     await makeManager(backend).run()
-    expect(backend.client.auth.set).toHaveBeenCalledWith({
-      path: { id: "openai" },
-      query: QD,
-      body: { type: "api", key: "sk-test-123" },
-    })
+    expect(backend.api.auth.set).toHaveBeenCalledWith("openai", { type: "api", key: "sk-test-123" })
     expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("connected"))
   })
 
@@ -174,11 +174,9 @@ describe("ProviderManager.run — connect", () => {
       .mockResolvedValueOnce(undefined)
     await makeManager(backend).run()
     expect(openExternal).toHaveBeenCalled()
-    expect(backend.client.provider.oauth.authorize).toHaveBeenCalledWith({ path: { id: "anthropic" }, query: QD, body: { method: 0 } })
+    expect(backend.api.provider.oauth.authorize).toHaveBeenCalledWith("anthropic", { method: 0 })
     // callback also carries an AbortSignal (cancellable progress), so match loosely.
-    expect(backend.client.provider.oauth.callback).toHaveBeenCalledWith(
-      expect.objectContaining({ path: { id: "anthropic" }, query: QD, body: { method: 0 } }),
-    )
+    expect(backend.api.provider.oauth.callback).toHaveBeenCalledWith("anthropic", { method: 0 }, expect.any(AbortSignal))
     expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("connected"))
   })
 
@@ -188,7 +186,7 @@ describe("ProviderManager.run — connect", () => {
       auth: { "github-copilot": [{ type: "oauth", label: "GitHub" }] },
     })
     // The callback never resolves — the user closed the browser without finishing.
-    backend.client.provider.oauth.callback = vi.fn(() => new Promise(() => {}))
+    backend.api.provider.oauth.callback = vi.fn(() => new Promise(() => {}))
     // Simulate the user clicking Cancel on the progress notification.
     const withProgress = vscode.window.withProgress as unknown as ReturnType<typeof vi.fn>
     withProgress.mockImplementationOnce((_opts: unknown, task: (p: unknown, t: unknown) => unknown) =>
@@ -208,7 +206,7 @@ describe("ProviderManager.run — connect", () => {
       all: [{ id: "github-copilot", name: "GitHub Copilot" }],
       auth: { "github-copilot": [{ type: "oauth", label: "GitHub" }] },
     })
-    backend.client.provider.oauth.authorize = vi
+    backend.api.provider.oauth.authorize = vi
       .fn()
       .mockResolvedValue({ data: { url: "https://github.com/login/device", method: "auto", instructions: "Enter code: ABCD-1234" } })
     win.showQuickPick
@@ -226,7 +224,7 @@ describe("ProviderManager.run — connect", () => {
       all: [{ id: "github-copilot", name: "GitHub Copilot" }],
       auth: { "github-copilot": [{ type: "oauth", label: "GitHub" }] },
     })
-    backend.client.provider.oauth.callback = vi.fn().mockResolvedValue({ error: { data: { message: "device code expired" } } })
+    backend.api.provider.oauth.callback = vi.fn().mockResolvedValue({ error: { data: { message: "device code expired" } } })
     win.showQuickPick
       .mockResolvedValueOnce({ connect: true })
       .mockResolvedValueOnce({ choice: choice("github-copilot", "GitHub Copilot", [{ type: "oauth", label: "GitHub" }]) })
@@ -237,7 +235,7 @@ describe("ProviderManager.run — connect", () => {
 
   it("connects via OAuth (code): prompts for the authorization code", async () => {
     const backend = makeBackend({ all: [{ id: "openai", name: "OpenAI" }], auth: { openai: [{ type: "oauth", label: "ChatGPT" }] } })
-    backend.client.provider.oauth.authorize = vi
+    backend.api.provider.oauth.authorize = vi
       .fn()
       .mockResolvedValue({ data: { url: "https://auth/x", method: "code", instructions: "Paste the code" } })
     win.showQuickPick
@@ -246,7 +244,7 @@ describe("ProviderManager.run — connect", () => {
       .mockResolvedValueOnce(undefined)
     win.showInputBox.mockResolvedValueOnce("the-code")
     await makeManager(backend).run()
-    expect(backend.client.provider.oauth.callback).toHaveBeenCalledWith({ path: { id: "openai" }, query: QD, body: { method: 0, code: "the-code" } })
+    expect(backend.api.provider.oauth.callback).toHaveBeenCalledWith("openai", { method: 0, code: "the-code" })
   })
 
   it("asks which login method when a provider exposes more than one", async () => {
@@ -262,7 +260,7 @@ describe("ProviderManager.run — connect", () => {
       .mockResolvedValueOnce(undefined)
     win.showInputBox.mockResolvedValueOnce("sk-xyz")
     await makeManager(backend).run()
-    expect(backend.client.auth.set).toHaveBeenCalledWith({ path: { id: "anthropic" }, query: QD, body: { type: "api", key: "sk-xyz" } })
+    expect(backend.api.auth.set).toHaveBeenCalledWith("anthropic", { type: "api", key: "sk-xyz" })
   })
 
   it("reports when no providers are available to connect", async () => {

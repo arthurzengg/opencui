@@ -50,6 +50,7 @@ import type {
   QuestionReplyResponses,
   SessionListResponses,
 } from "@opencode-ai/sdk/v2"
+import type { RemoveResult } from "../provider/provider-format"
 
 /**
  * What the host needs from an opencode server. Every module that talks to
@@ -150,6 +151,13 @@ export interface BackendApi {
 
   auth: {
     set(providerID: string, body: BodyOf<AuthSetData>): Promise<ApiResult<DataOf<AuthSetResponses>>>
+    /** "unsupported" when the server predates the route. */
+    remove(providerID: string): Promise<RemoveResult>
+  }
+
+  instance: {
+    /** Drops the server's per-directory caches (#571); false when the route is missing. */
+    refresh(): Promise<boolean>
   }
 
   /**
