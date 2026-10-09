@@ -82,9 +82,9 @@ export class ServerManager {
     const configMode = readConfigMode(config)
     const workspace = primaryWorkspaceRoot()
     // opencode 2.0 wants a password at start and Basic auth after (#693).
-    // Only probed when the setting is on, so a 1.x start pays nothing.
+    // The version probe runs unless the setting says 1.x only.
     const opencode2 =
-      config.get<boolean>("opencode2") === true && isOpencode2(await this.deps.readVersion?.(binaryPath))
+      config.get<string>("opencode2") !== "off" && isOpencode2(await this.deps.readVersion?.(binaryPath))
         ? { password: randomBytes(24).toString("base64url") }
         : undefined
 
@@ -283,14 +283,17 @@ function bundledBinaryPath(extensionPath: string): string | undefined {
 }
 
 /**
- * The configured binary is opencode 2.0, whose API the host does not speak
- * (#684). Raised from the startup line instead of waiting out the timeout.
+ * The binary announced itself as opencode 2.0 on a start that expected 1.x:
+ * the setting refuses 2.0, or the version probe failed and the startup line
+ * is the first sign (#691). Raised from that line instead of waiting out
+ * the timeout.
  */
 export class UnsupportedOpencodeError extends Error {
   constructor(readonly binaryPath: string) {
     super(
-      `OpenCode Panel supports opencode 1.x, but "${binaryPath}" is opencode 2.0. ` +
-        'Point the "opencui.binaryPath" setting at an opencode 1.x binary.',
+      `"${binaryPath}" started as opencode 2.0, which OpenCode Panel did not expect: ` +
+        'either the "opencui.opencode2" setting is off, or "opencode --version" could not be read before the start. ' +
+        'Set the setting to "auto", or point "opencui.binaryPath" at an opencode 1.x binary.',
     )
     this.name = "UnsupportedOpencodeError"
   }

@@ -123,9 +123,14 @@
           "description": "Path to opencode binary"
         },
         "opencui.opencode2": {
-          "type": "boolean",
-          "default": false,
-          "description": "Experimental: start and talk to an opencode 2.0 binary. Read-only for now: sessions, history, and catalogs load, while sending prompts waits on the remaining adapter steps (#684). Off: opencode 2.0 is reported as unsupported."
+          "type": "string",
+          "enum": ["auto", "off"],
+          "enumDescriptions": [
+            "Detect the binary's version at startup and talk to opencode 2.0 through its own API when it is a 2.x binary (experimental).",
+            "Only opencode 1.x: a 2.x binary is refused with a message instead of being started."
+          ],
+          "default": "auto",
+          "description": "How OpenCode Panel treats an opencode 2.0 binary. Support for 2.0 is experimental: everything works except MCP sign-in from the panel, /init, and sharing."
         },
         "opencui.serverPort": {
           "type": "number",
