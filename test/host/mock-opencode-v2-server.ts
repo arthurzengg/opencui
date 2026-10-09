@@ -20,6 +20,8 @@ export type MockOpencodeV2 = {
   /** Every request that reached the server, after the auth check. */
   requests: Array<{ method: string; path: string; query: Record<string, string> }>
   push: (event: Record<string, unknown>) => void
+  /** Resolves once an SSE client is connected. */
+  awaitClient: () => Promise<void>
   close: () => Promise<void>
 }
 
@@ -37,9 +39,14 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     commands: [],
     mcp: [],
     requests: [],
+    // Events pushed before a client connects wait for the first one, as
+    // the 1.x mock does, so a test never races the subscription.
     push: (event: Record<string, unknown>) => {
-      for (const res of sse) res.write(`data: ${JSON.stringify(event)}\n\n`)
+      const frame = `data: ${JSON.stringify(event)}\n\n`
+      if (sse.length === 0) pending.push(frame)
+      for (const res of sse) res.write(frame)
     },
+    awaitClient: () => (sse.length > 0 ? Promise.resolve() : new Promise<void>((resolve) => clientWaiters.push(resolve))),
     close: () =>
       new Promise<void>((resolve) => {
         for (const res of sse) res.end()
@@ -48,6 +55,8 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
   } satisfies MockOpencodeV2
   const expectedAuth = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`
   const sse: ServerResponse[] = []
+  const pending: string[] = []
+  let clientWaiters: Array<() => void> = []
 
   const json = (res: ServerResponse, status: number, body: unknown) => {
     res.statusCode = status
@@ -69,7 +78,9 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     if (path === "/api/event") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
       res.write(`data: ${JSON.stringify({ id: "evt_0", created: Date.now(), type: "server.connected", data: {} })}\n\n`)
+      for (const frame of pending.splice(0)) res.write(frame)
       sse.push(res)
+      for (const resolve of clientWaiters.splice(0)) resolve()
       res.on("close", () => {
         const i = sse.indexOf(res)
         if (i >= 0) sse.splice(i, 1)

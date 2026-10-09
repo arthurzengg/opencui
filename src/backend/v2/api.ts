@@ -1,6 +1,7 @@
 import { OpenCode } from "@opencode/client/promise"
 import type { ApiResult, BackendApi } from "../api"
 import { mapAgents, mapCommands, mapMcpStatus, mapMessages, mapProviders, mapSession, mapSessionStatus } from "./map"
+import { translateEvents } from "./events"
 
 export type V2Client = ReturnType<typeof OpenCode.make>
 
@@ -105,7 +106,7 @@ export function createV2Api(options: { url: string; directory: string; password:
       remove: () => Promise.resolve({ kind: "unsupported" as const }),
     },
     instance: { refresh: () => Promise.resolve(false) },
-    events: async (signal) => client.event.subscribe({ signal }) as AsyncIterable<unknown>,
+    events: async (signal) => translateEvents(client.event.subscribe({ signal })),
     health: () => call(async () => ({ healthy: true as const, version: (await client.server.info()).version })),
   }
 }
