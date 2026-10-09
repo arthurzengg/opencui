@@ -65,6 +65,8 @@ brew install sst/tap/opencode                      # macOS Homebrew
 opencode auth login
 ```
 
+OpenCode Panel works with opencode 1.x. opencode 2.0 is a separate beta line with its own installers and API; the panel detects it and stops with a message instead of waiting. Support for 2.0 is tracked in [#684](https://github.com/arthurzengg/opencui/issues/684).
+
 Then install the extension:
 
 ```bash
