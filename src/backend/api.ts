@@ -6,10 +6,10 @@ import type {
   ConfigProvidersResponses,
   McpAddData,
   McpAddResponses,
-  McpAuthAuthenticateResponses,
   McpAuthRemoveResponses,
   McpConnectResponses,
   McpDisconnectResponses,
+  McpStatus,
   McpStatusResponses,
   ProviderAuthResponses,
   ProviderListResponses,
@@ -133,7 +133,10 @@ export interface BackendApi {
     connect(name: string): Promise<ApiResult<DataOf<McpConnectResponses>>>
     disconnect(name: string): Promise<ApiResult<DataOf<McpDisconnectResponses>>>
     auth: {
-      authenticate(name: string): Promise<ApiResult<DataOf<McpAuthAuthenticateResponses>>>
+      /** Where the sign-in sends the user; 1.x opens the browser itself and answers with nothing to open. */
+      authorize(name: string): Promise<ApiResult<OauthAuthorization>>
+      /** Waits for the sign-in to finish, or completes it with the pasted code, and answers the server's new status. */
+      callback(name: string, body: { code?: string }, signal?: AbortSignal): Promise<ApiResult<McpStatus>>
       remove(name: string): Promise<ApiResult<DataOf<McpAuthRemoveResponses>>>
     }
   }

@@ -68,7 +68,10 @@ export function createV1Api(url: string, directory: string): BackendApi {
       connect: (name) => call(client.mcp.connect({ path: { name }, query })),
       disconnect: (name) => call(client.mcp.disconnect({ path: { name }, query })),
       auth: {
-        authenticate: (name) => call(client.mcp.auth.authenticate({ path: { name }, query })),
+        // 1.x runs the whole sign-in server-side, browser included: there is
+        // nothing to open, and the one blocking call is the callback.
+        authorize: () => Promise.resolve({ data: { url: "", method: "auto" as const, instructions: "" }, status: 200 }),
+        callback: (name, _body, signal) => call(client.mcp.auth.authenticate({ path: { name }, query, signal })),
         remove: (name) => call(client.mcp.auth.remove({ path: { name }, query })),
       },
     },

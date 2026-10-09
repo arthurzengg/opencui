@@ -2,6 +2,7 @@ import * as vscode from "vscode"
 import type { McpStatus, McpLocalConfig, McpRemoteConfig } from "../backend/types"
 import type { ServerManager, Backend } from "../server"
 import { log } from "../output"
+import { runOAuth, suffix } from "../oauth-flow"
 import {
   actionsFor,
   parseCommand,
@@ -186,22 +187,25 @@ export class McpManager {
           return
         }
         case "authenticate": {
-          // The opencode server (a local subprocess) opens the browser and
-          // captures the OAuth redirect itself, then returns the new status —
-          // so this is one blocking call, no URI handler / code paste needed.
-          const res = await vscode.window.withProgress(
-            {
-              location: vscode.ProgressLocation.Notification,
-              cancellable: false,
-              title: `Authenticating "${name}" — finish in your browser...`,
-            },
-            () => backend.api.mcp.auth.authenticate(name),
-          )
-          if (res.error || !res.data) {
-            vscode.window.showErrorMessage(`OpenCode Panel: authentication failed for "${name}"`)
+          // On 1.x the server opens the browser and finishes the sign-in
+          // itself, so authorize has nothing to open and the callback is the
+          // one blocking call; on 2.0 authorize hands back the URL and the
+          // callback finishes the attempt from here.
+          const outcome = await runOAuth({
+            name,
+            authorize: () => backend.api.mcp.auth.authorize(name),
+            callback: (body, signal) => backend.api.mcp.auth.callback(name, body, signal),
+          })
+          if (outcome.kind === "dismissed") return
+          if (outcome.kind === "cancelled") {
+            vscode.window.showInformationMessage(`OpenCode Panel: signing in to "${name}" was cancelled.`)
             return
           }
-          vscode.window.showInformationMessage(`OpenCode Panel: "${name}" is now ${statusLabel(res.data)}`)
+          if (outcome.kind === "failed") {
+            vscode.window.showErrorMessage(`OpenCode Panel: authentication failed for "${name}"${suffix(outcome.message)}`)
+            return
+          }
+          vscode.window.showInformationMessage(`OpenCode Panel: "${name}" is now ${statusLabel(outcome.data)}`)
           return
         }
         case "signout": {

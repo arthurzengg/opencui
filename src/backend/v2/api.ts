@@ -24,7 +24,7 @@ async function call<T>(run: () => Promise<T>): Promise<ApiResult<T>> {
   }
 }
 
-/** The steps after #693 fill these in; until then the caller sees a failure, not a hang. */
+/** What 2.0.24 has no route for; the caller sees a failure, not a hang. */
 function unavailable<T>(operation: string): Promise<ApiResult<T>> {
   return Promise.resolve({ error: new Error(`${operation} is not available on opencode 2.0 yet (#684)`), status: 501 })
 }
@@ -70,6 +70,50 @@ export function createV2Api(options: { url: string; directory: string; password:
     return entries.length
   }
   const attempts = new Map<string, { integrationID: string; attemptID: string }>()
+  type OAuthMethod = Extract<IntegrationInfo["methods"][number], { type: "oauth" }>
+  // Providers and MCP servers sign in the same way: an OAuth attempt on
+  // their integration, remembered under the caller's key until it ends.
+  const startOAuth = async (key: string, integration: IntegrationInfo, method: OAuthMethod) => {
+    const attempt = (await client.integration.oauth.connect({ ...location, integrationID: integration.id, methodID: method.id })).data
+    attempts.set(key, { integrationID: integration.id, attemptID: attempt.attemptID })
+    return { url: attempt.url, method: attempt.mode, instructions: attempt.instructions }
+  }
+  // With a code the attempt completes at once; without one the server
+  // finishes it from the browser and the status is polled until then.
+  const finishOAuth = async (key: string, code: string | undefined, signal?: AbortSignal) => {
+    const attempt = attempts.get(key)
+    if (!attempt) throw new Error(`no OAuth attempt in progress for ${key}`)
+    const ref = { ...location, integrationID: attempt.integrationID, attemptID: attempt.attemptID }
+    if (code) {
+      await client.integration.oauth.complete({ ...ref, code })
+      attempts.delete(key)
+      return
+    }
+    for (;;) {
+      if (signal?.aborted) {
+        await client.integration.oauth.cancel(ref).catch(() => undefined)
+        attempts.delete(key)
+        throw new Error("cancelled")
+      }
+      const status = (await client.integration.oauth.status(ref)).data
+      if (status.status === "complete") {
+        attempts.delete(key)
+        return
+      }
+      if (status.status === "failed" || status.status === "expired") {
+        attempts.delete(key)
+        throw new Error(status.status === "failed" ? status.message : "the sign-in attempt expired")
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+  }
+  const mcpIntegration = async (name: string) => {
+    const server = (await client.mcp.list(location)).data.find((s) => s.name === name)
+    if (!server?.integrationID) throw new Error(`MCP server ${name} has no sign-in integration`)
+    const integration = (await integrations()).find((i) => i.id === server.integrationID)
+    if (!integration) throw new Error(`no integration ${server.integrationID} for MCP server ${name}`)
+    return integration
+  }
 
   // 1.x sends the model, agent, and variant with every prompt; 2.0 keeps them
   // on the session, so they are switched before the text goes in. The
@@ -215,14 +259,28 @@ export function createV2Api(options: { url: string; directory: string; password:
       connect: (name) => call(async () => (await client.mcp.connect({ ...location, server: name }), true as const)),
       disconnect: (name) => call(async () => (await client.mcp.disconnect({ ...location, server: name }), true as const)),
       auth: {
-        // 2.0 hands back a URL for the user to open rather than opening it
-        // itself, which the MCP picker has no step for yet.
-        authenticate: () => unavailable("MCP sign-in from the panel"),
+        // An OAuth-capable remote server points at an integration and signs
+        // in through that integration's attempt, which is what the 2.0 CLI's
+        // own `mcp auth` runs. The server is reconnected afterwards; the
+        // status read back says whether that took.
+        authorize: (name) =>
+          call(async () => {
+            const integration = await mcpIntegration(name)
+            const method = loginMethods(integration).find((m): m is OAuthMethod => m.type === "oauth")
+            if (!method) throw new Error(`MCP server ${name} has no OAuth sign-in`)
+            return startOAuth(`mcp:${name}`, integration, method)
+          }),
+        callback: (name, body, signal) =>
+          call(async () => {
+            await finishOAuth(`mcp:${name}`, body.code, signal)
+            await client.mcp.connect({ ...location, server: name }).catch(() => undefined)
+            const status = mapMcpStatus((await client.mcp.list(location)).data)[name]
+            if (!status) throw new Error(`MCP server ${name} is not configured`)
+            return status
+          }),
         remove: (name) =>
           call(async () => {
-            const integrationID = (await client.mcp.list(location)).data.find((s) => s.name === name)?.integrationID
-            if (!integrationID) throw new Error(`no integration for MCP server ${name}`)
-            await removeCredentials(integrationID)
+            await removeCredentials((await mcpIntegration(name)).id)
             return { success: true as const }
           }),
       },
@@ -255,40 +313,9 @@ export function createV2Api(options: { url: string; directory: string; password:
             const integration = await integrationFor(providerID)
             const method = loginMethods(integration)[body.method]
             if (!method || method.type !== "oauth") throw new Error(`login method ${body.method} of ${providerID} is not OAuth`)
-            const attempt = (await client.integration.oauth.connect({ ...location, integrationID: integration.id, methodID: method.id })).data
-            attempts.set(providerID, { integrationID: integration.id, attemptID: attempt.attemptID })
-            return { url: attempt.url, method: attempt.mode, instructions: attempt.instructions }
+            return startOAuth(`provider:${providerID}`, integration, method)
           }),
-        // With a code the attempt completes at once; without one the server
-        // finishes it from the browser and the status is polled until then.
-        callback: (providerID, body, signal) =>
-          call(async () => {
-            const attempt = attempts.get(providerID)
-            if (!attempt) throw new Error(`no OAuth attempt in progress for ${providerID}`)
-            const ref = { ...location, integrationID: attempt.integrationID, attemptID: attempt.attemptID }
-            if (body.code) {
-              await client.integration.oauth.complete({ ...ref, code: body.code })
-              attempts.delete(providerID)
-              return true
-            }
-            for (;;) {
-              if (signal?.aborted) {
-                await client.integration.oauth.cancel(ref).catch(() => undefined)
-                attempts.delete(providerID)
-                throw new Error("cancelled")
-              }
-              const status = (await client.integration.oauth.status(ref)).data
-              if (status.status === "complete") {
-                attempts.delete(providerID)
-                return true
-              }
-              if (status.status === "failed" || status.status === "expired") {
-                attempts.delete(providerID)
-                throw new Error(status.status === "failed" ? status.message : "the sign-in attempt expired")
-              }
-              await new Promise((resolve) => setTimeout(resolve, 500))
-            }
-          }),
+        callback: (providerID, body, signal) => call(async () => (await finishOAuth(`provider:${providerID}`, body.code, signal), true)),
       },
     },
     auth: {
