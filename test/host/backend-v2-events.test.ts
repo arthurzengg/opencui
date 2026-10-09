@@ -64,15 +64,33 @@ describe("opencode 2.0 event translator (#684)", () => {
     expect(t(ev("session.execution.started", { sessionID: S }))).toEqual([{ type: "session.status", properties: { sessionID: S, status: { type: "busy" } } }])
     expect(t(ev("session.execution.failed", { sessionID: S, error: { type: "ProviderError", message: "boom" } }))).toEqual([
       { type: "session.error", properties: { sessionID: S, error: { name: "ProviderError", data: { message: "boom" } } } },
+      { type: "session.idle", properties: { sessionID: S } },
     ])
-    expect(t(ev("session.execution.interrupted", { sessionID: S, reason: "user" }))).toEqual([])
+    expect(t(ev("session.execution.interrupted", { sessionID: S, reason: "user" }))).toEqual([{ type: "session.idle", properties: { sessionID: S } }])
     t(ev("session.step.started", { sessionID: S, assistantMessageID: M, agent: "build", model, started: 1 }))
-    expect(t(ev("session.execution.interrupted", { sessionID: S, reason: "user" }))[0]!.properties).toMatchObject({ info: { id: M, error: { name: "MessageAbortedError" } } })
+    const interrupted = t(ev("session.execution.interrupted", { sessionID: S, reason: "user" }))
+    expect(interrupted[0]!.properties).toMatchObject({ info: { id: M, error: { name: "MessageAbortedError" } } })
+    expect(interrupted[1]).toEqual({ type: "session.idle", properties: { sessionID: S } })
     expect(t(ev("session.retry.scheduled", { sessionID: S, assistantMessageID: M, attempt: 2, at: 99, error: { type: "ProviderError", message: "overloaded" } }))).toEqual([
       { type: "session.status", properties: { sessionID: S, status: { type: "retry", attempt: 2, message: "overloaded", next: 99 } } },
     ])
+    // The interruption already ended the turn; the idle that follows is dropped.
+    expect(t(ev("session.idle", { sessionID: S }))).toEqual([])
+    expect(t(ev("session.execution.interrupted", { sessionID: S, reason: "user" }))).toEqual([{ type: "session.idle", properties: { sessionID: S } }])
+  })
+
+  // A live run ended an execution without a session.idle, and the host reads
+  // idle as the end of the turn; a second idle would flush a second queued
+  // message, so one that does follow is dropped.
+  it("ends the turn when the execution ends, once", () => {
+    const t = createEventTranslator().translate
+    t(ev("session.execution.started", { sessionID: S }))
+    expect(t(ev("session.execution.succeeded", { sessionID: S }))).toEqual([{ type: "session.idle", properties: { sessionID: S } }])
+    expect(t(ev("session.idle", { sessionID: S }))).toEqual([])
+    t(ev("session.execution.started", { sessionID: S }))
+    expect(t(ev("session.execution.failed", { sessionID: S, error: { type: "ProviderError", message: "boom" } })).map((e) => e.type)).toEqual(["session.error", "session.idle"])
+    t(ev("session.execution.started", { sessionID: S }))
     expect(t(ev("session.idle", { sessionID: S }))).toEqual([{ type: "session.idle", properties: { sessionID: S } }])
-    expect(t(ev("session.execution.interrupted", { sessionID: S, reason: "user" }))).toEqual([])
   })
 
   it("surfaces a compaction as a summary message, and sessions as created and renamed", () => {
