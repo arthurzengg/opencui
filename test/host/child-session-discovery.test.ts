@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
+import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { subscribeSession, type ChildSessionInfo } from "../../src/chat/stream"
 
@@ -17,7 +19,7 @@ describe("subscribeSession: child-session auto-discovery via session.created", (
   it("fires onChildSessionDiscovered for session.created with our parent ID", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const discovered: ChildSessionInfo[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => discovered.push(info),
@@ -39,7 +41,7 @@ describe("subscribeSession: child-session auto-discovery via session.created", (
   it("ignores session.created events for unrelated parents", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const discovered: ChildSessionInfo[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => discovered.push(info),
@@ -59,7 +61,7 @@ describe("subscribeSession: child-session auto-discovery via session.created", (
   it("fires for session.updated when parentID becomes known", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const discovered: ChildSessionInfo[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => discovered.push(info),
@@ -79,7 +81,7 @@ describe("subscribeSession: child-session auto-discovery via session.created", (
   it("ignores session.created events that lack a parentID", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const discovered: ChildSessionInfo[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => discovered.push(info),

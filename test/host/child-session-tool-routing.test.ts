@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
+import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { subscribeSession, type ChildSessionEvent } from "../../src/chat/stream"
 
@@ -17,7 +19,7 @@ describe("subscribeSession: child-session tool/patch routing", () => {
   it("forwards a terminal tool event from a registered child to onChildSessionEvent", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: ChildSessionEvent[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionEvent: (e) => events.push(e),
@@ -60,7 +62,7 @@ describe("subscribeSession: child-session tool/patch routing", () => {
   it("skips tool events that haven't reached a terminal status yet", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: ChildSessionEvent[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionEvent: (e) => events.push(e),
@@ -91,7 +93,7 @@ describe("subscribeSession: child-session tool/patch routing", () => {
   it("forwards a child patch event with files + diff", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: ChildSessionEvent[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionEvent: (e) => events.push(e),
@@ -125,7 +127,7 @@ describe("subscribeSession: child-session tool/patch routing", () => {
   it("does NOT forward child tool/patch events for unregistered children", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: ChildSessionEvent[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionEvent: (e) => events.push(e),

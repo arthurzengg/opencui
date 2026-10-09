@@ -13,6 +13,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
+import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { subscribeSession, type ChildSessionEvent, type ChildSessionInfo } from "../../src/chat/stream"
 import { turnChanges } from "../../webview/src/review-extract"
@@ -49,7 +51,7 @@ describe("Subagent file edit → Review Panel: full integration", () => {
     // through unrouted (this was the user-reported bug).
     let discoveredChild: ChildSessionInfo | undefined
     const collectedChildEvents: ChildSessionEvent[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => {
@@ -179,7 +181,7 @@ describe("Subagent file edit → Review Panel: full integration", () => {
     const messages: ChatMessage[] = [{ id: "a_parent", role: "assistant", blocks: parentBlocks }]
 
     const collectedChildEvents: ChildSessionEvent[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => {
@@ -240,7 +242,7 @@ describe("Subagent file edit → Review Panel: full integration", () => {
     const parentBlocks: ChatBlock[] = []
     const messages: ChatMessage[] = [{ id: "a_parent", role: "assistant", blocks: parentBlocks }]
 
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => {

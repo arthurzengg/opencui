@@ -54,6 +54,7 @@ export class ServerManager {
   private starting: Promise<Backend> | undefined
   /** Cancels the in-flight start attempt so restart/dispose mid-startup is not a no-op (#581). */
   private startAbort: AbortController | undefined
+  private api: BackendApi | undefined
   /** Workspace root captured at start time so subsequent `ensure()` calls return a stable Backend. */
   private workspace: WorkspaceRoot | undefined
   private configMode: OpencodeConfigMode = "isolated"
@@ -61,8 +62,8 @@ export class ServerManager {
   constructor(private context: vscode.ExtensionContext) {}
 
   async ensure(): Promise<Backend> {
-    if (this.server && this.client && this.clientV2) {
-      return this.toBackend(this.server, this.client, this.clientV2)
+    if (this.server && this.api && this.client && this.clientV2) {
+      return this.toBackend(this.server, this.api, this.client, this.clientV2)
     }
     if (this.starting) return this.starting
     const abort = new AbortController()
@@ -124,7 +125,9 @@ export class ServerManager {
     const directory = workspace?.fsPath ?? process.cwd()
     const client = createOpencodeClient({ baseUrl: server.url, directory })
     const clientV2 = createOpencodeClientV2({ baseUrl: server.url, directory })
+    const api = createV1Api(client, clientV2, directory, server.url)
     this.server = server
+    this.api = api
     this.client = client
     this.clientV2 = clientV2
     this.workspace = workspace
@@ -134,7 +137,7 @@ export class ServerManager {
     // The drift check compares the binary on disk against this. An older
     // server without the health route leaves it unset and the check stays
     // silent.
-    void clientV2.global.health().then(
+    void api.health().then(
       (res) => {
         if (this.server !== server) return
         const version = res.data?.version
@@ -151,13 +154,14 @@ export class ServerManager {
       log("opencode server exited unexpectedly; clearing cached backend")
       if (server.pid !== undefined) this.updateRegistry((file) => releaseServer(file, server.pid!))
       this.server = undefined
+      this.api = undefined
       this.client = undefined
       this.clientV2 = undefined
       this.workspace = undefined
       this.binaryPath = undefined
       this.version = undefined
     })
-    return this.toBackend(server, client, clientV2)
+    return this.toBackend(server, api, client, clientV2)
   }
 
   async restart(): Promise<Backend> {
@@ -188,6 +192,7 @@ export class ServerManager {
         this.updateRegistry((file) => releaseServer(file, pid))
       }
       this.server = undefined
+      this.api = undefined
       this.client = undefined
       this.clientV2 = undefined
       this.workspace = undefined
@@ -228,18 +233,17 @@ export class ServerManager {
    * switch) that should stay silent rather than cold-start a server.
    */
   currentBackend(): Backend | undefined {
-    if (!this.server || !this.client || !this.clientV2) return undefined
-    return this.toBackend(this.server, this.client, this.clientV2)
+    if (!this.server || !this.api || !this.client || !this.clientV2) return undefined
+    return this.toBackend(this.server, this.api, this.client, this.clientV2)
   }
 
-  private toBackend(server: ServerHandle, client: OpencodeClient, clientV2: OpencodeClientV2): Backend {
-    const directory = this.workspace?.fsPath ?? process.cwd()
+  private toBackend(server: ServerHandle, api: BackendApi, client: OpencodeClient, clientV2: OpencodeClientV2): Backend {
     return {
       url: server.url,
-      api: createV1Api(client, clientV2, directory, server.url),
+      api,
       client,
       clientV2,
-      directory,
+      directory: api.directory,
       workspace: this.workspace,
       configMode: this.configMode,
     }
