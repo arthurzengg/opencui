@@ -1,7 +1,10 @@
-import type { OpenCodeEvent } from "@opencode/client/promise"
+import type { FormField, FormInfo, OpenCodeEvent } from "@opencode/client/promise"
 
 /** An event in the 1.x shape `chat/stream.ts` routes: `{ type, properties }`. */
 export type HostEvent = { type: string; properties: Record<string, unknown> }
+
+/** What the adapter needs to answer a form later: which session, and each field's key and kind, in the order the webview saw them. */
+export type FormRecord = { sessionID: string; fields: FormField[] }
 
 type Data<T extends OpenCodeEvent["type"]> = Extract<OpenCodeEvent, { type: T }>["data"]
 
@@ -16,6 +19,10 @@ type Data<T extends OpenCodeEvent["type"]> = Extract<OpenCodeEvent, { type: T }>
 export function createEventTranslator() {
   const tools = new Map<string, { name: string; messageID: string; input: Record<string, unknown>; start: number }>()
   const writing = new Map<string, string>()
+  // Replies go to session-scoped routes, but the host answers by request id
+  // alone, so the ask is remembered until its reply or cancel.
+  const permissions = new Map<string, string>()
+  const forms = new Map<string, FormRecord>()
 
   const part = (sessionID: string, messageID: string, id: string, rest: Record<string, unknown>): HostEvent => ({
     type: "message.part.updated",
@@ -45,8 +52,47 @@ export function createEventTranslator() {
   const outputOf = (content: Array<{ type: string; text?: string; uri?: string }> | undefined) =>
     (content ?? []).map((c) => (c.type === "text" ? c.text ?? "" : c.uri ?? "")).join("\n")
 
-  return function translate(event: OpenCodeEvent): HostEvent[] {
+  function translate(event: OpenCodeEvent): HostEvent[] {
     switch (event.type) {
+      case "permission.asked": {
+        const d = event.data as Data<"permission.asked">
+        permissions.set(d.id, d.sessionID)
+        return [{
+          type: "permission.asked",
+          properties: {
+            id: d.id,
+            sessionID: d.sessionID,
+            permission: d.action,
+            patterns: d.resources,
+            always: d.save ?? [],
+            title: d.message ?? `Permission needed: ${d.action}`,
+            metadata: d.metadata ?? {},
+            messageID: d.source?.messageID,
+            callID: d.source?.id,
+            time: { created: event.created },
+          },
+        }]
+      }
+      case "permission.replied": {
+        const d = event.data as Data<"permission.replied">
+        permissions.delete(d.requestID)
+        return [{ type: "permission.replied", properties: { sessionID: d.sessionID, requestID: d.requestID, reply: d.reply } }]
+      }
+      case "form.created": {
+        const form = (event.data as Data<"form.created">).form as FormInfo
+        forms.set(form.id, { sessionID: form.sessionID, fields: form.fields })
+        return [{ type: "question.asked", properties: { id: form.id, sessionID: form.sessionID, questions: form.fields.map((field) => questionOf(form, field)) } }]
+      }
+      case "form.replied": {
+        const d = event.data as Data<"form.replied">
+        forms.delete(d.id)
+        return [{ type: "question.replied", properties: { sessionID: d.sessionID, requestID: d.id } }]
+      }
+      case "form.cancelled": {
+        const d = event.data as Data<"form.cancelled">
+        forms.delete(d.id)
+        return [{ type: "question.rejected", properties: { sessionID: d.sessionID, requestID: d.id } }]
+      }
       case "session.step.started": {
         const d = event.data as Data<"session.step.started">
         writing.set(d.sessionID, d.assistantMessageID)
@@ -163,12 +209,52 @@ export function createEventTranslator() {
         return []
     }
   }
+
+  return {
+    translate,
+    /** Session a pending permission request belongs to, if this translator saw the ask. */
+    sessionForPermission: (requestID: string) => permissions.get(requestID),
+    /** The form behind a pending question, if this translator saw it. */
+    form: (formID: string) => forms.get(formID),
+  }
+}
+
+export type EventTranslator = ReturnType<typeof createEventTranslator>
+
+/**
+ * A 2.0 form field as the 1.x question dialog shows it. A boolean becomes a
+ * yes/no choice, a number or text field a free answer, options keep their
+ * labels and descriptions; the answer travels back through formAnswer.
+ */
+function questionOf(form: FormInfo, field: FormField): Record<string, unknown> {
+  const base = { question: field.description ?? field.title ?? field.key, header: field.title ?? form.title }
+  if (field.type === "boolean") return { ...base, options: [{ label: "Yes", description: "" }, { label: "No", description: "" }], custom: false }
+  if (field.type === "multiselect" || (field.type === "string" && field.options?.length)) {
+    const options = (field.type === "multiselect" ? field.options : field.options ?? []).map((o) => ({ label: o.label, description: o.description ?? "" }))
+    return { ...base, options, multiple: field.type === "multiselect", custom: field.custom ?? false }
+  }
+  return { ...base, options: [], custom: true }
+}
+
+/** The 1.x reply, one list of chosen labels or typed text per field, as the 2.0 form answer keyed by field. */
+export function formAnswer(record: FormRecord, answers: string[][]): Record<string, string | number | boolean | string[]> {
+  const answer: Record<string, string | number | boolean | string[]> = {}
+  record.fields.forEach((field, index) => {
+    const given = answers[index] ?? []
+    if (field.type === "boolean") answer[field.key] = given[0] === "Yes"
+    else if (field.type === "number" || field.type === "integer") answer[field.key] = Number(given[0] ?? "")
+    else if (field.type === "multiselect") answer[field.key] = given.map((label) => field.options.find((o) => o.label === label)?.value ?? label)
+    else if (field.type === "string") {
+      const label = given[0] ?? ""
+      answer[field.key] = field.options?.find((o) => o.label === label)?.value ?? label
+    } else answer[field.key] = given[0] ?? ""
+  })
+  return answer
 }
 
 /** The adapter's event stream: 2.0 events in, 1.x-shaped events out. */
-export async function* translateEvents(source: AsyncIterable<OpenCodeEvent>): AsyncIterable<HostEvent> {
-  const translate = createEventTranslator()
+export async function* translateEvents(translator: EventTranslator, source: AsyncIterable<OpenCodeEvent>): AsyncIterable<HostEvent> {
   for await (const event of source) {
-    for (const out of translate(event)) yield out
+    for (const out of translator.translate(event)) yield out
   }
 }

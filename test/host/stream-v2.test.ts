@@ -95,4 +95,35 @@ describe("subscribeSession over opencode 2.0 (#684)", () => {
     expect(errors[0]).toBe("rate limited")
     subscription.abort()
   })
+
+  it("routes a 2.0 permission ask and a form to the permission and question handlers", async () => {
+    const backend = { url: server.url, api: createV2Api({ url: server.url, directory: "/ws", password: server.password }), directory: "/ws" } as Backend
+    const permissions: Array<{ id: string; title: string; patterns?: string[] }> = []
+    const resolved: string[] = []
+    const questions: Array<{ id: string; questions: unknown[] }> = []
+    const subscription = subscribeSession(
+      backend,
+      S,
+      {
+        onTextDelta: () => {},
+        onPermissionNeeded: (p) => permissions.push(p),
+        onPermissionResolved: (id) => resolved.push(id),
+        onQuestionAsked: (q) => questions.push(q),
+        onQuestionResolved: (id) => resolved.push(id),
+      },
+      { watchdogMs: 10_000 },
+    )
+    await subscription.ready
+    await server.awaitClient()
+    push("permission.asked", { id: "req_1", sessionID: S, action: "bash", resources: ["git push"], message: "Push to origin?" })
+    push("form.created", { form: { id: "form_1", sessionID: S, title: "Branch", fields: [{ key: "name", type: "string", title: "Branch name" }] } })
+    await until(() => permissions.length === 1 && questions.length === 1)
+    expect(permissions[0]).toMatchObject({ id: "req_1", title: "Push to origin?", patterns: ["git push"] })
+    expect(questions[0]).toMatchObject({ id: "form_1", questions: [expect.objectContaining({ header: "Branch name", custom: true })] })
+    push("permission.replied", { sessionID: S, requestID: "req_1", reply: "once" })
+    push("form.replied", { id: "form_1", sessionID: S, answer: { name: "main" } })
+    await until(() => resolved.length === 2)
+    expect(resolved).toEqual(["req_1", "form_1"])
+    subscription.abort()
+  })
 })

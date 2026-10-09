@@ -18,7 +18,7 @@ export type MockOpencodeV2 = {
   commands: CommandInfo[]
   mcp: McpServer[]
   /** Every request that reached the server, after the auth check. */
-  requests: Array<{ method: string; path: string; query: Record<string, string> }>
+  requests: Array<{ method: string; path: string; query: Record<string, string>; body?: unknown }>
   push: (event: Record<string, unknown>) => void
   /** Resolves once an SSE client is connected. */
   awaitClient: () => Promise<void>
@@ -58,6 +58,10 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
   const pending: string[] = []
   let clientWaiters: Array<() => void> = []
 
+  const empty = (res: ServerResponse) => {
+    res.statusCode = 204
+    res.end()
+  }
   const json = (res: ServerResponse, status: number, body: unknown) => {
     res.statusCode = status
     res.setHeader("content-type", "application/json")
@@ -65,12 +69,24 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
   }
 
   function handle(req: IncomingMessage, res: ServerResponse) {
+    let raw = ""
+    req.on("data", (chunk) => (raw += chunk))
+    req.on("end", () => route(req, res, raw))
+  }
+
+  function route(req: IncomingMessage, res: ServerResponse, raw: string) {
     const url = new URL(req.url ?? "/", "http://localhost")
     // A JSON body on failures, as the Effect-based server sends; the client
     // reports a bare status without one as an unsupported content type.
     if (req.headers.authorization !== expectedAuth) return json(res, 401, { message: "unauthorized" })
     const query = Object.fromEntries(url.searchParams)
-    state.requests.push({ method: req.method ?? "", path: url.pathname, query })
+    let body: unknown
+    try {
+      body = raw ? JSON.parse(raw) : undefined
+    } catch {
+      body = raw
+    }
+    state.requests.push({ method: req.method ?? "", path: url.pathname, query, ...(body !== undefined ? { body } : {}) })
     const location = { directory: query["location[directory]"] ?? "" }
     const path = url.pathname
 
@@ -101,6 +117,10 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
       if (!rows) return json(res, 404, { message: "session not found" })
       return json(res, 200, { data: rows, cursor: {} })
     }
+    // Replies answer 204 with no body, as the server does.
+    if (/^\/api\/session\/[^/]+\/permission\/[^/]+\/reply$/.test(path) && req.method === "POST") return empty(res)
+    if (/^\/api\/session\/[^/]+\/form\/[^/]+\/reply$/.test(path) && req.method === "POST") return empty(res)
+    if (/^\/api\/session\/[^/]+\/form\/[^/]+$/.test(path) && req.method === "DELETE") return empty(res)
     if (path === "/api/model") return json(res, 200, { location, data: state.models })
     if (path === "/api/provider") return json(res, 200, { location, data: state.providers })
     if (path === "/api/agent") return json(res, 200, { location, data: state.agents })
