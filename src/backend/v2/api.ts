@@ -1,6 +1,7 @@
 import { OpenCode } from "@opencode/client/promise"
 import type { ApiResult, BackendApi } from "../api"
 import { mapAgents, mapCommands, mapMcpStatus, mapMessages, mapProviders, mapSession, mapSessionStatus } from "./map"
+import { createEventTranslator, formAnswer, translateEvents } from "./events"
 
 export type V2Client = ReturnType<typeof OpenCode.make>
 
@@ -41,6 +42,11 @@ export function createV2Api(options: { url: string; directory: string; password:
     headers: { Authorization: `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}` },
   })
   const location = { location: { directory } }
+  // One translator for the adapter's lifetime: it remembers the asks that
+  // replies answer.
+  const translator = createEventTranslator()
+  const unknown = <T>(what: string, id: string): Promise<ApiResult<T>> =>
+    Promise.resolve({ error: new Error(`${what} ${id} was not seen on this connection`), status: 404 })
   const listSessions = async (filter: { parentID?: string | null; limit?: number; search?: string }) =>
     (await client.session.list({ directory, ...filter })).data
   return {
@@ -77,8 +83,26 @@ export function createV2Api(options: { url: string; directory: string; password:
       init: () => unavailable("session.init"),
       fork: () => unavailable("session.fork"),
     },
-    permission: { reply: () => unavailable("permission.reply") },
-    question: { reply: () => unavailable("question.reply"), reject: () => unavailable("question.reject") },
+    permission: {
+      reply: (requestID, reply) => {
+        const sessionID = translator.sessionForPermission(requestID)
+        if (!sessionID) return unknown("permission request", requestID)
+        if (!reply) return Promise.resolve({ error: new Error("a permission reply needs a decision"), status: 400 })
+        return call(async () => (await client.permission.reply({ sessionID, requestID, decision: reply }), true as const))
+      },
+    },
+    question: {
+      reply: (requestID, answers) => {
+        const form = translator.form(requestID)
+        if (!form) return unknown("form", requestID)
+        return call(async () => (await client.session.form.reply({ sessionID: form.sessionID, formID: requestID, answer: formAnswer(form, answers ?? []) }), true as const))
+      },
+      reject: (requestID) => {
+        const form = translator.form(requestID)
+        if (!form) return unknown("form", requestID)
+        return call(async () => (await client.session.form.cancel({ sessionID: form.sessionID, formID: requestID }), true as const))
+      },
+    },
     config: {
       providers: () =>
         call(async () => {
@@ -105,7 +129,7 @@ export function createV2Api(options: { url: string; directory: string; password:
       remove: () => Promise.resolve({ kind: "unsupported" as const }),
     },
     instance: { refresh: () => Promise.resolve(false) },
-    events: async (signal) => client.event.subscribe({ signal }) as AsyncIterable<unknown>,
+    events: async (signal) => translateEvents(translator, client.event.subscribe({ signal })),
     health: () => call(async () => ({ healthy: true as const, version: (await client.server.info()).version })),
   }
 }

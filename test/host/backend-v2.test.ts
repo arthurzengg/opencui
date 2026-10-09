@@ -90,6 +90,30 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(ended).toBe(true)
   })
 
+  it("answers a permission and a form through the session-scoped routes it saw asked", async () => {
+    const a = api()
+    const controller = new AbortController()
+    const stream = await a.events(controller.signal)
+    const iterator = stream[Symbol.asyncIterator]()
+    await iterator.next()
+    server.push({ id: "evt_p", created: 1, type: "permission.asked", data: { id: "req_1", sessionID: "ses_root", action: "bash", resources: ["ls"] } })
+    server.push({ id: "evt_f", created: 2, type: "form.created", data: { form: { id: "form_1", sessionID: "ses_root", title: "Pick", fields: [{ key: "env", type: "string", options: [{ value: "prod", label: "Production" }] }] } } })
+    expect(((await iterator.next()).value as { type: string }).type).toBe("permission.asked")
+    expect(((await iterator.next()).value as { type: string }).type).toBe("question.asked")
+
+    expect((await a.permission.reply("req_1", "once")).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_root/permission/req_1/reply", body: { decision: "once" } })
+    expect((await a.question.reply("form_1", [["Production"]])).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_root/form/form_1/reply", body: { answer: { env: "prod" } } })
+    expect((await a.question.reject("form_1")).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "DELETE", path: "/api/session/ses_root/form/form_1" })
+
+    const unseen = await a.permission.reply("req_other", "reject")
+    expect(unseen.status).toBe(404)
+    expect(String((unseen.error as Error).message)).toContain("not seen on this connection")
+    controller.abort()
+  })
+
   it("answers the operations the later steps own with a failure, not a hang", async () => {
     const res = await api().session.create()
     expect(res.data).toBeUndefined()

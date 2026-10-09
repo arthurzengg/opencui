@@ -18,8 +18,10 @@ export type MockOpencodeV2 = {
   commands: CommandInfo[]
   mcp: McpServer[]
   /** Every request that reached the server, after the auth check. */
-  requests: Array<{ method: string; path: string; query: Record<string, string> }>
+  requests: Array<{ method: string; path: string; query: Record<string, string>; body?: unknown }>
   push: (event: Record<string, unknown>) => void
+  /** Resolves once an SSE client is connected. */
+  awaitClient: () => Promise<void>
   close: () => Promise<void>
 }
 
@@ -37,9 +39,14 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     commands: [],
     mcp: [],
     requests: [],
+    // Events pushed before a client connects wait for the first one, as
+    // the 1.x mock does, so a test never races the subscription.
     push: (event: Record<string, unknown>) => {
-      for (const res of sse) res.write(`data: ${JSON.stringify(event)}\n\n`)
+      const frame = `data: ${JSON.stringify(event)}\n\n`
+      if (sse.length === 0) pending.push(frame)
+      for (const res of sse) res.write(frame)
     },
+    awaitClient: () => (sse.length > 0 ? Promise.resolve() : new Promise<void>((resolve) => clientWaiters.push(resolve))),
     close: () =>
       new Promise<void>((resolve) => {
         for (const res of sse) res.end()
@@ -48,7 +55,13 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
   } satisfies MockOpencodeV2
   const expectedAuth = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`
   const sse: ServerResponse[] = []
+  const pending: string[] = []
+  let clientWaiters: Array<() => void> = []
 
+  const empty = (res: ServerResponse) => {
+    res.statusCode = 204
+    res.end()
+  }
   const json = (res: ServerResponse, status: number, body: unknown) => {
     res.statusCode = status
     res.setHeader("content-type", "application/json")
@@ -56,12 +69,24 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
   }
 
   function handle(req: IncomingMessage, res: ServerResponse) {
+    let raw = ""
+    req.on("data", (chunk) => (raw += chunk))
+    req.on("end", () => route(req, res, raw))
+  }
+
+  function route(req: IncomingMessage, res: ServerResponse, raw: string) {
     const url = new URL(req.url ?? "/", "http://localhost")
     // A JSON body on failures, as the Effect-based server sends; the client
     // reports a bare status without one as an unsupported content type.
     if (req.headers.authorization !== expectedAuth) return json(res, 401, { message: "unauthorized" })
     const query = Object.fromEntries(url.searchParams)
-    state.requests.push({ method: req.method ?? "", path: url.pathname, query })
+    let body: unknown
+    try {
+      body = raw ? JSON.parse(raw) : undefined
+    } catch {
+      body = raw
+    }
+    state.requests.push({ method: req.method ?? "", path: url.pathname, query, ...(body !== undefined ? { body } : {}) })
     const location = { directory: query["location[directory]"] ?? "" }
     const path = url.pathname
 
@@ -69,7 +94,9 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     if (path === "/api/event") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
       res.write(`data: ${JSON.stringify({ id: "evt_0", created: Date.now(), type: "server.connected", data: {} })}\n\n`)
+      for (const frame of pending.splice(0)) res.write(frame)
       sse.push(res)
+      for (const resolve of clientWaiters.splice(0)) resolve()
       res.on("close", () => {
         const i = sse.indexOf(res)
         if (i >= 0) sse.splice(i, 1)
@@ -90,6 +117,10 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
       if (!rows) return json(res, 404, { message: "session not found" })
       return json(res, 200, { data: rows, cursor: {} })
     }
+    // Replies answer 204 with no body, as the server does.
+    if (/^\/api\/session\/[^/]+\/permission\/[^/]+\/reply$/.test(path) && req.method === "POST") return empty(res)
+    if (/^\/api\/session\/[^/]+\/form\/[^/]+\/reply$/.test(path) && req.method === "POST") return empty(res)
+    if (/^\/api\/session\/[^/]+\/form\/[^/]+$/.test(path) && req.method === "DELETE") return empty(res)
     if (path === "/api/model") return json(res, 200, { location, data: state.models })
     if (path === "/api/provider") return json(res, 200, { location, data: state.providers })
     if (path === "/api/agent") return json(res, 200, { location, data: state.agents })
