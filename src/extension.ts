@@ -65,6 +65,7 @@ export async function activate(context: vscode.ExtensionContext) {
       chat.focus()
     }),
     vscode.commands.registerCommand("opencui.chat.new", () => chat.newSession()),
+    vscode.commands.registerCommand("opencui.chat.addSelection", () => chat.addSelectionToChat()),
     vscode.commands.registerCommand("opencui.conversation.select", () => chat.pickConversation()),
     vscode.commands.registerCommand("opencui.inlineEdit", () => inline.run()),
     vscode.commands.registerCommand("opencui.selectAgent", () => picker.pickAgent()),

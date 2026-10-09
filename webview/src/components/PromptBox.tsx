@@ -100,7 +100,8 @@ type Props = {
    * Only wired for the send composers; the parent reducer clears it after a send
    * or conversation switch so a re-mounted composer never re-applies stale text.
    */
-  inject?: { text: string; nonce: number }
+  inject?: { text: string; nonce: number; mode?: "set" | "append" }
+  injectMention?: string
   /** Open a highlighted URL (Cmd/Ctrl+Click in the textarea) externally. */
   onOpenLink?: (url: string) => void
 }
@@ -136,7 +137,7 @@ function buildInitialConversations(initial: Props["initial"]): Map<string, strin
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, history, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject, onOpenLink }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, history, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject, injectMention, onOpenLink }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   // The Stop ring joins the shared breathing clock (#621).
   const stopPhase = useLivePhase(busy && !aborting)
@@ -237,8 +238,17 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
   // undone prompt). pendingCursor places the caret at the end after setText.
   useEffect(() => {
     if (!inject) return
-    setText(inject.text)
-    pendingCursor.current = inject.text.length
+    if (injectMention) knownMentions.current.add(injectMention)
+    if (inject.mode === "append") {
+      setText((prev) => {
+        const next = prev ? (prev.endsWith(" ") ? prev + inject.text : prev + " " + inject.text) : inject.text
+        pendingCursor.current = next.length
+        return next
+      })
+    } else {
+      setText(inject.text)
+      pendingCursor.current = inject.text.length
+    }
     // The injected text replaces whatever was recalled, so the browse position
     // and its stashed draft no longer describe the box — leaving them set would
     // have the next Down restore a draft the user can no longer see.

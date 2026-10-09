@@ -84,6 +84,26 @@ describe("buildManifest", () => {
     expect(selectionItem?.bytes).toBe("const x = 1".length)
   })
 
+  it("resolves byte counts and parsed path for mentions with line ranges", () => {
+    const m = buildManifest({
+      workspace: ROOT,
+      workspaceInfo: WORKSPACE_INFO,
+      configMode: "isolated",
+      editor: {},
+      mentions: ["src/foo.ts#L5-9"],
+      mentionBytes: {
+        "src/foo.ts#L5-9": { included: 120, original: 120 },
+      },
+    })
+    const item = m.items.find((i) => i.label === "src/foo.ts#L5-9")
+    expect(item).toBeDefined()
+    expect(item?.label).toBe("src/foo.ts#L5-9")
+    expect(item?.path).toBe("src/foo.ts")
+    expect(item?.bytes).toBe(120)
+    expect(item?.status).toBe("included")
+    expect(m.totals.includedBytes).toBe(120)
+  })
+
   it("classifies absolute external mentions and includes byte counts", () => {
     const m = buildManifest({
       workspace: ROOT,

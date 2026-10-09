@@ -366,6 +366,7 @@ export default function App() {
           commands={state.commands}
           onRunCommand={runCommandAndPinTop}
           inject={state.injectedText}
+          injectMention={state.injectedMention}
           history={promptHistoryEntries}
           onOpenLink={openLink}
         />
@@ -511,6 +512,7 @@ export default function App() {
               commands={state.commands}
               onRunCommand={runCommandAndPinTop}
               inject={state.injectedText}
+              injectMention={state.injectedMention}
               history={promptHistoryEntries}
               onOpenLink={openLink}
             />

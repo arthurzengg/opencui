@@ -3,6 +3,7 @@ import * as vscode from "vscode"
 import {
   attachableConversationIDs,
   buildPrompt,
+  parseMention,
   readMentions,
   formatConversationContext,
   readConversationMentions,
@@ -124,6 +125,17 @@ describe("readMentions", () => {
     expect(out.block).toBeDefined()
     const matches = out.block!.match(/@src\/foo\.ts/g)
     expect(matches).toHaveLength(1)
+  })
+
+  it("strips the addSelectionToChat line-range suffix before reading and keys bytes by raw label", async () => {
+    vi.mocked(vscode.workspace.fs.readFile).mockResolvedValueOnce(
+      new TextEncoder().encode("export const x = 1\n"),
+    )
+    const out = await readMentions(["src/foo.ts#L5-9"])
+    expect(out.failed).toEqual([])
+    expect(out.block).toContain("@src/foo.ts")
+    expect(out.block).not.toContain("#L")
+    expect(out.bytes["src/foo.ts#L5-9"]).toBeDefined()
   })
 
   it("records failed reads in `failed`", async () => {
@@ -481,5 +493,28 @@ describe("readConversationMentions", () => {
     expect(out.bytes.long!.truncated).toBe(true)
     expect(out.bytes.long!.included).toBeLessThanOrEqual(budget)
     expect(out.bytes.long!.original).toBeGreaterThan(budget)
+  })
+})
+
+describe("parseMention", () => {
+  it("parses paths without line range", () => {
+    expect(parseMention("src/foo.ts")).toEqual({
+      raw: "src/foo.ts",
+      path: "src/foo.ts",
+      range: undefined,
+    })
+  })
+
+  it("parses single-line and multi-line ranges", () => {
+    expect(parseMention("src/foo.ts#L5")).toEqual({
+      raw: "src/foo.ts#L5",
+      path: "src/foo.ts",
+      range: "L5",
+    })
+    expect(parseMention("src/foo.ts#L5-9")).toEqual({
+      raw: "src/foo.ts#L5-9",
+      path: "src/foo.ts",
+      range: "L5-9",
+    })
   })
 })

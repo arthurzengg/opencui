@@ -6,7 +6,7 @@ import type {
   WorkspaceInfo,
 } from "../protocol"
 import type { OpencodeConfigMode } from "../server"
-import type { EditorContext } from "../context"
+import { parseMention, type EditorContext } from "../context"
 import { isInsideRoot, type WorkspaceRoot } from "../workspace-root"
 import { expectedToolFamilies } from "../opencode/tool-discovery"
 
@@ -128,8 +128,9 @@ function makeMentionItem(
   workspace: WorkspaceRoot | undefined,
   bytes: { included: number; original: number } | undefined,
 ): PromptContextManifestItem {
-  const absolute = path.isAbsolute(rel)
-  const external = absolute && (!workspace || !isInsideRoot(workspace, rel))
+  const { path: filePath } = parseMention(rel)
+  const absolute = path.isAbsolute(filePath)
+  const external = absolute && (!workspace || !isInsideRoot(workspace, filePath))
   const status: PromptContextManifestItem["status"] =
     bytes && bytes.included < bytes.original ? "truncated" : "included"
   return {
@@ -137,7 +138,7 @@ function makeMentionItem(
     source: external ? "external" : "mention",
     kind: "file",
     label: rel,
-    path: rel,
+    path: filePath,
     root: external ? undefined : workspace?.fsPath,
     reason: external
       ? "Manually mentioned file outside the workspace"

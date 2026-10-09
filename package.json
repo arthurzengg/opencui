@@ -65,6 +65,10 @@
         "title": "OpenCode Panel: New Chat"
       },
       {
+        "command": "opencui.chat.addSelection",
+        "title": "OpenCode Panel: Add Selection to Chat"
+      },
+      {
         "command": "opencui.conversation.select",
         "title": "OpenCode Panel: Select Conversation"
       },
