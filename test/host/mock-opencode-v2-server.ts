@@ -149,6 +149,8 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
         return empty(res)
       }
     }
+    const instruction = path.match(/^\/api\/experimental\/session\/([^/]+)\/instructions\/entries\/([^/]+)$/)
+    if (instruction && (req.method === "PUT" || req.method === "DELETE")) return empty(res)
     const action = path.match(/^\/api\/(?:experimental\/)?session\/([^/]+)\/(prompt|synthetic|model|agent|interrupt|wait|compact|fork|command|revert\/stage|revert\/commit|revert)$/)
     if (action && (req.method === "POST" || (req.method === "DELETE" && action[2] === "revert"))) {
       if (action[2] === "fork") {

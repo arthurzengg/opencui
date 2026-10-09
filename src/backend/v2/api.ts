@@ -73,9 +73,14 @@ export function createV2Api(options: { url: string; directory: string; password:
 
   // 1.x sends the model, agent, and variant with every prompt; 2.0 keeps them
   // on the session, so they are switched before the text goes in. The
-  // injected context (#666) is a synthetic text part in 1.x and 2.0's own
-  // synthetic message here, so the model still sees it and the transcript
-  // does not. Files travel as URIs; the panel's attachments are data URLs.
+  // injected context (#666) is a synthetic text part in 1.x; 2.0's synthetic
+  // message starts a turn of its own (a live run showed a second execution
+  // per prompt), so the context goes into the session's instructions under
+  // one key, replaced per prompt and removed when a prompt carries none.
+  // The model sees it in its instructions and the transcript does not.
+  // Files travel as URIs; the panel's attachments are data URLs.
+  const CONTEXT_KEY = "opencui.context"
+  const contextual = new Set<string>()
   async function deliver(sessionID: string, body: PromptBody) {
     const selection = body as PromptBody & { variant?: string }
     if (selection.model) {
@@ -83,11 +88,18 @@ export function createV2Api(options: { url: string; directory: string; password:
     }
     if (selection.agent) await client.session.switchAgent({ sessionID, agent: selection.agent })
     const text: string[] = []
+    const context: string[] = []
     const files: Array<{ uri: string; name?: string }> = []
     for (const part of body.parts) {
-      if (part.type === "text" && part.synthetic) await client.session.synthetic({ sessionID, text: part.text })
+      if (part.type === "text" && part.synthetic) context.push(part.text)
       else if (part.type === "text") text.push(part.text)
       else if (part.type === "file") files.push({ uri: part.url, name: part.filename })
+    }
+    if (context.length) {
+      await client.session.instructions.entry.put({ sessionID, key: CONTEXT_KEY, value: context.join("\n\n") })
+      contextual.add(sessionID)
+    } else if (contextual.delete(sessionID)) {
+      await client.session.instructions.entry.remove({ sessionID, key: CONTEXT_KEY })
     }
     await client.session.prompt({ sessionID, text: text.join("\n\n"), files: files.length ? files : undefined })
   }
@@ -115,7 +127,17 @@ export function createV2Api(options: { url: string; directory: string; password:
           return mapSession(await client.session.get({ sessionID: id }), directory)
         }),
       delete: (id) => call(async () => (await client.session.remove({ sessionID: id }), true as const)),
-      status: () => call(async () => mapSessionStatus(await listSessions({}))),
+      // Busy sessions come from the stream; the listing's outcome and idle
+      // marks cover sessions this connection never saw start. Sessions in
+      // neither are left out, which the router reads as idle.
+      status: () =>
+        call(async () => {
+          const derived = mapSessionStatus(await listSessions({}))
+          const status: typeof derived = {}
+          for (const [id, value] of Object.entries(derived)) if (value.type !== "busy") status[id] = value
+          for (const id of translator.executing()) status[id] = { type: "busy" }
+          return status
+        }),
       children: (id) => call(async () => (await listSessions({ parentID: id })).map((s) => mapSession(s, directory))),
       // The sync prompt waits for the turn and answers with its last
       // assistant message, which is what the inline edit reads.

@@ -47,7 +47,12 @@ export function mapSession(session: SessionInfo, directory: string): Session & S
   }
 }
 
-/** 2.0 has no status route; a session is idle once its last idle mark is as new as its last update, or it has an outcome. */
+/**
+ * 2.0 has no status route. A session is idle once it has an outcome or an
+ * idle mark as new as its last update; one with neither (a fresh session,
+ * or one updated since its last idle) is busy only as far as the listing
+ * can tell, and the adapter overrides that with what the stream saw.
+ */
 export function mapSessionStatus(sessions: SessionInfo[]): Record<string, SessionStatus> {
   const out: Record<string, SessionStatus> = {}
   for (const s of sessions) {
