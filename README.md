@@ -65,7 +65,7 @@ brew install sst/tap/opencode                      # macOS Homebrew
 opencode auth login
 ```
 
-OpenCode Panel works with opencode 1.x. opencode 2.0 is a separate beta line with its own installers and API; the panel detects it and stops with a message instead of waiting. Support for 2.0 is tracked in [#684](https://github.com/arthurzengg/opencui/issues/684).
+OpenCode Panel works with opencode 1.x and, experimentally, with opencode 2.0. It reads the binary's version at startup and talks to each through its own API; nothing needs configuring. opencode 2.0 is a separate beta line with its own installers (`curl -fsSL https://opencode.ai/v2/install | bash`, `npm install -g @opencode/cli`, `brew install anomalyco/tap/opencode-v2`). On 2.0, MCP sign-in from the panel, `/init`, and sharing are not available yet. Set `opencui.opencode2` to `off` to refuse 2.0 binaries.
 
 Then install the extension:
 
