@@ -4,11 +4,15 @@ import { mapAgents, mapCommands, mapMcpStatus, mapMessages, mapProviders, mapSes
 
 export type V2Client = ReturnType<typeof OpenCode.make>
 
-/** HTTP status a ClientError carries in its detail, when it carries one. */
+/**
+ * A status the endpoint declares comes back as the decoded error body, with
+ * no number attached; only an undeclared one arrives as a ClientError that
+ * carries it. So this is best effort, and 0 means "a failure, status unknown".
+ */
 function statusOf(error: unknown): number {
-  const detail = (error as { detail?: unknown })?.detail
-  const match = typeof detail === "string" ? detail.match(/\b([1-5]\d\d)\b/) : null
-  return match ? Number(match[1]) : 0
+  const { cause, detail } = (error ?? {}) as { cause?: { status?: unknown }; detail?: unknown }
+  if (typeof cause?.status === "number") return cause.status
+  return typeof detail === "string" && /^[1-5]\d\d$/.test(detail) ? Number(detail) : 0
 }
 
 async function call<T>(run: () => Promise<T>): Promise<ApiResult<T>> {
