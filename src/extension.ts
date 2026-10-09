@@ -1,5 +1,5 @@
 import * as vscode from "vscode"
-import { ServerManager } from "./server"
+import { ServerManager, UnsupportedOpencodeError } from "./server"
 import { StatusBar } from "./status"
 import { ChatView } from "./chat/view"
 import { InlineEdit } from "./inline/edit"
@@ -112,6 +112,12 @@ export async function activate(context: vscode.ExtensionContext) {
     .catch((e) => {
       log("failed to start backend", e)
       status.set("error", String(e))
+      if (e instanceof UnsupportedOpencodeError) {
+        void vscode.window.showErrorMessage(`OpenCode Panel: ${e.message}`, "Open Settings").then((choice) => {
+          if (choice === "Open Settings") void vscode.commands.executeCommand("workbench.action.openSettings", "opencui.binaryPath")
+        })
+        return
+      }
       vscode.window.showErrorMessage(`OpenCode Panel: failed to start opencode backend: ${e.message}`)
     })
 

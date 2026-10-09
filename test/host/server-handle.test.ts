@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, writeFileSync, chmodSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { startOpencodeServer } from "../../src/server"
+import { startOpencodeServer, UnsupportedOpencodeError } from "../../src/server"
 
 // A stand-in opencode binary: announces readiness like the real server, then
 // exits shortly after — letting us observe the post-startup exit notification
@@ -91,5 +91,60 @@ describe("startOpencodeServer exit notification", () => {
       }),
     ).rejects.toThrow(/cancelled/)
     expect(spawned).toBe(false)
+  })
+})
+
+async function waitForExit(pid: number | undefined) {
+  expect(pid).toBeDefined()
+  for (let i = 0; i < 40; i++) {
+    try {
+      process.kill(pid!, 0)
+    } catch {
+      return
+    }
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  throw new Error(`process ${pid} is still alive`)
+}
+
+describe("opencode 2.0 binaries (#691)", () => {
+  // 2.0 prints "server listening on" without the "opencode " prefix, then its
+  // password. The old code waited out the whole timeout and quoted the output.
+  it("fails within a second, names the setting, kills the server, and never repeats the password", async () => {
+    const bin = fakeBinary('echo "server listening on http://127.0.0.1:43216"\necho "server password hunter2"\nexec sleep 10')
+    let pid: number | undefined
+    const started = Date.now()
+    const error: Error = await startOpencodeServer(bin, {
+      hostname: "127.0.0.1",
+      port: 43216,
+      timeout: 5000,
+      configMode: "isolated",
+      onSpawn: (p) => (pid = p),
+    }).then(
+      () => {
+        throw new Error("should have rejected")
+      },
+      (e: Error) => e,
+    )
+    expect(error).toBeInstanceOf(UnsupportedOpencodeError)
+    expect(error.message).toMatch(/opencode 2\.0/)
+    expect(error.message).toContain("opencui.binaryPath")
+    expect(error.message).toContain(bin)
+    expect(error.message).not.toContain("hunter2")
+    expect(Date.now() - started).toBeLessThan(1500)
+    await waitForExit(pid)
+  })
+
+  it("redacts the 2.0 password from the output a startup timeout quotes", async () => {
+    const bin = fakeBinary('echo "server password hunter2"\nexec sleep 10')
+    const error: Error = await startOpencodeServer(bin, {
+      hostname: "127.0.0.1",
+      port: 43217,
+      timeout: 300,
+      configMode: "isolated",
+    }).catch((e: Error) => e)
+    expect(error.message).toMatch(/Timeout waiting/)
+    expect(error.message).toContain("server password [redacted]")
+    expect(error.message).not.toContain("hunter2")
   })
 })
