@@ -128,9 +128,8 @@ function opencode2Serving(port: number, version: string): string {
 }
 
 describe("ServerManager with opencode 2.0 (#693)", () => {
-  it("starts a 2.0 binary with a password and reads its version through Basic auth when the setting is on", async () => {
+  it("starts a 2.0 binary with a password and reads its version through Basic auth by default", async () => {
     settings.binaryPath = opencode2Serving(43301, "2.0.24")
-    settings.opencode2 = true
     const v2 = new ServerManager({ extensionPath: "/nonexistent" } as never, { readVersion: async () => "2.0.24" })
     try {
       const backend = await v2.ensure()
@@ -143,6 +142,7 @@ describe("ServerManager with opencode 2.0 (#693)", () => {
 
   it("keeps the fail-fast when the setting is off", async () => {
     settings.binaryPath = opencode2Serving(43302, "2.0.24")
+    settings.opencode2 = "off"
     const v2 = new ServerManager({ extensionPath: "/nonexistent" } as never, { readVersion: async () => "2.0.24" })
     try {
       await expect(v2.ensure()).rejects.toBeInstanceOf(UnsupportedOpencodeError)
@@ -151,9 +151,8 @@ describe("ServerManager with opencode 2.0 (#693)", () => {
     }
   })
 
-  it("starts a 1.x binary the 1.x way even with the setting on", async () => {
+  it("starts a 1.x binary the 1.x way", async () => {
     settings.binaryPath = healthServing(43303, "1.18.35")
-    settings.opencode2 = true
     const v1 = new ServerManager({ extensionPath: "/nonexistent" } as never, { readVersion: async () => "1.18.35" })
     try {
       await v1.ensure()
