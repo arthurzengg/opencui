@@ -1,5 +1,5 @@
 import type { Backend } from "./server"
-import type { TextPartInput, FilePartInput } from "@opencode-ai/sdk"
+import type { PromptBody } from "./backend/api"
 import type { Preferences } from "./preferences"
 import { log } from "./output"
 
@@ -15,7 +15,7 @@ export class SessionRunner {
 
   async ensureSession(): Promise<string> {
     if (this.sessionId) return this.sessionId
-    const res = await this.backend.client.session.create({ body: {} })
+    const res = await this.backend.api.session.create()
     if (res.error) throw new Error(`failed to create session: ${JSON.stringify(res.error)}`)
     if (!res.data) throw new Error("session.create returned no data")
     this.sessionId = res.data.id
@@ -30,17 +30,14 @@ export class SessionRunner {
   /** Send a prompt and wait for the final assistant text. */
   async prompt(input: PromptInput): Promise<string> {
     const id = await this.ensureSession()
-    const parts: Array<TextPartInput | FilePartInput> = [{ type: "text", text: input.text }]
+    const parts: PromptBody["parts"] = [{ type: "text", text: input.text }]
     const sel = this.prefs?.get()
-    const body: Parameters<typeof this.backend.client.session.prompt>[0]["body"] = { parts }
+    const body: PromptBody = { parts }
     if (sel?.agent) body!.agent = sel.agent
     if (sel?.modelProviderID && sel?.modelID) {
       body!.model = { providerID: sel.modelProviderID, modelID: sel.modelID }
     }
-    const res = await this.backend.client.session.prompt({
-      path: { id },
-      body,
-    })
+    const res = await this.backend.api.session.prompt(id, body)
     if (res.error) {
       log("prompt http error", res.error)
       throw new Error(`prompt failed: ${JSON.stringify(res.error)}`)

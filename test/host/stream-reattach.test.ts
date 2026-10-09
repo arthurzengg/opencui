@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { createSessionStreamState, subscribeSession, type StreamHandlers } from "../../src/chat/stream"
 
@@ -23,8 +23,7 @@ const SESSION = "ses_test"
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 function backend() {
-  const client = createOpencodeClient({ baseUrl: server.url })
-  return { url: server.url, client, directory: "/tmp" }
+  return { url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }
 }
 
 type Log = { starts: string[]; deltas: string[]; ends: string[] }

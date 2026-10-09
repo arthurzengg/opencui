@@ -44,6 +44,7 @@ import { PermissionRuleStore } from "./permission-rules"
 import { ConversationManager } from "./conversation-manager"
 import { ContinuationState, isContinuationToast } from "./continuation-state"
 import { sweepAbortTree, drainAbortTree } from "./abort-tree"
+import type { PromptBody } from "../backend/api"
 import { SubagentDispatch } from "./subagent-dispatch"
 import { relativeToCwd } from "./paths"
 import { splitReviewDiff } from "./diff"
@@ -577,7 +578,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async replyPermission(requestID: string, reply: "once" | "reject") {
     try {
       const backend = await this.servers.ensure()
-      const res = await backend.clientV2.permission.reply({ requestID, reply, directory: backend.directory })
+      const res = await backend.api.permission.reply(requestID, reply)
       if (res.error) log("permission reply failed", res.error)
     } catch (e) {
       log("permission reply failed", e)
@@ -601,10 +602,8 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async refreshExternalSessions(backend?: Backend, search?: string) {
     try {
       const activeBackend = backend ?? (await this.servers.ensure())
-      // roots, limit, and search exist only on the v2 client (#617): the v1
-      // client is a frozen snapshot that can pass nothing but directory.
-      const res = await activeBackend.clientV2.session.list({
-        directory: activeBackend.directory,
+      // roots, limit, and search filter on the server (#617).
+      const res = await activeBackend.api.session.list({
         roots: true,
         limit: MAX_EXTERNAL_SESSIONS,
         search: search || undefined,
@@ -636,10 +635,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     try {
       const backend = await this.servers.ensure()
-      const res = await backend.client.session.messages({
-        path: { id: sessionID },
-        query: { directory: backend.directory },
-      })
+      const res = await backend.api.session.messages(sessionID)
       if (res.error || !res.data) {
         log("import session: messages fetch failed", res.error)
         void vscode.window.showErrorMessage("Failed to load the opencode session.")
@@ -775,13 +771,9 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async updateServerSessionTitle(sessionID: string, title: string): Promise<boolean> {
     try {
       const backend = await this.servers.ensure()
-      const res = await backend.client.session.update({
-        path: { id: sessionID },
-        body: { title },
-        query: { directory: backend.directory },
-      })
+      const res = await backend.api.session.update(sessionID, { title })
       if (res.error) {
-        log("session.update failed", res.response.status, res.error)
+        log("session.update failed", res.status, res.error)
         return false
       }
     } catch (e) {
@@ -846,13 +838,10 @@ export class ChatView implements vscode.WebviewViewProvider {
     let outcome: "deleted" | "missing" | "failed"
     try {
       const backend = await this.servers.ensure()
-      const res = await backend.client.session.delete({
-        path: { id: sessionID },
-        query: { directory: backend.directory },
-      })
+      const res = await backend.api.session.delete(sessionID)
       if (res.error) {
-        log("session.delete failed", res.response.status, res.error)
-        outcome = res.response.status === 404 ? "missing" : "failed"
+        log("session.delete failed", res.status, res.error)
+        outcome = res.status === 404 ? "missing" : "failed"
       } else {
         outcome = "deleted"
       }
@@ -1164,8 +1153,8 @@ export class ChatView implements vscode.WebviewViewProvider {
         // Agents failing must not take the model list down with it (and vice
         // versa) — the picker degrades to whichever half arrived.
         const [res, agentsRes] = await Promise.all([
-          activeBackend.client.config.providers(),
-          activeBackend.client.app.agents().catch((e: unknown) => {
+          activeBackend.api.config.providers(),
+          activeBackend.api.app.agents().catch((e: unknown) => {
             log("model catalog: app.agents threw", e)
             return undefined
           }),
@@ -1268,9 +1257,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async refreshCommands(backend?: Backend) {
     try {
       const activeBackend = backend ?? (await this.servers.ensure())
-      const res = await activeBackend.client.command.list({
-        query: { directory: activeBackend.directory },
-      })
+      const res = await activeBackend.api.command.list()
       if (res.error || !res.data) {
         log("command.list failed", res.error)
         return
@@ -1504,13 +1491,13 @@ export class ChatView implements vscode.WebviewViewProvider {
    * pending-questions map. Without it, opencode falls back to a different
    * workspace, fails to find the pending request, logs "reply for unknown
    * request", and the original `Question.ask` Effect stays blocked forever,
-   * exactly the "stuck after submit" symptom. The v2 client only rewrites the
-   * directory header into the query for GET requests, so it is passed here.
+   * exactly the "stuck after submit" symptom. The adapter sends it with
+   * every reply.
    */
   private async replyQuestion(requestID: string, answers: string[][]) {
     try {
       const backend = await this.servers.ensure()
-      const res = await backend.clientV2.question.reply({ requestID, answers, directory: backend.directory })
+      const res = await backend.api.question.reply(requestID, answers)
       if (res.error) log("question reply failed", res.error)
     } catch (e) {
       log("question reply threw", e)
@@ -1520,7 +1507,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private async rejectQuestion(requestID: string) {
     try {
       const backend = await this.servers.ensure()
-      const res = await backend.clientV2.question.reject({ requestID, directory: backend.directory })
+      const res = await backend.api.question.reject(requestID)
       if (res.error) log("question reject failed", res.error)
     } catch (e) {
       log("question reject threw", e)
@@ -1650,12 +1637,12 @@ export class ChatView implements vscode.WebviewViewProvider {
       // still-live parent and spun up a new turn. Settling the parent before
       // its children closes that race.
       const state = { aborted: this.abortedTree, isLive: () => gen === this.abortGen }
-      await sweepAbortTree(backend.client, sessionID, childSessionIDs, state)
+      await sweepAbortTree(backend.api, sessionID, childSessionIDs, state)
       // Bounded safety net from the original design: with traversal gated on
       // the aborted set, a pass after a complete sweep terminates at the root
       // and goes quiet. Stop is one volley — the drain must NOT re-hunt the
       // tree, or it kills sessions spawned after Stop (see sweepAbortTree).
-      void drainAbortTree(backend.client, sessionID, state, {
+      void drainAbortTree(backend.api, sessionID, state, {
         passes: ChatView.ABORT_DRAIN_PASSES,
         intervalMs: ChatView.ABORT_DRAIN_INTERVAL_MS,
       })
@@ -1870,7 +1857,6 @@ export class ChatView implements vscode.WebviewViewProvider {
     )
     if (prompt.context) parts.push({ type: "text", text: prompt.context, synthetic: true })
     parts.push({ type: "text", text: prompt.text })
-    type PromptBody = NonNullable<Parameters<typeof backend.client.session.prompt>[0]["body"]>
     const body: PromptBody = {
       parts: parts as PromptBody["parts"],
     }
@@ -1895,17 +1881,14 @@ export class ChatView implements vscode.WebviewViewProvider {
         : "default"
     log("prompt dispatch", { sessionID: this.sessionID, agent: sel.agent ?? "default", model: modelLog })
     try {
-      const res = await backend.client.session.promptAsync({
-        path: { id: this.sessionID },
-        body,
-      })
+      const res = await backend.api.session.promptAsync(this.sessionID, body)
       if (res.error) {
-        log("prompt failed", res.response.status, res.error)
+        log("prompt failed", res.status, res.error)
         // A session deleted from the TUI or another window leaves a bound
         // conversation that can never send again; name that instead of the
         // generic rejection so the user knows to delete it (#660).
         this.failSend(
-          res.response.status === 404
+          res.status === 404
             ? "This chat's opencode session no longer exists; it may have been deleted from the TUI or another window. Delete this chat or start a new one."
             : "opencode rejected the prompt; see the output log for details.",
         )
@@ -1949,7 +1932,7 @@ export class ChatView implements vscode.WebviewViewProvider {
    */
   private async createSessionForSend(backend: Backend): Promise<string | undefined> {
     try {
-      const created = await backend.client.session.create({ body: {} })
+      const created = await backend.api.session.create()
       if (created.error || !created.data) {
         log("session.create failed", created.error)
         this.failSend("opencode could not create a session; see the output log for details.")
@@ -2037,11 +2020,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       ;(body as unknown as { variant?: string }).variant = sel.modelVariant
     }
     try {
-      const res = await backend.client.session.command({
-        path: { id: this.sessionID },
-        query: { directory: backend.directory },
-        body,
-      })
+      const res = await backend.api.session.command(this.sessionID, body)
       if (res.error) {
         log("command failed", res.error)
         this.failSend("opencode rejected the command; see the output log for details.")
@@ -2123,10 +2102,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       let revertFailed = false
       try {
         const backend = await this.servers.ensure()
-        const res = await backend.client.session.revert({
-          path: { id: this.sessionID },
-          body: { messageID: target.backendID },
-        })
+        const res = await backend.api.session.revert(this.sessionID, { messageID: target.backendID })
         if (res.error) {
           log("session.revert failed", res.error)
           revertFailed = true

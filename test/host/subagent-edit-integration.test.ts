@@ -12,7 +12,7 @@
  * tool). If that wire is missing or broken, the assertion at the end fails.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { subscribeSession, type ChildSessionEvent, type ChildSessionInfo } from "../../src/chat/stream"
 import { turnChanges } from "../../webview/src/review-extract"
@@ -30,7 +30,6 @@ afterEach(async () => {
 
 describe("Subagent file edit → Review Panel: full integration", () => {
   it("captures a subagent's edit as a ReviewChange with subagent attribution", async () => {
-    const client = createOpencodeClient({ baseUrl: server.url })
 
     // Stand in for ChatView.messages — the host's chat record. We'll push
     // tool/patch blocks here exactly as appendSubagentBlock does in
@@ -49,7 +48,7 @@ describe("Subagent file edit → Review Panel: full integration", () => {
     // through unrouted (this was the user-reported bug).
     let discoveredChild: ChildSessionInfo | undefined
     const collectedChildEvents: ChildSessionEvent[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => {
@@ -174,12 +173,11 @@ describe("Subagent file edit → Review Panel: full integration", () => {
     // The other half of the matrix: when omo is installed and publishes the
     // child sessionID in metadata, the legacy registration path takes over.
     // We test that both pathways produce the same end result.
-    const client = createOpencodeClient({ baseUrl: server.url })
     const parentBlocks: ChatBlock[] = []
     const messages: ChatMessage[] = [{ id: "a_parent", role: "assistant", blocks: parentBlocks }]
 
     const collectedChildEvents: ChildSessionEvent[] = []
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => {
@@ -236,11 +234,10 @@ describe("Subagent file edit → Review Panel: full integration", () => {
   it("doesn't capture edits from sessions that aren't our subagents", async () => {
     // Robustness: if some unrelated session in opencode emits edit events,
     // we MUST NOT attribute them to the current conversation's review card.
-    const client = createOpencodeClient({ baseUrl: server.url })
     const parentBlocks: ChatBlock[] = []
     const messages: ChatMessage[] = [{ id: "a_parent", role: "assistant", blocks: parentBlocks }]
 
-    const subscription = subscribeSession({ url: server.url, client, directory: "/tmp" }, "ses_parent", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_parent", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionDiscovered: (info) => {

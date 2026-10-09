@@ -4,9 +4,7 @@ import type { Preferences } from "../preferences"
 import { log } from "../output"
 import {
   connectableProviders,
-  refreshInstance,
   removableProviders,
-  removeProviderAuth,
   UNSUPPORTED_HINT,
   type AuthMethod,
   type ConnectableProvider,
@@ -91,11 +89,7 @@ export class ProviderManager {
 
   private async fetchState(backend: Backend): Promise<ProviderState | undefined> {
     try {
-      const query = { directory: backend.directory }
-      const [listRes, cfgRes] = await Promise.all([
-        backend.client.provider.list({ query }),
-        backend.client.config.providers({ query }),
-      ])
+      const [listRes, cfgRes] = await Promise.all([backend.api.provider.list(), backend.api.config.providers()])
       if (listRes.error || !listRes.data) {
         vscode.window.showErrorMessage("OpenCode Panel: failed to load providers")
         return undefined
@@ -116,10 +110,9 @@ export class ProviderManager {
   // --- Connect ------------------------------------------------------------
 
   private async connectFlow(backend: Backend, state: ProviderState) {
-    const query = { directory: backend.directory }
     let methodsByProvider: Record<string, AuthMethod[]>
     try {
-      const res = await backend.client.provider.auth({ query })
+      const res = await backend.api.provider.auth()
       if (res.error || !res.data) {
         vscode.window.showErrorMessage("OpenCode Panel: failed to load provider login methods")
         return
@@ -174,11 +167,7 @@ export class ProviderManager {
     })
     if (!key) return
     try {
-      const res = await backend.client.auth.set({
-        path: { id: choice.id },
-        query: { directory: backend.directory },
-        body: { type: "api", key: key.trim() },
-      })
+      const res = await backend.api.auth.set(choice.id, { type: "api", key: key.trim() })
       if (res.error) {
         vscode.window.showErrorMessage(`OpenCode Panel: could not connect "${choice.name}"`)
         return
@@ -199,7 +188,7 @@ export class ProviderManager {
    * the dispose route is missing (older opencode).
    */
   private async refreshBackend(backend: Backend) {
-    if (await refreshInstance(backend.url, backend.directory)) return
+    if (await backend.api.instance.refresh()) return
     const choice = await vscode.window.showInformationMessage(
       "OpenCode Panel: restart the opencode server to apply the provider change.",
       "Restart server",
@@ -208,10 +197,8 @@ export class ProviderManager {
   }
 
   private async connectOAuth(backend: Backend, choice: ConnectableProvider, methodIndex: number) {
-    const query = { directory: backend.directory }
-    const path = { id: choice.id }
     try {
-      const authRes = await backend.client.provider.oauth.authorize({ path, query, body: { method: methodIndex } })
+      const authRes = await backend.api.provider.oauth.authorize(choice.id, { method: methodIndex })
       if (authRes.error || !authRes.data) {
         vscode.window.showErrorMessage(
           `OpenCode Panel: could not start OAuth for "${choice.name}"${suffix(errorText(authRes.error))}`,
@@ -251,8 +238,8 @@ export class ProviderManager {
                 resolve({ kind: "cancelled" })
               }),
             )
-            const onCallback = backend.client.provider.oauth
-              .callback({ path, query, body: { method: methodIndex }, signal: controller.signal })
+            const onCallback = backend.api.provider.oauth
+              .callback(choice.id, { method: methodIndex }, controller.signal)
               .then((res): AutoOutcome => (!res.error && res.data === true ? { kind: "ok" } : { kind: "failed", message: errorText(res.error) }))
               .catch((e): AutoOutcome => (controller.signal.aborted ? { kind: "cancelled" } : { kind: "failed", message: (e as Error).message }))
             return Promise.race([onCallback, onCancel])
@@ -279,11 +266,7 @@ export class ProviderManager {
         validateInput: (v) => (v.trim() ? undefined : "An authorization code is required"),
       })
       if (!code) return
-      const cbRes = await backend.client.provider.oauth.callback({
-        path,
-        query,
-        body: { method: methodIndex, code: code.trim() },
-      })
+      const cbRes = await backend.api.provider.oauth.callback(choice.id, { method: methodIndex, code: code.trim() })
       if (cbRes.error || cbRes.data !== true) {
         vscode.window.showErrorMessage(`OpenCode Panel: authorization failed for "${choice.name}"${suffix(errorText(cbRes.error))}`)
         return
@@ -309,7 +292,7 @@ export class ProviderManager {
     )
     if (confirm !== "Remove") return
 
-    const result = await removeProviderAuth(backend.url, row.id)
+    const result = await backend.api.auth.remove(row.id)
     if (result.kind === "ok") {
       vscode.window.showInformationMessage(`OpenCode Panel: removed credentials for "${row.name}".`)
       // Same staleness in the other direction: without the refresh the

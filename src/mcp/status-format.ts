@@ -4,7 +4,7 @@
  * `vscode` so they unit-test in the node project without the API stub
  * (mirrors `src/chat/paths.ts`).
  */
-import type { McpStatus } from "@opencode-ai/sdk"
+import type { McpStatus } from "../backend/types"
 
 /**
  * Actions a server can offer, gated by its current status (see `actionsFor`).

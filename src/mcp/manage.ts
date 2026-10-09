@@ -1,5 +1,5 @@
 import * as vscode from "vscode"
-import type { McpStatus, McpLocalConfig, McpRemoteConfig } from "@opencode-ai/sdk"
+import type { McpStatus, McpLocalConfig, McpRemoteConfig } from "../backend/types"
 import type { ServerManager, Backend } from "../server"
 import { log } from "../output"
 import {
@@ -76,7 +76,7 @@ export class McpManager {
 
   private async fetchStatus(backend: Backend): Promise<Record<string, McpStatus> | undefined> {
     try {
-      const res = await backend.client.mcp.status({ query: { directory: backend.directory } })
+      const res = await backend.api.mcp.status()
       if (res.error || !res.data) {
         vscode.window.showErrorMessage("OpenCode Panel: failed to load MCP status")
         return undefined
@@ -138,10 +138,7 @@ export class McpManager {
     }
 
     try {
-      const res = await backend.client.mcp.add({
-        body: { name: serverName, config },
-        query: { directory: backend.directory },
-      })
+      const res = await backend.api.mcp.add({ name: serverName, config })
       if (res.error) {
         vscode.window.showErrorMessage(
           `OpenCode Panel: could not add "${serverName}" — ${errorMessage(res.error)}`,
@@ -173,19 +170,18 @@ export class McpManager {
   }
 
   private async runAction(backend: Backend, name: string, status: McpStatus, action: McpAction) {
-    const query = { directory: backend.directory }
     try {
       switch (action) {
         case "connect": {
           const res = await vscode.window.withProgress(
             { location: vscode.ProgressLocation.Notification, cancellable: false, title: `Connecting "${name}"...` },
-            () => backend.client.mcp.connect({ path: { name }, query }),
+            () => backend.api.mcp.connect(name),
           )
           if (res.error) vscode.window.showErrorMessage(`OpenCode Panel: could not connect "${name}"`)
           return
         }
         case "disconnect": {
-          const res = await backend.client.mcp.disconnect({ path: { name }, query })
+          const res = await backend.api.mcp.disconnect(name)
           if (res.error) vscode.window.showErrorMessage(`OpenCode Panel: could not disconnect "${name}"`)
           return
         }
@@ -199,7 +195,7 @@ export class McpManager {
               cancellable: false,
               title: `Authenticating "${name}" — finish in your browser...`,
             },
-            () => backend.client.mcp.auth.authenticate({ path: { name }, query }),
+            () => backend.api.mcp.auth.authenticate(name),
           )
           if (res.error || !res.data) {
             vscode.window.showErrorMessage(`OpenCode Panel: authentication failed for "${name}"`)
@@ -209,7 +205,7 @@ export class McpManager {
           return
         }
         case "signout": {
-          const res = await backend.client.mcp.auth.remove({ path: { name }, query })
+          const res = await backend.api.mcp.auth.remove(name)
           // 404 = nothing stored (e.g. a local server) — informational, not an error.
           if (res.error) {
             vscode.window.showInformationMessage(`OpenCode Panel: no stored OAuth credentials for "${name}"`)

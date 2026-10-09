@@ -352,11 +352,11 @@ export function subscribeSession(
 
   void (async () => {
     try {
-      const sse = await backend.client.global.event({ signal: controller.signal })
+      const stream = await backend.api.events(controller.signal)
       log(`[sse] connected for session ${sessionID}`)
       handlers.onReady?.()
       readyResolve()
-      for await (const evt of sse.stream as AsyncIterable<{ payload?: unknown }>) {
+      for await (const evt of stream as AsyncIterable<{ payload?: unknown }>) {
         const payload = eventPayload(evt.payload ?? evt)
         if (!payload?.type) continue
         route(payload.type, payload.properties)
@@ -678,9 +678,7 @@ export function subscribeSession(
     const genAtPoll = activityGen
     log(`[watchdog] no SSE events for ${watchdogMs}ms, polling /session/status`)
     try {
-      const result = await backend.client.session.status({
-        query: { directory: backend.directory },
-      })
+      const result = await backend.api.session.status()
       // The poll's answer describes the moment it was asked. If the session
       // showed life while it was in flight (a new turn's events, or a real
       // session.idle already handled by markIdle), the stale answer must not

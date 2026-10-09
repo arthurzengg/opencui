@@ -85,11 +85,7 @@ export class BuiltinRunners {
     const sel = this.deps.prefs.get()
     const body = sel.modelProviderID && sel.modelID ? { providerID: sel.modelProviderID, modelID: sel.modelID } : undefined
     try {
-      const res = await backend.client.session.summarize({
-        path: { id: sessionID },
-        query: { directory: backend.directory },
-        body,
-      })
+      const res = await backend.api.session.summarize(sessionID, body)
       if (res.error) {
         log("compact failed", res.error)
         this.deps.failTurn("opencode could not compact the session; see the output log for details.")
@@ -110,7 +106,7 @@ export class BuiltinRunners {
     if (!sessionID) {
       // No turn has begun yet (no bubble, no busy state), so a create failure
       // needs direct feedback rather than the failTurn unbrick path.
-      const created = await backend.client.session.create({ body: {} }).catch((e: unknown) => {
+      const created = await backend.api.session.create().catch((e: unknown) => {
         log("init: session.create threw", e)
         return undefined
       })
@@ -129,10 +125,10 @@ export class BuiltinRunners {
     }
     await this.deps.beginBuiltinTurn("/init")
     try {
-      const res = await backend.client.session.init({
-        path: { id: sessionID },
-        query: { directory: backend.directory },
-        body: { providerID: sel.modelProviderID, modelID: sel.modelID, messageID: generateMessageID() },
+      const res = await backend.api.session.init(sessionID, {
+        providerID: sel.modelProviderID,
+        modelID: sel.modelID,
+        messageID: generateMessageID(),
       })
       if (res.error) {
         log("init failed", res.error)
@@ -151,10 +147,7 @@ export class BuiltinRunners {
       return
     }
     try {
-      const res = await backend.client.session.share({
-        path: { id: sessionID },
-        query: { directory: backend.directory },
-      })
+      const res = await backend.api.session.share(sessionID)
       if (res.error || !res.data) {
         log("share failed", res.error)
         void vscode.window.showErrorMessage("Failed to share session.")
@@ -176,10 +169,7 @@ export class BuiltinRunners {
     const sessionID = this.deps.getSessionID()
     if (!sessionID) return
     try {
-      const res = await backend.client.session.unshare({
-        path: { id: sessionID },
-        query: { directory: backend.directory },
-      })
+      const res = await backend.api.session.unshare(sessionID)
       if (res.error) {
         log("unshare failed", res.error)
         void vscode.window.showErrorMessage("Failed to disable sharing.")
@@ -210,11 +200,7 @@ export class BuiltinRunners {
     }
     const target = messages[idx]!
     try {
-      const res = await backend.client.session.revert({
-        path: { id: sessionID },
-        query: { directory: backend.directory },
-        body: { messageID: target.backendID! },
-      })
+      const res = await backend.api.session.revert(sessionID, { messageID: target.backendID! })
       if (res.error) {
         log("undo: session.revert failed", res.error)
         void vscode.window.showErrorMessage("Failed to undo the last turn.")
@@ -252,15 +238,8 @@ export class BuiltinRunners {
     try {
       const res =
         action.kind === "revert"
-          ? await backend.client.session.revert({
-              path: { id: sessionID },
-              query: { directory: backend.directory },
-              body: { messageID: action.messageID },
-            })
-          : await backend.client.session.unrevert({
-              path: { id: sessionID },
-              query: { directory: backend.directory },
-            })
+          ? await backend.api.session.revert(sessionID, { messageID: action.messageID })
+          : await backend.api.session.unrevert(sessionID)
       if (res.error) {
         log("redo failed", res.error)
         void vscode.window.showErrorMessage("Failed to redo.")
@@ -292,11 +271,7 @@ export class BuiltinRunners {
       return
     }
     try {
-      const res = await backend.client.session.fork({
-        path: { id: sessionID },
-        query: { directory: backend.directory },
-        body: {},
-      })
+      const res = await backend.api.session.fork(sessionID, {})
       if (res.error || !res.data) {
         log("fork failed", res.error)
         void vscode.window.showErrorMessage("Failed to fork the conversation.")
@@ -333,10 +308,7 @@ export class BuiltinRunners {
  */
 async function restampForkedIDs(backend: Backend, sessionID: string, messages: ChatMessage[]) {
   try {
-    const res = await backend.client.session.messages({
-      path: { id: sessionID },
-      query: { directory: backend.directory },
-    })
+    const res = await backend.api.session.messages(sessionID)
     const server = (res.data ?? []) as Array<{ info?: { id?: string } }>
     if (res.error || server.length !== messages.length) {
       log("fork: skipping backendID re-stamp", { error: res.error, server: server.length, local: messages.length })

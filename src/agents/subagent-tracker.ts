@@ -462,9 +462,7 @@ export class SubagentTracker {
     if (candidates.length === 0) return
     let statuses: Record<string, { type?: string } | undefined> = {}
     try {
-      const res = await backend.client.session.status({
-        query: { directory: backend.directory },
-      })
+      const res = await backend.api.session.status()
       statuses = (res?.data ?? {}) as Record<string, { type?: string } | undefined>
     } catch (e) {
       log("[subagent-tracker] reconcile session.status failed", e)

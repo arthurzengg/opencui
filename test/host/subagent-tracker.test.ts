@@ -497,7 +497,7 @@ describe("SubagentTracker.reconcile", () => {
       url: "http://test",
       directory: "/tmp",
       configMode: "isolated" as const,
-      client: {
+      api: {
         session: {
           status: async () => ({ data: statuses }),
         },

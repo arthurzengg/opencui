@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { createOpencodeClient } from "@opencode-ai/sdk"
+import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { subscribeSession } from "../../src/chat/stream"
 
@@ -14,8 +14,7 @@ afterEach(async () => {
 })
 
 function makeBackend() {
-  const client = createOpencodeClient({ baseUrl: server.url })
-  return { url: server.url, client, directory: "/tmp" }
+  return { url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
