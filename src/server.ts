@@ -262,6 +262,20 @@ function bundledBinaryPath(extensionPath: string): string | undefined {
   }
 }
 
+/**
+ * The configured binary is opencode 2.0, whose API the host does not speak
+ * (#684). Raised from the startup line instead of waiting out the timeout.
+ */
+export class UnsupportedOpencodeError extends Error {
+  constructor(readonly binaryPath: string) {
+    super(
+      `OpenCode Panel supports opencode 1.x, but "${binaryPath}" is opencode 2.0. ` +
+        'Point the "opencui.binaryPath" setting at an opencode 1.x binary.',
+    )
+    this.name = "UnsupportedOpencodeError"
+  }
+}
+
 export type SpawnTarget = {
   command: string
   /** Route through cmd.exe — required for the .cmd/.bat shims npm installs. */
@@ -369,8 +383,15 @@ export function startOpencodeServer(
     proc.stdout.on("data", (chunk) => {
       if (settled) return
       output += chunk.toString()
-      for (const line of output.split("\n")) {
-        if (!stripAnsi(line).startsWith("opencode server listening")) continue
+      for (const raw of output.split("\n")) {
+        const line = stripAnsi(raw)
+        // 2.0 drops the "opencode " prefix and prints a server password next
+        // (#691); its API is not the one the host speaks, so stop here.
+        if (line.startsWith("server listening on")) {
+          fail(new UnsupportedOpencodeError(binaryPath))
+          return
+        }
+        if (!line.startsWith("opencode server listening")) continue
         const match = line.match(/on\s+(https?:\/\/[^\s]+)/)
         if (!match?.[1]) {
           fail(new Error(`Failed to parse server url from output: ${line}`))
@@ -408,7 +429,10 @@ export function startOpencodeServer(
 function formatServerOutput(output: string) {
   const trimmed = output.trim()
   if (!trimmed) return "\nServer output: (none)"
-  const lines = trimmed.split("\n")
+  // This text reaches the error toast and the log; 2.0 prints its password here.
+  const lines = trimmed
+    .split("\n")
+    .map((line) => (/^\s*server password\b/i.test(stripAnsi(line)) ? "server password [redacted]" : line))
   return `\nServer output:\n${lines.slice(-40).join("\n")}`
 }
 
