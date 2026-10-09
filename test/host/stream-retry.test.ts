@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { createOpencodeClient } from "@opencode-ai/sdk"
-import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
 import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { subscribeSession } from "../../src/chat/stream"
@@ -19,8 +17,7 @@ afterEach(async () => {
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 async function subscribe() {
-  const client = createOpencodeClient({ baseUrl: server.url })
-  const backend = { url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" } as any
+  const backend = { url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" } as any
   const retries: Array<SessionRetryInfo | undefined> = []
   let busy = 0
   let idle = 0

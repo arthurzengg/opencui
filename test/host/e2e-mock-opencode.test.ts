@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { createOpencodeClient } from "@opencode-ai/sdk"
-import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
 import { createV1Api } from "../../src/backend/v1"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { subscribeSession } from "../../src/chat/stream"
@@ -9,8 +8,7 @@ import { sweepAbortTree, drainAbortTree } from "../../src/chat/abort-tree"
 let server: MockOpencodeServer
 
 /** The abort sweep takes the backend API, not a raw client. */
-const api = (client: ReturnType<typeof createOpencodeClient>) =>
-  createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/ws", server.url)
+const api = () => createV1Api(server.url, "/ws")
 
 beforeEach(async () => {
   server = await startMockOpencode()
@@ -90,7 +88,7 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     server.setChildren("ses_child_a", ["ses_grand_a1"])
 
     const state = { aborted: new Set<string>(), isLive: () => true }
-    const found = await sweepAbortTree(api(client), "ses_parent", [], state)
+    const found = await sweepAbortTree(api(), "ses_parent", [], state)
 
     expect(found).toBe(4)
     expect(server.aborts[0]).toBe("ses_parent") // root settles before any child
@@ -104,7 +102,7 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     server.setChildren("ses_parent", ["ses_child_a"])
 
     const state = { aborted: new Set<string>(), isLive: () => true }
-    expect(await sweepAbortTree(api(client), "ses_parent", [], state)).toBe(2)
+    expect(await sweepAbortTree(api(), "ses_parent", [], state)).toBe(2)
 
     // A new session appears under the root right after Stop: opencode's own
     // title/summary/compaction children, or follow-up work that doesn't bump
@@ -113,7 +111,7 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     // regression vs v1.4.3. Original semantics: traversal terminates at the
     // already-aborted root and the late session survives.
     server.setChildren("ses_parent", ["ses_child_a", "ses_post_stop"])
-    expect(await sweepAbortTree(api(client), "ses_parent", [], state)).toBe(0)
+    expect(await sweepAbortTree(api(), "ses_parent", [], state)).toBe(0)
 
     expect(server.aborts).toEqual(["ses_parent", "ses_child_a"])
   })
@@ -126,9 +124,9 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     // with a cleared aborted-set, so the root must be aborted again — the old
     // ChatView-lifetime set made every Stop after the first a no-op.
     const stop1 = { aborted: new Set<string>(), isLive: () => true }
-    await sweepAbortTree(api(client), "ses_parent", [], stop1)
+    await sweepAbortTree(api(), "ses_parent", [], stop1)
     const stop2 = { aborted: new Set<string>(), isLive: () => true }
-    expect(await sweepAbortTree(api(client), "ses_parent", [], stop2)).toBe(1)
+    expect(await sweepAbortTree(api(), "ses_parent", [], stop2)).toBe(1)
 
     expect(server.aborts).toEqual(["ses_parent", "ses_parent"])
   })
@@ -138,13 +136,13 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     server.setChildren("ses_parent", [])
 
     const state = { aborted: new Set<string>(), isLive: () => true }
-    await sweepAbortTree(api(client), "ses_parent", [], state)
+    await sweepAbortTree(api(), "ses_parent", [], state)
     expect(server.aborts).toEqual(["ses_parent"])
 
     // Stop is one volley: once the initial sweep covered the tree, the drain
     // must go quiet, not keep killing whatever spawns under the root next.
     server.setChildren("ses_parent", ["ses_late_dispatch"])
-    await drainAbortTree(api(client), "ses_parent", state, { passes: 3, intervalMs: 5 })
+    await drainAbortTree(api(), "ses_parent", state, { passes: 3, intervalMs: 5 })
 
     expect(server.aborts).toEqual(["ses_parent"])
   })
@@ -156,7 +154,7 @@ describe("E2E (mock opencode): SDK ↔ HTTP server", () => {
     // Generation dies as soon as the root abort lands (the user sent a new
     // turn); the children must NOT be aborted out from under the new turn.
     const state = { aborted: new Set<string>(), isLive: () => server.aborts.length === 0 }
-    await sweepAbortTree(api(client), "ses_parent", [], state)
+    await sweepAbortTree(api(), "ses_parent", [], state)
 
     expect(server.aborts).toEqual(["ses_parent"])
   })
@@ -314,7 +312,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
   it("forwards onAssistantStart on first message.updated event", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: { mid: string }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: (mid) => events.push({ mid }),
       onTextDelta: () => {},
     })
@@ -334,7 +332,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
   it("filters events for other sessions", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: { mid: string }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: (mid) => events.push({ mid }),
       onTextDelta: () => {},
     })
@@ -356,7 +354,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
   it("emits onAssistantEnd on a terminal finish reason", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const ends: { mid: string; finish?: string }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onAssistantEnd: (mid, p) => ends.push({ mid, finish: p.finish }),
       onTextDelta: () => {},
@@ -380,7 +378,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
   it("does NOT emit onAssistantEnd for non-terminal finish reasons (tool-calls)", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const ends: { mid: string }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onAssistantEnd: (mid) => ends.push({ mid }),
       onTextDelta: () => {},
@@ -399,7 +397,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
   it("forwards onUserMessage when a user message.updated arrives", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const userIDs: string[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onUserMessage: (mid) => userIDs.push(mid),
       onAssistantStart: () => {},
       onTextDelta: () => {},
@@ -427,7 +425,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
   it("aggregates streaming text deltas via message.part.updated", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const deltas: string[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: (_mid, delta) => deltas.push(delta),
     })
@@ -453,7 +451,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const starts: string[] = []
     const deltas: string[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onUserMessage: () => {},
       onAssistantStart: (mid) => starts.push(mid),
       onTextDelta: (_mid, delta) => deltas.push(delta),
@@ -496,7 +494,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const starts: string[] = []
     const deltas: string[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onUserMessage: () => {},
       onAssistantStart: (mid) => starts.push(mid),
       onTextDelta: (_mid, delta) => deltas.push(delta),
@@ -524,7 +522,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
   it("forwards tool updates with status running/completed", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const toolUpdates: { tool: string; status: string }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onTool: (_mid, update) => toolUpdates.push({ tool: update.tool, status: update.status }),
@@ -566,7 +564,7 @@ describe("E2E (mock opencode): subscribeSession streaming", () => {
   it("forwards onPatch when a patch part arrives", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const patches: { files: string[] }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onPatch: (_mid, files) => patches.push({ files }),
@@ -596,7 +594,7 @@ describe("E2E (mock opencode): child session routing", () => {
   it("does NOT call onChildSessionEvent for unregistered child sessions", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: { type: string; sessionID: string }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionEvent: (e) => events.push({ type: e.type, sessionID: e.sessionID }),
@@ -612,7 +610,7 @@ describe("E2E (mock opencode): child session routing", () => {
   it("routes session.idle on a REGISTERED child to onChildSessionEvent", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: { type: string; sessionID: string }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionEvent: (e) => events.push({ type: e.type, sessionID: e.sessionID }),
@@ -629,7 +627,7 @@ describe("E2E (mock opencode): child session routing", () => {
   it("stops routing after removeChildSession", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: { type: string; sessionID: string }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionEvent: (e) => events.push({ type: e.type, sessionID: e.sessionID }),
@@ -647,7 +645,7 @@ describe("E2E (mock opencode): child session routing", () => {
   it("treats message.part.updated for a registered child as a busy signal", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const events: { type: string; sessionID: string }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionEvent: (e) => events.push({ type: e.type, sessionID: e.sessionID }),
@@ -673,7 +671,7 @@ describe("E2E (mock opencode): child session routing", () => {
   it("forwards a terminal assistantEnd with usage from the child session", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const ends: { sessionID: string; usage?: { model?: string } }[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onChildSessionEvent: (e) => {
@@ -705,7 +703,7 @@ describe("E2E (mock opencode): child session routing", () => {
   it("does NOT call the parent's onSessionIdle when a child session goes idle", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     let parentIdleCount = 0
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onTextDelta: () => {},
       onSessionIdle: () => {
@@ -730,7 +728,7 @@ describe("E2E (mock opencode): stream loss detection", () => {
   it("fires onStreamClosed when the server ends the SSE stream", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const closed: string[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onStreamClosed: (reason) => closed.push(reason),
     })
@@ -747,7 +745,7 @@ describe("E2E (mock opencode): stream loss detection", () => {
   it("does NOT fire onStreamClosed on deliberate abort", async () => {
     const client = createOpencodeClient({ baseUrl: server.url })
     const closed: string[] = []
-    const subscription = subscribeSession({ url: server.url, api: createV1Api(client, createOpencodeClientV2({ baseUrl: server.url }), "/tmp", server.url), client, directory: "/tmp" }, "ses_test", {
+    const subscription = subscribeSession({ url: server.url, api: createV1Api(server.url, "/tmp"), directory: "/tmp" }, "ses_test", {
       onAssistantStart: () => {},
       onStreamClosed: (reason) => closed.push(reason),
     })

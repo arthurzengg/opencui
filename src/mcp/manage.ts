@@ -1,5 +1,5 @@
 import * as vscode from "vscode"
-import type { McpStatus, McpLocalConfig, McpRemoteConfig } from "@opencode-ai/sdk"
+import type { McpStatus, McpLocalConfig, McpRemoteConfig } from "../backend/types"
 import type { ServerManager, Backend } from "../server"
 import { log } from "../output"
 import {

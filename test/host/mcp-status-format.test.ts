@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import type { McpStatus } from "@opencode-ai/sdk"
+import type { McpStatus } from "../../src/backend/types"
 import {
   actionsFor,
   parseCommand,

@@ -2,8 +2,6 @@ import * as vscode from "vscode"
 import * as path from "path"
 import * as fs from "fs"
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
-import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk"
-import { createOpencodeClient as createOpencodeClientV2, type OpencodeClient as OpencodeClientV2 } from "@opencode-ai/sdk/v2"
 import type { BackendApi } from "./backend/api"
 import { createV1Api } from "./backend/v1"
 import { log } from "./output"
@@ -26,12 +24,6 @@ export type Backend = {
   url: string
   /** Every call to opencode goes through here; see backend/api.ts. */
   api: BackendApi
-  client: OpencodeClient
-  /**
-   * The v1 client is a frozen snapshot and never gained the permission and
-   * question reply routes; those go through the v2 client (#609).
-   */
-  clientV2: OpencodeClientV2
   directory: string
   /**
    * Workspace root the server was bound to at start time. Undefined when no
@@ -45,8 +37,6 @@ export type Backend = {
 
 export class ServerManager {
   private server: ServerHandle | undefined
-  private client: OpencodeClient | undefined
-  private clientV2: OpencodeClientV2 | undefined
   /** Resolved path the running server was spawned from. */
   private binaryPath: string | undefined
   /** Version the running server's health route reported (#615). */
@@ -62,9 +52,7 @@ export class ServerManager {
   constructor(private context: vscode.ExtensionContext) {}
 
   async ensure(): Promise<Backend> {
-    if (this.server && this.api && this.client && this.clientV2) {
-      return this.toBackend(this.server, this.api, this.client, this.clientV2)
-    }
+    if (this.server && this.api) return this.toBackend(this.server, this.api)
     if (this.starting) return this.starting
     const abort = new AbortController()
     const attempt = this.startInternal(abort.signal).finally(() => {
@@ -123,13 +111,9 @@ export class ServerManager {
     }
     log("opencode server ready at", server.url)
     const directory = workspace?.fsPath ?? process.cwd()
-    const client = createOpencodeClient({ baseUrl: server.url, directory })
-    const clientV2 = createOpencodeClientV2({ baseUrl: server.url, directory })
-    const api = createV1Api(client, clientV2, directory, server.url)
+    const api = createV1Api(server.url, directory)
     this.server = server
     this.api = api
-    this.client = client
-    this.clientV2 = clientV2
     this.workspace = workspace
     this.configMode = configMode
     this.binaryPath = binaryPath
@@ -155,13 +139,11 @@ export class ServerManager {
       if (server.pid !== undefined) this.updateRegistry((file) => releaseServer(file, server.pid!))
       this.server = undefined
       this.api = undefined
-      this.client = undefined
-      this.clientV2 = undefined
       this.workspace = undefined
       this.binaryPath = undefined
       this.version = undefined
     })
-    return this.toBackend(server, api, client, clientV2)
+    return this.toBackend(server, api)
   }
 
   async restart(): Promise<Backend> {
@@ -193,8 +175,6 @@ export class ServerManager {
       }
       this.server = undefined
       this.api = undefined
-      this.client = undefined
-      this.clientV2 = undefined
       this.workspace = undefined
       this.binaryPath = undefined
       this.version = undefined
@@ -233,16 +213,14 @@ export class ServerManager {
    * switch) that should stay silent rather than cold-start a server.
    */
   currentBackend(): Backend | undefined {
-    if (!this.server || !this.api || !this.client || !this.clientV2) return undefined
-    return this.toBackend(this.server, this.api, this.client, this.clientV2)
+    if (!this.server || !this.api) return undefined
+    return this.toBackend(this.server, this.api)
   }
 
-  private toBackend(server: ServerHandle, api: BackendApi, client: OpencodeClient, clientV2: OpencodeClientV2): Backend {
+  private toBackend(server: ServerHandle, api: BackendApi): Backend {
     return {
       url: server.url,
       api,
-      client,
-      clientV2,
       directory: api.directory,
       workspace: this.workspace,
       configMode: this.configMode,

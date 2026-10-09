@@ -1,6 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { createOpencodeClient } from "@opencode-ai/sdk"
-import { createOpencodeClient as createOpencodeClientV2 } from "@opencode-ai/sdk/v2"
 import { startMockOpencode, type MockOpencodeServer } from "./mock-opencode-server"
 import { createV1Api } from "../../src/backend/v1"
 
@@ -14,12 +12,7 @@ afterEach(async () => {
 })
 
 function api(directory = "/ws") {
-  return createV1Api(
-    createOpencodeClient({ baseUrl: server.url, directory }),
-    createOpencodeClientV2({ baseUrl: server.url, directory }),
-    directory,
-    server.url,
-  )
+  return createV1Api(server.url, directory)
 }
 
 describe("opencode 1.x adapter (#689)", () => {
