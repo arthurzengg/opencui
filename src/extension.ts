@@ -36,7 +36,7 @@ export async function activate(context: vscode.ExtensionContext) {
       (e) => log("orphan server reap failed", e),
     )
   }
-  servers = new ServerManager(context)
+  servers = new ServerManager(context, { readVersion: readBinaryVersion })
   recentEdits = new RecentEditsTracker()
   const indexSettings = readIndexSettings(vscode.workspace.getConfiguration("opencui"))
   indexManager = new IndexManager(indexSettings)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { mkdtempSync, writeFileSync, chmodSync } from "fs"
+import { mkdtempSync, writeFileSync, chmodSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { startOpencodeServer, UnsupportedOpencodeError } from "../../src/server"
@@ -146,5 +146,26 @@ describe("opencode 2.0 binaries (#691)", () => {
     expect(error.message).toMatch(/Timeout waiting/)
     expect(error.message).toContain("server password [redacted]")
     expect(error.message).not.toContain("hunter2")
+  })
+})
+
+describe("opencode 2.0 starts (#693)", () => {
+  it("passes the password to the binary and accepts the 2.0 startup line when asked", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencui-v2-start-"))
+    const seen = join(dir, "password.txt")
+    const bin = fakeBinary(`echo "$OPENCODE_PASSWORD" > "${seen}"\necho "server listening on http://127.0.0.1:43218"\necho "server password $OPENCODE_PASSWORD"\nexec sleep 10`)
+    const handle = await startOpencodeServer(bin, {
+      hostname: "127.0.0.1",
+      port: 43218,
+      timeout: 5000,
+      configMode: "isolated",
+      opencode2: { password: "pw-under-test" },
+    })
+    try {
+      expect(handle.url).toBe("http://127.0.0.1:43218")
+      expect(readFileSync(seen, "utf8").trim()).toBe("pw-under-test")
+    } finally {
+      handle.close()
+    }
   })
 })

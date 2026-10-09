@@ -4,6 +4,8 @@ import * as fs from "fs"
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
 import type { BackendApi } from "./backend/api"
 import { createV1Api } from "./backend/v1"
+import { createV2Api } from "./backend/v2/api"
+import { randomBytes } from "crypto"
 import { log } from "./output"
 import { primaryWorkspaceRoot, type WorkspaceRoot } from "./workspace-root"
 import { recordServer, registryPath, releaseServer } from "./server-registry"
@@ -49,7 +51,11 @@ export class ServerManager {
   private workspace: WorkspaceRoot | undefined
   private configMode: OpencodeConfigMode = "isolated"
 
-  constructor(private context: vscode.ExtensionContext) {}
+  constructor(
+    private context: vscode.ExtensionContext,
+    /** `readVersion` runs `opencode --version`; without it every binary is taken as 1.x. */
+    private deps: { readVersion?: (binaryPath: string) => Promise<string | undefined> } = {},
+  ) {}
 
   async ensure(): Promise<Backend> {
     if (this.server && this.api) return this.toBackend(this.server, this.api)
@@ -75,12 +81,19 @@ export class ServerManager {
     const binaryPath = resolveBinaryPath(configuredBinaryPath, this.context.extensionPath)
     const configMode = readConfigMode(config)
     const workspace = primaryWorkspaceRoot()
+    // opencode 2.0 wants a password at start and Basic auth after (#693).
+    // Only probed when the setting is on, so a 1.x start pays nothing.
+    const opencode2 =
+      config.get<boolean>("opencode2") === true && isOpencode2(await this.deps.readVersion?.(binaryPath))
+        ? { password: randomBytes(24).toString("base64url") }
+        : undefined
 
     log("starting opencode server", {
       configuredBinaryPath,
       resolved: binaryPath,
       port,
       configMode,
+      opencode2: opencode2 !== undefined,
       workspace: workspace?.fsPath ?? "(no workspace)",
     })
     let spawnedPid: number | undefined
@@ -92,6 +105,7 @@ export class ServerManager {
         timeout: SERVER_START_TIMEOUT_MS,
         cwd: workspace?.fsPath,
         configMode,
+        opencode2,
         signal,
         // Registered at spawn, not at ready: an extension host killed during
         // the 60s startup window must still leave a reapable record.
@@ -111,7 +125,9 @@ export class ServerManager {
     }
     log("opencode server ready at", server.url)
     const directory = workspace?.fsPath ?? process.cwd()
-    const api = createV1Api(server.url, directory)
+    const api = opencode2
+      ? createV2Api({ url: server.url, directory, password: opencode2.password })
+      : createV1Api(server.url, directory)
     this.server = server
     this.api = api
     this.workspace = workspace
@@ -232,6 +248,10 @@ function randomPort() {
   return Math.floor(Math.random() * (65535 - 16384 + 1)) + 16384
 }
 
+function isOpencode2(version: string | undefined): boolean {
+  return Number(version?.split(".")[0]) >= 2
+}
+
 function readConfigMode(config: vscode.WorkspaceConfiguration): OpencodeConfigMode {
   const value = config.get<string>("opencodeConfigMode")
   return value === "user" ? "user" : "isolated"
@@ -327,6 +347,11 @@ export function startOpencodeServer(
     /** Workspace root for the subprocess `cwd`. Undefined means inherit. */
     cwd?: string
     configMode: OpencodeConfigMode
+    /**
+     * Start the binary as opencode 2.0: pass it this password and accept its
+     * startup line. Without this, a 2.0 startup line is a failure (#691).
+     */
+    opencode2?: { password: string }
     /** Fired with the child pid immediately after spawn. */
     onSpawn?: (pid: number) => void
     /** Aborting rejects the startup promise and kills the spawned child. */
@@ -346,6 +371,7 @@ export function startOpencodeServer(
   } else {
     delete env.OPENCODE_CONFIG_CONTENT
   }
+  if (options.opencode2) env.OPENCODE_PASSWORD = options.opencode2.password
   const target = resolveSpawnTarget(binaryPath)
   const proc = spawn(target.command, ["serve", `--hostname=${options.hostname}`, `--port=${options.port}`], {
     cwd: options.cwd,
@@ -386,12 +412,14 @@ export function startOpencodeServer(
       for (const raw of output.split("\n")) {
         const line = stripAnsi(raw)
         // 2.0 drops the "opencode " prefix and prints a server password next
-        // (#691); its API is not the one the host speaks, so stop here.
-        if (line.startsWith("server listening on")) {
+        // (#691); unless this start asked for 2.0, its API is not the one the
+        // host speaks, so stop here.
+        const listening2 = line.startsWith("server listening on")
+        if (listening2 && !options.opencode2) {
           fail(new UnsupportedOpencodeError(binaryPath))
           return
         }
-        if (!line.startsWith("opencode server listening")) continue
+        if (!listening2 && !line.startsWith("opencode server listening")) continue
         const match = line.match(/on\s+(https?:\/\/[^\s]+)/)
         if (!match?.[1]) {
           fail(new Error(`Failed to parse server url from output: ${line}`))

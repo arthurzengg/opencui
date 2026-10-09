@@ -14,11 +14,11 @@ function walk(dir: string): string[] {
 // opencode 2.0 renames every route and event. Keeping the SDK inside
 // src/backend is what makes supporting it one more module instead of a
 // change to every caller (#689).
-describe("the opencode SDK stays behind src/backend", () => {
-  it("is imported by no other host module, not even for types", () => {
+describe("the opencode clients stay behind src/backend", () => {
+  it("neither the 1.x SDK nor the 2.0 client is imported by another host module, not even for types", () => {
     const offenders = walk(SRC)
       .filter((file) => !file.startsWith(path.join(SRC, "backend") + path.sep))
-      .filter((file) => /from\s+["']@opencode-ai\/sdk/.test(readFileSync(file, "utf8")))
+      .filter((file) => /from\s+["']@opencode(-ai)?\//.test(readFileSync(file, "utf8")))
       .map((file) => path.relative(SRC, file))
     expect(offenders).toEqual([])
   })
