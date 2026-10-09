@@ -122,6 +122,11 @@
           "default": "opencode",
           "description": "Path to opencode binary"
         },
+        "opencui.opencode2": {
+          "type": "boolean",
+          "default": false,
+          "description": "Experimental: start and talk to an opencode 2.0 binary. Read-only for now: sessions, history, and catalogs load, while sending prompts waits on the remaining adapter steps (#684). Off: opencode 2.0 is reported as unsupported."
+        },
         "opencui.serverPort": {
           "type": "number",
           "default": 0,
@@ -190,13 +195,17 @@
         },
         "opencui.indexing.includeGlobs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": ["**/*"],
           "description": "Globs the semantic index should consider. Combined with the workspace finder."
         },
         "opencui.indexing.excludeGlobs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [
             "**/{node_modules,.git,dist,build,out,coverage,.next,.turbo,.cache}/**"
           ],
@@ -220,7 +229,8 @@
     "publish:marketplace": "vsce publish --no-dependencies"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.18.30"
+    "@opencode-ai/sdk": "^1.18.30",
+    "@opencode/client": "2.0.24"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
