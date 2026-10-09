@@ -183,6 +183,37 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect((await a.mcp.status()).data?.linear).toEqual({ status: "connected" })
   })
 
+  it("connects a provider with a key through its integration, lists it as connected, and removes the credential", async () => {
+    server.providers = [{ id: "p", name: "Provider P", integrationID: "p-int", activation: "enabled", package: "pkg" }]
+    server.integrations = [{ id: "p-int", name: "Provider P", methods: [{ type: "key", label: "API key" }, { id: "oauth-1", type: "oauth", label: "Sign in" }], connections: [] }]
+    const a = api()
+    expect((await a.provider.list()).data).toMatchObject({ all: [{ id: "p", name: "Provider P" }], connected: [] })
+    expect((await a.provider.auth()).data).toEqual({ p: [{ type: "api", label: "API key" }, { type: "oauth", label: "Sign in" }] })
+    expect((await a.auth.set("p", { type: "api", key: "sk-1" })).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/integration/p-int/connect/key", body: { key: "sk-1" } })
+    expect((await a.provider.list()).data?.connected).toEqual(["p"])
+    expect(await a.auth.remove("p")).toEqual({ kind: "ok" })
+    expect(server.requests.at(-1)).toMatchObject({ method: "DELETE", path: "/api/credential/cred_1" })
+    expect(await a.auth.remove("p")).toMatchObject({ kind: "error" })
+    expect(await a.instance.refresh()).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/location/reload" })
+  })
+
+  it("runs an OAuth login as a 2.0 attempt: authorize, then complete by code or by polling", async () => {
+    server.providers = [{ id: "p", name: "Provider P", integrationID: "p-int", activation: "enabled", package: "pkg" }]
+    server.integrations = [{ id: "p-int", name: "Provider P", methods: [{ type: "key" }, { id: "oauth-1", type: "oauth", label: "Sign in" }], connections: [] }]
+    const a = api()
+    const authorized = await a.provider.oauth.authorize("p", { method: 1 })
+    expect(authorized.data).toEqual({ url: "https://auth.example/start", method: "auto", instructions: "Finish in the browser" })
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/integration/p-int/connect/oauth", body: { methodID: "oauth-1" } })
+    expect((await a.provider.oauth.callback("p", { method: 1, code: "abc" })).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/integration/p-int/connect/oauth/att_1/complete", body: { code: "abc" } })
+    await a.provider.oauth.authorize("p", { method: 1 })
+    expect((await a.provider.oauth.callback("p", { method: 1 })).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "GET", path: "/api/integration/p-int/connect/oauth/att_1" })
+    expect(String((await a.provider.oauth.authorize("p", { method: 0 })).error)).toContain("not OAuth")
+  })
+
   it("answers the operations the later steps own with a failure, not a hang", async () => {
     const res = await api().session.share("ses_root")
     expect(res.data).toBeUndefined()

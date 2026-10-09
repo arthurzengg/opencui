@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import type { AgentInfo, CommandInfo, McpServer, ModelInfo, ProviderInfo, SessionInfo, SessionMessageInfo } from "@opencode/client/promise"
+import type { AgentInfo, CommandInfo, CredentialEntry, IntegrationAttemptStatus, IntegrationInfo, McpServer, ModelInfo, ProviderInfo, SessionInfo, SessionMessageInfo } from "@opencode/client/promise"
 
 /**
  * The slice of an opencode 2.0 server the adapter reads (#693): Basic auth
@@ -17,6 +17,10 @@ export type MockOpencodeV2 = {
   agents: AgentInfo[]
   commands: CommandInfo[]
   mcp: McpServer[]
+  integrations: IntegrationInfo[]
+  credentials: CredentialEntry[]
+  /** What the OAuth status route answers; tests set it before polling. */
+  oauthStatus: IntegrationAttemptStatus
   /** Every request that reached the server, after the auth check. */
   requests: Array<{ method: string; path: string; query: Record<string, string>; body?: unknown }>
   push: (event: Record<string, unknown>) => void
@@ -38,6 +42,9 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     agents: [],
     commands: [],
     mcp: [],
+    integrations: [] as IntegrationInfo[],
+    credentials: [] as CredentialEntry[],
+    oauthStatus: { status: "complete", time: { created: 0, expires: 0 } } as IntegrationAttemptStatus,
     requests: [],
     // Events pushed before a client connects wait for the first one, as
     // the 1.x mock does, so a test never races the subscription.
@@ -187,6 +194,32 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
         return empty(res)
       }
     }
+    if (path === "/api/integration") return json(res, 200, { location, data: state.integrations })
+    const connect = path.match(/^\/api\/integration\/([^/]+)\/connect\/(key|oauth)(?:\/([^/]+))?(\/complete)?$/)
+    if (connect) {
+      const integration = state.integrations.find((i) => i.id === connect[1])
+      if (!integration) return json(res, 404, { message: "integration not found" })
+      if (connect[2] === "key" && req.method === "POST") {
+        const id = `cred_${state.credentials.length + 1}`
+        state.credentials.push({ id, integrationID: integration.id, label: "API key", active: true, value: { type: "key" } as CredentialEntry["value"] })
+        integration.connections.push({ type: "credential", id, label: "API key", method: "key" })
+        return empty(res)
+      }
+      if (connect[2] === "oauth" && !connect[3] && req.method === "POST") {
+        return json(res, 200, { location, data: { attemptID: "att_1", url: "https://auth.example/start", instructions: "Finish in the browser", mode: "auto", time: { created: 0, expires: 0 } } })
+      }
+      if (connect[3] && req.method === "GET") return json(res, 200, { location, data: state.oauthStatus })
+      if (connect[3] && connect[4] && req.method === "POST") return empty(res)
+      if (connect[3] && req.method === "DELETE") return empty(res)
+    }
+    if (path === "/api/credential" && req.method === "GET") return json(res, 200, { data: state.credentials })
+    const credential = path.match(/^\/api\/credential\/([^/]+)$/)
+    if (credential && req.method === "DELETE") {
+      state.credentials = state.credentials.filter((c) => c.id !== credential[1])
+      for (const i of state.integrations) i.connections = i.connections.filter((c) => c.type !== "credential" || c.id !== credential[1])
+      return empty(res)
+    }
+    if (path === "/api/location/reload" && req.method === "POST") return empty(res)
     if (path === "/api/model") return json(res, 200, { location, data: state.models })
     if (path === "/api/provider") return json(res, 200, { location, data: state.providers })
     if (path === "/api/agent") return json(res, 200, { location, data: state.agents })
