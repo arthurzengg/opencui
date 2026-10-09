@@ -78,6 +78,8 @@ type V2Params<K extends "permission" | "question" | "session", M extends keyof O
 export type PermissionReply = V2Params<"permission", "reply">["reply"]
 export type QuestionAnswers = V2Params<"question", "reply">["answers"]
 export type SessionListOptions = Omit<V2Params<"session", "list">, "directory">
+/** Where an OAuth sign-in sends the user, and how it ends: watched by the server or by a code pasted back. */
+export type OauthAuthorization = DataOf<ProviderOauthAuthorizeResponses>
 
 export interface BackendApi {
   /** Workspace the server was started in; sent with every request. */
