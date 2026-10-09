@@ -114,8 +114,51 @@ describe("opencode 2.0 adapter (#693)", () => {
     controller.abort()
   })
 
+  it("creates, renames, stops, and deletes a session on the recorded routes", async () => {
+    const a = api()
+    const created = await a.session.create()
+    expect(created.data).toMatchObject({ id: "ses_4", title: "New session", directory: "/ws" })
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session", body: { location: { directory: "/ws" } } })
+    const renamed = await a.session.update("ses_4", { title: "Renamed" })
+    expect(renamed.data?.title).toBe("Renamed")
+    expect(server.requests.find((r) => r.method === "PATCH")).toMatchObject({ path: "/api/session/ses_4", body: { title: "Renamed" } })
+    expect((await a.session.abort("ses_4")).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_4/interrupt" })
+    expect((await a.session.delete("ses_4")).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "DELETE", path: "/api/session/ses_4" })
+    expect(server.sessions.some((s) => s.id === "ses_4")).toBe(false)
+  })
+
+  it("delivers a prompt as model and agent switches, synthetic context, then text and files", async () => {
+    const body = {
+      parts: [
+        { type: "text", text: "Workspace: /ws\n<README excerpt>", synthetic: true },
+        { type: "text", text: "explain the build" },
+        { type: "file", mime: "image/png", url: "data:image/png;base64,AAAA", filename: "shot.png" },
+      ],
+      model: { providerID: "anthropic", modelID: "claude-sonnet-5" },
+      agent: "plan",
+      variant: "high",
+    } as unknown as Parameters<ReturnType<typeof api>["session"]["promptAsync"]>[1]
+    const before = server.requests.length
+    expect((await api().session.promptAsync("ses_root", body)).error).toBeUndefined()
+    expect(server.requests.slice(before).map((r) => [r.method, r.path, r.body])).toEqual([
+      ["POST", "/api/session/ses_root/model", { model: { id: "claude-sonnet-5", providerID: "anthropic", variant: "high" } }],
+      ["POST", "/api/session/ses_root/agent", { agent: "plan" }],
+      ["POST", "/api/session/ses_root/synthetic", { text: "Workspace: /ws\n<README excerpt>" }],
+      ["POST", "/api/session/ses_root/prompt", { text: "explain the build", files: [{ uri: "data:image/png;base64,AAAA", name: "shot.png" }] }],
+    ])
+  })
+
+  it("waits for a sync prompt's turn and answers with the last assistant message", async () => {
+    const res = await api().session.prompt("ses_root", { parts: [{ type: "text", text: "hi" }] })
+    expect(server.requests.some((r) => r.path === "/api/experimental/session/ses_root/wait")).toBe(true)
+    expect(res.data?.info).toMatchObject({ id: "a1", role: "assistant" })
+    expect(res.data?.parts).toEqual([expect.objectContaining({ type: "text", text: "hello" })])
+  })
+
   it("answers the operations the later steps own with a failure, not a hang", async () => {
-    const res = await api().session.create()
+    const res = await api().session.share("ses_root")
     expect(res.data).toBeUndefined()
     expect(res.status).toBe(501)
     expect(String((res.error as Error).message)).toContain("not available on opencode 2.0 yet")

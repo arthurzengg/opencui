@@ -111,6 +111,46 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
       if (query.limit) rows = rows.slice(0, Number(query.limit))
       return json(res, 200, { data: rows, cursor: {} })
     }
+    if (path === "/api/session" && req.method === "POST") {
+      const input = (body ?? {}) as { title?: string; agent?: string; model?: SessionInfo["model"] }
+      const created: SessionInfo = {
+        id: `ses_${state.sessions.length + 1}`,
+        projectID: "proj_mock",
+        title: input.title ?? "New session",
+        agent: input.agent,
+        model: input.model,
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        time: { created: Date.now(), updated: Date.now() },
+      }
+      state.sessions.push(created)
+      // Single-session routes answer { data } and the client unwraps it.
+      return json(res, 200, { data: created })
+    }
+    const one = path.match(/^\/api\/session\/([^/]+)$/)
+    if (one) {
+      const row = state.sessions.find((s) => s.id === one[1])
+      if (!row) return json(res, 404, { message: "session not found" })
+      if (req.method === "GET") return json(res, 200, { data: row })
+      if (req.method === "PATCH") {
+        const title = (body as { title?: string } | undefined)?.title
+        if (typeof title === "string") row.title = title
+        return empty(res)
+      }
+      if (req.method === "DELETE") {
+        state.sessions.splice(state.sessions.indexOf(row), 1)
+        return empty(res)
+      }
+    }
+    const action = path.match(/^\/api\/(?:experimental\/)?session\/([^/]+)\/(prompt|synthetic|model|agent|interrupt|wait)$/)
+    if (action && req.method === "POST") {
+      // Success statuses as the client expects them: the inbox routes and
+      // interrupt answer a body, the switches and wait answer nothing.
+      if (action[2] === "prompt") return json(res, 200, { id: `inbox_${state.requests.length}`, sessionID: action[1], time: { created: Date.now() }, type: "user", payload: body, delivery: "queue" })
+      if (action[2] === "synthetic") return json(res, 200, { id: `inbox_${state.requests.length}`, sessionID: action[1], time: { created: Date.now() }, type: "synthetic", payload: body, delivery: "queue" })
+      if (action[2] === "interrupt") return json(res, 200, {})
+      return empty(res)
+    }
     const messages = path.match(/^\/api\/session\/([^/]+)\/message$/)
     if (messages && req.method === "GET") {
       const rows = state.messages[messages[1]!]

@@ -1,5 +1,5 @@
 import { OpenCode } from "@opencode/client/promise"
-import type { ApiResult, BackendApi } from "../api"
+import type { ApiResult, BackendApi, PromptBody } from "../api"
 import { mapAgents, mapCommands, mapMcpStatus, mapMessages, mapProviders, mapSession, mapSessionStatus } from "./map"
 import { createEventTranslator, formAnswer, translateEvents } from "./events"
 
@@ -49,10 +49,31 @@ export function createV2Api(options: { url: string; directory: string; password:
     Promise.resolve({ error: new Error(`${what} ${id} was not seen on this connection`), status: 404 })
   const listSessions = async (filter: { parentID?: string | null; limit?: number; search?: string }) =>
     (await client.session.list({ directory, ...filter })).data
+
+  // 1.x sends the model, agent, and variant with every prompt; 2.0 keeps them
+  // on the session, so they are switched before the text goes in. The
+  // injected context (#666) is a synthetic text part in 1.x and 2.0's own
+  // synthetic message here, so the model still sees it and the transcript
+  // does not. Files travel as URIs; the panel's attachments are data URLs.
+  async function deliver(sessionID: string, body: PromptBody) {
+    const selection = body as PromptBody & { variant?: string }
+    if (selection.model) {
+      await client.session.switchModel({ sessionID, model: { id: selection.model.modelID, providerID: selection.model.providerID, variant: selection.variant } })
+    }
+    if (selection.agent) await client.session.switchAgent({ sessionID, agent: selection.agent })
+    const text: string[] = []
+    const files: Array<{ uri: string; name?: string }> = []
+    for (const part of body.parts) {
+      if (part.type === "text" && part.synthetic) await client.session.synthetic({ sessionID, text: part.text })
+      else if (part.type === "text") text.push(part.text)
+      else if (part.type === "file") files.push({ uri: part.url, name: part.filename })
+    }
+    await client.session.prompt({ sessionID, text: text.join("\n\n"), files: files.length ? files : undefined })
+  }
   return {
     directory,
     session: {
-      create: () => unavailable("session.create"),
+      create: () => call(async () => mapSession(await client.session.create(location), directory)),
       list: (options) =>
         call(async () => {
           const rows = await listSessions({
@@ -67,14 +88,28 @@ export function createV2Api(options: { url: string; directory: string; password:
           const page = await client.message.list({ sessionID: id, limit: options?.limit })
           return mapMessages(id, directory, page.data)
         }),
-      update: () => unavailable("session.update"),
-      delete: () => unavailable("session.delete"),
+      update: (id, body) =>
+        call(async () => {
+          await client.session.update({ sessionID: id, title: body.title })
+          return mapSession(await client.session.get({ sessionID: id }), directory)
+        }),
+      delete: (id) => call(async () => (await client.session.remove({ sessionID: id }), true as const)),
       status: () => call(async () => mapSessionStatus(await listSessions({}))),
       children: (id) => call(async () => (await listSessions({ parentID: id })).map((s) => mapSession(s, directory))),
-      prompt: () => unavailable("session.prompt"),
-      promptAsync: () => unavailable("session.promptAsync"),
+      // The sync prompt waits for the turn and answers with its last
+      // assistant message, which is what the inline edit reads.
+      prompt: (id, body) =>
+        call(async () => {
+          await deliver(id, body)
+          await client.session.wait({ sessionID: id })
+          const page = await client.message.list({ sessionID: id })
+          const last = mapMessages(id, directory, page.data).filter((m) => m.info.role === "assistant").at(-1)
+          if (!last) throw new Error("the turn produced no assistant message")
+          return last as Awaited<ReturnType<BackendApi["session"]["prompt"]>> extends ApiResult<infer T> ? T : never
+        }),
+      promptAsync: (id, body) => call(async () => (await deliver(id, body), undefined as never)),
       command: () => unavailable("session.command"),
-      abort: () => unavailable("session.abort"),
+      abort: (id) => call(async () => (await client.session.interrupt({ sessionID: id }), true as const)),
       revert: () => unavailable("session.revert"),
       unrevert: () => unavailable("session.unrevert"),
       summarize: () => unavailable("session.summarize"),
