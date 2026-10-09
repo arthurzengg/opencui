@@ -1,4 +1,4 @@
-import { OpenCode } from "@opencode/client/promise"
+import { OpenCode, type IntegrationInfo } from "@opencode/client/promise"
 import type { ApiResult, BackendApi, PromptBody } from "../api"
 import { mapAgents, mapCommands, mapMcpStatus, mapMessages, mapProviders, mapSession, mapSessionStatus } from "./map"
 import { createEventTranslator, formAnswer, translateEvents } from "./events"
@@ -50,11 +50,37 @@ export function createV2Api(options: { url: string; directory: string; password:
   const listSessions = async (filter: { parentID?: string | null; limit?: number; search?: string }) =>
     (await client.session.list({ directory, ...filter })).data
 
+  // 2.0 keeps credentials on integrations, which providers and MCP servers
+  // point at; 1.x keyed everything by provider. The login methods the host
+  // can drive are keys and OAuth, in the integration's order, so the method
+  // index the picker hands back resolves against that same list.
+  const integrations = async () => (await client.integration.list(location)).data
+  const integrationFor = async (providerID: string): Promise<IntegrationInfo> => {
+    const [providers, all] = await Promise.all([client.provider.list(location), integrations()])
+    const id = providers.data.find((p) => p.id === providerID)?.integrationID ?? providerID
+    const integration = all.find((i) => i.id === id)
+    if (!integration) throw new Error(`no integration for provider ${providerID}`)
+    return integration
+  }
+  const loginMethods = (integration: IntegrationInfo) =>
+    integration.methods.flatMap((m) => (m.type === "oauth" || m.type === "key" ? [m] : []))
+  const removeCredentials = async (integrationID: string) => {
+    const entries = (await client.credential.list()).filter((c) => c.integrationID === integrationID)
+    for (const entry of entries) await client.credential.remove({ credentialID: entry.id })
+    return entries.length
+  }
+  const attempts = new Map<string, { integrationID: string; attemptID: string }>()
+
   // 1.x sends the model, agent, and variant with every prompt; 2.0 keeps them
   // on the session, so they are switched before the text goes in. The
-  // injected context (#666) is a synthetic text part in 1.x and 2.0's own
-  // synthetic message here, so the model still sees it and the transcript
-  // does not. Files travel as URIs; the panel's attachments are data URLs.
+  // injected context (#666) is a synthetic text part in 1.x; 2.0's synthetic
+  // message starts a turn of its own (a live run showed a second execution
+  // per prompt), so the context goes into the session's instructions under
+  // one key, replaced per prompt and removed when a prompt carries none.
+  // The model sees it in its instructions and the transcript does not.
+  // Files travel as URIs; the panel's attachments are data URLs.
+  const CONTEXT_KEY = "opencui.context"
+  const contextual = new Set<string>()
   async function deliver(sessionID: string, body: PromptBody) {
     const selection = body as PromptBody & { variant?: string }
     if (selection.model) {
@@ -62,11 +88,18 @@ export function createV2Api(options: { url: string; directory: string; password:
     }
     if (selection.agent) await client.session.switchAgent({ sessionID, agent: selection.agent })
     const text: string[] = []
+    const context: string[] = []
     const files: Array<{ uri: string; name?: string }> = []
     for (const part of body.parts) {
-      if (part.type === "text" && part.synthetic) await client.session.synthetic({ sessionID, text: part.text })
+      if (part.type === "text" && part.synthetic) context.push(part.text)
       else if (part.type === "text") text.push(part.text)
       else if (part.type === "file") files.push({ uri: part.url, name: part.filename })
+    }
+    if (context.length) {
+      await client.session.instructions.entry.put({ sessionID, key: CONTEXT_KEY, value: context.join("\n\n") })
+      contextual.add(sessionID)
+    } else if (contextual.delete(sessionID)) {
+      await client.session.instructions.entry.remove({ sessionID, key: CONTEXT_KEY })
     }
     await client.session.prompt({ sessionID, text: text.join("\n\n"), files: files.length ? files : undefined })
   }
@@ -94,7 +127,17 @@ export function createV2Api(options: { url: string; directory: string; password:
           return mapSession(await client.session.get({ sessionID: id }), directory)
         }),
       delete: (id) => call(async () => (await client.session.remove({ sessionID: id }), true as const)),
-      status: () => call(async () => mapSessionStatus(await listSessions({}))),
+      // Busy sessions come from the stream; the listing's outcome and idle
+      // marks cover sessions this connection never saw start. Sessions in
+      // neither are left out, which the router reads as idle.
+      status: () =>
+        call(async () => {
+          const derived = mapSessionStatus(await listSessions({}))
+          const status: typeof derived = {}
+          for (const [id, value] of Object.entries(derived)) if (value.type !== "busy") status[id] = value
+          for (const id of translator.executing()) status[id] = { type: "busy" }
+          return status
+        }),
       children: (id) => call(async () => (await listSessions({ parentID: id })).map((s) => mapSession(s, directory))),
       // The sync prompt waits for the turn and answers with its last
       // assistant message, which is what the inline edit reads.
@@ -162,21 +205,111 @@ export function createV2Api(options: { url: string; directory: string; password:
     command: { list: () => call(async () => mapCommands((await client.command.list(location)).data)) },
     mcp: {
       status: () => call(async () => mapMcpStatus((await client.mcp.list(location)).data)),
-      add: () => unavailable("mcp.add"),
-      connect: () => unavailable("mcp.connect"),
-      disconnect: () => unavailable("mcp.disconnect"),
-      auth: { authenticate: () => unavailable("mcp.auth.authenticate"), remove: () => unavailable("mcp.auth.remove") },
+      // 1.x says enabled, 2.0 says disabled; the rest of a config carries over.
+      add: (body) =>
+        call(async () => {
+          const { enabled, ...config } = body.config as { enabled?: boolean } & Record<string, unknown>
+          await client.mcp.add({ ...location, server: body.name, config: { ...config, disabled: enabled === false } as never })
+          return mapMcpStatus((await client.mcp.list(location)).data)
+        }),
+      connect: (name) => call(async () => (await client.mcp.connect({ ...location, server: name }), true as const)),
+      disconnect: (name) => call(async () => (await client.mcp.disconnect({ ...location, server: name }), true as const)),
+      auth: {
+        // 2.0 hands back a URL for the user to open rather than opening it
+        // itself, which the MCP picker has no step for yet.
+        authenticate: () => unavailable("MCP sign-in from the panel"),
+        remove: (name) =>
+          call(async () => {
+            const integrationID = (await client.mcp.list(location)).data.find((s) => s.name === name)?.integrationID
+            if (!integrationID) throw new Error(`no integration for MCP server ${name}`)
+            await removeCredentials(integrationID)
+            return { success: true as const }
+          }),
+      },
     },
     provider: {
-      list: () => unavailable("provider.list"),
-      auth: () => unavailable("provider.auth"),
-      oauth: { authorize: () => unavailable("provider.oauth.authorize"), callback: () => unavailable("provider.oauth.callback") },
+      // The picker reads id and name off `all`; the legacy model shape it
+      // declares is not filled in.
+      list: () =>
+        call(async () => {
+          const [providers, all] = await Promise.all([client.provider.list(location), integrations()])
+          const connected = providers.data
+            .filter((p) => (all.find((i) => i.id === (p.integrationID ?? p.id))?.connections.length ?? 0) > 0)
+            .map((p) => p.id)
+          return { all: providers.data.map((p) => ({ id: p.id, name: p.name, env: [], models: {} })) as never, connected, default: {} }
+        }),
+      auth: () =>
+        call(async () => {
+          const [providers, all] = await Promise.all([client.provider.list(location), integrations()])
+          const methods: Record<string, Array<{ type: "oauth" | "api"; label: string }>> = {}
+          for (const p of providers.data) {
+            const integration = all.find((i) => i.id === (p.integrationID ?? p.id))
+            if (!integration) continue
+            methods[p.id] = loginMethods(integration).map((m) => (m.type === "oauth" ? { type: "oauth", label: m.label } : { type: "api", label: m.label ?? "API key" }))
+          }
+          return methods
+        }),
+      oauth: {
+        authorize: (providerID, body) =>
+          call(async () => {
+            const integration = await integrationFor(providerID)
+            const method = loginMethods(integration)[body.method]
+            if (!method || method.type !== "oauth") throw new Error(`login method ${body.method} of ${providerID} is not OAuth`)
+            const attempt = (await client.integration.oauth.connect({ ...location, integrationID: integration.id, methodID: method.id })).data
+            attempts.set(providerID, { integrationID: integration.id, attemptID: attempt.attemptID })
+            return { url: attempt.url, method: attempt.mode, instructions: attempt.instructions }
+          }),
+        // With a code the attempt completes at once; without one the server
+        // finishes it from the browser and the status is polled until then.
+        callback: (providerID, body, signal) =>
+          call(async () => {
+            const attempt = attempts.get(providerID)
+            if (!attempt) throw new Error(`no OAuth attempt in progress for ${providerID}`)
+            const ref = { ...location, integrationID: attempt.integrationID, attemptID: attempt.attemptID }
+            if (body.code) {
+              await client.integration.oauth.complete({ ...ref, code: body.code })
+              attempts.delete(providerID)
+              return true
+            }
+            for (;;) {
+              if (signal?.aborted) {
+                await client.integration.oauth.cancel(ref).catch(() => undefined)
+                attempts.delete(providerID)
+                throw new Error("cancelled")
+              }
+              const status = (await client.integration.oauth.status(ref)).data
+              if (status.status === "complete") {
+                attempts.delete(providerID)
+                return true
+              }
+              if (status.status === "failed" || status.status === "expired") {
+                attempts.delete(providerID)
+                throw new Error(status.status === "failed" ? status.message : "the sign-in attempt expired")
+              }
+              await new Promise((resolve) => setTimeout(resolve, 500))
+            }
+          }),
+      },
     },
     auth: {
-      set: () => unavailable("auth.set"),
-      remove: () => Promise.resolve({ kind: "unsupported" as const }),
+      set: (providerID, body) =>
+        call(async () => {
+          if (body.type !== "api") throw new Error("only API keys can be stored from the panel on opencode 2.0")
+          const integration = await integrationFor(providerID)
+          await client.integration.connect.key({ ...location, integrationID: integration.id, key: body.key })
+          return true
+        }),
+      remove: async (providerID) => {
+        try {
+          const integration = await integrationFor(providerID)
+          const removed = await removeCredentials(integration.id)
+          return removed > 0 ? { kind: "ok" } : { kind: "error", message: "no stored credential for this provider" }
+        } catch (e) {
+          return { kind: "error", message: (e as Error).message }
+        }
+      },
     },
-    instance: { refresh: () => Promise.resolve(false) },
+    instance: { refresh: () => client.location.reload().then(() => true, () => false) },
     events: async (signal) => translateEvents(translator, client.event.subscribe({ signal })),
     health: () => call(async () => ({ healthy: true as const, version: (await client.server.info()).version })),
   }

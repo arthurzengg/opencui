@@ -155,4 +155,20 @@ describe("subscribeSession over opencode 2.0 (#684)", () => {
     expect(discovered[0]).toEqual({ id: "ses_child", parentID: S, title: "Worker" })
     subscription.abort()
   })
+
+  it("routes a registered subagent session's turn to the child handler", async () => {
+    const backend = { url: server.url, api: createV2Api({ url: server.url, directory: "/ws", password: server.password }), directory: "/ws" } as Backend
+    const child: Array<{ type: string; sessionID: string }> = []
+    const subscription = subscribeSession(backend, S, { onTextDelta: () => {}, onChildSessionEvent: (e) => child.push({ type: e.type, sessionID: e.sessionID }) }, { watchdogMs: 10_000 })
+    await subscription.ready
+    await server.awaitClient()
+    subscription.addChildSession("ses_child")
+    push("session.step.started", { sessionID: "ses_child", assistantMessageID: "msg_c1", agent: "explore", model: { id: "m", providerID: "p" }, started: 1 })
+    push("session.text.delta", { sessionID: "ses_child", assistantMessageID: "msg_c1", ordinal: 0, delta: "working" })
+    push("session.idle", { sessionID: "ses_child" })
+    await until(() => child.some((e) => e.type === "idle"))
+    expect(child.every((e) => e.sessionID === "ses_child")).toBe(true)
+    expect(child.map((e) => e.type)).toContain("idle")
+    subscription.abort()
+  })
 })
