@@ -142,8 +142,16 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
         return empty(res)
       }
     }
-    const action = path.match(/^\/api\/(?:experimental\/)?session\/([^/]+)\/(prompt|synthetic|model|agent|interrupt|wait)$/)
-    if (action && req.method === "POST") {
+    const action = path.match(/^\/api\/(?:experimental\/)?session\/([^/]+)\/(prompt|synthetic|model|agent|interrupt|wait|compact|fork|command|revert\/stage|revert\/commit|revert)$/)
+    if (action && (req.method === "POST" || (req.method === "DELETE" && action[2] === "revert"))) {
+      if (action[2] === "fork") {
+        const source = state.sessions.find((s) => s.id === action[1])
+        const forked: SessionInfo = { ...(source ?? { projectID: "proj_mock", cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }), id: `ses_${state.sessions.length + 1}`, title: `Fork of ${source?.title ?? action[1]}`, time: { created: Date.now(), updated: Date.now() } }
+        state.sessions.push(forked)
+        return json(res, 200, { data: forked })
+      }
+      if (action[2] === "compact") return json(res, 200, { data: { id: `inbox_${state.requests.length}`, sessionID: action[1], type: "compaction" } })
+      if (action[2] === "revert/stage") return json(res, 200, { data: {} })
       // Success statuses as the client expects them: the inbox routes and
       // interrupt answer a body, the switches and wait answer nothing.
       if (action[2] === "prompt") return json(res, 200, { id: `inbox_${state.requests.length}`, sessionID: action[1], time: { created: Date.now() }, type: "user", payload: body, delivery: "queue" })

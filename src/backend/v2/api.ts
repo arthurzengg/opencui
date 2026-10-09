@@ -108,15 +108,28 @@ export function createV2Api(options: { url: string; directory: string; password:
           return last as Awaited<ReturnType<BackendApi["session"]["prompt"]>> extends ApiResult<infer T> ? T : never
         }),
       promptAsync: (id, body) => call(async () => (await deliver(id, body), undefined as never)),
-      command: () => unavailable("session.command"),
+      command: (id, body) =>
+        call(async () => (await client.session.command({ sessionID: id, name: body.command, text: body.arguments }), undefined as never)),
       abort: (id) => call(async () => (await client.session.interrupt({ sessionID: id }), true as const)),
-      revert: () => unavailable("session.revert"),
-      unrevert: () => unavailable("session.unrevert"),
-      summarize: () => unavailable("session.summarize"),
-      share: () => unavailable("session.share"),
-      unshare: () => unavailable("session.unshare"),
-      init: () => unavailable("session.init"),
-      fork: () => unavailable("session.fork"),
+      // 1.x revert marks the session reverted to a message and unrevert
+      // restores it; 2.0 stages a revert and clears it, with a separate
+      // commit that the host never issues, so a reverted turn stays
+      // recoverable the way /redo expects.
+      revert: (id, body) =>
+        call(async () => {
+          await client.session.revert.stage({ sessionID: id, messageID: body.messageID })
+          return mapSession(await client.session.get({ sessionID: id }), directory)
+        }),
+      unrevert: (id) =>
+        call(async () => {
+          await client.session.revert.clear({ sessionID: id })
+          return mapSession(await client.session.get({ sessionID: id }), directory)
+        }),
+      summarize: (id) => call(async () => (await client.session.compact({ sessionID: id }), true as const)),
+      share: () => unavailable("sharing a session"),
+      unshare: () => unavailable("sharing a session"),
+      init: () => unavailable("/init"),
+      fork: (id, body) => call(async () => mapSession(await client.session.fork({ sessionID: id, before: body.messageID }), directory)),
     },
     permission: {
       reply: (requestID, reply) => {

@@ -157,6 +157,21 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(res.data?.parts).toEqual([expect.objectContaining({ type: "text", text: "hello" })])
   })
 
+  it("runs the slash commands on the recorded routes", async () => {
+    const a = api()
+    expect((await a.session.summarize("ses_root")).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_root/compact" })
+    expect((await a.session.revert("ses_root", { messageID: "u1" })).data?.id).toBe("ses_root")
+    expect(server.requests.find((r) => r.path.endsWith("/revert/stage"))).toMatchObject({ method: "POST", body: { messageID: "u1" } })
+    expect((await a.session.unrevert("ses_root")).data?.id).toBe("ses_root")
+    expect(server.requests.find((r) => r.method === "DELETE" && r.path.endsWith("/revert"))).toMatchObject({ path: "/api/session/ses_root/revert" })
+    const forked = await a.session.fork("ses_root", { messageID: "u1" })
+    expect(forked.data).toMatchObject({ id: "ses_4", title: "Fork of Root chat" })
+    expect(server.requests.find((r) => r.path.endsWith("/fork"))).toMatchObject({ body: { before: "u1" } })
+    expect((await a.session.command("ses_root", { command: "review", arguments: "the diff" })).error).toBeUndefined()
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_root/command", body: { name: "review", text: "the diff" } })
+  })
+
   it("answers the operations the later steps own with a failure, not a hang", async () => {
     const res = await api().session.share("ses_root")
     expect(res.data).toBeUndefined()
