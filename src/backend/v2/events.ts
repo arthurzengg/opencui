@@ -27,6 +27,17 @@ export function createEventTranslator() {
   // status route, and a fresh session has no idle mark, so the listing
   // alone cannot say which sessions are working.
   const executing = new Set<string>()
+  // A live run showed no session.idle after a finished execution; the host
+  // reads idle as the end of a turn, so an execution's end becomes one. A
+  // session.idle that does arrive before the next execution is then
+  // dropped, since a second idle would flush a second queued message.
+  const idled = new Set<string>()
+  const idle = (sessionID: string): HostEvent[] => {
+    executing.delete(sessionID)
+    writing.delete(sessionID)
+    idled.add(sessionID)
+    return [{ type: "session.idle", properties: { sessionID } }]
+  }
 
   const part = (sessionID: string, messageID: string, id: string, rest: Record<string, unknown>): HostEvent => ({
     type: "message.part.updated",
@@ -166,25 +177,25 @@ export function createEventTranslator() {
       case "session.execution.started": {
         const d = event.data as Data<"session.execution.started">
         executing.add(d.sessionID)
+        idled.delete(d.sessionID)
         return [{ type: "session.status", properties: { sessionID: d.sessionID, status: { type: "busy" } } }]
       }
-      case "session.execution.succeeded": {
-        executing.delete((event.data as Data<"session.execution.succeeded">).sessionID)
-        return []
-      }
+      case "session.execution.succeeded":
+        return idle((event.data as Data<"session.execution.succeeded">).sessionID)
       case "session.execution.failed": {
         const d = event.data as Data<"session.execution.failed">
-        executing.delete(d.sessionID)
-        return [{ type: "session.error", properties: { sessionID: d.sessionID, error: { name: d.error.type, data: { message: d.error.message } } } }]
+        return [
+          { type: "session.error", properties: { sessionID: d.sessionID, error: { name: d.error.type, data: { message: d.error.message } } } },
+          ...idle(d.sessionID),
+        ]
       }
       case "session.execution.interrupted": {
         // 1.x marks the message aborted through its error; the router and
         // the webview read that name as "Stopped" rather than a failure.
         const d = event.data as Data<"session.execution.interrupted">
-        executing.delete(d.sessionID)
         const messageID = writing.get(d.sessionID)
-        if (!messageID) return []
-        return [info(d.sessionID, messageID, { error: { name: "MessageAbortedError", data: { message: "Aborted" } } })]
+        const aborted = messageID ? [info(d.sessionID, messageID, { error: { name: "MessageAbortedError", data: { message: "Aborted" } } })] : []
+        return [...aborted, ...idle(d.sessionID)]
       }
       case "session.retry.scheduled": {
         const d = event.data as Data<"session.retry.scheduled">
@@ -192,9 +203,8 @@ export function createEventTranslator() {
       }
       case "session.idle": {
         const d = event.data as Data<"session.idle">
-        writing.delete(d.sessionID)
-        executing.delete(d.sessionID)
-        return [{ type: "session.idle", properties: { sessionID: d.sessionID } }]
+        if (idled.delete(d.sessionID)) return []
+        return idle(d.sessionID)
       }
       case "session.compaction.ended": {
         // 1.x surfaces a compaction as an assistant message flagged summary,
