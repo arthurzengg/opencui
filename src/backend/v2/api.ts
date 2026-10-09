@@ -1,5 +1,6 @@
 import { OpenCode } from "@opencode/client/promise"
 import type { ApiResult, BackendApi } from "../api"
+import { mapAgents, mapCommands, mapMcpStatus, mapMessages, mapProviders, mapSession, mapSessionStatus } from "./map"
 
 export type V2Client = ReturnType<typeof OpenCode.make>
 
@@ -35,16 +36,31 @@ export function createV2Api(options: { url: string; directory: string; password:
     baseUrl: url,
     headers: { Authorization: `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}` },
   })
+  const location = { location: { directory } }
+  const listSessions = async (filter: { parentID?: string | null; limit?: number; search?: string }) =>
+    (await client.session.list({ directory, ...filter })).data
   return {
     directory,
     session: {
       create: () => unavailable("session.create"),
-      list: () => unavailable("session.list"),
-      messages: () => unavailable("session.messages"),
+      list: (options) =>
+        call(async () => {
+          const rows = await listSessions({
+            parentID: options?.roots ? null : undefined,
+            limit: options?.limit,
+            search: options?.search,
+          })
+          return rows.map((s) => mapSession(s, directory))
+        }),
+      messages: (id, options) =>
+        call(async () => {
+          const page = await client.message.list({ sessionID: id, limit: options?.limit })
+          return mapMessages(id, directory, page.data)
+        }),
       update: () => unavailable("session.update"),
       delete: () => unavailable("session.delete"),
-      status: () => unavailable("session.status"),
-      children: () => unavailable("session.children"),
+      status: () => call(async () => mapSessionStatus(await listSessions({}))),
+      children: (id) => call(async () => (await listSessions({ parentID: id })).map((s) => mapSession(s, directory))),
       prompt: () => unavailable("session.prompt"),
       promptAsync: () => unavailable("session.promptAsync"),
       command: () => unavailable("session.command"),
@@ -59,11 +75,17 @@ export function createV2Api(options: { url: string; directory: string; password:
     },
     permission: { reply: () => unavailable("permission.reply") },
     question: { reply: () => unavailable("question.reply"), reject: () => unavailable("question.reject") },
-    config: { providers: () => unavailable("config.providers") },
-    app: { agents: () => unavailable("app.agents") },
-    command: { list: () => unavailable("command.list") },
+    config: {
+      providers: () =>
+        call(async () => {
+          const [providers, models] = await Promise.all([client.provider.list(location), client.model.list(location)])
+          return mapProviders(providers.data, models.data)
+        }),
+    },
+    app: { agents: () => call(async () => mapAgents((await client.agent.list(location)).data)) },
+    command: { list: () => call(async () => mapCommands((await client.command.list(location)).data)) },
     mcp: {
-      status: () => unavailable("mcp.status"),
+      status: () => call(async () => mapMcpStatus((await client.mcp.list(location)).data)),
       add: () => unavailable("mcp.add"),
       connect: () => unavailable("mcp.connect"),
       disconnect: () => unavailable("mcp.disconnect"),
