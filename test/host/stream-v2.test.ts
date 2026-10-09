@@ -126,4 +126,33 @@ describe("subscribeSession over opencode 2.0 (#684)", () => {
     expect(resolved).toEqual(["req_1", "form_1"])
     subscription.abort()
   })
+
+  // The watchdog polls session.status when events stop; 2.0 has no status
+  // route, so the adapter derives it from the session listing.
+  it("recovers a lost idle through the derived status when events stop", async () => {
+    server.sessions = [{ id: S, projectID: "p", title: "t", cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, time: { created: 1, updated: 10, idle: 10 } }]
+    const backend = { url: server.url, api: createV2Api({ url: server.url, directory: "/ws", password: server.password }), directory: "/ws" } as Backend
+    let idle = 0
+    const subscription = subscribeSession(backend, S, { onTextDelta: () => {}, onSessionIdle: () => idle++ }, { watchdogMs: 50 })
+    await subscription.ready
+    await server.awaitClient()
+    push("session.step.started", { sessionID: S, assistantMessageID: M, agent: "build", model: { id: "m", providerID: "p" }, started: 1 })
+    push("session.text.delta", { sessionID: S, assistantMessageID: M, ordinal: 0, delta: "hi" })
+    await until(() => idle === 1, 2000)
+    expect(server.requests.some((r) => r.path === "/api/session" && r.query.directory === "/ws")).toBe(true)
+    subscription.abort()
+  })
+
+  it("discovers a subagent from a 2.0 session created under the parent", async () => {
+    const backend = { url: server.url, api: createV2Api({ url: server.url, directory: "/ws", password: server.password }), directory: "/ws" } as Backend
+    const discovered: Array<{ id: string; parentID?: string; title?: string }> = []
+    const subscription = subscribeSession(backend, S, { onTextDelta: () => {}, onChildSessionDiscovered: (info) => discovered.push(info) }, { watchdogMs: 10_000 })
+    await subscription.ready
+    await server.awaitClient()
+    push("session.created", { sessionID: "ses_child", projectID: "p", location: { directory: "/ws" }, parentID: S, slug: "worker", title: "Worker", version: "2" })
+    push("session.created", { sessionID: "ses_unrelated", projectID: "p", location: { directory: "/ws" }, slug: "other", version: "2" })
+    await until(() => discovered.length === 1)
+    expect(discovered[0]).toEqual({ id: "ses_child", parentID: S, title: "Worker" })
+    subscription.abort()
+  })
 })
