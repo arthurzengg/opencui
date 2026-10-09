@@ -172,6 +172,17 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_root/command", body: { name: "review", text: "the diff" } })
   })
 
+  it("adds, disconnects, and reconnects an MCP server on the experimental routes", async () => {
+    const a = api()
+    const added = await a.mcp.add({ name: "linear", config: { type: "remote", url: "https://mcp.linear.app", enabled: true } })
+    expect(added.data).toMatchObject({ github: { status: "connected" }, linear: { status: "connected" } })
+    expect(server.requests.find((r) => r.method === "PUT")).toMatchObject({ path: "/api/experimental/mcp/linear", query: { "location[directory]": "/ws" }, body: { config: { type: "remote", url: "https://mcp.linear.app", disabled: false } } })
+    expect((await a.mcp.disconnect("linear")).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/experimental/mcp/linear/disconnect" })
+    expect((await a.mcp.connect("linear")).data).toBe(true)
+    expect((await a.mcp.status()).data?.linear).toEqual({ status: "connected" })
+  })
+
   it("answers the operations the later steps own with a failure, not a hang", async () => {
     const res = await api().session.share("ses_root")
     expect(res.data).toBeUndefined()

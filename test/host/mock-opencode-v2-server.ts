@@ -169,6 +169,24 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     if (/^\/api\/session\/[^/]+\/permission\/[^/]+\/reply$/.test(path) && req.method === "POST") return empty(res)
     if (/^\/api\/session\/[^/]+\/form\/[^/]+\/reply$/.test(path) && req.method === "POST") return empty(res)
     if (/^\/api\/session\/[^/]+\/form\/[^/]+$/.test(path) && req.method === "DELETE") return empty(res)
+    const mcp = path.match(/^\/api\/experimental\/mcp\/([^/]+)(?:\/(connect|disconnect))?$/)
+    if (mcp) {
+      const name = mcp[1]!
+      if (req.method === "PUT") {
+        const config = (body as { config?: { disabled?: boolean } } | undefined)?.config
+        state.mcp = [...state.mcp.filter((s) => s.name !== name), { name, status: config?.disabled ? { status: "disabled" } : { status: "connected" } }]
+        return empty(res)
+      }
+      if (req.method === "DELETE") {
+        state.mcp = state.mcp.filter((s) => s.name !== name)
+        return empty(res)
+      }
+      if (req.method === "POST" && mcp[2]) {
+        const row = state.mcp.find((s) => s.name === name)
+        if (row) row.status = mcp[2] === "connect" ? { status: "connected" } : { status: "disabled" }
+        return empty(res)
+      }
+    }
     if (path === "/api/model") return json(res, 200, { location, data: state.models })
     if (path === "/api/provider") return json(res, 200, { location, data: state.providers })
     if (path === "/api/agent") return json(res, 200, { location, data: state.agents })

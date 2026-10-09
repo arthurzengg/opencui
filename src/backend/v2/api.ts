@@ -162,9 +162,15 @@ export function createV2Api(options: { url: string; directory: string; password:
     command: { list: () => call(async () => mapCommands((await client.command.list(location)).data)) },
     mcp: {
       status: () => call(async () => mapMcpStatus((await client.mcp.list(location)).data)),
-      add: () => unavailable("mcp.add"),
-      connect: () => unavailable("mcp.connect"),
-      disconnect: () => unavailable("mcp.disconnect"),
+      // 1.x says enabled, 2.0 says disabled; the rest of a config carries over.
+      add: (body) =>
+        call(async () => {
+          const { enabled, ...config } = body.config as { enabled?: boolean } & Record<string, unknown>
+          await client.mcp.add({ ...location, server: body.name, config: { ...config, disabled: enabled === false } as never })
+          return mapMcpStatus((await client.mcp.list(location)).data)
+        }),
+      connect: (name) => call(async () => (await client.mcp.connect({ ...location, server: name }), true as const)),
+      disconnect: (name) => call(async () => (await client.mcp.disconnect({ ...location, server: name }), true as const)),
       auth: { authenticate: () => unavailable("mcp.auth.authenticate"), remove: () => unavailable("mcp.auth.remove") },
     },
     provider: {
