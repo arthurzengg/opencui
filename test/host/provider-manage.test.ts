@@ -244,7 +244,8 @@ describe("ProviderManager.run — connect", () => {
       .mockResolvedValueOnce(undefined)
     win.showInputBox.mockResolvedValueOnce("the-code")
     await makeManager(backend).run()
-    expect(backend.api.provider.oauth.callback).toHaveBeenCalledWith("openai", { method: 0, code: "the-code" })
+    // No signal: a pasted code completes at once, there is nothing to cancel.
+    expect(backend.api.provider.oauth.callback).toHaveBeenCalledWith("openai", { method: 0, code: "the-code" }, undefined)
   })
 
   it("asks which login method when a provider exposes more than one", async () => {

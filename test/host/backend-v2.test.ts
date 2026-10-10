@@ -200,6 +200,21 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect((await a.mcp.status()).data?.linear).toEqual({ status: "connected" })
   })
 
+  it("signs an MCP server in through its integration's OAuth attempt, then reconnects it", async () => {
+    server.mcp = [{ name: "linear", status: { status: "needs_auth", error: "sign in" }, integrationID: "linear-int" }, { name: "local", status: { status: "connected" } }]
+    server.integrations = [{ id: "linear-int", name: "Linear", methods: [{ id: "oauth-1", type: "oauth", label: "Sign in" }], connections: [] }]
+    const a = api()
+    expect((await a.mcp.auth.authorize("linear")).data).toEqual({ url: "https://auth.example/start", method: "auto", instructions: "Finish in the browser" })
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/integration/linear-int/connect/oauth", body: { methodID: "oauth-1" } })
+    expect((await a.mcp.auth.callback("linear", {})).data).toEqual({ status: "connected" })
+    expect(server.requests.slice(-3).map((r) => `${r.method} ${r.path}`)).toEqual([
+      "GET /api/integration/linear-int/connect/oauth/att_1",
+      "POST /api/experimental/mcp/linear/connect",
+      "GET /api/mcp",
+    ])
+    expect(String((await a.mcp.auth.authorize("local")).error)).toContain("no sign-in integration")
+  })
+
   it("connects a provider with a key through its integration, lists it as connected, and removes the credential", async () => {
     server.providers = [{ id: "p", name: "Provider P", integrationID: "p-int", activation: "enabled", package: "pkg" }]
     server.integrations = [{ id: "p-int", name: "Provider P", methods: [{ type: "key", label: "API key" }, { id: "oauth-1", type: "oauth", label: "Sign in" }], connections: [] }]

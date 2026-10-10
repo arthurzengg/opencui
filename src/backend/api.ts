@@ -6,10 +6,10 @@ import type {
   ConfigProvidersResponses,
   McpAddData,
   McpAddResponses,
-  McpAuthAuthenticateResponses,
   McpAuthRemoveResponses,
   McpConnectResponses,
   McpDisconnectResponses,
+  McpStatus,
   McpStatusResponses,
   ProviderAuthResponses,
   ProviderListResponses,
@@ -78,6 +78,8 @@ type V2Params<K extends "permission" | "question" | "session", M extends keyof O
 export type PermissionReply = V2Params<"permission", "reply">["reply"]
 export type QuestionAnswers = V2Params<"question", "reply">["answers"]
 export type SessionListOptions = Omit<V2Params<"session", "list">, "directory">
+/** Where an OAuth sign-in sends the user, and how it ends: watched by the server or by a code pasted back. */
+export type OauthAuthorization = DataOf<ProviderOauthAuthorizeResponses>
 
 export interface BackendApi {
   /** Workspace the server was started in; sent with every request. */
@@ -131,7 +133,10 @@ export interface BackendApi {
     connect(name: string): Promise<ApiResult<DataOf<McpConnectResponses>>>
     disconnect(name: string): Promise<ApiResult<DataOf<McpDisconnectResponses>>>
     auth: {
-      authenticate(name: string): Promise<ApiResult<DataOf<McpAuthAuthenticateResponses>>>
+      /** Where the sign-in sends the user; 1.x opens the browser itself and answers with nothing to open. */
+      authorize(name: string): Promise<ApiResult<OauthAuthorization>>
+      /** Waits for the sign-in to finish, or completes it with the pasted code, and answers the server's new status. */
+      callback(name: string, body: { code?: string }, signal?: AbortSignal): Promise<ApiResult<McpStatus>>
       remove(name: string): Promise<ApiResult<DataOf<McpAuthRemoveResponses>>>
     }
   }

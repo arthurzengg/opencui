@@ -16,13 +16,14 @@ const win = vscode.window as unknown as {
   showWarningMessage: ReturnType<typeof vi.fn>
 }
 const writeText = (vscode.env.clipboard.writeText as unknown) as ReturnType<typeof vi.fn>
+const openExternal = vscode.env.openExternal as unknown as ReturnType<typeof vi.fn>
 
 type McpStub = {
   status: ReturnType<typeof vi.fn>
   add: ReturnType<typeof vi.fn>
   connect: ReturnType<typeof vi.fn>
   disconnect: ReturnType<typeof vi.fn>
-  auth: { authenticate: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> }
+  auth: { authorize: ReturnType<typeof vi.fn>; callback: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> }
 }
 
 function makeMcp(overrides: Partial<McpStub> = {}): McpStub {
@@ -32,7 +33,8 @@ function makeMcp(overrides: Partial<McpStub> = {}): McpStub {
     connect: vi.fn().mockResolvedValue({ data: true }),
     disconnect: vi.fn().mockResolvedValue({ data: true }),
     auth: {
-      authenticate: vi.fn().mockResolvedValue({ data: { status: "connected" } }),
+      authorize: vi.fn().mockResolvedValue({ data: { url: "https://auth.example/start", method: "auto", instructions: "" } }),
+      callback: vi.fn().mockResolvedValue({ data: { status: "connected" } }),
       remove: vi.fn().mockResolvedValue({ data: { success: true } }),
     },
     ...overrides,
@@ -55,6 +57,7 @@ beforeEach(() => {
   win.showErrorMessage.mockReset()
   win.showWarningMessage.mockReset()
   writeText.mockReset()
+  openExternal.mockReset()
 })
 
 describe("McpManager.run", () => {
@@ -77,14 +80,15 @@ describe("McpManager.run", () => {
     expect(mcp.status).toHaveBeenCalledTimes(2) // initial open + after the action
   })
 
-  it("authenticates a needs_auth server via the server-orchestrated flow", async () => {
+  it("signs in a needs_auth server: opens the URL, then waits on the callback", async () => {
     const mcp = makeMcp({ status: vi.fn().mockResolvedValue({ data: { linear: { status: "needs_auth" } } }) })
     win.showQuickPick
       .mockResolvedValueOnce({ server: "linear" })
       .mockResolvedValueOnce({ action: "authenticate" })
       .mockResolvedValueOnce(undefined)
     await makeManager(mcp).run()
-    expect(mcp.auth.authenticate).toHaveBeenCalledWith("linear")
+    expect(openExternal).toHaveBeenCalledTimes(1)
+    expect(mcp.auth.callback).toHaveBeenCalledWith("linear", {}, expect.any(AbortSignal))
     expect(win.showInformationMessage).toHaveBeenCalledWith(expect.stringContaining("connected"))
   })
 
