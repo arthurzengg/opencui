@@ -50,10 +50,13 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(children.data?.map((s) => s.id)).toEqual(["ses_child"])
   })
 
-  it("reports idle from the listing and busy from executions the stream saw", async () => {
+  it("reports idle from the listing and busy from the active route or executions the stream saw", async () => {
     const a = api()
     // A fresh session has no idle mark: the listing cannot call it busy.
     expect((await a.session.status()).data).toEqual({ ses_root: { type: "idle" }, ses_other: { type: "idle" } })
+    server.active = { ses_other: { type: "running" } }
+    expect((await a.session.status()).data?.ses_other).toEqual({ type: "busy" })
+    server.active = {}
     const controller = new AbortController()
     const iterator = (await a.events(controller.signal))[Symbol.asyncIterator]()
     await iterator.next()

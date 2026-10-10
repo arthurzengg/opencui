@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-import type { AgentInfo, CommandInfo, CredentialEntry, IntegrationAttemptStatus, IntegrationInfo, McpServer, ModelInfo, ProviderInfo, SessionInfo, SessionMessageInfo } from "@opencode/client/promise"
+import type { AgentInfo, CommandInfo, CredentialEntry, IntegrationAttemptStatus, IntegrationInfo, McpServer, ModelInfo, ProviderInfo, SessionActive, SessionInfo, SessionMessageInfo } from "@opencode/client/promise"
 
 /**
  * The slice of an opencode 2.0 server the adapter reads (#693): Basic auth
@@ -11,6 +11,8 @@ export type MockOpencodeV2 = {
   url: string
   password: string
   sessions: SessionInfo[]
+  /** What the active route answers: the sessions the server is running. */
+  active: Record<string, SessionActive>
   messages: Record<string, SessionMessageInfo[]>
   models: ModelInfo[]
   providers: ProviderInfo[]
@@ -36,6 +38,7 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     url: "",
     password,
     sessions: [],
+    active: {} as Record<string, SessionActive>,
     messages: {},
     models: [],
     providers: [],
@@ -110,6 +113,7 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
       })
       return
     }
+    if (path === "/api/session/active" && req.method === "GET") return json(res, 200, { data: state.active })
     if (path === "/api/session" && req.method === "GET") {
       let rows = state.sessions
       if (query.parentID === "null") rows = rows.filter((s) => !s.parentID)

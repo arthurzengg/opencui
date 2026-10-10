@@ -171,15 +171,17 @@ export function createV2Api(options: { url: string; directory: string; password:
           return mapSession(await client.session.get({ sessionID: id }), directory)
         }),
       delete: (id) => call(async () => (await client.session.remove({ sessionID: id }), true as const)),
-      // Busy sessions come from the stream; the listing's outcome and idle
-      // marks cover sessions this connection never saw start. Sessions in
-      // neither are left out, which the router reads as idle.
+      // Busy is what the server calls active plus the executions this stream
+      // saw start (the active route lags an execution's first events); the
+      // listing's outcome and idle marks cover the rest. Sessions in neither
+      // are left out, which the router reads as idle.
       status: () =>
         call(async () => {
-          const derived = mapSessionStatus(await listSessions({}))
+          const [sessions, active] = await Promise.all([listSessions({}), client.session.active()])
+          const derived = mapSessionStatus(sessions)
           const status: typeof derived = {}
           for (const [id, value] of Object.entries(derived)) if (value.type !== "busy") status[id] = value
-          for (const id of translator.executing()) status[id] = { type: "busy" }
+          for (const id of [...Object.keys(active), ...translator.executing()]) status[id] = { type: "busy" }
           return status
         }),
       children: (id) => call(async () => (await listSessions({ parentID: id })).map((s) => mapSession(s, directory))),
