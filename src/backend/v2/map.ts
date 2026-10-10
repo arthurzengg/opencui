@@ -1,7 +1,6 @@
 import type {
   Agent,
   AssistantMessage,
-  Command,
   McpStatus,
   Message,
   Model,
@@ -13,6 +12,7 @@ import type {
   UserMessage,
 } from "@opencode-ai/sdk"
 import type { Session as SessionListed } from "@opencode-ai/sdk/v2"
+import type { CommandEntry } from "../api"
 import type {
   AgentInfo,
   CommandInfo,
@@ -191,8 +191,8 @@ export function mapAgents(agents: AgentInfo[]): Agent[] {
 }
 
 /** 2.0 commands carry no template, so none is known to take arguments. */
-export function mapCommands(commands: CommandInfo[]): Command[] {
-  return commands.map((c) => ({ name: c.name, description: c.description, template: "" }))
+export function mapCommands(commands: CommandInfo[]): CommandEntry[] {
+  return commands.map((c) => ({ name: c.name, description: c.description }))
 }
 
 /** 2.0's "pending" (still connecting) has no 1.x counterpart; it shows as a failure that names the wait. */

@@ -95,9 +95,9 @@ describe("opencode 2.0 mappers (#693)", () => {
     expect(mapAgents(agents)).toEqual([expect.objectContaining({ name: "build", mode: "primary", description: "Default", model: { providerID: "anthropic", modelID: "claude-sonnet-5" } })])
   })
 
-  it("maps commands with an empty template, since 2.0 carries none", () => {
+  it("maps commands without a template, since 2.0 carries none", () => {
     const commands: CommandInfo[] = [{ name: "review", description: "Review changes" }]
-    expect(mapCommands(commands)).toEqual([{ name: "review", description: "Review changes", template: "" }])
+    expect(mapCommands(commands)).toEqual([{ name: "review", description: "Review changes" }])
   })
 
   it("maps every MCP status, naming the wait for a server still connecting", () => {

@@ -84,7 +84,7 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(providers.data?.providers[0]).toMatchObject({ id: "p", name: "Provider P" })
     expect(Object.keys((providers.data?.providers[0]?.models.m as unknown as { variants: object }).variants)).toEqual(["high"])
     expect(agents.data).toEqual([expect.objectContaining({ name: "build", mode: "primary" })])
-    expect(commands.data).toEqual([{ name: "review", description: undefined, template: "" }])
+    expect(commands.data).toEqual([{ name: "review", description: undefined }])
     expect(mcp.data).toEqual({ github: { status: "connected" } })
     for (const path of ["/api/model", "/api/provider", "/api/agent", "/api/command", "/api/mcp"]) {
       expect(server.requests.find((r) => r.path === path)?.query).toEqual({ "location[directory]": "/ws" })

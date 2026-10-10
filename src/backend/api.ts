@@ -2,7 +2,7 @@ import type {
   AppAgentsResponses,
   AuthSetData,
   AuthSetResponses,
-  CommandListResponses,
+  Command,
   ConfigProvidersResponses,
   McpAddData,
   McpAddResponses,
@@ -78,6 +78,8 @@ type V2Params<K extends "permission" | "question" | "session", M extends keyof O
 export type PermissionReply = V2Params<"permission", "reply">["reply"]
 export type QuestionAnswers = V2Params<"question", "reply">["answers"]
 export type SessionListOptions = Omit<V2Params<"session", "list">, "directory">
+/** 2.0 lists commands without their template, so the picker cannot tell which take arguments. */
+export type CommandEntry = Omit<Command, "template"> & { template?: string }
 /** Where an OAuth sign-in sends the user, and how it ends: watched by the server or by a code pasted back. */
 export type OauthAuthorization = DataOf<ProviderOauthAuthorizeResponses>
 
@@ -124,7 +126,7 @@ export interface BackendApi {
   }
 
   command: {
-    list(): Promise<ApiResult<DataOf<CommandListResponses>>>
+    list(): Promise<ApiResult<CommandEntry[]>>
   }
 
   mcp: {
