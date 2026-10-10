@@ -4,6 +4,8 @@ import type { ServerManager, Backend } from "../server"
 import type { Preferences } from "../preferences"
 import {
   subscribeSession,
+  type ChildSessionEvent,
+  ACTIVITY_STREAM_FIELD_MAX,
   type PermissionRequest,
   type QuestionRequest,
   type Subscription,
@@ -63,7 +65,7 @@ import { RecentEditsTracker } from "../workspace-context/recent-edits"
 import { readContextSettings } from "../workspace-context/budget"
 import type { IndexManager } from "../indexing/index-manager"
 import { AgentTaskStore, classifyTerminal, type AgentTask } from "../agents/task-store"
-import { summarizeAgentTasks } from "../agents/summary"
+import { summarizeAgentTasks, compactSessionMessages } from "../agents/summary"
 import { SubagentTracker } from "../agents/subagent-tracker"
 import { toWire } from "./wire-format"
 import {
@@ -199,13 +201,15 @@ export class ChatView implements vscode.WebviewViewProvider {
   /** Disk home for attachment bytes; conversation state keeps references only. */
   private attachmentStore: AttachmentStore
 
+  private activitySubscribers = new Map<string, { childSessionID: string; lastStatus?: string }>()
+
   constructor(
     private context: vscode.ExtensionContext,
     private servers: ServerManager,
     private prefs: Preferences,
     private recentEdits: RecentEditsTracker,
     private indexManager: IndexManager,
-    private taskStore?: AgentTaskStore,
+    private taskStore?: AgentTaskStore
   ) {
     // Memento.update writes to the in-memory cache synchronously and only the
     // disk flush is async, so the very-next `workspaceState.get` below still
@@ -302,6 +306,120 @@ export class ChatView implements vscode.WebviewViewProvider {
       `[agents-status] post snapshot conv=${activeID} total=${status.total} (running=${status.running} waiting=${status.waiting} error=${status.error}) ids=[${status.tasks.map((t) => `${t.kind}:${t.id}`).join(", ")}]`,
     )
     this.post({ type: "agentsStatus", status })
+  }
+
+  /**
+   * Stuck-agent detail: resolve taskID → child session via the task
+   * store, fetch that session's transcript from the server, and reply
+   * compacted (role + text + tool names, field-capped). Resolution
+   * failure — unknown taskID, main row, metadata not yet landed — is all
+   * one answer: `ok:false, "unknown task"`.
+   */
+  private async handleAgentActivity(requestID: number, taskID: string) {
+    let childSessionID = this.taskStore?.get(taskID)?.childSessionID
+    if (!childSessionID && taskID.startsWith("subagent:child:")) {
+      childSessionID = taskID.slice("subagent:child:".length)
+    }
+    if (!childSessionID) {
+      this.post({ type: "agentActivityResponse", requestID, ok: false, error: "unknown task" })
+      return
+    }
+    try {
+      const backend = await this.servers.ensure()
+      const res = await backend.api.session.messages(childSessionID)
+      if (res.error || !res.data) {
+        log(`agentActivity: messages fetch failed task=${taskID}`, res.error)
+        this.post({ type: "agentActivityResponse", requestID, ok: false, error: "failed to load activity" })
+        return
+      }
+      const messages = compactSessionMessages(res.data as Parameters<typeof compactSessionMessages>[0])
+      this.post({ type: "agentActivityResponse", requestID, ok: true, messages })
+    } catch (e) {
+      log(`agentActivity threw task=${taskID}`, e)
+      this.post({ type: "agentActivityResponse", requestID, ok: false, error: "failed to load activity" })
+    }
+  }
+
+  /**
+   * Open the live stdout feed for one task. Resolves taskID → child
+   * session; unknown / main / no-child rows all answer the same immediate
+   * `{kind:"status", status:"error"}` push so the detail view surfaces
+   * something instead of hanging silent.
+   */
+  private handleActivitySubscribe(taskID: string) {
+    let childSessionID = this.taskStore?.get(taskID)?.childSessionID
+    if (!childSessionID && taskID.startsWith("subagent:child:")) {
+      childSessionID = taskID.slice("subagent:child:".length)
+    }
+    if (!childSessionID) {
+      this.post({
+        type: "agentActivityStream",
+        taskID,
+        event: { kind: "status", status: "error" },
+      })
+      return
+    }
+    this.activitySubscribers.set(taskID, { childSessionID, lastStatus: undefined })
+  }
+
+  private handleActivityUnsubscribe(taskID: string) {
+    this.activitySubscribers.delete(taskID)
+  }
+
+  /**
+   * Fan one child SSE event out to every subscriber watching that child.
+   * `lastStatus` dedups busy/idle/error — those fire per-delta / per-
+   * transition and would otherwise flood the feed with identical lines.
+   * Idle/error also emit `{kind:"end"}` so the detail view knows the
+   * stream is finished (record stays until the webview unsubscribes).
+   */
+  private pushActivityStream(event: ChildSessionEvent) {
+    if (this.activitySubscribers.size === 0) return
+    for (const [taskID, sub] of this.activitySubscribers.entries()) {
+      if (sub.childSessionID !== event.sessionID) continue
+      if (event.type === "busy" || event.type === "idle" || event.type === "error") {
+        if (sub.lastStatus === event.type) continue
+        sub.lastStatus = event.type
+        this.post({
+          type: "agentActivityStream",
+          taskID,
+          event: { kind: "status", status: event.type },
+        })
+        if (event.type === "idle" || event.type === "error") {
+          this.post({ type: "agentActivityStream", taskID, event: { kind: "end" } })
+        }
+        continue
+      }
+      if (event.type === "text") {
+        this.post({ type: "agentActivityStream", taskID, event: { kind: "text", text: event.text } })
+        continue
+      }
+      if (event.type === "toolStart") {
+        this.post({
+          type: "agentActivityStream",
+          taskID,
+          event: { kind: "tool", tool: event.tool, input: event.input },
+        })
+        continue
+      }
+      if (event.type === "tool") {
+        const output = event.update.output
+        this.post({
+          type: "agentActivityStream",
+          taskID,
+          event: {
+            kind: "toolResult",
+            tool: event.update.tool,
+            output:
+              output === undefined
+                ? undefined
+                : output.length > ACTIVITY_STREAM_FIELD_MAX
+                  ? output.slice(0, ACTIVITY_STREAM_FIELD_MAX)
+                  : output,
+          },
+        })
+      }
+    }
   }
 
   /**
@@ -492,6 +610,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
     this.taskStoreUnsub?.dispose()
     this.taskStoreUnsub = undefined
+    this.activitySubscribers.clear()
     this.activityEmitter.dispose()
     this.permissionRulesUnsub?.dispose()
     this.permissionRulesUnsub = undefined
@@ -1401,6 +1520,15 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       case "importSession":
         await this.importSession(msg.sessionID)
+        return
+      case "agentActivityRequest":
+        await this.handleAgentActivity(msg.requestID, msg.taskID)
+        return
+      case "agentActivitySubscribe":
+        this.handleActivitySubscribe(msg.taskID)
+        return
+      case "agentActivityUnsubscribe":
+        this.handleActivityUnsubscribe(msg.taskID)
         return
       case "refreshSessions":
         void this.refreshExternalSessions(undefined, msg.search)
@@ -2406,6 +2534,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         if (event.type === "tool" || event.type === "patch") {
           this.appendSubagentBlock(event, backend.directory)
         }
+        this.pushActivityStream(event)
         if (!this.subagentTracker) return
         void this.subagentTracker.handleChildSessionEvent(event).then(() => {
           // After any child terminal event, if we were deferring an

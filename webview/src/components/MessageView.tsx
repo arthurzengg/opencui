@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { RetryStatus } from "./RetryStatus"
 import { useLivePhase } from "../hooks/useLivePhase"
-import type { Block, Message } from "../hooks/useChatState"
+import type { Block, Message, AgentActivityResult } from "../hooks/useChatState"
 import type { AgentsStatusInfo, Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit, SessionRetryInfo } from "../protocol"
 import { findTokenRanges, makeAttachmentLabel } from "../mention-tokens"
 import {
@@ -51,6 +51,8 @@ type MessageViewProps = {
   onRetry?: (assistantID: string) => void
   agentActivity?: AgentsStatusInfo
   agentActivityEntering?: boolean
+  /** Loads one agent's transcript for the popover detail view. */
+  requestAgentActivity?: (taskID: string) => Promise<AgentActivityResult>
   /** Provider retry opencode is waiting on; rendered in place of the thinking indicator (#611). */
   retry?: SessionRetryInfo
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
@@ -98,6 +100,7 @@ function MessageViewComponent({
   onRetry,
   agentActivity,
   agentActivityEntering,
+  requestAgentActivity,
   retry,
   searchFiles,
   listDir,
@@ -134,7 +137,7 @@ function MessageViewComponent({
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
       {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
-      <AgentActivity status={agentActivity} entering={agentActivityEntering} />
+      <AgentActivity status={agentActivity} entering={agentActivityEntering} requestActivity={requestAgentActivity} />
       {retry && message.pending && <RetryStatus retry={retry} onOpenLink={onOpenLink} />}
       {!retry && message.pending && message.blocks.length === 0 && (
         <ThinkingLine quiet={(agentActivity?.total ?? 0) > 0} />

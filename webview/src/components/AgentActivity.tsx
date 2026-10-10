@@ -1,129 +1,305 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { AgentsStatusInfo, AgentsTaskInfo } from "../protocol"
-import { useDismissableMenu } from "../hooks/useDismissableMenu"
+import type { AgentActivityResult, AgentActivityStreamEvent } from "../hooks/useChatState"
+import { subscribeAgentActivity } from "../hooks/useChatState"
 import { useLivePhase } from "../hooks/useLivePhase"
 import { formatAgent, formatModel } from "./StatusBar"
 
-export function AgentActivity({ status, entering }: { status?: AgentsStatusInfo; entering?: boolean }) {
-  const { toggle, ref, open } = useDismissableMenu()
-  const running = (status?.running ?? 0) > 0
-  // Only the dot breathes; the label and colour stay still (#621).
-  const dotPhase = useLivePhase(running)
+/**
+ * Same grace idea as ToolCard's ELAPSED_GRACE_MS: don't flag a running
+ * task until the staleness is clearly past normal churn. Measured against
+ * `updatedAt`, which the host refreshes on status transitions — a running
+ * row whose `updatedAt` has gone silent this long gets a "no updates
+ * recently" hint in the detail view and a stuck class on the badge.
+ * ponytail: host currently skips same-status refreshes while a row stays
+ * running (subagent-tracker busy handler), so long healthy runs can trip
+ * this — shrink the grace or ask the host lane for an updatedAt heartbeat
+ * once the activity feed lands.
+ */
+const STUCK_GRACE_MS = 60_000
+
+/**
+ * ponytail: live buffer is unbounded per subscription except for this cap —
+ * a chatty subagent's stdout would otherwise grow without limit while the
+ * detail view stays open; drop oldest past the limit.
+ */
+const LIVE_LINE_LIMIT = 1000
+
+export function AgentActivity({
+  status,
+  entering,
+  requestActivity,
+}: {
+  status?: AgentsStatusInfo
+  entering?: boolean
+  requestActivity?: (taskID: string) => Promise<AgentActivityResult>
+}) {
+  const [selectedId, setSelectedId] = useState<string>()
+  const lastChildSessionIdRef = useRef<string>()
+
+  const selectedTask = status?.tasks.find((task) => task.id === selectedId)
+  if (selectedTask?.childSessionID) {
+    lastChildSessionIdRef.current = selectedTask.childSessionID
+  } else if (!selectedId) {
+    lastChildSessionIdRef.current = undefined
+  }
+
+  // Task disappearance (agentsStatus prune) while its detail is open:
+  // clear the selection so the detail unmounts → subscribe cleanup posts
+  // agentActivityUnsubscribe. If the task was promoted to childSessionID identity,
+  // update selectedId so the view stays open. Hooks stay above the early return.
+  useEffect(() => {
+    if (!selectedId || !status) return
+    const matching = status.tasks.find((task) => task.id === selectedId)
+    if (matching) return
+    if (lastChildSessionIdRef.current) {
+      const promoted = status.tasks.find((task) => task.childSessionID === lastChildSessionIdRef.current)
+      if (promoted) {
+        setSelectedId(promoted.id)
+        return
+      }
+    }
+    setSelectedId(undefined)
+  }, [selectedId, status])
 
   if (!status || status.total === 0) return null
 
-  const errorOnly = !running && status.error > 0
-  const waitingOnly = !running && !errorOnly && status.waiting > 0
-  const className =
-    "agents-pill agent-activity-pill" +
-    (open ? " is-open" : "") +
-    (running ? " is-running" : "") +
-    (errorOnly ? " is-error" : "") +
-    (waitingOnly ? " is-waiting" : "")
-
-  // total === tasks.length by construction in summarizeAgentTasks (pinned
-  // by test), so past the total-0 guard above the popover always has rows.
   const tasks = status.tasks
-  const main = tasks.filter((t) => t.kind === "main")
-  const sub = tasks.filter((t) => t.kind === "subagent")
+  const selected = selectedId
+    ? tasks.find(
+        (task) =>
+          task.id === selectedId ||
+          (Boolean(lastChildSessionIdRef.current) && task.childSessionID === lastChildSessionIdRef.current),
+      )
+    : undefined
 
   return (
-    <div className={"agent-activity" + (entering ? " is-entering" : "")} ref={ref}>
-      <button
-        type="button"
-        className={className}
-        onClick={toggle}
-        title={buildAgentsTitle(status)}
-        aria-label="Open agents for this response"
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        <span className={`agent-activity-dot${running ? " live-breathe" : ""}`} style={dotPhase} aria-hidden="true" />
-        <span className="agent-activity-name">Agents</span>
-        <span className="agent-activity-summary">{activitySummary(status)}</span>
-      </button>
-      {open && (
-        <div className="agents-popover agent-activity-popover" role="menu">
-          <div className="agents-popover-title">Agents in this response</div>
-          <div className="agents-popover-scroll">
-            {main.length > 0 && (
-              <>
-                <div className="agents-popover-section">Main</div>
-                {main.map((task) => (
-                  <AgentsRow key={task.id} task={task} />
-                ))}
-              </>
-            )}
-            {sub.length > 0 && (
-              <>
-                <div className="agents-popover-section">Subagents</div>
-                {sub.map((task) => (
-                  <AgentsRow key={task.id} task={task} />
-                ))}
-              </>
-            )}
-          </div>
-        </div>
+    <div
+      className={"agent-activity" + (entering ? " is-entering" : "")}
+      role="group"
+      aria-label="Agents for this response"
+    >
+      {selected ? (
+        <AgentDetail task={selected} requestActivity={requestActivity} onBack={() => setSelectedId(undefined)} />
+      ) : (
+        tasks.map((task) => (
+          <AgentBadge key={task.id} task={task} onOpen={() => setSelectedId(task.id)} />
+        ))
       )}
     </div>
   )
 }
 
-function AgentsRow({ task }: { task: AgentsTaskInfo }) {
+/** One badge per active agent: role name + status dot + short elapsed. */
+function AgentBadge({ task, onOpen }: { task: AgentsTaskInfo; onOpen: () => void }) {
   const isLive = task.status === "running" || task.status === "waiting"
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!isLive) return
-    const handle = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(handle)
-  }, [isLive])
-
-  const elapsedMs = isLive ? now - task.startedAt : task.updatedAt - task.startedAt
-  const elapsed = formatElapsed(elapsedMs)
+  const now = useTickingNow(isLive)
+  const elapsed = formatElapsed(isLive ? now - task.startedAt : task.updatedAt - task.startedAt)
+  const stuck = task.status === "running" && now - task.updatedAt > STUCK_GRACE_MS
+  const running = task.status === "running"
+  const phase = useLivePhase(running)
+  const label = badgeLabel(task)
   const statusText = task.status === "error" && task.error
     ? `error · ${task.error}`
     : task.status
-  const subagentLabel = task.subagent ? formatAgent(task.subagent) : undefined
-  const modelLabel = task.model ? formatModel(`${task.model.providerID}/${task.model.modelID}`) : undefined
-  const categoryLabel = task.category && task.category !== task.subagent ? task.category : undefined
-  const detailParts = [
-    categoryLabel ? `category: ${categoryLabel}` : undefined,
-    subagentLabel,
-    modelLabel,
-  ].filter((part): part is string => Boolean(part))
-  const detail = detailParts.length > 0 ? detailParts.join(" · ") : undefined
-  const tooltip = [task.title, statusText, elapsed, detail].filter(Boolean).join(" · ")
+  const tooltip = [task.title, statusText, elapsed, stuck ? "no updates recently" : undefined]
+    .filter(Boolean)
+    .join(" · ")
   return (
-    <div className={`agents-row agents-row-${task.status}`} title={tooltip}>
-      <span className="agents-row-title">{task.title}</span>
-      <span className="agents-row-meta">{statusText} · {elapsed}</span>
-      {detail && <span className="agents-row-detail">{detail}</span>}
+    <button
+      type="button"
+      className={`agents-badge agents-badge-${task.status}${stuck ? " is-stuck" : ""}`}
+      onClick={onOpen}
+      title={tooltip}
+      aria-label={`Open ${label} activity`}
+    >
+      <span className={`agent-activity-dot${running ? " live-breathe" : ""}`} style={phase} aria-hidden="true" />
+      <span className="agents-badge-name">{label}</span>
+      <span className="agents-badge-elapsed">{elapsed}</span>
+    </button>
+  )
+}
+
+/** Role name: main agent reads "Main"; subagent slug pretty-printed via formatAgent. */
+function badgeLabel(task: AgentsTaskInfo): string {
+  if (task.kind === "main") return "Main"
+  if (task.subagent) return formatAgent(task.subagent)
+  return "Agent"
+}
+
+function AgentDetail({
+  task,
+  requestActivity,
+  onBack,
+}: {
+  task: AgentsTaskInfo
+  requestActivity?: (taskID: string) => Promise<AgentActivityResult>
+  onBack: () => void
+}) {
+  const [result, setResult] = useState<AgentActivityResult | undefined>(undefined)
+  const [live, setLive] = useState<AgentActivityStreamEvent[]>([])
+  const feedRef = useRef<HTMLDivElement>(null)
+  const stickRef = useRef(true)
+  const isLive = task.status === "running" || task.status === "waiting"
+  const now = useTickingNow(isLive)
+  const elapsedMs = isLive ? now - task.startedAt : task.updatedAt - task.startedAt
+  const statusText = task.status === "error" && task.error
+    ? `error · ${task.error}`
+    : task.status
+  const stuck = task.status === "running" && now - task.updatedAt > STUCK_GRACE_MS
+
+  // Escape key returns to badge list.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
+        onBack()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [onBack])
+
+  // Backlog: one-shot request/response for what already happened.
+  useEffect(() => {
+    if (!requestActivity) return
+    let active = true
+    setResult(undefined)
+    requestActivity(task.id).then((response) => {
+      if (active) setResult(response)
+    })
+    return () => {
+      active = false
+    }
+  }, [requestActivity, task.id])
+
+  // Live tail: subscribe on open; cleanup posts unsubscribe (Back click or
+  // task-disappearance unmount — both funnel through this teardown).
+  // Consecutive text events are coalesced so streaming tokens flow naturally.
+  useEffect(() => {
+    const off = subscribeAgentActivity(task.id, (event) => {
+      setLive((prev) => {
+        if (event.kind === "text" && prev.length > 0 && prev[prev.length - 1].kind === "text") {
+          const last = prev[prev.length - 1] as { kind: "text"; text: string }
+          const updated: AgentActivityStreamEvent = {
+            kind: "text",
+            text: last.text + event.text,
+          }
+          return [...prev.slice(0, -1), updated]
+        }
+        return prev.length >= LIVE_LINE_LIMIT ? [...prev.slice(1), event] : [...prev, event]
+      })
+    })
+    return off
+  }, [task.id])
+
+  // Stick to bottom while the reader is at (or near) the bottom; a scroll-up
+  // disengages until they return. Same idea as the chat's stick-to-bottom.
+  const handleFeedScroll = () => {
+    const el = feedRef.current
+    if (!el) return
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 16
+  }
+  useEffect(() => {
+    const el = feedRef.current
+    if (!el || !stickRef.current) return
+    el.scrollTop = el.scrollHeight
+  })
+
+  const loading = requestActivity !== undefined && result === undefined
+  const errorText = requestActivity === undefined
+    ? "Activity unavailable"
+    : result && !result.ok
+      ? (result.error ? result.error : "Activity unavailable")
+      : undefined
+  const messages = result && result.ok && result.messages ? result.messages : undefined
+  const empty = !loading && !errorText && !messages?.length && live.length === 0
+
+  return (
+    <div className="agents-detail">
+      <button type="button" className="agents-detail-back" onClick={onBack} aria-label="Back">
+        Back
+      </button>
+      <div className="agents-detail-title">{task.title}</div>
+      <div className="agents-detail-meta">
+        <span className={`agents-detail-status agents-detail-status-${task.status}`}>{statusText}</span>
+        <span> · {formatElapsed(elapsedMs)}</span>
+        {stuck && <span className="agents-detail-stuck"> · no updates recently</span>}
+      </div>
+      <div className="agents-detail-grid">
+        <div className="agents-detail-grid-row">
+          <span className="agents-detail-key">Agent</span>
+          <span className="agents-detail-val">{task.subagent ? task.subagent : "main"}</span>
+        </div>
+        {task.model && (
+          <div className="agents-detail-grid-row">
+            <span className="agents-detail-key">Model</span>
+            <span className="agents-detail-val">{formatModel(`${task.model.providerID}/${task.model.modelID}`)}</span>
+          </div>
+        )}
+        {task.category && task.category !== task.subagent && (
+          <div className="agents-detail-grid-row">
+            <span className="agents-detail-key">Category</span>
+            <span className="agents-detail-val">{task.category}</span>
+          </div>
+        )}
+      </div>
+      <div className="agents-detail-feed" ref={feedRef} onScroll={handleFeedScroll}>
+        {loading && <div className="agents-detail-note" role="status">Loading activity…</div>}
+        {errorText && <div className="agents-detail-error">{errorText}</div>}
+        {empty && <div className="agents-detail-note">No activity recorded</div>}
+        {messages?.map((message, i) => (
+          <div
+            key={i}
+            className={`agents-feed-row agents-feed-${message.role === "user" || message.role === "assistant" ? message.role : "other"}`}
+          >
+            <span className="agents-feed-role">{message.role}</span>
+            {message.text && <span className="agents-feed-text">{message.text}</span>}
+            {message.tools && message.tools.length > 0 && (
+              <div className="agents-feed-tools">
+                {message.tools.map((tool, idx) => (
+                  <span key={idx} className="agents-feed-tool-pill">
+                    tool {tool}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        {live.map((event, i) => (
+          <div key={`live-${i}`} className={`agents-live-line agents-live-${event.kind}`}>
+            {formatLiveLine(event)}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
 
-// Both helpers render only behind the total-0 guard, and total is the sum
-// of running + waiting + error — at least one count is always non-zero.
-function activitySummary(status: AgentsStatusInfo): string {
-  if (status.running > 0) return `${status.running} running`
-  if (status.waiting > 0) return `${status.waiting} waiting`
-  return `${status.error} error${status.error === 1 ? "" : "s"}`
+function formatLiveLine(event: AgentActivityStreamEvent): string {
+  if (event.kind === "text") return event.text
+  if (event.kind === "tool") return event.input ? `tool ${event.tool} ${event.input}` : `tool ${event.tool}`
+  if (event.kind === "toolResult") return event.output ? `result ${event.tool} ${event.output}` : `result ${event.tool}`
+  if (event.kind === "status") return `status ${event.status}`
+  return "stream ended"
 }
 
-function buildAgentsTitle(status: AgentsStatusInfo): string {
-  const lines: string[] = []
-  if (status.running > 0)
-    lines.push(`${status.running} agent${status.running === 1 ? "" : "s"} running`)
-  if (status.waiting > 0) lines.push(`${status.waiting} waiting for input`)
-  if (status.error > 0) lines.push(`${status.error} with errors`)
-  lines.push("Click to view")
-  return lines.join("\n")
+/** Wall-clock ticker for live badges; frozen (returns mount time) when inactive. */
+function useTickingNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    const handle = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(handle)
+  }, [active])
+  return now
 }
 
 /**
  * Every prompt records a Main row, so total is never 0 during a reply. The
- * pill is for subagent work (#680), and settled rows never reach the wire, so
- * any subagent row here is running, waiting, or in error.
+ * surface is for subagent work (#680), and settled rows never reach the wire,
+ * so any subagent row here is running, waiting, or in error.
  */
 export function hasSubagentWork(status?: AgentsStatusInfo): boolean {
   return !!status && status.tasks.some((task) => task.kind === "subagent")

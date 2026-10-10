@@ -358,6 +358,14 @@ export type AgentsTaskInfo = {
   /** Resolved model — same shape opencode reports on the assistant
    * message; the StatusBar will prettify it through `formatModel`. */
   model?: { providerID: string; modelID: string }
+  /**
+   * Subagent's own opencode sessionID, forwarded so the webview can ask
+   * the host for this agent's compact transcript via
+   * `agentActivityRequest`. Undefined on main rows (no child session) and
+   * on subagent rows whose tool metadata hasn't landed yet. The parent
+   * `sessionID` stays stripped — the popover must not learn it.
+   */
+  childSessionID?: string
 }
 
 /**
@@ -386,6 +394,18 @@ export type AgentsStatusInfo = {
   error: number
   total: number
   tasks: AgentsTaskInfo[]
+}
+
+/**
+ * One transcript row in `agentActivityResponse` — deliberately tiny
+ * (role + text + tool names, each field capped host-side) so a stuck
+ * subagent's activity can be inspected without shipping the full child
+ * session (reasoning, tool I/O, patches) over the wire.
+ */
+export type AgentActivityMessage = {
+  role: "user" | "assistant"
+  text: string
+  tools: string[]
 }
 
 /**
@@ -486,6 +506,17 @@ export type Attachment = {
   storageID?: string
 }
 
+/**
+ * One live event in an open agent detail view's stdout feed. Pushed by the
+ * host as `agentActivityStream` once the webview has subscribed.
+ */
+export type AgentActivityStreamEvent =
+  | { kind: "text"; text: string }
+  | { kind: "tool"; tool: string; input?: string }
+  | { kind: "toolResult"; tool: string; output?: string }
+  | { kind: "status"; status: string }
+  | { kind: "end" }
+
 /** Messages sent from the extension host to the webview. */
 export type Outbound =
   | { type: "ready"; connected: boolean; selection: Selection }
@@ -548,6 +579,10 @@ export type Outbound =
   | { type: "appendComposerText"; text: string; mention?: string }
   | { type: "indexStatus"; status: IndexStatusInfo }
   | { type: "agentsStatus"; status: AgentsStatusInfo }
+  /** Reply to `agentActivityRequest`; `ok:false` carries `error` only. */
+  | { type: "agentActivityResponse"; requestID: number; ok: boolean; messages?: AgentActivityMessage[]; error?: string }
+  /** Push for a subscribed task's live stdout feed. */
+  | { type: "agentActivityStream"; taskID: string; event: AgentActivityStreamEvent }
   | { type: "fileSearchResult"; requestID: number; hits: FileSearchHit[] }
   | { type: "listDirResult"; requestID: number; entries: DirEntry[] }
   | { type: "attachmentResult"; requestID: number; attachments: Attachment[]; error?: string }
@@ -606,3 +641,16 @@ export type Inbound =
   | { type: "questionReject"; id: string }
   | { type: "startIndex" }
   | { type: "stopIndex" }
+  /**
+   * Fetch one agent's compact child-session transcript (stuck-agent
+   * detail view). The host resolves `taskID` → `childSessionID` via the
+   * AgentTaskStore — the webview never talks to the child session itself.
+   */
+  | { type: "agentActivityRequest"; requestID: number; taskID: string }
+  /**
+   * Open / close the live stdout feed for one task. On subscribe the host
+   * resolves `taskID` → `childSessionID` and starts pushing
+   * `agentActivityStream` events; on unsubscribe it stops.
+   */
+  | { type: "agentActivitySubscribe"; taskID: string }
+  | { type: "agentActivityUnsubscribe"; taskID: string }

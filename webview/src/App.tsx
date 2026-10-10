@@ -49,6 +49,7 @@ export default function App() {
     searchFiles,
     listDir,
     attachFile,
+    requestAgentActivity,
     startIndex,
     stopIndex,
     openLink,
@@ -454,6 +455,7 @@ export default function App() {
                 onRetry={handleRetry}
                 agentActivity={m.id === agentActivityMessageID ? state.agentsStatus : undefined}
                 agentActivityEntering={m.id === agentActivityEntering}
+                requestAgentActivity={requestAgentActivity}
                 retry={m.id === activeProcessID ? state.retry : undefined}
                 onOpenLink={openLink}
               />

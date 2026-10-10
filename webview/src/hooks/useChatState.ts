@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef } from "react"
 import { vscode } from "../vscode"
 import { createDeltaCoalescer } from "../delta-coalescer"
 import type {
+  AgentActivityStreamEvent,
   AgentsStatusInfo,
   Attachment,
   ChatBlock,
@@ -29,6 +30,130 @@ import type {
 
 export type Block = ChatBlock
 export type Message = ChatMessage
+
+/** One compact transcript line for an agent's detail view. */
+export type AgentActivityMessage = { role: string; text: string; tools?: string[] }
+
+export type AgentActivityResult = {
+  ok: boolean
+  messages?: AgentActivityMessage[]
+  error?: string
+}
+
+/**
+ * Per-request store for in-flight `agentActivityRequest` round-trips. Entries
+ * resolve (and delete themselves) on `agentActivityResponse` or the 5s
+ * timeout — a task removed from `agentsStatus` mid-flight just orphans the
+ * detail view, and the late response finds no resolver, so nothing to prune.
+ */
+const agentActivityPending = new Map<number, (result: AgentActivityResult) => void>()
+let nextAgentActivityRequestID = 1
+
+function isAgentActivityMessage(entry: unknown): entry is AgentActivityMessage {
+  if (typeof entry !== "object" || entry === null) return false
+  const candidate = entry as { role?: unknown; text?: unknown; tools?: unknown }
+  return (
+    typeof candidate.role === "string" &&
+    typeof candidate.text === "string" &&
+    (candidate.tools === undefined || Array.isArray(candidate.tools))
+  )
+}
+
+/**
+ * Returns true when `msg` was an `agentActivityResponse` (consumed here).
+ * The host-lane contract types aren't in protocol.ts yet, so the shape is
+ * guarded field by field before touching the pending map.
+ */
+function resolveAgentActivity(msg: Outbound): boolean {
+  const response = msg as unknown as {
+    type?: unknown
+    requestID?: unknown
+    ok?: unknown
+    messages?: unknown
+    error?: unknown
+  }
+  if (response.type !== "agentActivityResponse") return false
+  if (typeof response.requestID !== "number") return true
+  const resolve = agentActivityPending.get(response.requestID)
+  if (!resolve) return true
+  agentActivityPending.delete(response.requestID)
+  resolve({
+    ok: response.ok === true,
+    messages: Array.isArray(response.messages)
+      ? response.messages.filter(isAgentActivityMessage).map((m) => ({
+          role: m.role,
+          text: m.text,
+          tools: Array.isArray(m.tools) ? m.tools.filter((t): t is string => typeof t === "string") : [],
+        }))
+      : undefined,
+    error: typeof response.error === "string" ? response.error : undefined,
+  })
+  return true
+}
+
+/** Re-export so components import the wire type from one place. */
+export type { AgentActivityStreamEvent }
+
+function parseStreamEvent(raw: unknown): AgentActivityStreamEvent | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined
+  const event = raw as {
+    kind?: unknown
+    text?: unknown
+    tool?: unknown
+    input?: unknown
+    output?: unknown
+    status?: unknown
+  }
+  if (event.kind === "text" && typeof event.text === "string") {
+    return { kind: "text", text: event.text }
+  }
+  if (event.kind === "tool" && typeof event.tool === "string") {
+    return { kind: "tool", tool: event.tool, input: typeof event.input === "string" ? event.input : undefined }
+  }
+  if (event.kind === "toolResult" && typeof event.tool === "string") {
+    return { kind: "toolResult", tool: event.tool, output: typeof event.output === "string" ? event.output : undefined }
+  }
+  if (event.kind === "status" && typeof event.status === "string") {
+    return { kind: "status", status: event.status }
+  }
+  if (event.kind === "end") return { kind: "end" }
+  return undefined
+}
+
+/** Guarded parse of a host `agentActivityStream` push; undefined = not ours / malformed. */
+export function parseAgentActivityStream(
+  msg: Outbound,
+): { taskID: string; event: AgentActivityStreamEvent } | undefined {
+  const raw = msg as unknown as { type?: unknown; taskID?: unknown; event?: unknown }
+  if (raw.type !== "agentActivityStream") return undefined
+  if (typeof raw.taskID !== "string") return undefined
+  const event = parseStreamEvent(raw.event)
+  if (!event) return undefined
+  return { taskID: raw.taskID, event }
+}
+
+/**
+  * Open the live stdout feed for one agent. Returns the unsubscribe function
+ * (detaches the listener AND posts `agentActivityUnsubscribe` — callers must
+ * run it on detail close and on task disappearance). One listener per
+ * subscription: detail views are rare and short-lived, so a shared
+ * multiplexer would only save a listener or two.
+ */
+export function subscribeAgentActivity(
+  taskID: string,
+  onEvent: (event: AgentActivityStreamEvent) => void,
+): () => void {
+  const off = vscode.onMessage((msg) => {
+    const stream = parseAgentActivityStream(msg)
+    if (!stream || stream.taskID !== taskID) return
+    onEvent(stream.event)
+  })
+  vscode.post({ type: "agentActivitySubscribe", taskID })
+  return () => {
+    off()
+    vscode.post({ type: "agentActivityUnsubscribe", taskID })
+  }
+}
 
 /**
  * A prompt the user submitted while a turn was still running. Held
@@ -529,6 +654,7 @@ export function useChatState() {
     // and bypass the queue.
     const coalescer = createDeltaCoalescer(dispatch)
     const off = vscode.onMessage((msg) => {
+      if (resolveAgentActivity(msg)) return
       if (msg.type === "fileSearchResult") {
         const resolver = fileSearchPending.current.get(msg.requestID)
         if (resolver) {
@@ -614,6 +740,16 @@ export function useChatState() {
         setTimeout(() => {
           if (attachPending.current.delete(requestID)) resolve({ attachments: [] })
         }, 5 * 60 * 1000)
+      })
+    },
+    requestAgentActivity(taskID: string): Promise<AgentActivityResult> {
+      const requestID = nextAgentActivityRequestID++
+      return new Promise<AgentActivityResult>((resolve) => {
+        agentActivityPending.set(requestID, resolve)
+        vscode.post({ type: "agentActivityRequest", requestID, taskID })
+        setTimeout(() => {
+          if (agentActivityPending.delete(requestID)) resolve({ ok: false, error: "No response from host" })
+        }, 5000)
       })
     },
     abort() {

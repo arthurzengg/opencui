@@ -240,16 +240,18 @@ button:focus-visible {
   }
 }
 /* ===== AgentActivity =====
-   Message-flow activity surface for live main-agent + subagent work. It
-   renders inside the active assistant message, next to the Process panel,
-   so it reads as "work for this response" instead of another header setting. */
+   One badge per active agent (running / waiting / error), side by side,
+   inside the assistant message next to the Process panel. Clicking a badge
+   swaps the row for that agent's inline detail view — no popover. */
 .agent-activity {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin: -4px 0 10px;
 }
-/* Only through the class: the pill remounts in each new assistant message
+/* Only through the class: the surface remounts in each new assistant message
    while work continues, and App marks just the one it appeared in (#674). */
 .agent-activity.is-entering {
   animation: agent-activity-in 0.2s ease;
@@ -260,44 +262,31 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .agent-activity.is-entering { animation: none; }
 }
-.agents-pill {
+.agents-badge {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  background: transparent;
-  border: 0;
-  /* Match .selector-trigger so the hover bubble (when it appears) has the
-     same visual weight as the model / agent trigger. Padding stays applied
-     all the time so the layout doesn't jump on hover — only the background
-     fades in. */
-  padding: 2px 9px;
-  min-height: 22px;
-  border-radius: var(--radius-lg);
-  margin: 0;
-  font: inherit;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--vscode-foreground);
-  cursor: pointer;
-  line-height: 1.5;
-  white-space: nowrap;
-  transition: background-color 0.12s ease;
-}
-.agent-activity-pill {
   gap: 6px;
+  min-height: 22px;
   padding: 3px 9px;
   border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--radius-lg);
   background: var(--vscode-editorWidget-background);
-  color: var(--vscode-foreground);
-  font-size: 11px;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+  margin: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  transition: background-color 0.12s ease;
 }
-.agent-activity-name {
-  font-weight: 700;
-}
-.agent-activity-summary {
-  font-weight: 500;
-  opacity: 0.7;
+.agents-badge:hover,
+.agents-badge:focus-visible {
+  background: var(--hover-bg-pill);
 }
 .agent-activity-dot {
   flex: 0 0 auto;
@@ -306,120 +295,140 @@ button:focus-visible {
   border-radius: var(--radius-pill);
   background: var(--color-status-default);
 }
-.agents-pill:hover,
-.agents-pill.is-open {
-  background: var(--hover-bg-pill);
-}
-.agents-pill.is-idle {
-  color: var(--vscode-foreground);
-  opacity: 0.55;
-}
-.agents-pill.is-running {
-  color: var(--color-agent-running);
-}
-.agents-pill.is-running .agent-activity-dot {
-  background: var(--color-agent-running);
-}
-.agents-pill.is-error {
-  color: var(--color-error);
-}
-.agents-pill.is-error .agent-activity-dot {
-  background: var(--color-error);
-}
-.agents-pill.is-waiting {
+.agents-badge-running { color: var(--color-agent-running); }
+.agents-badge-running .agent-activity-dot { background: var(--color-agent-running); }
+.agents-badge-waiting {
   color: var(--color-warn);
+  opacity: 0.75;
 }
-.agents-pill.is-waiting .agent-activity-dot {
-  background: var(--color-warn);
+.agents-badge-waiting .agent-activity-dot { background: var(--color-warn); }
+.agents-badge-error { color: var(--color-error); }
+.agents-badge-error .agent-activity-dot { background: var(--color-error); }
+/* Stale updatedAt on a running badge: elapsed goes warn-colored. */
+.agents-badge.is-stuck .agents-badge-elapsed { color: var(--color-warn); }
+.agents-badge-name { font-weight: 700; }
+.agents-badge-elapsed {
+  font-weight: 500;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }
-.agents-popover {
-  position: absolute;
-  /* Same surface vocabulary as the header popovers, but anchored to the
-     inline activity pill so it opens beside the Process panel rather than
-     from the status bar. */
-  top: calc(100% + 2px);
-  right: 10px;
-  width: min(300px, calc(100vw - 20px));
-  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
-  color: var(--vscode-foreground);
-  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-popover);
-  padding: 8px 0;
-  z-index: var(--z-popover);
-  font-size: 12px;
-  /* Cap how tall the popover can grow before scrolling — without this a
-     long-running Hephaestus session can produce 20+ historical
-     subagents and the popover would otherwise stretch off the
-     bottom of the chat view. The header sticks in place; only the
-     list scrolls (see `.agents-popover-scroll` below). */
+/* ===== Agent detail (opens in place of the badge row) ===== */
+.agents-detail {
   display: flex;
   flex-direction: column;
-  max-height: min(420px, calc(100vh - 80px));
-  overflow: hidden;
+  gap: 6px;
+  padding: 0 12px;
+  width: 100%;
+  box-sizing: border-box;
 }
-.agent-activity-popover {
-  top: calc(100% + 4px);
-  left: 0;
-  right: auto;
-  width: min(320px, calc(100vw - 36px));
-  max-height: min(360px, calc(100vh - 140px));
+.agents-detail-back {
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
 }
-.agents-popover-scroll {
+.agents-detail-back:hover { text-decoration: underline; }
+.agents-detail-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.agents-detail-meta {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.agents-detail-status-running { color: var(--color-agent-running); }
+.agents-detail-status-error { color: var(--color-error); }
+.agents-detail-status-waiting { color: var(--color-warn); }
+.agents-detail-stuck { color: var(--color-warn); }
+.agents-detail-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+.agents-detail-grid-row {
+  display: flex;
+  gap: 8px;
+}
+.agents-detail-key {
+  opacity: 0.55;
+  min-width: 56px;
+}
+.agents-detail-val {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.agents-detail-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--vscode-panel-border);
+  padding-top: 6px;
+  /* Cap the feed: header stays visible, only transcript scrolls. */
+  max-height: min(240px, 50vh);
   overflow-y: auto;
-  min-height: 0;
-  /* Subtle scrollbar to match VS Code; falls back to system default. */
   scrollbar-width: thin;
 }
-.agents-popover-title {
-  padding: 0 12px 6px;
+.agents-detail-note {
+  opacity: 0.6;
   font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.7;
 }
-.agents-popover-section {
-  padding: 6px 12px 2px;
+.agents-detail-error {
+  color: var(--color-error);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.agents-feed-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.agents-feed-role {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  opacity: 0.55;
-}
-.agents-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 12px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.agents-row-title {
-  font-weight: 500;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-.agents-row-meta {
-  opacity: 0.65;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-/* Per-subagent "agent slug · model name" sub-label. Renders only when
-   omo's tool metadata gave us something to show; main-agent rows leave
-   it undefined because the StatusBar already shows the user's primary
-   agent + model next to the selector. */
-.agents-row-detail {
   opacity: 0.5;
-  font-size: 10.5px;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  font-variant-numeric: tabular-nums;
 }
-.agents-row-running .agents-row-title { color: var(--color-agent-running); }
-.agents-row-error .agents-row-meta { color: var(--color-error); }
-.agents-row-waiting .agents-row-meta { color: var(--color-warn); }
+.agents-feed-text {
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agents-feed-user .agents-feed-text { opacity: 0.85; }
+.agents-feed-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.agents-feed-tool-pill {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--vscode-editor-inactiveSelectionBackground, rgba(127, 127, 127, 0.15));
+  color: var(--vscode-terminal-ansiCyan, var(--vscode-descriptionForeground));
+  line-height: 1.4;
+}
+/* Live tail lines under the backlog: monospace, terminal-ish. */
+.agents-live-line {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agents-live-tool { color: var(--vscode-terminal-ansiCyan, var(--vscode-descriptionForeground)); }
+.agents-live-toolResult { opacity: 0.65; }
+.agents-live-status { color: var(--color-warn); }
+.agents-live-end {
+  opacity: 0.5;
+  font-style: italic;
+}
 
 .selector-menu {
   flex: 0 1 auto;
@@ -659,7 +668,7 @@ button:focus-visible {
   font-weight: 600;
   text-transform: uppercase;
   /* All uppercase micro-labels track at 0.05em (see .question-header,
-     .mention-section, .agents-popover-*). */
+     .mention-section, .agents-feed-role). */
   letter-spacing: 0.05em;
   cursor: default;
 }

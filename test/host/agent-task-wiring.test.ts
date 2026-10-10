@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest"
-import { taskTitleFromUpdate, summarizeAgentTasks } from "../../src/agents/summary"
+import {
+  taskTitleFromUpdate,
+  summarizeAgentTasks,
+  isSubagentTool,
+  compactSessionMessages,
+  MAX_ACTIVITY_TEXT_CHARS,
+  MAX_ACTIVITY_TOOLS,
+} from "../../src/agents/summary"
 import { SubagentDispatch, summarizePrompt } from "../../src/chat/subagent-dispatch"
 import type { ToolUpdate } from "../../src/chat/stream"
 import { AgentTaskStore, type AgentTask, type Memento } from "../../src/agents/task-store"
@@ -148,6 +155,7 @@ describe("summarizeAgentTasks", () => {
       subagent: undefined,
       category: undefined,
       model: undefined,
+      childSessionID: undefined,
     })
   })
 
@@ -193,6 +201,113 @@ describe("summarizeAgentTasks", () => {
     expect(mainRow.subagent).toBeUndefined()
     expect(mainRow.category).toBeUndefined()
     expect(mainRow.model).toBeUndefined()
+  })
+
+  it("forwards childSessionID so the webview can request the child transcript", () => {
+    const result = summarizeAgentTasks([
+      task({
+        id: "main:c:s",
+        kind: "main",
+        sessionID: "s",
+        status: "running",
+      }),
+      task({
+        id: "subagent:child:ses_x",
+        kind: "subagent",
+        sessionID: "s",
+        childSessionID: "ses_x",
+        status: "running",
+      }),
+    ])
+    const mainRow = result.tasks.find((t) => t.kind === "main")!
+    const subRow = result.tasks.find((t) => t.kind === "subagent")!
+    expect(mainRow.childSessionID).toBeUndefined()
+    expect(subRow.childSessionID).toBe("ses_x")
+    // sessionID itself must stay stripped — privacy strip unchanged.
+    expect(Object.keys(mainRow)).not.toContain("sessionID")
+    expect(Object.keys(mainRow)).not.toContain("conversationID")
+    expect(Object.keys(mainRow)).not.toContain("callID")
+  })
+})
+
+describe("compactSessionMessages", () => {
+  it("reduces a transcript to role + joined text + tool names", () => {
+    const out = compactSessionMessages([
+      { info: { id: "m1", role: "user" }, parts: [{ type: "text", text: "do the thing" }] },
+      {
+        info: { id: "m2", role: "assistant" },
+        parts: [
+          { type: "reasoning", text: "hidden chain" },
+          { type: "tool", tool: "bash", callID: "c1", state: { status: "running" } },
+          { type: "text", text: "part one" },
+          { type: "text", text: "part two" },
+        ],
+      },
+    ])
+    expect(out).toEqual([
+      { role: "user", text: "do the thing", tools: [] },
+      { role: "assistant", text: "part one\n\npart two", tools: ["bash"] },
+    ])
+  })
+
+  it("keeps running tools (stuck mid-tool is the point of the view)", () => {
+    const out = compactSessionMessages([
+      {
+        info: { id: "m1", role: "assistant" },
+        parts: [{ type: "tool", tool: "task", callID: "c1", state: { status: "running" } }],
+      },
+    ])
+    expect(out).toEqual([{ role: "assistant", text: "", tools: ["task"] }])
+  })
+
+  it("skips synthetic/ignored text and non-user/assistant roles", () => {
+    const out = compactSessionMessages([
+      { info: { id: "m0", role: "system" }, parts: [{ type: "text", text: "sys" }] },
+      {
+        info: { id: "m2", role: "user" },
+        parts: [
+          { type: "text", text: "synthetic", synthetic: true },
+          { type: "text", text: "ignored", ignored: true },
+        ],
+      },
+      { info: { id: "m3", role: "assistant" }, parts: [{ type: "reasoning", text: "only reasoning" }] },
+    ])
+    expect(out).toEqual([])
+  })
+
+  it("keeps summary messages — they are assistant text and cheap context", () => {
+    const out = compactSessionMessages([
+      { info: { id: "m1", role: "assistant", summary: true }, parts: [{ type: "text", text: "sum" }] },
+    ])
+    expect(out).toEqual([{ role: "assistant", text: "sum", tools: [] }])
+  })
+
+  it("caps text at MAX_ACTIVITY_TEXT_CHARS and tools at MAX_ACTIVITY_TOOLS", () => {
+    const out = compactSessionMessages([
+      {
+        info: { id: "m1", role: "assistant" },
+        parts: [
+          { type: "text", text: "x".repeat(MAX_ACTIVITY_TEXT_CHARS + 500) },
+          ...Array.from({ length: MAX_ACTIVITY_TOOLS + 20 }, (_, i) => ({
+            type: "tool",
+            tool: `tool_${i}`,
+            callID: `c${i}`,
+            state: { status: "running" },
+          })),
+        ],
+      },
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0]!.text).toHaveLength(MAX_ACTIVITY_TEXT_CHARS)
+    expect(out[0]!.tools).toHaveLength(MAX_ACTIVITY_TOOLS)
+  })
+
+  it("drops messages with neither text nor tools", () => {
+    const out = compactSessionMessages([
+      { info: { id: "m1", role: "assistant" }, parts: [] },
+      { info: { id: "m2", role: "assistant" } },
+    ])
+    expect(out).toEqual([])
   })
 })
 

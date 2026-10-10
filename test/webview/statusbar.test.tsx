@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, cleanup, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { StatusBar } from "../../webview/src/components/StatusBar"
 import { AgentActivity } from "../../webview/src/components/AgentActivity"
+import { vscode } from "../../webview/src/vscode"
+import type { AgentActivityResult } from "../../webview/src/hooks/useChatState"
 
 beforeEach(() => {
   cleanup()
@@ -420,51 +422,122 @@ describe("AgentActivity", () => {
 
   it("stays hidden until there is active agent work", () => {
     render(<AgentActivity />)
-    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Agents for this response" })).not.toBeInTheDocument()
     cleanup()
     render(<AgentActivity status={{ running: 0, waiting: 0, error: 0, total: 0, tasks: [] }} />)
-    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Agents for this response" })).not.toBeInTheDocument()
   })
 
-  it("waits until click to dismiss so outside targets can handle their own click first", async () => {
-    const user = userEvent.setup()
-    render(<AgentActivity status={baseStatus} />)
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("Explain this file")).toBeInTheDocument()
-    fireEvent.pointerDown(document.body)
-    expect(screen.getByText("Explain this file")).toBeInTheDocument()
-    fireEvent.click(document.body)
-    expect(screen.queryByText("Explain this file")).not.toBeInTheDocument()
+  it("renders one badge per task labeled with the role name, not the title", () => {
+    render(
+      <AgentActivity
+        status={{
+          running: 2,
+          waiting: 0,
+          error: 0,
+          total: 2,
+          tasks: [
+            {
+              id: "main:c:s",
+              kind: "main",
+              title: "Refactor module",
+              status: "running",
+              startedAt: Date.now() - 5_000,
+              updatedAt: Date.now(),
+            },
+            {
+              id: "subagent:s:c1",
+              kind: "subagent",
+              title: "Fix lint errors",
+              status: "running",
+              startedAt: Date.now() - 2_000,
+              updatedAt: Date.now(),
+              subagent: "explore",
+            },
+          ],
+        }}
+      />,
+    )
+    // formatAgent("explore") → "Explore"; main agent reads "Main".
+    expect(screen.getByRole("button", { name: "Open Main activity" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Explore activity" })).toBeInTheDocument()
+    expect(screen.queryByText("Refactor module")).not.toBeInTheDocument()
   })
 
-  it("renders 'Agents' when a task is running in this chat", () => {
-    render(<AgentActivity status={baseStatus} />)
-    expect(screen.getByText("Agents")).toBeInTheDocument()
-    expect(screen.getByText("1 running")).toBeInTheDocument()
+  it("styles badges per status: running normal, waiting dimmed, error red", () => {
+    render(
+      <AgentActivity
+        status={{
+          running: 1,
+          waiting: 1,
+          error: 1,
+          total: 3,
+          tasks: [
+            {
+              id: "main:c:s",
+              kind: "main",
+              title: "Explain this file",
+              status: "running",
+              startedAt: Date.now() - 12_000,
+              updatedAt: Date.now(),
+            },
+            {
+              id: "subagent:s:w1",
+              kind: "subagent",
+              title: "Waiting on input",
+              status: "waiting",
+              startedAt: Date.now() - 8_000,
+              updatedAt: Date.now(),
+              subagent: "librarian",
+            },
+            {
+              id: "subagent:s:e1",
+              kind: "subagent",
+              title: "Failed worker",
+              status: "error",
+              error: "boom",
+              startedAt: Date.now() - 10_000,
+              updatedAt: Date.now() - 1_000,
+            },
+          ],
+        }}
+      />,
+    )
+    const runningBadge = screen.getByRole("button", { name: "Open Main activity" })
+    const waitingBadge = screen.getByRole("button", { name: "Open Librarian activity" })
+    const errorBadge = screen.getByRole("button", { name: "Open Agent activity" })
+    expect(runningBadge.className).toContain("agents-badge-running")
+    expect(waitingBadge.className).toContain("agents-badge-waiting")
+    expect(waitingBadge.className).not.toContain("agents-badge-running")
+    expect(errorBadge.className).toContain("agents-badge-error")
+    expect(errorBadge.className).not.toContain("agents-badge-running")
   })
 
-  it("applies is-running class so the breathing animation can trigger", () => {
-    render(<AgentActivity status={baseStatus} />)
-    const pill = screen.getByRole("button", { name: /open agents/i })
-    expect(pill.className).toContain("agents-pill")
-    expect(pill.className).toContain("is-running")
-  })
-
-  it("breathes only the dot while running, on the shared clock (#621)", () => {
+  it("breathes only the badge dot while running, on the shared clock (#621)", () => {
     const { container, rerender } = render(<AgentActivity status={baseStatus} />)
     const dot = container.querySelector(".agent-activity-dot") as HTMLElement
     expect(dot.className).toContain("live-breathe")
     expect(dot.style.animationDelay).toMatch(/^-?\d+ms$/)
-    const pill = screen.getByRole("button", { name: /open agents/i }) as HTMLElement
-    expect(pill.className).not.toContain("live-breathe")
-    expect(pill.style.animationDelay).toBe("")
+    const badge = screen.getByRole("button", { name: "Open Main activity" }) as HTMLElement
+    expect(badge.className).not.toContain("live-breathe")
+    expect(badge.style.animationDelay).toBe("")
 
-    rerender(<AgentActivity status={{ ...baseStatus, running: 0, waiting: 1 }} />)
+    rerender(
+      <AgentActivity
+        status={{
+          running: 0,
+          waiting: 1,
+          error: 0,
+          total: 1,
+          tasks: [{ ...baseStatus.tasks[0]!, status: "waiting" }],
+        }}
+      />,
+    )
     expect(dot.className).not.toContain("live-breathe")
     expect(dot.style.animationDelay).toBe("")
   })
 
-  it("uses static is-error class when only error tasks remain", () => {
+  it("keeps the errored badge red even when nothing else is running", () => {
     render(
       <AgentActivity
         status={{
@@ -486,58 +559,12 @@ describe("AgentActivity", () => {
         }}
       />,
     )
-    const pill = screen.getByRole("button", { name: /open agents/i })
-    expect(pill.className).toContain("is-error")
-    expect(pill.className).not.toContain("is-running")
+    const badge = screen.getByRole("button", { name: "Open Main activity" })
+    expect(badge.className).toContain("agents-badge-error")
+    expect(badge.className).not.toContain("agents-badge-running")
   })
 
-  it("opens an inline popover on click and lists tasks", async () => {
-    const user = userEvent.setup()
-    render(
-      <AgentActivity
-        status={{
-          ...baseStatus,
-          running: 2,
-          total: 2,
-          tasks: [
-            {
-              id: "main:c:s",
-              kind: "main",
-              title: "Refactor module",
-              status: "running",
-              startedAt: Date.now() - 5_000,
-              updatedAt: Date.now(),
-            },
-            {
-              id: "subagent:s:c1",
-              kind: "subagent",
-              title: "Fix lint errors",
-              status: "running",
-              startedAt: Date.now() - 2_000,
-              updatedAt: Date.now(),
-            },
-          ],
-        }}
-      />,
-    )
-    expect(screen.queryByText("Refactor module")).not.toBeInTheDocument()
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("Refactor module")).toBeInTheDocument()
-    expect(screen.getByText("Fix lint errors")).toBeInTheDocument()
-    expect(screen.getByText("Main")).toBeInTheDocument()
-    expect(screen.getByText("Subagents")).toBeInTheDocument()
-  })
-
-  it("groups separators are omitted when only one kind is present", async () => {
-    const user = userEvent.setup()
-    render(<AgentActivity status={baseStatus} />)
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("Main")).toBeInTheDocument()
-    expect(screen.queryByText("Subagents")).not.toBeInTheDocument()
-  })
-
-  it("shows errored subagent rows alongside a running parent", async () => {
-    const user = userEvent.setup()
+  it("shows an errored subagent badge alongside a running parent", () => {
     render(
       <AgentActivity
         status={{
@@ -562,45 +589,71 @@ describe("AgentActivity", () => {
               error: "search timed out",
               startedAt: Date.now() - 10_000,
               updatedAt: Date.now() - 5_000,
+              subagent: "explore",
             },
           ],
         }}
       />,
     )
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("Explore codebase patterns")).toBeInTheDocument()
-    expect(screen.getByText("Subagents")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Main activity" }).className).toContain("agents-badge-running")
+    const errored = screen.getByRole("button", { name: "Open Explore activity" })
+    expect(errored.className).toContain("agents-badge-error")
+    expect(errored.getAttribute("title")).toMatch(/search timed out/)
   })
 
-  it("closes the popover when Escape is pressed", async () => {
-    const user = userEvent.setup()
-    render(<AgentActivity status={baseStatus} />)
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("Explain this file")).toBeInTheDocument()
-    await user.keyboard("{Escape}")
-    expect(screen.queryByText("Explain this file")).not.toBeInTheDocument()
-  })
-
-  it("shows a tooltip summarizing the counts", () => {
+  it("hides again once every task has settled", () => {
     render(
       <AgentActivity
         status={{
-          running: 2,
-          waiting: 1,
+          running: 0,
+          waiting: 0,
           error: 0,
-          total: 3,
+          total: 0,
           tasks: [],
         }}
       />,
     )
-    const pill = screen.getByRole("button", { name: /open agents/i })
-    expect(pill.getAttribute("title")).toMatch(/2 agents running/)
-    expect(pill.getAttribute("title")).toMatch(/1 waiting for input/)
-    expect(pill.getAttribute("title")).toMatch(/Click to view/)
+    expect(screen.queryByRole("group", { name: "Agents for this response" })).not.toBeInTheDocument()
   })
 
-  it("renders the subagent slug + prettified model on a subagent row", async () => {
+  it("freezes the elapsed time on error badges using updatedAt - startedAt", () => {
+    render(
+      <AgentActivity
+        status={{
+          running: 0,
+          waiting: 0,
+          error: 1,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_err",
+              kind: "subagent",
+              title: "Failed subagent",
+              status: "error",
+              error: "boom",
+              startedAt: 1_000,
+              updatedAt: 13_000, // 12s elapsed regardless of when the badge renders
+            },
+          ],
+        }}
+      />,
+    )
+    const badge = screen.getByRole("button", { name: "Open Agent activity" })
+    // The badge freezes the duration: updatedAt - startedAt stays "12s".
+    expect(within(badge).getByText("12s")).toBeInTheDocument()
+    expect(badge.getAttribute("title")).toMatch(/error · boom/)
+  })
+
+  it("opens the detail view from a badge: backlog + live stream + unsubscribe on close", async () => {
     const user = userEvent.setup()
+    const postSpy = vi.spyOn(vscode, "post").mockImplementation(() => {})
+    let resolveActivity: (result: AgentActivityResult) => void = () => {}
+    const requestActivity = vi.fn(
+      () =>
+        new Promise<AgentActivityResult>((resolve) => {
+          resolveActivity = resolve
+        }),
+    )
     render(
       <AgentActivity
         status={{
@@ -621,15 +674,123 @@ describe("AgentActivity", () => {
             },
           ],
         }}
+        requestActivity={requestActivity}
       />,
     )
-    await user.click(screen.getByText("Agents"))
-    // formatAgent("explore") → "Explore"; formatModel(...) → "Opus 4.5".
-    // The detail string joins them with " · ".
-    expect(screen.getByText(/Explore · Opus 4\.5/)).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open Explore activity" }))
+    expect(requestActivity).toHaveBeenCalledWith("subagent:child:ses_x")
+    expect(postSpy).toHaveBeenCalledWith({
+      type: "agentActivitySubscribe",
+      taskID: "subagent:child:ses_x",
+    })
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument()
+    expect(screen.getByText("explore")).toBeInTheDocument()
+    expect(screen.getByText(/Opus 4\.5/)).toBeInTheDocument()
+    expect(screen.getByText("running")).toBeInTheDocument()
+    expect(screen.getByText("Loading activity…")).toBeInTheDocument()
+
+    resolveActivity({ ok: true, messages: [{ role: "assistant", text: "Searching docs" }] })
+    await screen.findByText("Searching docs")
+    expect(screen.queryByText("Loading activity…")).not.toBeInTheDocument()
+
+    // Live events append under the backlog.
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "agentActivityStream",
+          taskID: "subagent:child:ses_x",
+          event: { kind: "text", text: "live line one" },
+        },
+      }),
+    )
+    await screen.findByText("live line one")
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "agentActivityStream",
+          taskID: "subagent:child:ses_x",
+          event: { kind: "tool", tool: "bash", input: "bun test" },
+        },
+      }),
+    )
+    await screen.findByText("tool bash bun test")
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "agentActivityStream",
+          taskID: "subagent:child:ses_x",
+          event: { kind: "status", status: "waiting" },
+        },
+      }),
+    )
+    await screen.findByText("status waiting")
+    // Events for other tasks (or malformed ones) never land in this feed.
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "agentActivityStream",
+          taskID: "subagent:child:other",
+          event: { kind: "text", text: "foreign line" },
+        },
+      }),
+    )
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "agentActivityStream",
+          taskID: "subagent:child:ses_x",
+          event: { kind: "bogus" },
+        },
+      }),
+    )
+    expect(screen.queryByText("foreign line")).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Back" }))
+    expect(postSpy).toHaveBeenCalledWith({
+      type: "agentActivityUnsubscribe",
+      taskID: "subagent:child:ses_x",
+    })
+    expect(screen.getByRole("button", { name: "Open Explore activity" })).toBeInTheDocument()
   })
 
-  it("prefixes a category label when the dispatch went through a category route", async () => {
+  it("shows the host error text when the backlog request fails", async () => {
+    const user = userEvent.setup()
+    vi.spyOn(vscode, "post").mockImplementation(() => {})
+    const requestActivity = vi.fn(() =>
+      Promise.resolve<AgentActivityResult>({ ok: false, error: "session gone" }),
+    )
+    render(
+      <AgentActivity
+        status={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_e",
+              kind: "subagent",
+              title: "Broken worker",
+              status: "running",
+              startedAt: Date.now() - 1_000,
+              updatedAt: Date.now(),
+            },
+          ],
+        }}
+        requestActivity={requestActivity}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "Open Agent activity" }))
+    await screen.findByText("session gone")
+    expect(screen.queryByText("Loading activity…")).not.toBeInTheDocument()
+  })
+
+  it("flags a stale running task on both badge and detail", async () => {
     const user = userEvent.setup()
     render(
       <AgentActivity
@@ -640,27 +801,64 @@ describe("AgentActivity", () => {
           total: 1,
           tasks: [
             {
-              id: "subagent:child:ses_y",
+              id: "subagent:child:ses_s",
               kind: "subagent",
-              title: "Deep refactor",
+              title: "Stuck worker",
               status: "running",
-              startedAt: Date.now() - 1_000,
-              updatedAt: Date.now(),
-              subagent: "hephaestus",
-              category: "deep",
-              model: { providerID: "github-copilot", modelID: "gpt-5.5" },
+              startedAt: Date.now() - 300_000,
+              updatedAt: Date.now() - 120_000,
             },
           ],
         }}
       />,
     )
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText(/category: deep/)).toBeInTheDocument()
-    expect(screen.getByText(/Hephaestus/)).toBeInTheDocument()
+    const badge = screen.getByRole("button", { name: "Open Agent activity" })
+    expect(badge.className).toContain("is-stuck")
+    expect(badge.getAttribute("title")).toMatch(/no updates recently/)
+    await user.click(badge)
+    expect(screen.getByText(/no updates recently/)).toBeInTheDocument()
   })
 
-  it("does not render the agent/model detail line when neither is set", async () => {
+  it("closes the detail when the task leaves agentsStatus", async () => {
     const user = userEvent.setup()
+    const requestActivity = vi.fn(() => Promise.resolve<AgentActivityResult>({ ok: true }))
+    const { rerender } = render(
+      <AgentActivity
+        status={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_gone",
+              kind: "subagent",
+              title: "Gone worker",
+              status: "running",
+              startedAt: Date.now() - 1_000,
+              updatedAt: Date.now(),
+            },
+          ],
+        }}
+        requestActivity={requestActivity}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "Open Agent activity" }))
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument()
+    rerender(<AgentActivity status={{ running: 0, waiting: 0, error: 0, total: 0, tasks: [] }} requestActivity={requestActivity} />)
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Agents for this response" })).not.toBeInTheDocument()
+  })
+
+  it("renders tool pills from the compacted backlog", async () => {
+    const user = userEvent.setup()
+    vi.spyOn(vscode, "post").mockImplementation(() => {})
+    const requestActivity = vi.fn(() =>
+      Promise.resolve<AgentActivityResult>({
+        ok: true,
+        messages: [{ role: "assistant", text: "Inspecting codebase", tools: ["grep", "read"] }],
+      }),
+    )
     render(
       <AgentActivity
         status={{
@@ -670,49 +868,156 @@ describe("AgentActivity", () => {
           total: 1,
           tasks: [
             {
-              id: "subagent:child:ses_z",
+              id: "subagent:child:ses_tools",
               kind: "subagent",
-              title: "Mystery worker",
+              title: "Tool worker",
               status: "running",
               startedAt: Date.now() - 1_000,
               updatedAt: Date.now(),
             },
           ],
         }}
+        requestActivity={requestActivity}
       />,
     )
-    await user.click(screen.getByText("Agents"))
-    expect(screen.getByText("Mystery worker")).toBeInTheDocument()
-    expect(screen.queryByText(/category:/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open Agent activity" }))
+    await screen.findByText("Inspecting codebase")
+    expect(screen.getByText("tool grep")).toBeInTheDocument()
+    expect(screen.getByText("tool read")).toBeInTheDocument()
   })
 
-  it("freezes the elapsed time on error rows using updatedAt - startedAt", async () => {
+  it("coalesces consecutive live text stream chunks", async () => {
     const user = userEvent.setup()
+    vi.spyOn(vscode, "post").mockImplementation(() => {})
+    const requestActivity = vi.fn(() => Promise.resolve<AgentActivityResult>({ ok: true, messages: [] }))
     render(
       <AgentActivity
         status={{
-          running: 0,
+          running: 1,
           waiting: 0,
-          error: 1,
+          error: 0,
           total: 1,
           tasks: [
             {
-              id: "subagent:child:ses_err",
+              id: "subagent:child:ses_stream",
               kind: "subagent",
-              title: "Failed subagent",
-              status: "error",
-              error: "boom",
-              startedAt: 1_000,
-              updatedAt: 13_000, // 12s elapsed regardless of when the popover renders
+              title: "Stream worker",
+              status: "running",
+              startedAt: Date.now() - 1_000,
+              updatedAt: Date.now(),
             },
           ],
         }}
+        requestActivity={requestActivity}
       />,
     )
-    await user.click(screen.getByText("Agents"))
-    // Meta line reads "error · boom · 12s" — the row freezes the
-    // duration so opening the popover later still says "12s".
-    expect(screen.getByText(/error · boom · 12s/)).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open Agent activity" }))
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "agentActivityStream",
+          taskID: "subagent:child:ses_stream",
+          event: { kind: "text", text: "Hello " },
+        },
+      }),
+    )
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "agentActivityStream",
+          taskID: "subagent:child:ses_stream",
+          event: { kind: "text", text: "world!" },
+        },
+      }),
+    )
+    await screen.findByText("Hello world!")
+  })
+
+  it("closes the detail view on Escape key press", async () => {
+    const user = userEvent.setup()
+    const requestActivity = vi.fn(() => Promise.resolve<AgentActivityResult>({ ok: true }))
+    render(
+      <AgentActivity
+        status={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_esc",
+              kind: "subagent",
+              title: "Esc worker",
+              status: "running",
+              startedAt: Date.now() - 1_000,
+              updatedAt: Date.now(),
+            },
+          ],
+        }}
+        requestActivity={requestActivity}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "Open Agent activity" }))
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument()
+    await user.keyboard("{Escape}")
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Agent activity" })).toBeInTheDocument()
+  })
+
+  it("preserves open detail view when task promotes to childSessionID identity", async () => {
+    const user = userEvent.setup()
+    const requestActivity = vi.fn(() => Promise.resolve<AgentActivityResult>({ ok: true }))
+    const { rerender } = render(
+      <AgentActivity
+        status={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:dispatch:call_1",
+              childSessionID: "ses_promoted",
+              kind: "subagent",
+              title: "Promoted worker",
+              status: "running",
+              startedAt: Date.now() - 1_000,
+              updatedAt: Date.now(),
+            },
+          ],
+        }}
+        requestActivity={requestActivity}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "Open Agent activity" }))
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument()
+
+    // Host promotes row identity to subagent:child:ses_promoted
+    rerender(
+      <AgentActivity
+        status={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_promoted",
+              childSessionID: "ses_promoted",
+              kind: "subagent",
+              title: "Promoted worker",
+              status: "running",
+              startedAt: Date.now() - 1_000,
+              updatedAt: Date.now(),
+            },
+          ],
+        }}
+        requestActivity={requestActivity}
+      />,
+    )
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument()
   })
 })
 
