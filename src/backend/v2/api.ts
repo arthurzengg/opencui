@@ -217,7 +217,8 @@ export function createV2Api(options: { url: string; directory: string; password:
       summarize: (id) => call(async () => (await client.session.compact({ sessionID: id }), true as const)),
       share: () => unavailable("sharing a session"),
       unshare: () => unavailable("sharing a session"),
-      init: () => unavailable("/init"),
+      // 2.0 keeps /init as a built-in command rather than a route of its own.
+      init: (id) => call(async () => (await client.session.command({ sessionID: id, name: "init", text: "" }), true as const)),
       fork: (id, body) => call(async () => mapSession(await client.session.fork({ sessionID: id, before: body.messageID }), directory)),
     },
     permission: {

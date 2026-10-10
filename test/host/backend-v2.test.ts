@@ -190,6 +190,8 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(server.requests.find((r) => r.path.endsWith("/fork"))).toMatchObject({ body: { before: "u1" } })
     expect((await a.session.command("ses_root", { command: "review", arguments: "the diff" })).error).toBeUndefined()
     expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_root/command", body: { name: "review", text: "the diff" } })
+    expect((await a.session.init("ses_root", { messageID: "msg_1", providerID: "p", modelID: "m" })).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_root/command", body: { name: "init", text: "" } })
   })
 
   it("adds, disconnects, and reconnects an MCP server on the experimental routes", async () => {
