@@ -147,6 +147,12 @@ export type ChildSessionInfo = {
   id: string
   parentID: string
   title?: string
+  /**
+   * Agent slug opencode stamped on the child session at creation
+   * (`task`/`subagent` tool sets `agent: <name>`). Absent when a host
+   * omits it; callers fall back to the title's `(@<agent> subagent)`.
+   */
+  agent?: string
 }
 
 /**
@@ -402,6 +408,7 @@ export function subscribeSession(
           id: info.id,
           parentID: info.parentID,
           title: typeof info.title === "string" ? info.title : undefined,
+          agent: typeof info.agent === "string" ? info.agent : undefined,
         })
       }
     }

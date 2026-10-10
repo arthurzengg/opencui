@@ -400,6 +400,7 @@ export class SubagentTracker {
       sessionID: parentSessionID,
       childSessionID: info.id,
       title: info.title?.trim() ? info.title.trim() : "Subagent",
+      subagent: agentFromChildSession(info),
       status: "running",
       startedAt: now,
       updatedAt: now,
@@ -628,8 +629,21 @@ type ReadMetadata = {
   description?: string
 }
 
-export function readMetadata(metadata: Record<string, unknown> | undefined): ReadMetadata {
-  if (!metadata) return {}
+/**
+ * Agent slug for a discovered child session, without depending on any
+ * plugin. opencode's `task`/`subagent` tool sets `agent` on the child
+ * session at creation (carried through on `session.created`); older hosts
+ * only stamp the title with `(@<agent> subagent)`. Both are host-native,
+ * so this works for stock opencode and any plugin that delegates through
+ * the built-in tool.
+ */
+function agentFromChildSession(info: ChildSessionInfo): string | undefined {
+  if (info.agent?.trim()) return info.agent.trim()
+  const match = info.title?.match(/\(@([^\s()]+)\s+subagent\)/i)
+  return match?.[1]
+}
+
+export function readMetadata(metadata: Record<string, unknown> | undefined): ReadMetadata {  if (!metadata) return {}
   // omo writes both `sessionId` and `taskId`; opencode itself uses
   // camelCase too. We accept any common spelling so this works even if
   // a future omo refactor renames fields.
@@ -651,8 +665,7 @@ export function readMetadata(metadata: Record<string, unknown> | undefined): Rea
   }
 }
 
-function readStr(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined
+function readStr(value: unknown): string | undefined {  if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   return trimmed ? trimmed : undefined
 }

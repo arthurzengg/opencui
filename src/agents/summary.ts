@@ -14,6 +14,8 @@ import {
  * omo background-task and delegate-task families:
  *   - `task` / `Task` / `task_tool` — opencode's built-in task tool (and
  *     omo's `delegateTask` which is registered under the name `task`).
+ *   - `subagent` — opencode 2.0's built-in delegation tool (the v2 host
+ *     renamed `task` → `subagent`).
  *   - `delegate_task` — defensive: if a future omo version re-registers
  *     this with its lowercase name we still catch it.
  *   - `call_omo_agent` — omo's parallel subagent dispatcher used by the
@@ -26,6 +28,7 @@ export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set([
   "task",
   "Task",
   "task_tool",
+  "subagent",
   "delegate_task",
   "call_omo_agent",
   "background_task",

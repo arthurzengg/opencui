@@ -311,6 +311,38 @@ describe("compactSessionMessages", () => {
   })
 })
 
+describe("isSubagentTool", () => {
+  it("matches opencode's built-in `task` tool", () => {
+    expect(isSubagentTool("task")).toBe(true)
+  })
+
+  it("matches opencode 2.0's built-in `subagent` tool", () => {
+    expect(isSubagentTool("subagent")).toBe(true)
+  })
+
+  it("matches omo's `call_omo_agent` used by Hephaestus / Sisyphus subagents", () => {
+    expect(isSubagentTool("call_omo_agent")).toBe(true)
+  })
+
+  it("matches omo's `background_task` (Hephaestus fire-and-forget pattern)", () => {
+    expect(isSubagentTool("background_task")).toBe(true)
+  })
+
+  it("matches `delegate_task` defensively (in case omo re-registers under its lowercase name)", () => {
+    expect(isSubagentTool("delegate_task")).toBe(true)
+  })
+
+  it("matches defensive name variants (Task, task_tool)", () => {
+    expect(isSubagentTool("Task")).toBe(true)
+    expect(isSubagentTool("task_tool")).toBe(true)
+  })
+
+  it("returns false for non-subagent tools", () => {
+    for (const name of ["read", "edit", "bash", "grep", "glob", "webfetch", "tasks", "callomoagent"]) {
+      expect(isSubagentTool(name)).toBe(false)
+    }
+  })
+})
 describe("summarizePrompt", () => {
   it("collapses whitespace and caps at 64 characters", () => {
     const text = "  Fix   TypeScript    errors  in the build  "

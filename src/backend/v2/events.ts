@@ -219,7 +219,7 @@ export function createEventTranslator() {
       }
       case "session.created": {
         const d = event.data as Data<"session.created">
-        return [{ type: "session.created", properties: { info: { id: d.sessionID, parentID: d.parentID, title: d.title } } }]
+        return [{ type: "session.created", properties: { info: { id: d.sessionID, parentID: d.parentID, title: d.title, agent: d.agent } } }]
       }
       case "session.renamed": {
         const d = event.data as Data<"session.renamed">
