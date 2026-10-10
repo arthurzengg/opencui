@@ -1218,6 +1218,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.catalogRefreshTimer = setTimeout(() => {
       this.catalogRefreshTimer = undefined
       void this.refreshModelCatalog(backend)
+      void this.refreshCommands(backend)
     }, ChatView.CATALOG_REFRESH_MS)
   }
 

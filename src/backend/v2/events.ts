@@ -227,6 +227,17 @@ export function createEventTranslator() {
       }
       case "server.connected":
         return [{ type: "server.connected", properties: {} }]
+      // 1.x has one event for any catalog change; 2.0 names the catalog,
+      // and its command list is empty for the first seconds after a start,
+      // so the panel's first fetch sees nothing until command.updated.
+      case "provider.updated":
+      case "model.updated":
+      case "agent.updated":
+      case "command.updated":
+      case "config.updated":
+      case "integration.updated":
+      case "credential.updated":
+        return [{ type: "catalog.updated", properties: {} }]
       default:
         return []
     }
