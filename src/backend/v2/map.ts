@@ -16,6 +16,7 @@ import type { CommandEntry } from "../api"
 import type {
   AgentInfo,
   CommandInfo,
+  IntegrationInfo,
   McpServer,
   ModelInfo,
   ProviderInfo,
@@ -132,16 +133,21 @@ function mapToolState(tool: SessionMessageAssistantTool): ToolState {
 type ModelWithVariants = Model & { variants: Record<string, Record<string, never>> }
 
 /** The picker reads `models[id].variants` and context-usage reads `models[id].limit.context`. */
-export function mapProviders(providers: ProviderInfo[], models: ModelInfo[]): { providers: Provider[]; default: Record<string, string> } {
+export function mapProviders(providers: ProviderInfo[], models: ModelInfo[], integrations: IntegrationInfo[] = []): { providers: Provider[]; default: Record<string, string> } {
   const byProvider = new Map<string, Provider>()
-  const providerFor = (id: string, name = id): Provider => {
+  const providerFor = (id: string, name = id, source: Provider["source"] = "config"): Provider => {
     const existing = byProvider.get(id)
     if (existing) return existing
-    const created: Provider = { id, name, source: "config", env: [], options: {}, models: {} }
+    const created: Provider = { id, name, source, env: [], options: {}, models: {} }
     byProvider.set(id, created)
     return created
   }
-  for (const p of providers) providerFor(p.id, p.name)
+  for (const p of providers) {
+    // The provider picker refuses to remove a credential that came from the
+    // environment; 2.0 says so on the integration's connections.
+    const connections = integrations.find((i) => i.id === (p.integrationID ?? p.id))?.connections ?? []
+    providerFor(p.id, p.name, connections.length > 0 && connections.every((c) => c.type === "env") ? "env" : "config")
+  }
   for (const m of models) {
     const kinds = (list: string[]) => ({
       text: list.includes("text"),

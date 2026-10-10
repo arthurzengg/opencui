@@ -244,8 +244,8 @@ export function createV2Api(options: { url: string; directory: string; password:
     config: {
       providers: () =>
         call(async () => {
-          const [providers, models] = await Promise.all([client.provider.list(location), client.model.list(location)])
-          return mapProviders(providers.data, models.data)
+          const [providers, models, all] = await Promise.all([client.provider.list(location), client.model.list(location), integrations()])
+          return mapProviders(providers.data, models.data, all)
         }),
     },
     app: { agents: () => call(async () => mapAgents((await client.agent.list(location)).data)) },
