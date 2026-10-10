@@ -1,7 +1,6 @@
 import type {
   Agent,
   AssistantMessage,
-  Command,
   McpStatus,
   Message,
   Model,
@@ -13,9 +12,11 @@ import type {
   UserMessage,
 } from "@opencode-ai/sdk"
 import type { Session as SessionListed } from "@opencode-ai/sdk/v2"
+import type { CommandEntry } from "../api"
 import type {
   AgentInfo,
   CommandInfo,
+  IntegrationInfo,
   McpServer,
   ModelInfo,
   ProviderInfo,
@@ -132,16 +133,21 @@ function mapToolState(tool: SessionMessageAssistantTool): ToolState {
 type ModelWithVariants = Model & { variants: Record<string, Record<string, never>> }
 
 /** The picker reads `models[id].variants` and context-usage reads `models[id].limit.context`. */
-export function mapProviders(providers: ProviderInfo[], models: ModelInfo[]): { providers: Provider[]; default: Record<string, string> } {
+export function mapProviders(providers: ProviderInfo[], models: ModelInfo[], integrations: IntegrationInfo[] = []): { providers: Provider[]; default: Record<string, string> } {
   const byProvider = new Map<string, Provider>()
-  const providerFor = (id: string, name = id): Provider => {
+  const providerFor = (id: string, name = id, source: Provider["source"] = "config"): Provider => {
     const existing = byProvider.get(id)
     if (existing) return existing
-    const created: Provider = { id, name, source: "config", env: [], options: {}, models: {} }
+    const created: Provider = { id, name, source, env: [], options: {}, models: {} }
     byProvider.set(id, created)
     return created
   }
-  for (const p of providers) providerFor(p.id, p.name)
+  for (const p of providers) {
+    // The provider picker refuses to remove a credential that came from the
+    // environment; 2.0 says so on the integration's connections.
+    const connections = integrations.find((i) => i.id === (p.integrationID ?? p.id))?.connections ?? []
+    providerFor(p.id, p.name, connections.length > 0 && connections.every((c) => c.type === "env") ? "env" : "config")
+  }
   for (const m of models) {
     const kinds = (list: string[]) => ({
       text: list.includes("text"),
@@ -191,8 +197,8 @@ export function mapAgents(agents: AgentInfo[]): Agent[] {
 }
 
 /** 2.0 commands carry no template, so none is known to take arguments. */
-export function mapCommands(commands: CommandInfo[]): Command[] {
-  return commands.map((c) => ({ name: c.name, description: c.description, template: "" }))
+export function mapCommands(commands: CommandInfo[]): CommandEntry[] {
+  return commands.map((c) => ({ name: c.name, description: c.description }))
 }
 
 /** 2.0's "pending" (still connecting) has no 1.x counterpart; it shows as a failure that names the wait. */

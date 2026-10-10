@@ -105,6 +105,9 @@ describe("opencode 2.0 event translator (#684)", () => {
     ])
     expect(t(ev("session.renamed", { sessionID: S, title: "New name" }))).toEqual([{ type: "session.updated", properties: { info: { id: S, title: "New name" } } }])
     expect(t(ev("server.connected", {} as never))).toEqual([{ type: "server.connected", properties: {} }])
+    for (const type of ["command.updated", "provider.updated", "model.updated", "agent.updated"] as const) {
+      expect(t(ev(type, {} as never))).toEqual([{ type: "catalog.updated", properties: {} }])
+    }
     expect(t({ id: "evt_x", created: 1, type: "pty.created", data: {} } as unknown as OpenCodeEvent)).toEqual([])
   })
 

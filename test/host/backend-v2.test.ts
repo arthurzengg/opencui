@@ -50,10 +50,13 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(children.data?.map((s) => s.id)).toEqual(["ses_child"])
   })
 
-  it("reports idle from the listing and busy from executions the stream saw", async () => {
+  it("reports idle from the listing and busy from the active route or executions the stream saw", async () => {
     const a = api()
     // A fresh session has no idle mark: the listing cannot call it busy.
     expect((await a.session.status()).data).toEqual({ ses_root: { type: "idle" }, ses_other: { type: "idle" } })
+    server.active = { ses_other: { type: "running" } }
+    expect((await a.session.status()).data?.ses_other).toEqual({ type: "busy" })
+    server.active = {}
     const controller = new AbortController()
     const iterator = (await a.events(controller.signal))[Symbol.asyncIterator]()
     await iterator.next()
@@ -81,7 +84,7 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(providers.data?.providers[0]).toMatchObject({ id: "p", name: "Provider P" })
     expect(Object.keys((providers.data?.providers[0]?.models.m as unknown as { variants: object }).variants)).toEqual(["high"])
     expect(agents.data).toEqual([expect.objectContaining({ name: "build", mode: "primary" })])
-    expect(commands.data).toEqual([{ name: "review", description: undefined, template: "" }])
+    expect(commands.data).toEqual([{ name: "review", description: undefined }])
     expect(mcp.data).toEqual({ github: { status: "connected" } })
     for (const path of ["/api/model", "/api/provider", "/api/agent", "/api/command", "/api/mcp"]) {
       expect(server.requests.find((r) => r.path === path)?.query).toEqual({ "location[directory]": "/ws" })
@@ -187,6 +190,8 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(server.requests.find((r) => r.path.endsWith("/fork"))).toMatchObject({ body: { before: "u1" } })
     expect((await a.session.command("ses_root", { command: "review", arguments: "the diff" })).error).toBeUndefined()
     expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_root/command", body: { name: "review", text: "the diff" } })
+    expect((await a.session.init("ses_root", { messageID: "msg_1", providerID: "p", modelID: "m" })).data).toBe(true)
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_root/command", body: { name: "init", text: "" } })
   })
 
   it("adds, disconnects, and reconnects an MCP server on the experimental routes", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { AgentInfo, CommandInfo, McpServer, ModelInfo, ProviderInfo, SessionInfo, SessionMessageInfo } from "@opencode/client/promise"
+import type { AgentInfo, CommandInfo, IntegrationInfo, McpServer, ModelInfo, ProviderInfo, SessionInfo, SessionMessageInfo } from "@opencode/client/promise"
 import { mapAgents, mapCommands, mapMcpStatus, mapMessages, mapProviders, mapSession, mapSessionStatus } from "../../src/backend/v2/map"
 
 const session = (over: Partial<SessionInfo> = {}): SessionInfo => ({
@@ -78,7 +78,9 @@ describe("opencode 2.0 mappers (#693)", () => {
 
   it("merges providers and models into the 1.x catalog, with variants and context limits", () => {
     const providers: ProviderInfo[] = [{ id: "anthropic", name: "Anthropic", activation: "enabled", package: "@ai-sdk/anthropic" }]
-    const catalog = mapProviders(providers, [model(), model({ id: "openai/gpt-6", modelID: "gpt-6", providerID: "openai", name: "GPT-6", variants: [] })])
+    const integrations: IntegrationInfo[] = [{ id: "anthropic", name: "Anthropic", methods: [], connections: [{ type: "env", name: "ANTHROPIC_API_KEY" }] }]
+    const catalog = mapProviders(providers, [model(), model({ id: "openai/gpt-6", modelID: "gpt-6", providerID: "openai", name: "GPT-6", variants: [] })], integrations)
+    expect(catalog.providers.map((p) => p.source)).toEqual(["env", "config"])
     expect(catalog.providers.map((p) => p.id)).toEqual(["anthropic", "openai"])
     const sonnet = catalog.providers[0]!.models["claude-sonnet-5"] as unknown as { variants: Record<string, unknown>; limit: { context: number }; capabilities: { attachment: boolean } }
     expect(Object.keys(sonnet.variants)).toEqual(["low", "high"])
@@ -95,9 +97,9 @@ describe("opencode 2.0 mappers (#693)", () => {
     expect(mapAgents(agents)).toEqual([expect.objectContaining({ name: "build", mode: "primary", description: "Default", model: { providerID: "anthropic", modelID: "claude-sonnet-5" } })])
   })
 
-  it("maps commands with an empty template, since 2.0 carries none", () => {
+  it("maps commands without a template, since 2.0 carries none", () => {
     const commands: CommandInfo[] = [{ name: "review", description: "Review changes" }]
-    expect(mapCommands(commands)).toEqual([{ name: "review", description: "Review changes", template: "" }])
+    expect(mapCommands(commands)).toEqual([{ name: "review", description: "Review changes" }])
   })
 
   it("maps every MCP status, naming the wait for a server still connecting", () => {

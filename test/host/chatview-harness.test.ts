@@ -1666,8 +1666,9 @@ describe("ChatView harness: catalog.updated refreshes the model catalog (#613)",
     models: { "gpt-5.5": { variants: { low: {}, high: {} } } },
   }
   const catalogs = () => harness.posted.filter((m) => m.type === "modelCatalog")
+  const commandLists = () => harness.posted.filter((m) => m.type === "commands").length
 
-  it("re-fetches the providers once for a burst of catalog.updated events", async () => {
+  it("re-fetches the providers and the commands once for a burst of catalog.updated events", async () => {
     await harness.send({ type: "mounted" })
     await until(() => catalogs().length > 0)
     // The subscription that carries server events opens on the first send.
@@ -1675,6 +1676,7 @@ describe("ChatView harness: catalog.updated refreshes the model catalog (#613)",
     await server.awaitClient()
     await new Promise((r) => setTimeout(r, 100))
     const fetches = server.providerFetches()
+    const lists = commandLists()
 
     server.setProviders([PROVIDER])
     server.push({ type: "catalog.updated" })
@@ -1687,6 +1689,7 @@ describe("ChatView harness: catalog.updated refreshes the model catalog (#613)",
     )
     await new Promise((r) => setTimeout(r, 400))
     expect(server.providerFetches() - fetches).toBe(1)
+    expect(commandLists() - lists).toBe(1)
   })
 })
 

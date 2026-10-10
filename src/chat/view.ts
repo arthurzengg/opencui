@@ -1218,6 +1218,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.catalogRefreshTimer = setTimeout(() => {
       this.catalogRefreshTimer = undefined
       void this.refreshModelCatalog(backend)
+      void this.refreshCommands(backend)
     }, ChatView.CATALOG_REFRESH_MS)
   }
 
@@ -1286,7 +1287,9 @@ export class ChatView implements vscode.WebviewViewProvider {
         name: c.name,
         description: c.description,
         agent: c.agent,
-        takesArguments: /\$ARGUMENTS\b/.test(c.template),
+        // 2.0 lists commands without templates: unknown means wait for
+        // arguments, since a command sent half-formed is the worse mistake.
+        takesArguments: c.template === undefined || /\$ARGUMENTS\b/.test(c.template),
       }))
       this.customCommandNames = new Set(custom.map((c) => c.name))
       // Merge opencode's built-ins (/compact, /share, …); a custom command of
