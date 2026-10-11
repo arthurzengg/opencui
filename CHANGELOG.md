@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-10-11
+
+### Added
+
+- opencode 2.0 support. The panel reads the binary's version at startup and talks to a 2.x server through its own adapter: the password-protected server, requests scoped by location, and the 2.0 event stream translated into the events the chat already handles. Chat, streaming, reasoning, tools and patches, permissions, questions, subagents, model, agent, and variant switching, `/compact`, `/undo`, `/redo`, `/fork`, `/init`, custom commands, MCP add, connect, disconnect, sign-in, and sign-out, provider key and OAuth connect, context usage, and history rename and delete work on 2.0. Sharing is not available there, since 2.0.24 has no route for it, and custom commands on 2.0 wait for Enter so arguments can be typed, since 2.0 lists them without their templates. On 1.x nothing changes beyond one `opencode --version` read at startup. The `opencui.opencode2` setting (`auto` by default) set to `off` refuses 2.0 binaries (#684, #690, #692, #694, #695, #696, #697, #698, #699, #700, #701).
+- Add Selection to Chat (`Cmd/Ctrl+Shift+L` in an editor): focuses the panel and drops the active selection's reference, such as `@src/foo.ts#L5-9`, into the composer (#655).
+
 ## [1.15.12] - 2026-10-07
 
 ### Changed
