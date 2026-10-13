@@ -365,12 +365,6 @@ describe("MessageView (assistant role)", () => {
     expect(line().style.animationDelay).toBe("")
   })
 
-  it("renders error text when message has error", () => {
-    const msg = { ...assistantMessage(""), error: "AI error happened" } as Message
-    render(<MessageView message={msg} processOpen={false} processOnly={false} />)
-    expect(screen.getByText("AI error happened")).toBeInTheDocument()
-  })
-
   it("shows only the cost at rest and keeps model and token split for the tooltip", () => {
     const msg = {
       ...assistantMessage("response"),

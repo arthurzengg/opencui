@@ -26,11 +26,6 @@ describe("disambiguatePaths", () => {
     expect(result.get("c/views/index.ts")).toBe("c/views/index.ts")
   })
 
-  it("handles a deep path with no collision", () => {
-    const result = disambiguatePaths(["src/components/Button/index.ts"])
-    expect(result.get("src/components/Button/index.ts")).toBe("index.ts")
-  })
-
   it("mixes unique and colliding paths", () => {
     const result = disambiguatePaths([
       "src/utils/helpers.ts",

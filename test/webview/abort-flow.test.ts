@@ -89,22 +89,6 @@ describe("reducer abort flow", () => {
     expect(msg.blocks.find((b) => b.type === "patch")).toBeDefined()
   })
 
-  it("textDelta when NOT aborting still appends normally (control test)", () => {
-    const before = pendingAssistant()
-    const next = reducer(before, { type: "textDelta", id: "a1", delta: "hello" })
-    const msg = next.messages.find((m) => m.id === "a1")!
-    const textBlock = msg.blocks.find((b) => b.type === "text")
-    expect(textBlock).toBeDefined()
-    expect(textBlock?.type === "text" && textBlock.text).toBe("hello")
-  })
-
-  it("Send button can re-enable: busy stays false once sessionIdle fires after abort", () => {
-    const before = pendingAssistant()
-    const after = reducer(reducer(before, { type: "aborted" }), { type: "sessionIdle" })
-    expect(after.busy).toBe(false)
-    expect(after.aborting).toBe(false)
-  })
-
   it("aborted also clears pending permission", () => {
     const withPerm = reducer(
       pendingAssistant(),

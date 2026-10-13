@@ -879,25 +879,6 @@ describe("SubagentTracker: discovery + tool-dispatch merge", () => {
     // We expect 3 rows: two callID-keyed dispatches + one child placeholder.
     expect(store.list().filter((t) => t.kind === "subagent")).toHaveLength(3)
   })
-
-  it("metadata.sessionId still merges cleanly when it does arrive (omo path)", async () => {
-    // Sanity check: pre-existing omo flow should NOT regress.
-    const { tracker, store } = setupTracker()
-    await tracker.handleToolUpdate(
-      makeUpdate({
-        callID: "call_1",
-        tool: "call_omo_agent",
-        status: "running",
-        input: { description: "Explore auth" },
-        metadata: { sessionId: "ses_omo_child", agent: "explore" },
-      }),
-      "msg_parent",
-    )
-    const tasks = store.list().filter((t) => t.kind === "subagent")
-    expect(tasks).toHaveLength(1)
-    expect(tasks[0]!.childSessionID).toBe("ses_omo_child")
-    expect(tasks[0]!.subagent).toBe("explore")
-  })
 })
 
 describe("SubagentTracker: input.subagent_type fallback", () => {

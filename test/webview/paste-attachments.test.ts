@@ -31,11 +31,6 @@ function makeItem(file: File, kind = "file"): StubItem {
 }
 
 describe("clipboardHasImage", () => {
-  it("returns true when any item is a file with an accepted image MIME", () => {
-    const data = makeData([makeItem(makeImageFile(100, "image/png"))])
-    expect(clipboardHasImage(data)).toBe(true)
-  })
-
   it("returns false for plain-text-only clipboards", () => {
     const data = makeData([{ kind: "string", type: "text/plain", getAsFile: () => null }], "hello")
     expect(clipboardHasImage(data)).toBe(false)

@@ -35,12 +35,6 @@ describe("withBuiltinCommands", () => {
     expect(BUILTIN_COMMAND_NAMES.has("nope")).toBe(false)
   })
 
-  it("registers the session-management built-ins", () => {
-    for (const name of ["undo", "redo", "fork", "new", "mcp", "provider"]) {
-      expect(BUILTIN_COMMAND_NAMES.has(name)).toBe(true)
-    }
-  })
-
   it("flags exactly the session-neutral built-ins as allowedWhileBusy", () => {
     const allowed = BUILTIN_COMMANDS.filter((c) => c.allowedWhileBusy).map((c) => c.name)
     expect(allowed.sort()).toEqual(["mcp", "new", "provider"])

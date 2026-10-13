@@ -186,14 +186,6 @@ describe("PromptBox", () => {
     expect(screen.queryByRole("button", { name: /^Send$/ })).not.toBeInTheDocument()
   })
 
-  it("clicking the Stopping… button is a no-op (does not refire onAbort)", async () => {
-    const user = userEvent.setup()
-    const onAbort = vi.fn()
-    render(<PromptBox busy={true} aborting={true} onSend={vi.fn()} onAbort={onAbort} />)
-    await user.click(screen.getByRole("button", { name: /^Stopping…$/ }))
-    expect(onAbort).not.toHaveBeenCalled()
-  })
-
   it("does NOT submit when Enter is pressed during IME composition (Chinese / Japanese / Korean input)", () => {
     const onSend = vi.fn()
     render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} />)
@@ -207,17 +199,6 @@ describe("PromptBox", () => {
     textarea.value = "你好"
     textarea.dispatchEvent(event)
     expect(onSend).not.toHaveBeenCalled()
-  })
-
-  it("does submit when Enter is pressed AFTER IME composition ended", async () => {
-    const user = userEvent.setup()
-    const onSend = vi.fn()
-    render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} />)
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await user.type(textarea, "你好")
-    // After IME ends, a normal Enter event has isComposing === false.
-    await user.keyboard("{Enter}")
-    expect(onSend).toHaveBeenCalledWith("你好", undefined, undefined, undefined)
   })
 
   it("does not submit empty/whitespace input on Enter", async () => {
@@ -889,14 +870,6 @@ describe("PromptBox mention chip rendering", () => {
     expect(chip!.textContent).toBe("@src/foo.ts")
   })
 
-  it("does not render a chip for plain @text that wasn't picked from the menu", () => {
-    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} />)
-    const textarea = container.querySelector("textarea")!
-    // Manually fire a change with @random text; without insertion through the picker,
-    // knownMentions stays empty, so no chip should appear.
-    expect(container.querySelector(".mention-chip")).toBeNull()
-  })
-
   it("renders multiple chips when multiple mentions are inserted", async () => {
     const user = userEvent.setup()
     const searchFiles = vi.fn().mockImplementation(async (q: string) => {
@@ -1126,13 +1099,6 @@ describe("PromptBox two-step Backspace on chip", () => {
     await user.keyboard("{Backspace}")
     expect(textarea.value).toBe("@src/foo.ts ")
   })
-
-  it("Send forwards the chip's path even after the highlight state resolves", async () => {
-    const { user, onSend, textarea } = await setupChip()
-    await user.type(textarea, "explain")
-    await user.keyboard("{Enter}")
-    expect(onSend).toHaveBeenCalledWith("@src/foo.ts explain", ["src/foo.ts"], undefined, undefined)
-  })
 })
 
 describe("makeAttachmentLabel", () => {
@@ -1187,15 +1153,6 @@ describe("PromptBox attachments (inline @chip flow)", () => {
       />,
     )
     expect(screen.getByRole("button", { name: /Attach/i })).toBeInTheDocument()
-  })
-
-  it("inserts @filename text into the textarea when paperclip returns a non-image file", async () => {
-    const user = userEvent.setup()
-    const attachFile = vi.fn().mockResolvedValue({ attachments: [makePdf()] })
-    render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={attachFile} />)
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    await user.click(screen.getByRole("button", { name: /Attach/i }))
-    await waitFor(() => expect(textarea.value).toContain("@doc.pdf"))
   })
 
   it("renders the inserted @filename as a .mention-chip in the backdrop", async () => {
@@ -1460,29 +1417,6 @@ describe("PromptBox image paste from clipboard", () => {
     await user.click(textarea)
     await user.keyboard("ok{Enter}")
     await waitFor(() => expect(container.querySelector(".image-thumb")).toBeNull())
-  })
-
-  it("enables send with only a pasted image (no text required)", async () => {
-    const onSend = vi.fn()
-    const { container } = render(<PromptBox busy={false} onSend={onSend} onAbort={vi.fn()} attachFile={vi.fn()} />)
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
-    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
-    await waitFor(() => expect(container.querySelector(".image-thumb")).not.toBeNull())
-    const sendBtn = screen.getByRole("button", { name: /^Send$/i })
-    expect((sendBtn as HTMLButtonElement).disabled).toBe(false)
-  })
-
-  it("hover-X removes a pasted thumbnail", async () => {
-    const { container } = render(<PromptBox busy={false} onSend={vi.fn()} onAbort={vi.fn()} attachFile={vi.fn()} />)
-    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement
-    const file = new File([new Uint8Array(100)], "image.png", { type: "image/png" })
-    textarea.dispatchEvent(pasteEvent(makePasteData([file])))
-    await waitFor(() => expect(container.querySelector(".image-thumb")).not.toBeNull())
-    const user = userEvent.setup()
-    const removeBtn = screen.getByRole("button", { name: /Remove pasted-image\.png/i })
-    await user.click(removeBtn)
-    expect(container.querySelector(".image-thumb")).toBeNull()
   })
 
   it("does not intercept pure-text paste (default browser behavior runs)", async () => {

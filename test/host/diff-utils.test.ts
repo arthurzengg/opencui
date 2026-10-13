@@ -17,7 +17,6 @@ import {
   patchPath,
   reviewKey,
   samePath,
-  synthesizeCreatePatch,
 } from "../../webview/src/review-extract"
 
 describe("samePath / normalizePath", () => {
@@ -39,37 +38,9 @@ describe("samePath / normalizePath", () => {
 })
 
 describe("isTextReviewPathName", () => {
-  it("accepts standard source files", () => {
-    expect(isTextReviewPathName("src/index.ts")).toBe(true)
-    expect(isTextReviewPathName("README.md")).toBe(true)
-    expect(isTextReviewPathName("config.yaml")).toBe(true)
-  })
-
-  it("rejects binary extensions", () => {
-    expect(isTextReviewPathName("logo.png")).toBe(false)
-    expect(isTextReviewPathName("clip.mp4")).toBe(false)
-    expect(isTextReviewPathName("dump.bin")).toBe(false)
-    expect(isTextReviewPathName("archive.zip")).toBe(false)
-  })
-
-  it("rejects .DS_Store / Thumbs.db", () => {
-    expect(isTextReviewPathName(".DS_Store")).toBe(false)
-    expect(isTextReviewPathName("Thumbs.db")).toBe(false)
-  })
-
-  it("accepts dotfiles with extensions", () => {
-    expect(isTextReviewPathName(".eslintrc.json")).toBe(true)
-  })
-
-  it("accepts extensionless dotfiles", () => {
-    // The host used to run its own `path.extname`-based copy, which returns ""
-    // for these and rejected them while the webview accepted them — the panel
-    // rendered the row and openReviewChange refused to open it.
-    for (const name of [".gitignore", ".env", ".npmrc", ".editorconfig", ".gitattributes"]) {
-      expect(isTextReviewPathName(name)).toBe(true)
-    }
-  })
-
+  // The host used to run its own `path.extname`-based copy, which returns ""
+  // for extensionless dotfiles and rejected them while the webview accepted
+  // them: the panel rendered the row and openReviewChange refused to open it.
   it("classifies every path shape the panel can encounter", () => {
     const expected: Array<[string, boolean]> = [
       ["src/index.ts", true],
@@ -319,24 +290,5 @@ describe("reviewKey", () => {
     const a = reviewKey({ source: "s", path: "foo/bar.ts", kind: "updated", additions: 0, deletions: 0, patch: "" }, "h")
     const b = reviewKey({ source: "s", path: "foo\\bar.ts", kind: "updated", additions: 0, deletions: 0, patch: "" }, "h")
     expect(a).toBe(b)
-  })
-})
-
-describe("synthesizeCreatePatch", () => {
-  it("synthesizes from write input.content", () => {
-    const update = { callID: "c", tool: "write", status: "completed" as const, input: { content: "a\nb\nc" } }
-    const result = synthesizeCreatePatch(update)
-    expect(result).toContain("@@ -0,0 +1,3 @@")
-    expect(result).toContain("+a")
-    expect(result).toContain("+c")
-  })
-
-  it("synthesizes from edit input.newString", () => {
-    const update = { callID: "c", tool: "edit", status: "completed" as const, input: { newString: "x\ny" } }
-    expect(synthesizeCreatePatch(update)).toContain("@@ -0,0 +1,2 @@")
-  })
-
-  it("returns undefined for empty content", () => {
-    expect(synthesizeCreatePatch({ callID: "c", tool: "write", status: "completed", input: { content: "" } })).toBeUndefined()
   })
 })

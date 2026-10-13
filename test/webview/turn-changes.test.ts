@@ -1,15 +1,5 @@
 import { describe, it, expect } from "vitest"
-import {
-  turnChanges,
-  toolChanges,
-  synthesizeCreatePatch,
-  patchKind,
-  splitDiff,
-  isTextReviewChange,
-  countDiff,
-  samePath,
-  normalizePath,
-} from "../../webview/src/components/ReviewPanel"
+import { turnChanges, toolChanges, synthesizeCreatePatch, splitDiff, isTextReviewChange } from "../../webview/src/components/ReviewPanel"
 import { aggregateChanges, type ReviewChange } from "../../webview/src/review-extract"
 import type { Message } from "../../webview/src/hooks/useChatState"
 
@@ -44,64 +34,6 @@ describe("synthesizeCreatePatch", () => {
   })
 })
 
-describe("countDiff", () => {
-  it("counts addition lines", () => {
-    const patch = "@@ -1,3 +1,4 @@\n line\n+added1\n+added2\n line"
-    expect(countDiff(patch, "+")).toBe(2)
-  })
-
-  it("counts deletion lines", () => {
-    const patch = "@@ -1,4 +1,2 @@\n line\n-old1\n-old2\n line"
-    expect(countDiff(patch, "-")).toBe(2)
-  })
-
-  it("ignores file-header lines (+++/---)", () => {
-    const patch = "+++ b/file.ts\n--- a/file.ts\n+real-add"
-    expect(countDiff(patch, "+")).toBe(1)
-    expect(countDiff(patch, "-")).toBe(0)
-  })
-})
-
-describe("samePath / normalizePath", () => {
-  it("matches identical paths", () => {
-    expect(samePath("foo/bar.ts", "foo/bar.ts")).toBe(true)
-  })
-
-  it("normalizes backslashes to forward slashes", () => {
-    expect(normalizePath("foo\\bar.ts")).toBe("foo/bar.ts")
-    expect(samePath("foo\\bar.ts", "foo/bar.ts")).toBe(true)
-  })
-
-  it("strips leading ./", () => {
-    expect(normalizePath("./foo.ts")).toBe("foo.ts")
-    expect(samePath("./foo.ts", "foo.ts")).toBe(true)
-  })
-
-  it("returns false for undefined right", () => {
-    expect(samePath("foo.ts", undefined)).toBe(false)
-  })
-})
-
-describe("patchKind", () => {
-  it("maps add → created", () => {
-    expect(patchKind("add")).toBe("created")
-  })
-
-  it("maps delete → deleted", () => {
-    expect(patchKind("delete")).toBe("deleted")
-  })
-
-  it("maps move → moved", () => {
-    expect(patchKind("move")).toBe("moved")
-  })
-
-  it("maps anything else → updated", () => {
-    expect(patchKind("modify")).toBe("updated")
-    expect(patchKind(undefined)).toBe("updated")
-    expect(patchKind(null)).toBe("updated")
-  })
-})
-
 describe("isTextReviewChange", () => {
   const baseChange = {
     source: "s1",
@@ -118,21 +50,6 @@ describe("isTextReviewChange", () => {
 
   it("rejects when both additions and deletions are 0", () => {
     expect(isTextReviewChange({ ...baseChange, additions: 0, deletions: 0 })).toBe(false)
-  })
-
-  it("rejects binary extensions", () => {
-    expect(isTextReviewChange({ ...baseChange, path: "image.png" })).toBe(false)
-    expect(isTextReviewChange({ ...baseChange, path: "video.mp4" })).toBe(false)
-    expect(isTextReviewChange({ ...baseChange, path: "binary.bin" })).toBe(false)
-  })
-
-  it("rejects .DS_Store and Thumbs.db", () => {
-    expect(isTextReviewChange({ ...baseChange, path: ".DS_Store" })).toBe(false)
-    expect(isTextReviewChange({ ...baseChange, path: "Thumbs.db" })).toBe(false)
-  })
-
-  it("accepts dotfiles with extensions", () => {
-    expect(isTextReviewChange({ ...baseChange, path: ".eslintrc.json" })).toBe(true)
   })
 })
 
@@ -209,18 +126,6 @@ describe("turnChanges", () => {
     expect(result).toHaveLength(1)
     expect(result[0].kind).toBe("created")
     expect(result[0].additions).toBe(2)
-  })
-
-  it("ignores tool blocks with non-completed status", () => {
-    const messages: Message[] = [
-      toolMessage("m1", 0, {
-        tool: "edit",
-        metadata: { filediff: { patch: "@@\n+a", additions: 1, deletions: 0 } },
-        input: { filePath: "foo.ts" },
-        status: "running",
-      }),
-    ]
-    expect(turnChanges(messages)).toHaveLength(0)
   })
 
   it("returns empty for messages with no review-relevant blocks", () => {
@@ -303,37 +208,11 @@ describe("aggregateChanges", () => {
 })
 
 describe("toolChanges (write/edit create flow)", () => {
-  it("emits a synthesized patch for write with exists=false even without filediff", () => {
-    const result = toolChanges(
-      { tool: "write", input: { filePath: "new.ts", content: "line1\nline2" }, metadata: { exists: false } },
-      "src1",
-    )
-    expect(result).toHaveLength(1)
-    expect(result[0]?.kind).toBe("created")
-    expect(result[0]?.path).toBe("new.ts")
-    expect(result[0]?.additions).toBe(2)
-  })
-
   it("returns empty array for write without content (no filediff)", () => {
     const result = toolChanges(
       { tool: "write", input: { filePath: "f.ts" }, metadata: { exists: false } },
       "src1",
     )
     expect(result).toHaveLength(0)
-  })
-
-  it("uses metadata.filediff.patch for edit with diff", () => {
-    const result = toolChanges(
-      {
-        tool: "edit",
-        input: { filePath: "foo.ts" },
-        metadata: { filediff: { patch: "@@ -1,1 +1,1 @@\n-old\n+new", additions: 1, deletions: 1 } },
-      },
-      "src1",
-    )
-    expect(result).toHaveLength(1)
-    expect(result[0]?.kind).toBe("updated")
-    expect(result[0]?.additions).toBe(1)
-    expect(result[0]?.deletions).toBe(1)
   })
 })

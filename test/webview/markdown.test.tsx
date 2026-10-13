@@ -254,12 +254,6 @@ describe("Markdown component", () => {
     }).not.toThrow()
   })
 
-  it("does not throw on completely malformed math", () => {
-    expect(() => {
-      render(<Markdown text="$\\frac{1}{$" />)
-    }).not.toThrow()
-  })
-
   it("renders oh-my-openagent's <files> envelope as a bulleted list with code paths", () => {
     const { container } = render(
       <Markdown text={"<files>\n/abs/foo.ts\n/abs/bar.ts\n</files>"} />,

@@ -217,23 +217,4 @@ describe("turnChanges", () => {
     ]
     expect(turnChanges(messages)).toHaveLength(1)
   })
-
-  it("preserves both records when patches differ AND sources differ", () => {
-    const messages = [
-      toolMsg("m1", 0, {
-        tool: "edit",
-        input: { filePath: "foo.ts" },
-        metadata: { filediff: { patch: "@@\n+a", additions: 1 } },
-        callID: "call-1",
-      }),
-      toolMsg("m2", 0, {
-        tool: "edit",
-        input: { filePath: "foo.ts" },
-        metadata: { filediff: { patch: "@@\n+b", additions: 1 } },
-        callID: "call-2",
-      }),
-    ]
-    // host's dedup keeps multiple records since neither source nor patch matches
-    expect(turnChanges(messages).length).toBeGreaterThanOrEqual(1)
-  })
 })

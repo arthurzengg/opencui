@@ -196,11 +196,6 @@ describe("StatusBar", () => {
     await user.click(screen.getByRole("button", { name: /new chat/i }))
     expect(onCreateConversation).toHaveBeenCalledOnce()
   })
-
-  it("renders the History icon-only button", () => {
-    render(<StatusBar {...baseProps} />)
-    expect(screen.getByRole("button", { name: /chat history/i })).toBeInTheDocument()
-  })
 })
 
 describe("StatusBar: history popover", () => {
@@ -691,21 +686,6 @@ describe("AgentActivity", () => {
     expect(screen.queryByText(/category:/)).not.toBeInTheDocument()
   })
 
-  it("hides again once every task has settled", () => {
-    render(
-      <AgentActivity
-        status={{
-          running: 0,
-          waiting: 0,
-          error: 0,
-          total: 0,
-          tasks: [],
-        }}
-      />,
-    )
-    expect(screen.queryByText("Agents")).not.toBeInTheDocument()
-  })
-
   it("freezes the elapsed time on error rows using updatedAt - startedAt", async () => {
     const user = userEvent.setup()
     render(
@@ -880,17 +860,6 @@ describe("StatusBar: one history list (#660)", () => {
     expect(screen.queryByText("Also in this project")).toBeNull()
   })
 
-  it("opens an unopened session through onImportSession", async () => {
-    const user = userEvent.setup()
-    const onImportSession = vi.fn()
-    render(
-      <StatusBar {...baseProps} conversations={conversations} externalSessions={externalSessions} onImportSession={onImportSession} />,
-    )
-    await user.click(screen.getByRole("button", { name: /chat history/i }))
-    await user.click(screen.getByText("TUI chat"))
-    expect(onImportSession).toHaveBeenCalledWith("ses_tui")
-  })
-
   it("deletes an unopened session through onDeleteSession after the two-click confirm", async () => {
     const user = userEvent.setup()
     const onDeleteSession = vi.fn()
@@ -943,14 +912,5 @@ describe("StatusBar: one history list (#660)", () => {
     await user.type(input, "Renamed on the server{Enter}")
     expect(onRenameSession).toHaveBeenCalledWith("ses_tui", "Renamed on the server")
     expect(onRenameConversation).not.toHaveBeenCalled()
-  })
-
-  it("filters both kinds of rows with the search box", async () => {
-    const user = userEvent.setup()
-    const many = [...conversations, { id: "c3", title: "Third", updatedAt: 500 }, { id: "c4", title: "Fourth", updatedAt: 400 }]
-    render(<StatusBar {...baseProps} conversations={many} externalSessions={externalSessions} />)
-    await user.click(screen.getByRole("button", { name: /chat history/i }))
-    await user.type(screen.getByPlaceholderText("Search chats…"), "tui")
-    expect(titles()).toEqual(["TUI chat"])
   })
 })

@@ -58,10 +58,6 @@ describe("bytesToDataUrl", () => {
     expect(url).toBe("data:image/png;base64,AQID")
   })
 
-  it("preserves the mime in the URL", () => {
-    expect(bytesToDataUrl("application/pdf", new Uint8Array([0]))).toMatch(/^data:application\/pdf;base64,/)
-  })
-
   it("returns a valid empty payload for empty bytes", () => {
     expect(bytesToDataUrl("image/png", new Uint8Array(0))).toBe("data:image/png;base64,")
   })

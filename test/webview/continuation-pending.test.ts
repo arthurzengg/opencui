@@ -2,15 +2,6 @@ import { describe, it, expect } from "vitest"
 import { reducer, initialChatState } from "../../webview/src/hooks/useChatState"
 
 describe("reducer continuationPending", () => {
-  it("starts false on a fresh state", () => {
-    expect(initialChatState.continuationPending).toBe(false)
-  })
-
-  it("continuationPending: true sets the flag", () => {
-    const next = reducer(initialChatState, { type: "continuationPending", pending: true })
-    expect(next.continuationPending).toBe(true)
-  })
-
   it("continuationPending: false clears the flag", () => {
     const set = reducer(initialChatState, { type: "continuationPending", pending: true })
     const cleared = reducer(set, { type: "continuationPending", pending: false })

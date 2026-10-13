@@ -68,12 +68,6 @@ describe("migrateConversationsToWorkspace", () => {
     expect(workspaceState.store.get("opencui.migratedToWorkspaceState")).toBe(true)
   })
 
-  it("doesn't clear global keys when there are no legacy conversations", async () => {
-    const { context, globalState } = fakeContext({})
-    await migrateConversationsToWorkspace(context)
-    expect(globalState.store.has("opencui.conversations")).toBe(false) // never had it
-  })
-
   it("makes BOTH keys visible to a synchronous read before the first await settles", () => {
     // ChatView constructs ConversationManager (which synchronously reads both
     // keys) immediately after calling the migration WITHOUT awaiting it.

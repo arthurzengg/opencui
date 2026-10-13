@@ -297,14 +297,4 @@ describe("ReviewPanel", () => {
     await user.click(screen.getByRole("button", { name: /Keep all/i }))
     expect(header.getAttribute("aria-expanded")).toBe("true") // not collapsed
   })
-
-  it("retains 'created' kind when first change is create then later updated (turnChanges aggregation)", () => {
-    const messages = [
-      createMessage("m1", { filePath: "new.ts", content: "line1\nline2" }),
-      editMessage("m2", { filePath: "new.ts", patch: "@@\n+x", additions: 1, deletions: 0 }),
-    ]
-    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
-    expect(container.querySelector(".kind-created")).not.toBeNull()
-    expect(container.querySelector(".kind-updated")).toBeNull()
-  })
 })

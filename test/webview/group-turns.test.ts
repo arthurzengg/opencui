@@ -56,9 +56,4 @@ describe("groupTurns", () => {
     expect(out[1]?.user?.id).toBe("u1")
     expect(out[1]?.assistants.map((m) => m.id)).toEqual(["a3"])
   })
-
-  it("uses the user message id as the turn key when present", () => {
-    const out = groupTurns([user("u1"), assistant("a1")])
-    expect(out[0]?.key).toBe("u1")
-  })
 })

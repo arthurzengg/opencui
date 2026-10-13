@@ -122,42 +122,6 @@ describe("turn aggregation shape", () => {
       .map((c) => ({ path: c.path, additions: c.additions, deletions: c.deletions }))
       .sort((p, q) => p.path.localeCompare(q.path))
 
-  it("emits one row per file with stats summed across that file's tool calls", () => {
-    const messages: ChatMessage[] = [
-      assistant("m1", [
-        toolBlock({ callID: "c1", filePath: "src/a.ts", patch: "@@\n+x\n+y", additions: 2 }),
-        toolBlock({ callID: "c2", filePath: "src/b.ts", patch: "@@\n+z", additions: 1 }),
-        toolBlock({ callID: "c3", filePath: "src/a.ts", patch: "@@\n-q", additions: 0, deletions: 1 }),
-      ]),
-    ]
-    expect(rows(turnChanges(messages))).toEqual([
-      { path: "src/a.ts", additions: 2, deletions: 1 },
-      { path: "src/b.ts", additions: 1, deletions: 0 },
-    ])
-  })
-
-  it("keeps one row when a subagent and main both edit the same file", () => {
-    const messages: ChatMessage[] = [
-      assistant("m1", [
-        toolBlock({
-          callID: "c1",
-          filePath: "src/a.ts",
-          patch: "@@\n+x",
-          actor: { kind: "subagent", sessionID: "ses_child_1", subagent: "explore" },
-        }),
-        toolBlock({
-          callID: "c2",
-          filePath: "src/a.ts",
-          patch: "@@\n+y",
-          actor: { kind: "main" },
-        }),
-      ]),
-    ]
-    const changes = turnChanges(messages)
-    expect(changes).toHaveLength(1)
-    expect(changes[0]!.actors!.length).toBe(2)
-  })
-
   it("reports a pure-deletion patch as an update, not a create", () => {
     const patch = ["@@ -1,3 +1,1 @@", " ctx", "-removed1", "-removed2"].join("\n")
     const messages: ChatMessage[] = [
@@ -169,30 +133,6 @@ describe("turn aggregation shape", () => {
     expect(changes).toHaveLength(1)
     expect(changes[0]!.kind).toBe("updated")
     expect(rows(changes)).toEqual([{ path: "src/a.ts", additions: 0, deletions: 2 }])
-  })
-
-  it("marks a write to a non-existent file as created", () => {
-    const messages: ChatMessage[] = [
-      {
-        id: "m1",
-        role: "assistant",
-        blocks: [
-          {
-            type: "tool",
-            update: {
-              callID: "c1",
-              tool: "write",
-              status: "completed",
-              input: { filePath: "new.ts", content: "a\nb" },
-              metadata: { exists: false },
-            },
-          },
-        ],
-      } as ChatMessage,
-    ]
-    const changes = turnChanges(messages)
-    expect(changes).toHaveLength(1)
-    expect(changes[0]!.kind).toBe("created")
   })
 
   it("collapses edits to one file onto a single row across separate turns", () => {

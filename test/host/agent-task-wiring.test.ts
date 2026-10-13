@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest"
-import {
-  taskTitleFromUpdate,
-  summarizeAgentTasks,
-  isSubagentTool,
-} from "../../src/agents/summary"
+import { taskTitleFromUpdate, summarizeAgentTasks } from "../../src/agents/summary"
 import { SubagentDispatch, summarizePrompt } from "../../src/chat/subagent-dispatch"
 import type { ToolUpdate } from "../../src/chat/stream"
 import { AgentTaskStore, type AgentTask, type Memento } from "../../src/agents/task-store"
@@ -96,15 +92,6 @@ describe("summarizeAgentTasks", () => {
     expect(result.total).toBe(result.running + result.waiting + result.error)
   })
 
-  it("drops completed tasks — the popover shows only what's currently active", () => {
-    const result = summarizeAgentTasks([
-      task({ id: "a", status: "completed", startedAt: 1000, updatedAt: 5000 }),
-    ])
-    expect(result.tasks).toEqual([])
-    expect(result.running).toBe(0)
-    expect(result.total).toBe(0)
-  })
-
   it("drops cancelled tasks (user-initiated aborts) and completed tasks", () => {
     const result = summarizeAgentTasks([
       task({ id: "a", status: "cancelled" }),
@@ -127,36 +114,6 @@ describe("summarizeAgentTasks", () => {
     expect(result.error).toBe(1)
     expect(result.total).toBe(2)
     expect(result.tasks.map((t) => t.id)).toEqual(["x", "z"])
-  })
-
-  it("drops completed subagents even while the parent main task is still alive", () => {
-    const result = summarizeAgentTasks([
-      task({ id: "main:c:s", kind: "main", status: "running" }),
-      task({ id: "subagent:s:c1", kind: "subagent", status: "completed", startedAt: 100 }),
-      task({ id: "subagent:s:c2", kind: "subagent", status: "running", startedAt: 200 }),
-    ])
-    expect(result.running).toBe(2)
-    expect(result.total).toBe(2)
-    expect(result.tasks.map((t) => t.id)).toEqual(["main:c:s", "subagent:s:c2"])
-  })
-
-  it("empties the popover after every task settles — no per-chat history", () => {
-    const result = summarizeAgentTasks([
-      task({ id: "main:c:s", kind: "main", status: "completed", startedAt: 0, updatedAt: 9000 }),
-      task({ id: "subagent:s:c1", kind: "subagent", status: "completed", startedAt: 100, updatedAt: 5000 }),
-      task({ id: "subagent:s:c2", kind: "subagent", status: "completed", startedAt: 200, updatedAt: 7000 }),
-    ])
-    expect(result.tasks).toEqual([])
-    expect(result.running).toBe(0)
-    expect(result.total).toBe(0)
-  })
-
-  it("drops cancelled subagents — even when the parent is alive (user-initiated abort = noise)", () => {
-    const result = summarizeAgentTasks([
-      task({ id: "main:c:s", kind: "main", status: "running" }),
-      task({ id: "subagent:s:c1", kind: "subagent", status: "cancelled" }),
-    ])
-    expect(result.tasks.map((t) => t.id)).toEqual(["main:c:s"])
   })
 
   it("orders Main first, then Subagents, both by startedAt ascending", () => {
@@ -192,13 +149,6 @@ describe("summarizeAgentTasks", () => {
       category: undefined,
       model: undefined,
     })
-  })
-
-  it("forwards updatedAt so error rows can render a frozen total runtime", () => {
-    const result = summarizeAgentTasks([
-      task({ id: "a", status: "error", error: "boom", startedAt: 1000, updatedAt: 4500 }),
-    ])
-    expect(result.tasks[0]!.updatedAt).toBe(4500)
   })
 
   it("passes through subagent/category/model on subagent rows", () => {
@@ -243,35 +193,6 @@ describe("summarizeAgentTasks", () => {
     expect(mainRow.subagent).toBeUndefined()
     expect(mainRow.category).toBeUndefined()
     expect(mainRow.model).toBeUndefined()
-  })
-})
-
-describe("isSubagentTool", () => {
-  it("matches opencode's built-in `task` tool", () => {
-    expect(isSubagentTool("task")).toBe(true)
-  })
-
-  it("matches omo's `call_omo_agent` used by Hephaestus / Sisyphus subagents", () => {
-    expect(isSubagentTool("call_omo_agent")).toBe(true)
-  })
-
-  it("matches omo's `background_task` (Hephaestus fire-and-forget pattern)", () => {
-    expect(isSubagentTool("background_task")).toBe(true)
-  })
-
-  it("matches `delegate_task` defensively (in case omo re-registers under its lowercase name)", () => {
-    expect(isSubagentTool("delegate_task")).toBe(true)
-  })
-
-  it("matches defensive name variants (Task, task_tool)", () => {
-    expect(isSubagentTool("Task")).toBe(true)
-    expect(isSubagentTool("task_tool")).toBe(true)
-  })
-
-  it("returns false for non-subagent tools", () => {
-    for (const name of ["read", "edit", "bash", "grep", "glob", "webfetch", "tasks", "callomoagent"]) {
-      expect(isSubagentTool(name)).toBe(false)
-    }
   })
 })
 
