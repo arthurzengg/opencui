@@ -83,6 +83,15 @@ function alwaysPatterns(perm: PermissionRequest): string[] {
   return perm.always.length > 0 ? perm.always : perm.patterns
 }
 
+/**
+ * Ids were "u_" + Date.now(). Two bubbles minted in the same millisecond
+ * shared an id, and the transcript keys its turns by it, so React orphaned
+ * one of them: a bubble no restore could remove (#706).
+ */
+function mintUserMessageID(): string {
+  return "u_" + crypto.randomUUID()
+}
+
 export class ChatView implements vscode.WebviewViewProvider {
   static viewType = "opencui.chat"
 
@@ -1701,7 +1710,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.redoStack = [] // a new turn diverges the history; nothing to redo
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
-    const userMessageID = "u_" + Date.now()
+    const userMessageID = mintUserMessageID()
     // The message persists every chip pair as written — the edit flow rebuilds
     // label→id bindings from them. Self-mentions and duplicate chips are
     // filtered out of what the PROMPT attaches, never out of the message.
@@ -1988,7 +1997,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.redoStack = [] // a custom-command turn diverges the history
     const ctx = getEditorContext()
     const label = formatContextHeader(ctx)
-    const userMessageID = "u_" + Date.now()
+    const userMessageID = mintUserMessageID()
     // Show the typed invocation, never the expanded template — the SSE
     // onUserMessage only associates the backend id, it never rewrites the text.
     const display = "/" + command + (args ? " " + args : "")
@@ -2099,7 +2108,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     this.turnActive = true
     this.redoStack = [] // a /compact or /init turn diverges the history
     const ctx = getEditorContext()
-    const userMessageID = "u_" + Date.now()
+    const userMessageID = mintUserMessageID()
     this.pendingUserBackendID = userMessageID
     this.post({
       type: "userMessage",

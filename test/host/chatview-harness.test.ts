@@ -1847,3 +1847,19 @@ describe("ChatView harness: renaming across the one history list (#662)", () => 
     expect(server.sessionUpdates[0]).toEqual({ sessionID: SESSION_ID, body: { title: "Local name" } })
   })
 })
+
+describe("ChatView harness: user message ids (#706)", () => {
+  it("mints distinct ids for two prompts in the same millisecond", async () => {
+    await harness.send({ type: "mounted" })
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000)
+    try {
+      await harness.send({ type: "send", text: "first" })
+      await harness.send({ type: "send", text: "second" })
+    } finally {
+      now.mockRestore()
+    }
+    const ids = harness.posted.flatMap((m) => (m.type === "userMessage" ? [m.id] : []))
+    expect(ids).toHaveLength(2)
+    expect(ids[0]).not.toBe(ids[1])
+  })
+})
