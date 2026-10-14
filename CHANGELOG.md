@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.16.1] - 2026-10-14
+
+### Fixed
+
+- A user message could stay pinned at the top of the chat, under the new-chat composer and above every conversation opened afterwards, until the window was reloaded. Two messages created in the same millisecond received the same id, and the transcript could not tell them apart when it changed. Message ids are now unique by construction. A panel already showing the stray bubble needs one window reload after updating (#706, #707).
+
 ## [1.16.0] - 2026-10-11
 
 ### Added
