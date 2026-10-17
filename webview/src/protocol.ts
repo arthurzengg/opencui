@@ -131,6 +131,11 @@ export type ChatMessage = {
    * messages, undefined for messages from before the manifest landed.
    */
   context?: PromptContextManifest
+  /**
+   * Timestamps for message start and completion (epoch ms). Used to measure
+   * turn work elapsed duration (e.g. 'Worked for 8m').
+   */
+  time?: { created?: number; completed?: number }
 }
 
 export type ConversationSummary = {
@@ -366,6 +371,8 @@ export type AgentsTaskInfo = {
    * `sessionID` stays stripped — the popover must not learn it.
    */
   childSessionID?: string
+  /** Count of tools executed or running in the subagent's session. */
+  toolCount?: number
 }
 
 /**

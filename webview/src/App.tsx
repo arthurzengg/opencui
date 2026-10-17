@@ -7,7 +7,7 @@ import { useEntrance } from "./hooks/useEntrance"
 import { useLatch } from "./hooks/useLatch"
 import { createBottomGlide, nestedScrollerTakesWheelUp, prefersReducedMotion } from "./bottom-glide"
 import type { Attachment } from "./protocol"
-import { MessageView } from "./components/MessageView"
+import { MessageView, TurnAssistants } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
 import { hasSubagentWork } from "./components/AgentActivity"
 import { QueuedMessages } from "./components/QueuedMessages"
@@ -443,23 +443,19 @@ export default function App() {
                 onOpenLink={openLink}
               />
             )}
-            {turn.assistants.map((m, i) => (
-              <MessageView
-                key={m.id}
-                message={m}
-                processOpen={m.id === activeProcessID}
-                processOnly={m.pending || i < turn.assistants.length - 1}
-                busy={busy}
-                onReviewFile={openReviewFile}
-                onEditMessage={editMessage}
-                onRetry={handleRetry}
-                agentActivity={m.id === agentActivityMessageID ? state.agentsStatus : undefined}
-                agentActivityEntering={m.id === agentActivityEntering}
-                requestAgentActivity={requestAgentActivity}
-                retry={m.id === activeProcessID ? state.retry : undefined}
-                onOpenLink={openLink}
-              />
-            ))}
+            <TurnAssistants
+              turn={turn}
+              busy={busy}
+              activeProcessID={activeProcessID}
+              onReviewFile={openReviewFile}
+              onRetry={handleRetry}
+              agentActivityMessageID={agentActivityMessageID}
+              agentActivity={state.agentsStatus}
+              agentActivityEntering={agentActivityEntering}
+              requestAgentActivity={requestAgentActivity}
+              retry={state.retry}
+              onOpenLink={openLink}
+            />
           </div>
         ))}
       </div>

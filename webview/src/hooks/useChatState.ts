@@ -422,6 +422,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
             backendID: action.backendID,
             mentions: action.mentions,
             conversationMentions: action.conversationMentions,
+            time: { created: Date.now() },
           },
         ],
       }
@@ -451,7 +452,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return {
         ...state,
         busy: true,
-        messages: [...state.messages, { id: action.id, role: "assistant", blocks: [], pending: true }],
+        messages: [...state.messages, { id: action.id, role: "assistant", blocks: [], pending: true, time: { created: Date.now() } }],
       }
     case "assistantSummary":
       // Presentation-only flag on an existing bubble; same ignore-while-
@@ -514,15 +515,25 @@ export function reducer(state: ChatState, action: Action): ChatState {
       return {
         ...state,
         busy: false,
-        messages: upsertMessage(state.messages, action.id, { error: action.message, pending: false }),
+        messages: upsertMessage(state.messages, action.id, {
+          error: action.message,
+          pending: false,
+          time: { ...target?.time, completed: Date.now() },
+        }),
       }
     }
-    case "assistantDone":
+    case "assistantDone": {
+      const target = state.messages.find((m) => m.id === action.id)
       return {
         ...state,
         busy: false,
-        messages: upsertMessage(state.messages, action.id, { pending: false, usage: action.usage }),
+        messages: upsertMessage(state.messages, action.id, {
+          pending: false,
+          usage: action.usage,
+          time: { ...target?.time, completed: Date.now() },
+        }),
       }
+    }
     case "aborted": {
       // A Stop can race the turn's own completion: if sessionIdle was already
       // processed there is no turn left to stop, and no further sessionIdle
@@ -540,6 +551,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
       state.messages.forEach((m, i) => {
         if (m.role === "assistant" && m.pending) lastPendingIdx = i
       })
+      const now = Date.now()
       return {
         ...state,
         busy: true,
@@ -553,8 +565,8 @@ export function reducer(state: ChatState, action: Action): ChatState {
         queued: [],
         messages: state.messages.map((m, i) => {
           if (m.role !== "assistant" || !m.pending) return m
-          if (i === lastPendingIdx) return { ...m, pending: false, stopped: true }
-          return { ...m, pending: false }
+          if (i === lastPendingIdx) return { ...m, pending: false, stopped: true, time: { ...m.time, completed: now } }
+          return { ...m, pending: false, time: { ...m.time, completed: now } }
         }),
       }
     }
@@ -565,10 +577,11 @@ export function reducer(state: ChatState, action: Action): ChatState {
       // already cleared the banner.
       if (state.aborting) return state
       return { ...state, retry: action.retry }
-    case "sessionIdle":
+    case "sessionIdle": {
       // Opencode finished draining its in-flight LLM call. Clear both flags so
       // the Send button comes back; ALSO clear `aborting` regardless of how we
       // got here (normal completion or abort tail).
+      const now = Date.now()
       return {
         ...state,
         busy: false,
@@ -577,9 +590,12 @@ export function reducer(state: ChatState, action: Action): ChatState {
         retry: undefined,
         idleNonce: state.idleNonce + 1,
         messages: state.messages.map((m) =>
-          m.role === "assistant" && m.pending ? { ...m, pending: false } : m,
+          m.role === "assistant" && m.pending
+            ? { ...m, pending: false, time: { ...m.time, completed: m.time?.completed ?? now } }
+            : m,
         ),
       }
+    }
     case "continuationPending":
       return { ...state, continuationPending: action.pending }
     case "permission":

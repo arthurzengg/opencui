@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import "@testing-library/jest-dom/vitest"
 import { fireEvent, render, screen, cleanup, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { StatusBar } from "../../webview/src/components/StatusBar"
@@ -1018,6 +1019,115 @@ describe("AgentActivity", () => {
       />,
     )
     expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument()
+  })
+
+  it("displays toolCount on the badge when tools have been executed", () => {
+    render(
+      <AgentActivity
+        status={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_tools_count",
+              kind: "subagent",
+              title: "Worker with tools",
+              status: "running",
+              startedAt: Date.now() - 5_000,
+              updatedAt: Date.now(),
+              subagent: "explore",
+              toolCount: 3,
+            },
+          ],
+        }}
+      />,
+    )
+    expect(screen.getByText("3 tools")).toBeInTheDocument()
+    const badge = screen.getByRole("button", { name: "Open Explore activity" })
+    expect(badge).toHaveAttribute("title", expect.stringContaining("3 tools"))
+  })
+
+  it("renders a clean note for the Main agent without calling requestActivity", async () => {
+    const user = userEvent.setup()
+    const requestActivity = vi.fn()
+    render(
+      <AgentActivity
+        status={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "main:c:s",
+              kind: "main",
+              title: "Main turn",
+              status: "running",
+              startedAt: Date.now() - 2_000,
+              updatedAt: Date.now(),
+            },
+          ],
+        }}
+        requestActivity={requestActivity}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "Open Main activity" }))
+    expect(screen.getByText("Main session activity is displayed in the chat transcript above")).toBeInTheDocument()
+    expect(screen.queryByText("unknown task")).not.toBeInTheDocument()
+    expect(screen.queryByText("Activity unavailable")).not.toBeInTheDocument()
+    expect(requestActivity).not.toHaveBeenCalled()
+  })
+
+  it("formats live tool inputs cleanly ($ command, file path, grep query)", async () => {
+    const user = userEvent.setup()
+    vi.spyOn(vscode, "post").mockImplementation(() => {})
+    const requestActivity = vi.fn(() => Promise.resolve<AgentActivityResult>({ ok: true, messages: [] }))
+    render(
+      <AgentActivity
+        status={{
+          running: 1,
+          waiting: 0,
+          error: 0,
+          total: 1,
+          tasks: [
+            {
+              id: "subagent:child:ses_live_tools",
+              kind: "subagent",
+              title: "Tool formatter",
+              status: "running",
+              startedAt: Date.now() - 1_000,
+              updatedAt: Date.now(),
+            },
+          ],
+        }}
+        requestActivity={requestActivity}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "Open Agent activity" }))
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "agentActivityStream",
+          taskID: "subagent:child:ses_live_tools",
+          event: { kind: "tool", tool: "bash", input: JSON.stringify({ command: "git status" }) },
+        },
+      }),
+    )
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: {
+          type: "agentActivityStream",
+          taskID: "subagent:child:ses_live_tools",
+          event: { kind: "tool", tool: "read", input: JSON.stringify({ filePath: "src/index.ts" }) },
+        },
+      }),
+    )
+    await screen.findByText("$ git status")
+    expect(screen.getByText("read src/index.ts")).toBeInTheDocument()
   })
 })
 

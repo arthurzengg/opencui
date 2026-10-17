@@ -201,7 +201,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   /** Disk home for attachment bytes; conversation state keeps references only. */
   private attachmentStore: AttachmentStore
 
-  private activitySubscribers = new Map<string, { childSessionID: string; lastStatus?: string }>()
+  private activitySubscribers = new Map<string, { childSessionID?: string; lastStatus?: string }>()
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -342,16 +342,21 @@ export class ChatView implements vscode.WebviewViewProvider {
 
   /**
    * Open the live stdout feed for one task. Resolves taskID → child
-   * session; unknown / main / no-child rows all answer the same immediate
-   * `{kind:"status", status:"error"}` push so the detail view surfaces
-   * something instead of hanging silent.
+   * session; unknown tasks answer immediate error status.
    */
   private handleActivitySubscribe(taskID: string) {
-    let childSessionID = this.taskStore?.get(taskID)?.childSessionID
+    const task = this.taskStore?.get(taskID)
+    let childSessionID = task?.childSessionID
     if (!childSessionID && taskID.startsWith("subagent:child:")) {
       childSessionID = taskID.slice("subagent:child:".length)
     }
     if (!childSessionID) {
+      if (task && task.kind === "subagent") {
+        // Subagent task is known but childSessionID has not landed yet (spawning race).
+        // Hold the subscriber slot so it auto-binds once discovered.
+        this.activitySubscribers.set(taskID, { childSessionID: undefined, lastStatus: undefined })
+        return
+      }
       this.post({
         type: "agentActivityStream",
         taskID,
@@ -376,6 +381,13 @@ export class ChatView implements vscode.WebviewViewProvider {
   private pushActivityStream(event: ChildSessionEvent) {
     if (this.activitySubscribers.size === 0) return
     for (const [taskID, sub] of this.activitySubscribers.entries()) {
+      if (!sub.childSessionID) {
+        const bound = this.taskStore?.get(taskID)?.childSessionID
+        if (bound) sub.childSessionID = bound
+        else if (taskID.startsWith("subagent:child:")) {
+          sub.childSessionID = taskID.slice("subagent:child:".length)
+        }
+      }
       if (sub.childSessionID !== event.sessionID) continue
       if (event.type === "busy" || event.type === "idle" || event.type === "error") {
         if (sub.lastStatus === event.type) continue
@@ -1174,6 +1186,7 @@ export class ChatView implements vscode.WebviewViewProvider {
             backendID: msg.backendID,
             mentions: msg.mentions,
             conversationMentions: msg.conversationMentions,
+            time: { created: Date.now() },
           },
         ]
         this.saveActive()
@@ -1196,7 +1209,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         // (re-attach, trailing bookkeeping after a reload); a second row with
         // the same id is never right (#585).
         if (this.messages.some((m) => m.id === msg.id)) return
-        this.messages = [...this.messages, { id: msg.id, role: "assistant", blocks: [], pending: true }]
+        this.messages = [...this.messages, { id: msg.id, role: "assistant", blocks: [], pending: true, time: { created: Date.now() } }]
         this.saveActive()
         return
       case "assistantSummary":
@@ -1237,13 +1250,13 @@ export class ChatView implements vscode.WebviewViewProvider {
         return
       case "assistantError":
         this.messages = this.messages.map((m) =>
-          m.id === msg.id ? { ...m, error: msg.message, pending: false } : m,
+          m.id === msg.id ? { ...m, error: msg.message, pending: false, time: { ...m.time, completed: Date.now() } } : m,
         )
         this.saveActive()
         return
       case "assistantDone":
         this.messages = this.messages.map((m) =>
-          m.id === msg.id ? { ...m, pending: false, usage: msg.usage } : m,
+          m.id === msg.id ? { ...m, pending: false, usage: msg.usage, time: { ...m.time, completed: Date.now() } } : m,
         )
         this.saveActive()
         return
@@ -1255,10 +1268,11 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.messages.forEach((m, i) => {
           if (m.role === "assistant" && m.pending) lastPendingIdx = i
         })
+        const now = Date.now()
         this.messages = this.messages.map((m, i) => {
           if (m.role !== "assistant" || !m.pending) return m
-          if (i === lastPendingIdx) return { ...m, pending: false, stopped: true }
-          return { ...m, pending: false }
+          if (i === lastPendingIdx) return { ...m, pending: false, stopped: true, time: { ...m.time, completed: now } }
+          return { ...m, pending: false, time: { ...m.time, completed: now } }
         })
         this.saveActive()
         return

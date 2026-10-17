@@ -294,14 +294,27 @@ export class SubagentTracker {
         if (existing.status === "error" || existing.status === "completed" || existing.status === "cancelled") {
           return
         }
-        // Already running: skip the write. Busy signals arrive per streamed
-        // token (message.part.delta et al.), and each store.update() is a
-        // full workspaceState persist + onDidChange broadcast + agentsStatus
-        // IPC post. Nothing reads updatedAt on a live row (AgentsRow derives
-        // elapsed from startedAt) — the only transition left to make here is
-        // waiting -> running.
-        if (existing.status === "running") return
+        // Already running: throttle the write. Busy signals arrive per streamed
+        // token (message.part.delta et al.), so skip writes during rapid streaming,
+        // but refresh updatedAt every 15s so healthy active tasks do not trip the
+        // 60s stuck detector (#AgentActivity).
+        if (existing.status === "running") {
+          if (now - existing.updatedAt >= 15_000) {
+            this.store.touch(taskID, now)
+          }
+          return
+        }
         await this.store.update(taskID, { status: "running", updatedAt: now })
+        return
+      case "toolStart": {
+        const nextCount = (existing.toolCount ?? 0) + 1
+        await this.store.update(taskID, { toolCount: nextCount, updatedAt: now })
+        return
+      }
+      case "tool":
+        if (now - existing.updatedAt >= 5_000) {
+          this.store.touch(taskID, now)
+        }
         return
       case "idle":
         // Final state. Drop the child session from the interest set so

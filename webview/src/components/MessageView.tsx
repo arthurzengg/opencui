@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { RetryStatus } from "./RetryStatus"
 import { useLivePhase } from "../hooks/useLivePhase"
 import type { Block, Message, AgentActivityResult } from "../hooks/useChatState"
@@ -23,7 +23,7 @@ import { PromptBox } from "./PromptBox"
 import { ToolTrace } from "./ToolCard"
 import { ICON_SIZE } from "../design-tokens"
 import { usageDetail, usageSummary } from "../usage-format"
-import { AgentActivity } from "./AgentActivity"
+import { AgentActivity, formatElapsed } from "./AgentActivity"
 
 /**
  * Discriminated edit lifecycle for user-message bubbles.
@@ -478,7 +478,7 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   const pending = Boolean(message.pending)
   if (processOnly) {
     if (!hasProcessBlocks(message.blocks)) return null
-    return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+    return <ProcessPanel blocks={message.blocks} pending={pending} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
   // Deterministic split: the answer is the trailing run of text after the last
@@ -500,12 +500,12 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   let answerBlocks = answer
   if (answerHasText) {
     if (hasProcessBlocks(process)) {
-      panel = <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}-${start}`} defaultOpen={false} onReviewFile={onReviewFile} />
+      panel = <ProcessPanel blocks={process} pending={false} defaultOpen={false} onReviewFile={onReviewFile} />
     }
   } else if (hasProcessBlocks(message.blocks)) {
     // Ends on activity/reasoning — no distinct answer to surface yet, so the
     // whole message is the live process.
-    panel = <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+    panel = <ProcessPanel blocks={message.blocks} pending={pending} defaultOpen={processOpen} onReviewFile={onReviewFile} />
     answerBlocks = []
   }
   return (
@@ -516,34 +516,383 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   )
 }
 
+export type ProcessCluster = {
+  id: string
+  kind: "thought" | "command" | "read" | "search" | "edit" | "task" | "other"
+  blocks: Block[]
+  title: string
+}
+
+export function clusterProcessBlocks(blocks: Block[]): ProcessCluster[] {
+  const clusters: { kind: ProcessCluster["kind"]; blocks: Block[] }[] = []
+  for (const b of blocks) {
+    if (b.type === "tool" && isSystemReminderTool(b.update.tool)) {
+      continue
+    }
+    let kind: ProcessCluster["kind"] = "other"
+    if (b.type === "reasoning") {
+      kind = "thought"
+    } else if (b.type === "tool") {
+      const tool = b.update.tool
+      if (tool === "bash" || tool === "shell" || tool === "sh" || tool === "terminal" || tool === "exec") {
+        kind = "command"
+      } else if (tool === "read") {
+        kind = "read"
+      } else if (tool === "grep" || tool === "glob") {
+        kind = "search"
+      } else if (tool === "edit" || tool === "write" || tool === "apply_patch") {
+        kind = "edit"
+      } else if (tool === "task") {
+        kind = "task"
+      } else {
+        kind = "other"
+      }
+    } else if (b.type === "patch") {
+      kind = "edit"
+    } else if (b.type === "text") {
+      kind = "thought"
+    }
+
+    const prev = clusters[clusters.length - 1]
+    if (prev && prev.kind === kind) {
+      prev.blocks.push(b)
+    } else {
+      clusters.push({ kind, blocks: [b] })
+    }
+  }
+
+  return clusters.map((c, i) => {
+    let title = ""
+    if (c.kind === "thought") {
+      title = "Thought"
+    } else if (c.kind === "command") {
+      const count = c.blocks.filter((b) => b.type === "tool").length
+      title = `Ran ${count} ${count === 1 ? "command" : "commands"}`
+    } else if (c.kind === "read") {
+      const count = c.blocks.filter((b) => b.type === "tool").length
+      title = `Explored ${count} ${count === 1 ? "file" : "files"}`
+    } else if (c.kind === "search") {
+      const count = c.blocks.filter((b) => b.type === "tool").length
+      title = `${count} ${count === 1 ? "search" : "searches"}`
+    } else if (c.kind === "edit") {
+      const count = c.blocks.length
+      title = `Edited ${count} ${count === 1 ? "file" : "files"}`
+    } else if (c.kind === "task") {
+      const count = c.blocks.filter((b) => b.type === "tool").length
+      title = `Explored ${count} ${count === 1 ? "task" : "tasks"}`
+    } else {
+      title = processSummary(c.blocks) ?? processTitle(c.blocks)
+    }
+    return {
+      id: `cluster-${i}`,
+      kind: c.kind,
+      blocks: c.blocks,
+      title,
+    }
+  })
+}
+
+function ClusterPanel({
+  cluster,
+  pending,
+  defaultOpen,
+  onReviewFile,
+}: {
+  cluster: ProcessCluster
+  pending: boolean
+  defaultOpen?: boolean
+  onReviewFile?: (path: string) => void
+}) {
+  const [userChoice, setUserChoice] = useState<boolean | undefined>(undefined)
+  const autoOpen = pending ? true : Boolean(defaultOpen)
+  const open = userChoice !== undefined ? userChoice : autoOpen
+  const [everOpened, setEverOpened] = useState(open)
+
+  useEffect(() => {
+    if (open) setEverOpened(true)
+  }, [open])
+
+  const toggle = () => {
+    const next = !open
+    setUserChoice(next)
+    if (next) setEverOpened(true)
+  }
+
+  return (
+    <div className={`process sub-process ${open ? "is-open" : ""}`}>
+      <button className="process-head" onClick={toggle} aria-expanded={open}>
+        <span className="process-title">{cluster.title}</span>
+        <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
+      </button>
+      <div className="process-body-clip">
+        <div className="process-body">
+          {everOpened ? renderBlocks(cluster.blocks, true, onReviewFile, pending) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TurnWorkPanel({
+  blocks,
+  assistants,
+  pending,
+  defaultOpen,
+  onReviewFile,
+}: {
+  blocks: Block[]
+  assistants: Message[]
+  pending: boolean
+  defaultOpen?: boolean
+  onReviewFile?: (path: string) => void
+}) {
+  const [userChoice, setUserChoice] = useState<boolean | undefined>(undefined)
+  const autoOpen = pending ? true : Boolean(defaultOpen)
+  const open = userChoice !== undefined ? userChoice : autoOpen
+  const [everOpened, setEverOpened] = useState(open)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!pending) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [pending])
+
+  useEffect(() => {
+    if (open) setEverOpened(true)
+  }, [open])
+
+  const toggle = () => {
+    const next = !open
+    setUserChoice(next)
+    if (next) setEverOpened(true)
+  }
+
+  const clusters = useMemo(() => clusterProcessBlocks(blocks), [blocks])
+
+  const hasTools = blocks.some((b) => b.type === "tool" || b.type === "patch")
+  const startTime = assistants[0]?.time?.created
+  const completedTime = assistants[assistants.length - 1]?.time?.completed
+
+  let title: string
+  if (pending) {
+    const elapsed = startTime ? Math.max(0, now - startTime) : 0
+    const elapsedStr = elapsed >= 2000 ? ` · ${formatElapsed(elapsed)}` : ""
+    title = hasTools ? `Working${elapsedStr}` : `Thinking${elapsedStr}`
+  } else {
+    const duration = startTime && completedTime ? Math.max(0, completedTime - startTime) : 0
+    if (duration > 0) {
+      const durStr = formatElapsed(duration)
+      title = hasTools ? `Worked for ${durStr}` : `Thought for ${durStr}`
+    } else {
+      title = hasTools ? (processSummary(blocks) ?? "Worked") : "Thought"
+    }
+  }
+
+  const singleCluster = clusters.length === 1 ? clusters[0] : null
+
+  return (
+    <div className={`process turn-work ${open ? "is-open" : ""}`}>
+      <button className="process-head turn-work-head" onClick={toggle} aria-expanded={open}>
+        <span className="process-title">{title}</span>
+        <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
+      </button>
+      <div className="process-body-clip">
+        <div className="process-body turn-work-body">
+          {everOpened ? (
+            singleCluster ? (
+              renderBlocks(singleCluster.blocks, true, onReviewFile, pending)
+            ) : (
+              clusters.map((cluster, i) => (
+                <ClusterPanel
+                  key={cluster.id}
+                  cluster={cluster}
+                  pending={pending && i === clusters.length - 1}
+                  defaultOpen={pending && i === clusters.length - 1}
+                  onReviewFile={onReviewFile}
+                />
+              ))
+            )
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export type TurnAssistantsProps = {
+  turn: { user?: Message; assistants: Message[]; key: string }
+  busy?: boolean
+  activeProcessID?: string
+  onReviewFile?: (path: string) => void
+  onRetry?: (assistantID: string) => void
+  agentActivityMessageID?: string
+  agentActivity?: AgentsStatusInfo
+  agentActivityEntering?: string | null | boolean
+  requestAgentActivity?: (taskID: string) => Promise<AgentActivityResult>
+  retry?: SessionRetryInfo
+  onOpenLink?: (url: string) => void
+}
+
+export function TurnAssistants({
+  turn,
+  busy,
+  activeProcessID,
+  onReviewFile,
+  onRetry,
+  agentActivityMessageID,
+  agentActivity,
+  agentActivityEntering,
+  requestAgentActivity,
+  retry,
+  onOpenLink,
+}: TurnAssistantsProps) {
+  const assistants = turn.assistants
+  if (!assistants.length) {
+    if (busy) {
+      return (
+        <div className="msg role-assistant">
+          <ThinkingLine quiet={false} />
+        </div>
+      )
+    }
+    return null
+  }
+
+  const first = assistants[0]
+  if (first.summary && !first.error && !first.stopped) {
+    return <CompactionMarker message={first} onReviewFile={onReviewFile} />
+  }
+
+  const last = assistants[assistants.length - 1]
+  const lastAnswerStart = answerStartIndex(last.blocks)
+  const lastProcessBlocks = last.blocks.slice(0, lastAnswerStart)
+
+  const allProcessBlocks: Block[] = []
+  for (let i = 0; i < assistants.length - 1; i++) {
+    for (const b of assistants[i].blocks) {
+      if (hasProcessBlocks([b])) allProcessBlocks.push(b)
+    }
+  }
+  for (const b of lastProcessBlocks) {
+    if (hasProcessBlocks([b])) allProcessBlocks.push(b)
+  }
+
+  const hasWork = allProcessBlocks.length > 0
+  const turnPending = Boolean(busy || assistants.some((m) => m.pending))
+  const isProcessOpen = assistants.some((m) => m.id === activeProcessID)
+
+  return (
+    <>
+      {hasWork && (
+        <TurnWorkPanel
+          blocks={allProcessBlocks}
+          assistants={assistants}
+          pending={turnPending}
+          defaultOpen={isProcessOpen}
+          onReviewFile={onReviewFile}
+        />
+      )}
+      {assistants.map((m, i) => {
+        const isLast = i === assistants.length - 1
+        const start = answerStartIndex(m.blocks)
+        const answerBlocks = hasWork ? (isLast ? m.blocks.slice(start) : []) : (isLast ? m.blocks.slice(start) : m.blocks)
+        const answerHasText = answerBlocks.some((b) => b.type === "text" && b.text.trim().length > 0)
+
+        const currentActivity = m.id === agentActivityMessageID ? agentActivity : undefined
+        const isEntering =
+          agentActivityEntering === true ||
+          (typeof agentActivityEntering === "string" && m.id === agentActivityEntering)
+
+        const stopped = m.stopped || /^aborted$/i.test((m.error ?? "").trim())
+        const isRetry = m.id === activeProcessID ? retry : undefined
+
+        if (!hasWork) {
+          return (
+            <MessageView
+              key={m.id}
+              message={m}
+              processOpen={m.id === activeProcessID}
+              processOnly={m.pending || i < assistants.length - 1}
+              busy={busy}
+              onReviewFile={onReviewFile}
+              onRetry={onRetry}
+              agentActivity={currentActivity}
+              agentActivityEntering={isEntering}
+              requestAgentActivity={requestAgentActivity}
+              retry={isRetry}
+              onOpenLink={onOpenLink}
+            />
+          )
+        }
+
+        const showContent =
+          answerHasText ||
+          Boolean(m.error) ||
+          Boolean(stopped) ||
+          Boolean(currentActivity) ||
+          Boolean(isRetry && m.pending) ||
+          (!busy && !m.pending && Boolean(m.usage) && isLast)
+
+        return (
+          <div className="msg role-assistant" key={m.id}>
+            {m.ref?.label && <div className="msg-ref">{m.ref.label}</div>}
+            {showContent && renderBlocks(answerBlocks, false, onReviewFile, m.pending)}
+            <AgentActivity status={currentActivity} entering={isEntering} requestActivity={requestAgentActivity} />
+            {isRetry && m.pending && <RetryStatus retry={isRetry} onOpenLink={onOpenLink} />}
+            {stopped ? (
+              <div className="msg-stopped">
+                <span>Stopped</span>
+                {onRetry && !busy && (
+                  <button
+                    type="button"
+                    className="msg-retry"
+                    onClick={() => onRetry(m.id)}
+                    title="Resend the same prompt"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
+            ) : m.error ? (
+              <div className="msg-error">{m.error}</div>
+            ) : null}
+            {!busy && !m.pending && isLast && m.usage && <UsageChip usage={m.usage} />}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 function ProcessPanel({
   blocks,
   pending,
-  openKey,
   defaultOpen,
   onReviewFile,
 }: {
   blocks: Block[]
   pending: boolean
-  openKey: string
-  defaultOpen: boolean
+  defaultOpen?: boolean
   onReviewFile?: (path: string) => void
 }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const [userChoice, setUserChoice] = useState<boolean | undefined>(undefined)
+  const autoOpen = pending ? true : Boolean(defaultOpen)
+  const open = userChoice !== undefined ? userChoice : autoOpen
   // Lazy mount: nothing renders inside a never-opened body — a long
   // transcript's collapsed tool traces and process text would otherwise all
   // render invisibly. Once opened it stays mounted so the 0fr fold
   // animation has content during collapse.
-  const [everOpened, setEverOpened] = useState(defaultOpen)
+  const [everOpened, setEverOpened] = useState(open)
 
   useEffect(() => {
-    setOpen(defaultOpen)
-    if (defaultOpen) setEverOpened(true)
-  }, [defaultOpen, openKey])
+    if (open) setEverOpened(true)
+  }, [open])
 
   const toggle = () => {
-    if (!open) setEverOpened(true)
-    setOpen(!open)
+    const next = !open
+    setUserChoice(next)
+    if (next) setEverOpened(true)
   }
 
   const title = pending ? processTitle(blocks) : processSummary(blocks) ?? processTitle(blocks)

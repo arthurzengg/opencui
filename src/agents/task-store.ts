@@ -66,6 +66,7 @@ export type AgentTask = {
   startedAt: number
   updatedAt: number
   error?: string
+  toolCount?: number
 }
 
 /**
@@ -291,6 +292,20 @@ export class AgentTaskStore {
     await this.persistAndEmit()
   }
 
+  /**
+   * Refresh a task's in-memory updatedAt timestamp without persisting to
+   * memento storage. Emits onDidChange so live consumers (e.g. webview stuck
+   * detector) observe the heartbeat, avoiding memento I/O on pure clock ticks.
+   */
+  touch(id: string, now = Date.now()): void {
+    const idx = this.tasks.findIndex((t) => t.id === id)
+    if (idx < 0) return
+    const existing = this.tasks[idx]!
+    if (isTerminal(existing.status)) return
+    this.tasks = this.tasks.map((t) => (t.id === id ? { ...t, updatedAt: now } : t))
+    this.emitter.fire(this.list())
+  }
+
   /** Drop completed/cancelled tasks. Errors are preserved until cleared explicitly. */
   async clearCompleted(): Promise<void> {
     const next = this.tasks.filter(
@@ -416,7 +431,8 @@ function sameTask(a: AgentTask, b: AgentTask): boolean {
     a.kind === b.kind &&
     a.conversationID === b.conversationID &&
     a.sessionID === b.sessionID &&
-    a.startedAt === b.startedAt
+    a.startedAt === b.startedAt &&
+    a.toolCount === b.toolCount
   )
 }
 
@@ -462,6 +478,7 @@ function sanitize(raw: unknown): AgentTask[] {
         : undefined,
       runInBackground: typeof item.runInBackground === "boolean" ? item.runInBackground : undefined,
       error: typeof item.error === "string" ? item.error : undefined,
+      toolCount: typeof item.toolCount === "number" ? item.toolCount : undefined,
     })
   }
   return out

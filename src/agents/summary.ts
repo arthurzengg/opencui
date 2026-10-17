@@ -71,6 +71,7 @@ export function summarizeAgentTasks(
       category: task.kind === "subagent" ? task.category : undefined,
       model: task.kind === "subagent" ? task.model : undefined,
       childSessionID: task.childSessionID,
+      toolCount: task.kind === "subagent" ? task.toolCount : undefined,
     })
   }
   // Stable order: main tasks first (the user's prompt anchor), then

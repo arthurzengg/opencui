@@ -95,6 +95,17 @@ describe("buildTrace", () => {
     expect(trace.others[0]?.action).toBe("Ran")
   })
 
+  it("classifies shell as Ran and preserves output", () => {
+    const trace = buildTrace(
+      [update({ tool: "shell", input: { command: "git status" }, output: "On branch main" })],
+      [],
+    )
+    expect(trace.others).toHaveLength(1)
+    expect(trace.others[0]?.action).toBe("Ran")
+    expect(trace.others[0]?.detail).toBe("git status")
+    expect(trace.others[0]?.output).toBe("On branch main")
+  })
+
   it("ingests patch blocks alongside tool calls and dedupes by path", () => {
     const trace = buildTrace(
       [
@@ -158,6 +169,19 @@ describe("toolHeadline", () => {
     ])
     expect(h).toContain("Read")
     expect(h).toContain("2")
+  })
+
+  it("describes single command in others", () => {
+    const h = toolHeadline([update({ tool: "shell", input: { command: "ls" } })])
+    expect(h).toBe("Ran ls")
+  })
+
+  it("describes multiple commands as Ran N commands", () => {
+    const h = toolHeadline([
+      update({ tool: "shell", input: { command: "ls" } }),
+      update({ tool: "shell", input: { command: "pwd" } }),
+    ])
+    expect(h).toBe("Ran 2 commands")
   })
 })
 

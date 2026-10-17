@@ -4,6 +4,7 @@ import type { AgentActivityResult, AgentActivityStreamEvent } from "../hooks/use
 import { subscribeAgentActivity } from "../hooks/useChatState"
 import { useLivePhase } from "../hooks/useLivePhase"
 import { formatAgent, formatModel } from "./StatusBar"
+import { Markdown } from "./Markdown"
 
 /**
  * Same grace idea as ToolCard's ELAPSED_GRACE_MS: don't flag a running
@@ -90,7 +91,7 @@ export function AgentActivity({
   )
 }
 
-/** One badge per active agent: role name + status dot + short elapsed. */
+/** One badge per active agent: role name + status dot + optional tool count + short elapsed. */
 function AgentBadge({ task, onOpen }: { task: AgentsTaskInfo; onOpen: () => void }) {
   const isLive = task.status === "running" || task.status === "waiting"
   const now = useTickingNow(isLive)
@@ -102,7 +103,10 @@ function AgentBadge({ task, onOpen }: { task: AgentsTaskInfo; onOpen: () => void
   const statusText = task.status === "error" && task.error
     ? `error · ${task.error}`
     : task.status
-  const tooltip = [task.title, statusText, elapsed, stuck ? "no updates recently" : undefined]
+  const toolsText = task.toolCount && task.toolCount > 0
+    ? `${task.toolCount} ${task.toolCount === 1 ? "tool" : "tools"}`
+    : undefined
+  const tooltip = [task.title, statusText, toolsText, elapsed, stuck ? "no updates recently" : undefined]
     .filter(Boolean)
     .join(" · ")
   return (
@@ -115,6 +119,7 @@ function AgentBadge({ task, onOpen }: { task: AgentsTaskInfo; onOpen: () => void
     >
       <span className={`agent-activity-dot${running ? " live-breathe" : ""}`} style={phase} aria-hidden="true" />
       <span className="agents-badge-name">{label}</span>
+      {toolsText && <span className="agents-badge-tools">{toolsText}</span>}
       <span className="agents-badge-elapsed">{elapsed}</span>
     </button>
   )
@@ -161,9 +166,13 @@ function AgentDetail({
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [onBack])
 
-  // Backlog: one-shot request/response for what already happened.
+  const isMain = task.kind === "main"
+
+  // Backlog: one-shot request/response for what already happened. Re-evaluates
+  // when childSessionID lands to resolve the race condition where a task is clicked
+  // before opencode surfaces its child session identity.
   useEffect(() => {
-    if (!requestActivity) return
+    if (!requestActivity || isMain) return
     let active = true
     setResult(undefined)
     requestActivity(task.id).then((response) => {
@@ -172,12 +181,13 @@ function AgentDetail({
     return () => {
       active = false
     }
-  }, [requestActivity, task.id])
+  }, [requestActivity, task.id, task.childSessionID, isMain])
 
   // Live tail: subscribe on open; cleanup posts unsubscribe (Back click or
   // task-disappearance unmount — both funnel through this teardown).
   // Consecutive text events are coalesced so streaming tokens flow naturally.
   useEffect(() => {
+    if (isMain) return
     const off = subscribeAgentActivity(task.id, (event) => {
       setLive((prev) => {
         if (event.kind === "text" && prev.length > 0 && prev[prev.length - 1].kind === "text") {
@@ -192,7 +202,7 @@ function AgentDetail({
       })
     })
     return off
-  }, [task.id])
+  }, [task.id, isMain])
 
   // Stick to bottom while the reader is at (or near) the bottom; a scroll-up
   // disengages until they return. Same idea as the chat's stick-to-bottom.
@@ -207,14 +217,16 @@ function AgentDetail({
     el.scrollTop = el.scrollHeight
   })
 
-  const loading = requestActivity !== undefined && result === undefined
-  const errorText = requestActivity === undefined
-    ? "Activity unavailable"
-    : result && !result.ok
-      ? (result.error ? result.error : "Activity unavailable")
-      : undefined
+  const loading = !isMain && requestActivity !== undefined && result === undefined
+  const errorText = isMain
+    ? undefined
+    : requestActivity === undefined
+      ? "Activity unavailable"
+      : result && !result.ok
+        ? (result.error ? result.error : "Activity unavailable")
+        : undefined
   const messages = result && result.ok && result.messages ? result.messages : undefined
-  const empty = !loading && !errorText && !messages?.length && live.length === 0
+  const empty = !isMain && !loading && !errorText && !messages?.length && live.length === 0
 
   return (
     <div className="agents-detail">
@@ -246,6 +258,7 @@ function AgentDetail({
         )}
       </div>
       <div className="agents-detail-feed" ref={feedRef} onScroll={handleFeedScroll}>
+        {isMain && <div className="agents-detail-note">Main session activity is displayed in the chat transcript above</div>}
         {loading && <div className="agents-detail-note" role="status">Loading activity…</div>}
         {errorText && <div className="agents-detail-error">{errorText}</div>}
         {empty && <div className="agents-detail-note">No activity recorded</div>}
@@ -255,7 +268,11 @@ function AgentDetail({
             className={`agents-feed-row agents-feed-${message.role === "user" || message.role === "assistant" ? message.role : "other"}`}
           >
             <span className="agents-feed-role">{message.role}</span>
-            {message.text && <span className="agents-feed-text">{message.text}</span>}
+            {message.text && (
+              <div className="agents-feed-text">
+                <Markdown text={message.text} />
+              </div>
+            )}
             {message.tools && message.tools.length > 0 && (
               <div className="agents-feed-tools">
                 {message.tools.map((tool, idx) => (
@@ -277,10 +294,33 @@ function AgentDetail({
   )
 }
 
+export function formatLiveToolInput(tool: string, rawInput?: string): string {
+  if (!rawInput) return `tool ${tool}`
+  try {
+    const parsed = JSON.parse(rawInput)
+    if (typeof parsed === "object" && parsed !== null) {
+      if (tool === "bash" && typeof parsed.command === "string") {
+        return `$ ${parsed.command}`
+      }
+      const path = parsed.filePath ?? parsed.path
+      if (typeof path === "string") {
+        return `${tool} ${path}`
+      }
+      const pattern = parsed.pattern ?? parsed.query
+      if (typeof pattern === "string") {
+        return `${tool} ${pattern}`
+      }
+    }
+  } catch {
+    // not JSON or truncated string
+  }
+  return `tool ${tool} ${rawInput}`
+}
+
 function formatLiveLine(event: AgentActivityStreamEvent): string {
   if (event.kind === "text") return event.text
-  if (event.kind === "tool") return event.input ? `tool ${event.tool} ${event.input}` : `tool ${event.tool}`
-  if (event.kind === "toolResult") return event.output ? `result ${event.tool} ${event.output}` : `result ${event.tool}`
+  if (event.kind === "tool") return formatLiveToolInput(event.tool, event.input)
+  if (event.kind === "toolResult") return event.output ? `✓ ${event.tool} ${event.output}` : `✓ ${event.tool}`
   if (event.kind === "status") return `status ${event.status}`
   return "stream ended"
 }

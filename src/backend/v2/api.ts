@@ -128,7 +128,14 @@ export function createV2Api(options: { url: string; directory: string; password:
   async function deliver(sessionID: string, body: PromptBody) {
     const selection = body as PromptBody & { variant?: string }
     if (selection.model) {
-      await client.session.switchModel({ sessionID, model: { id: selection.model.modelID, providerID: selection.model.providerID, variant: selection.variant } })
+      await client.session.switchModel({
+        sessionID,
+        model: {
+          id: selection.model.modelID,
+          providerID: selection.model.providerID,
+          variant: selection.variant || undefined,
+        },
+      })
     }
     if (selection.agent) await client.session.switchAgent({ sessionID, agent: selection.agent })
     const text: string[] = []
