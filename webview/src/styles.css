@@ -2133,6 +2133,12 @@ button:focus-visible {
   outline: none;
 }
 .question-custom:focus { border-color: var(--vscode-focusBorder); }
+/* An option is checked, so the typed text is not the answer: dim the field
+   until the "Other…" radio is picked again. The text itself is kept. */
+.question-custom:disabled {
+  opacity: .5;
+  cursor: default;
+}
 .question-actions {
   display: flex;
   gap: 6px;
