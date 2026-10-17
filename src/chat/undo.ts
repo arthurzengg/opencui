@@ -20,6 +20,19 @@ export function lastUserTurnIndex(messages: ChatMessage[]): number {
 }
 
 /**
+ * Index of the settled user turn with the given webview-side id. Returns -1
+ * when the id is missing, points at a non-user message, or the message has
+ * no `backendID` yet (the revert call needs the opencode message id).
+ */
+export function userTurnIndexByID(messages: ChatMessage[], id: string): number {
+  const idx = messages.findIndex((m) => m.id === id)
+  if (idx < 0) return -1
+  const m = messages[idx]!
+  if (m.role !== "user" || !m.backendID) return -1
+  return idx
+}
+
+/**
  * The server call `/redo` makes after popping the tail it restores. opencode
  * moves the revert pointer to the first message of the next still-reverted tail,
  * or clears it (`unrevert`) when nothing remains reverted. `nextTail` is the new

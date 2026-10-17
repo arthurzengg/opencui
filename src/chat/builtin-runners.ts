@@ -4,7 +4,7 @@ import type { Preferences } from "../preferences"
 import type { ChatMessage, Outbound, ReviewHunkState } from "../protocol"
 import type { ConversationManager } from "./conversation-manager"
 import { generateMessageID } from "./builtin-commands"
-import { lastUserTurnIndex, redoAction, userMessageText } from "./undo"
+import { lastUserTurnIndex, redoAction, userMessageText, userTurnIndexByID } from "./undo"
 import { log } from "../output"
 
 /**
@@ -187,20 +187,49 @@ export class BuiltinRunners {
    * tail is stashed for `/redo` and the undone prompt is restored to the composer.
    */
   private async runUndo(backend: Backend) {
+    return this.revertToIndex(lastUserTurnIndex(this.deps.getMessages()), backend, {
+      nothingToUndoMessage: "Nothing to undo.",
+    })
+  }
+
+  /**
+   * Revert to a specific user message from the chat UI (per-message Undo).
+   * `webviewID` is the webview-side message id; anything that is not a
+   * settled user turn is reported like `/undo` with nothing to undo.
+   */
+  async revertToMessage(webviewID: string, backend: Backend): Promise<void> {
+    return this.revertToIndex(userTurnIndexByID(this.deps.getMessages(), webviewID), backend, {
+      nothingToUndoMessage: "Nothing to revert for this message.",
+    })
+  }
+
+  /** UI / palette equivalent of `/undo` — revert the last settled turn. */
+  async undoLastTurn(backend: Backend): Promise<void> {
+    return this.runUndo(backend)
+  }
+
+  private async revertToIndex(
+    idx: number,
+    backend: Backend,
+    opts: { nothingToUndoMessage: string },
+  ) {
     const sessionID = this.deps.getSessionID()
     if (!sessionID) {
       void vscode.window.showInformationMessage("Nothing to undo yet.")
       return
     }
     const messages = this.deps.getMessages()
-    const idx = lastUserTurnIndex(messages)
-    if (idx < 0) {
-      void vscode.window.showInformationMessage("Nothing to undo.")
+    if (idx < 0 || idx >= messages.length) {
+      void vscode.window.showInformationMessage(opts.nothingToUndoMessage)
       return
     }
     const target = messages[idx]!
+    if (!target.backendID) {
+      void vscode.window.showInformationMessage(opts.nothingToUndoMessage)
+      return
+    }
     try {
-      const res = await backend.api.session.revert(sessionID, { messageID: target.backendID! })
+      const res = await backend.api.session.revert(sessionID, { messageID: target.backendID })
       if (res.error) {
         log("undo: session.revert failed", res.error)
         void vscode.window.showErrorMessage("Failed to undo the last turn.")
@@ -224,6 +253,15 @@ export class BuiltinRunners {
 
   /** `/redo` — re-apply the most recently undone turn from the in-memory buffer. */
   private async runRedo(backend: Backend) {
+    return this.redoOnce(backend)
+  }
+
+  /** UI / palette equivalent of `/redo`. */
+  async redoTurn(backend: Backend): Promise<void> {
+    return this.redoOnce(backend)
+  }
+
+  private async redoOnce(backend: Backend) {
     const sessionID = this.deps.getSessionID()
     if (!sessionID) return
     const redoStack = this.deps.getRedoStack()

@@ -49,6 +49,7 @@ type MessageViewProps = {
   onBeginEdit?: (id: string) => void
   onEndEdit?: (id: string) => void
   onRetry?: (assistantID: string) => void
+  onRevertMessage?: (id: string) => void
   agentActivity?: AgentsStatusInfo
   agentActivityEntering?: boolean
   /** Provider retry opencode is waiting on; rendered in place of the thinking indicator (#611). */
@@ -96,6 +97,7 @@ function MessageViewComponent({
   onBeginEdit,
   onEndEdit,
   onRetry,
+  onRevertMessage,
   agentActivity,
   agentActivityEntering,
   retry,
@@ -114,6 +116,7 @@ function MessageViewComponent({
         onEditMessage={onEditMessage}
         onBeginEdit={onBeginEdit}
         onEndEdit={onEndEdit}
+        onRevertMessage={onRevertMessage}
         searchFiles={searchFiles}
         listDir={listDir}
         attachFile={attachFile}
@@ -206,6 +209,7 @@ function UserMessageView({
   onEditMessage,
   onBeginEdit,
   onEndEdit,
+  onRevertMessage,
   searchFiles,
   listDir,
   attachFile,
@@ -218,6 +222,7 @@ function UserMessageView({
   onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) => void
   onBeginEdit?: (id: string) => void
   onEndEdit?: (id: string) => void
+  onRevertMessage?: (id: string) => void
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
   listDir?: (path: string) => Promise<DirEntry[]>
   attachFile?: () => Promise<{ attachments: Attachment[]; error?: string }>
@@ -281,6 +286,7 @@ function UserMessageView({
   const canEdit = Boolean(onEditMessage)
   const editBlocked = busy || !message.backendID
   const editable = canEdit && !editBlocked
+  const canRevert = Boolean(onRevertMessage) && !editBlocked
   const editTitle = !canEdit
     ? undefined
     : busy
@@ -386,6 +392,24 @@ function UserMessageView({
           )}
           {originalText && (
             <div className="user-text">{renderUserText(originalText, knownLabels)}</div>
+          )}
+          {canRevert && !inEditMode && (
+            <button
+              type="button"
+              className="user-revert"
+              onClick={(event) => {
+                event.stopPropagation()
+                onRevertMessage?.(message.id)
+              }}
+              title={busy ? "Wait for the assistant to finish before reverting" : "Revert to this message"}
+              aria-label={`Revert to this message`}
+              disabled={busy || !message.backendID}
+            >
+              <svg viewBox="0 0 16 16" width={ICON_SIZE.md} height={ICON_SIZE.md} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 7V3.5h3.5" />
+                <path d="M3.5 3.5a6 6 0 1 1-1 4" />
+              </svg>
+            </button>
           )}
           {canEdit && (
             <span className="user-edit-hint" aria-hidden="true">

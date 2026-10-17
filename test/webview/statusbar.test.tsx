@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, cleanup, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { StatusBar } from "../../webview/src/components/StatusBar"
 import { AgentActivity } from "../../webview/src/components/AgentActivity"
@@ -17,6 +17,7 @@ const baseProps = {
   onSetAgent: vi.fn(),
   onSetModel: vi.fn(),
   onSetProviderCollapsed: vi.fn(),
+  onToggleModelFavorite: vi.fn(),
   onRefreshModels: vi.fn(),
   onCreateConversation: vi.fn(),
   onOpenConversation: vi.fn(),
@@ -187,6 +188,138 @@ describe("StatusBar", () => {
     const trigger = screen.getByRole("button", { name: /change agent, model, and effort/i })
     expect(trigger.textContent).toMatch(/Effort/)
     expect(trigger.textContent).toMatch(/default/)
+  })
+
+  it("shows the model's configured name from the catalog in the trigger", () => {
+    render(
+      <StatusBar
+        {...baseProps}
+        selection={{ model: "openai/gpt-5.5" }}
+        modelCatalog={{
+          models: [
+            {
+              providerID: "openai",
+              modelID: "gpt-5.5",
+              providerName: "OpenAI",
+              name: "GPT-5.5 Turbo",
+              variants: [],
+            },
+          ],
+          recents: [],
+          agents: [],
+        }}
+      />,
+    )
+    const trigger = screen.getByRole("button", { name: /change agent, model, and effort/i })
+    // The configured name wins over the prettified id ("GPT-5.5").
+    expect(trigger.querySelector(".selector-primary")?.textContent).toBe("GPT-5.5 Turbo")
+  })
+
+  it("falls back to the prettified id when the catalog name equals the id", () => {
+    render(
+      <StatusBar
+        {...baseProps}
+        selection={{ model: "anthropic/claude-opus-4-7" }}
+        modelCatalog={{
+          models: [
+            {
+              providerID: "anthropic",
+              modelID: "claude-opus-4-7",
+              providerName: "Anthropic",
+              name: "claude-opus-4-7",
+              variants: [],
+            },
+          ],
+          recents: [],
+          agents: [],
+        }}
+      />,
+    )
+    const trigger = screen.getByRole("button", { name: /change agent, model, and effort/i })
+    expect(trigger.querySelector(".selector-primary")?.textContent).toBe("Opus 4.7")
+  })
+
+  it("shows a model metadata table on hover and hides it otherwise", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar
+        {...baseProps}
+        selection={{ model: "openai/gpt-5.5" }}
+        modelCatalog={{
+          models: [
+            {
+              providerID: "openai",
+              modelID: "gpt-5.5",
+              providerName: "OpenAI",
+              name: "GPT-5.5 Turbo",
+              variants: ["low", "high"],
+              reasoning: true,
+              limit: { context: 400_000, input: 272_000, output: 128_000 },
+            },
+          ],
+          recents: [],
+          agents: [],
+        }}
+      />,
+    )
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    await user.hover(screen.getByRole("button", { name: /change agent, model, and effort/i }))
+    const card = screen.getByRole("tooltip")
+    expect(within(card).getByText("GPT-5.5 Turbo")).toBeInTheDocument()
+    expect(within(card).getByText("openai/gpt-5.5")).toBeInTheDocument()
+    expect(within(card).getByText("low, high")).toBeInTheDocument()
+    expect(within(card).getByText("400,000")).toBeInTheDocument()
+    expect(within(card).getByText("272,000")).toBeInTheDocument()
+    expect(within(card).getByText("128,000")).toBeInTheDocument()
+  })
+
+  it("hides the hover table while the model picker is open", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar
+        {...baseProps}
+        selection={{ model: "openai/gpt-5.5" }}
+        modelCatalog={{
+          models: [
+            {
+              providerID: "openai",
+              modelID: "gpt-5.5",
+              providerName: "OpenAI",
+              name: "GPT-5.5 Turbo",
+              variants: [],
+              limit: { context: 400_000 },
+            },
+          ],
+          recents: [],
+          agents: [],
+        }}
+      />,
+    )
+    await user.hover(screen.getByRole("button", { name: /change agent, model, and effort/i }))
+    expect(screen.getByRole("tooltip")).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: /change agent, model, and effort/i }))
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    expect(screen.getByRole("listbox", { name: "Models" })).toBeInTheDocument()
+  })
+
+  it("shows em dashes for limits opencode did not report", async () => {
+    const user = userEvent.setup()
+    render(
+      <StatusBar
+        {...baseProps}
+        selection={{ model: "openai/gpt-5.5" }}
+        modelCatalog={{
+          models: [
+            { providerID: "openai", modelID: "gpt-5.5", providerName: "OpenAI", variants: [] },
+          ],
+          recents: [],
+          agents: [],
+        }}
+      />,
+    )
+    await user.hover(screen.getByRole("button", { name: /change agent, model, and effort/i }))
+    const card = screen.getByRole("tooltip")
+    expect(within(card).getAllByText("—")).toHaveLength(4)
   })
 
   it("renders the New chat icon button and fires onCreateConversation", async () => {

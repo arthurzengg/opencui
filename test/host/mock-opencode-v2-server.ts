@@ -1,6 +1,23 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AgentInfo, CommandInfo, CredentialEntry, IntegrationAttemptStatus, IntegrationInfo, McpServer, ModelInfo, ProviderInfo, SessionActive, SessionInfo, SessionMessageInfo } from "@opencode/client/promise"
 
+/** The message log's per-page cap, as the real 2.0 route enforces it. */
+const MESSAGE_PAGE_MAX = 200
+type MessageOrder = "asc" | "desc"
+type MessageCursor = { offset: number; order: MessageOrder }
+
+const encodeMessageCursor = (offset: number, order: MessageOrder) =>
+  Buffer.from(JSON.stringify({ offset, order })).toString("base64")
+
+function decodeMessageCursor(value: string): MessageCursor {
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64").toString()) as { offset?: unknown; order?: unknown }
+    return { offset: typeof parsed.offset === "number" ? parsed.offset : 0, order: parsed.order === "asc" ? "asc" : "desc" }
+  } catch {
+    return { offset: 0, order: "desc" }
+  }
+}
+
 /**
  * The slice of an opencode 2.0 server the adapter reads (#693): Basic auth
  * with the password the server was started with, the info route, session
@@ -166,9 +183,11 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
       if (action[2] === "compact") return json(res, 200, { data: { id: `inbox_${state.requests.length}`, sessionID: action[1], type: "compaction" } })
       if (action[2] === "revert/stage") return json(res, 200, { data: {} })
       // Success statuses as the client expects them: the inbox routes and
-      // interrupt answer a body, the switches and wait answer nothing.
-      if (action[2] === "prompt") return json(res, 200, { id: `inbox_${state.requests.length}`, sessionID: action[1], time: { created: Date.now() }, type: "user", payload: body, delivery: "queue" })
-      if (action[2] === "synthetic") return json(res, 200, { id: `inbox_${state.requests.length}`, sessionID: action[1], time: { created: Date.now() }, type: "synthetic", payload: body, delivery: "queue" })
+      // interrupt answer a body, the switches and wait answer nothing. The
+      // inbox routes answer `{ data }` like the single-session routes above
+      // (the generated client unwraps `.data`).
+      if (action[2] === "prompt") return json(res, 200, { data: { id: `inbox_${state.requests.length}`, sessionID: action[1], time: { created: Date.now() }, type: "user", payload: body, delivery: "queue" } })
+      if (action[2] === "synthetic") return json(res, 200, { data: { id: `inbox_${state.requests.length}`, sessionID: action[1], time: { created: Date.now() }, type: "synthetic", payload: body, delivery: "queue" } })
       if (action[2] === "interrupt") return json(res, 200, {})
       return empty(res)
     }
@@ -176,7 +195,28 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     if (messages && req.method === "GET") {
       const rows = state.messages[messages[1]!]
       if (!rows) return json(res, 404, { message: "session not found" })
-      return json(res, 200, { data: rows, cursor: {} })
+      // The real route is a newest-first, cursor-paginated log capped at 200
+      // entries per page, and it refuses a cursor combined with an order.
+      if (query.cursor && query.order) {
+        return json(res, 400, { _tag: "InvalidCursorError", message: "Cursor cannot be combined with order" })
+      }
+      const cursor = query.cursor ? decodeMessageCursor(query.cursor) : undefined
+      const order = cursor ? cursor.order : query.order === "asc" ? "asc" : "desc"
+      const limit = query.limit ? Number(query.limit) : 50
+      if (!Number.isInteger(limit) || limit < 1 || limit > MESSAGE_PAGE_MAX) {
+        return json(res, 400, { _tag: "InvalidRequestError", message: "Expected a value less than or equal to 200", kind: "Query" })
+      }
+      const offset = cursor?.offset ?? 0
+      const ordered = order === "asc" ? rows : [...rows].reverse()
+      const data = ordered.slice(offset, offset + limit)
+      const nextOffset = offset + limit
+      return json(res, 200, {
+        data,
+        cursor: {
+          previous: offset > 0 ? encodeMessageCursor(Math.max(0, offset - limit), order) : null,
+          next: nextOffset < ordered.length ? encodeMessageCursor(nextOffset, order) : null,
+        },
+      })
     }
     // Replies answer 204 with no body, as the server does.
     if (/^\/api\/session\/[^/]+\/permission\/[^/]+\/reply$/.test(path) && req.method === "POST") return empty(res)

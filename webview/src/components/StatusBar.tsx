@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react"
 import type {
   ConversationSummary,
   ExternalSessionSummary,
@@ -8,6 +8,7 @@ import type {
 } from "../protocol"
 import { useDismissableMenu } from "../hooks/useDismissableMenu"
 import { StatusIndicator, type StatusIndicatorKind } from "./StatusIndicator"
+import { ModelHovercard } from "./ModelHovercard"
 import { ModelPicker } from "./ModelPicker"
 
 export type HeaderPopoverID = "selector" | "history" | "permissions"
@@ -30,6 +31,7 @@ type Props = {
   onSetAgent: (name?: string) => void
   onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
   onSetProviderCollapsed: (providerID: string, collapsed: boolean) => void
+  onToggleModelFavorite: (key: string) => void
   onRefreshModels: () => void
   onCreateConversation: () => void
   onOpenConversation: (id: string) => void
@@ -41,6 +43,12 @@ type Props = {
   onRenameSession?: (sessionID: string, title: string) => void
   onRemovePermissionRule?: (id: string) => void
   onClearPermissionRules?: () => void
+  /** Any settled user turn exists — enables the header Undo button. */
+  canUndo?: boolean
+  /** A turn is running — both header buttons stay disabled while busy. */
+  busy?: boolean
+  onUndoLastTurn?: () => void
+  onRedoTurn?: () => void
 }
 
 export function StatusBar({
@@ -58,6 +66,7 @@ export function StatusBar({
   onSetAgent,
   onSetModel,
   onSetProviderCollapsed,
+  onToggleModelFavorite,
   onRefreshModels,
   onCreateConversation,
   onOpenConversation,
@@ -69,6 +78,10 @@ export function StatusBar({
   onRenameSession,
   onRemovePermissionRule,
   onClearPermissionRules,
+  canUndo,
+  busy,
+  onUndoLastTurn,
+  onRedoTurn,
 }: Props) {
   const active = conversations.find((c) => c.id === activeConversationID)
   const [localActivePopover, setLocalActivePopover] = useState<HeaderPopoverID | null>(null)
@@ -96,6 +109,30 @@ export function StatusBar({
     <div className="statusbar">
       <StatusIndicator kind={dotKind} title={statusTitle} />
       <div className="spacer" />
+      {onUndoLastTurn && (
+        <button
+          type="button"
+          className="new-chat-trigger"
+          onClick={onUndoLastTurn}
+          disabled={busy || !canUndo}
+          aria-label="Revert last turn"
+          title={busy ? "Wait for the assistant to finish before reverting" : "Revert last turn"}
+        >
+          <span className="codicon codicon-discard" aria-hidden="true" />
+        </button>
+      )}
+      {onRedoTurn && (
+        <button
+          type="button"
+          className="new-chat-trigger"
+          onClick={onRedoTurn}
+          disabled={busy}
+          aria-label="Restore turn"
+          title={busy ? "Wait for the assistant to finish before restoring" : "Restore turn"}
+        >
+          <span className="codicon codicon-redo" aria-hidden="true" />
+        </button>
+      )}
       <SelectorMenu
         selection={selection}
         catalog={modelCatalog}
@@ -104,6 +141,7 @@ export function StatusBar({
         onSetAgent={onSetAgent}
         onSetModel={onSetModel}
         onSetProviderCollapsed={onSetProviderCollapsed}
+        onToggleModelFavorite={onToggleModelFavorite}
         onRefreshModels={onRefreshModels}
       />
       {permissionRules && permissionRules.length > 0 && onRemovePermissionRule && (
@@ -499,6 +537,7 @@ function SelectorMenu({
   onSetAgent,
   onSetModel,
   onSetProviderCollapsed,
+  onToggleModelFavorite,
   onRefreshModels,
 }: {
   selection: Selection
@@ -508,6 +547,7 @@ function SelectorMenu({
   onSetAgent: (name?: string) => void
   onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
   onSetProviderCollapsed: (providerID: string, collapsed: boolean) => void
+  onToggleModelFavorite: (key: string) => void
   onRefreshModels: () => void
 }) {
   const { toggle, ref } = useDismissableMenu({ open, onOpenChange })
@@ -515,21 +555,39 @@ function SelectorMenu({
   const agent = selection.agent ?? "default"
   const model = selection.model ?? "default"
   const variant = selection.modelVariant
-  const prettyModel = formatModel(model)
+  const prettyModel = formatModel(model, { truncate: false })
   const prettyAgent = formatAgent(agent)
-  const triggerTitle = `Model: ${model}${variant ? ` (effort: ${variant})` : ""}\nAgent: ${agent}`
+
+  // The real model opencode reports for the current selection. Its configured
+  // name is what the TUI and web UI show; the prettified id is only a fallback
+  // for a model whose name opencode left equal to its id.
+  const current = useMemo(
+    () =>
+      selection.model
+        ? catalog?.models.find((m) => `${m.providerID}/${m.modelID}` === selection.model)
+        : undefined,
+    [catalog, selection.model],
+  )
+  const displayModel = current?.name && current.name !== current.modelID ? current.name : prettyModel
+
+  const [hoverModel, setHoverModel] = useState(false)
+  const showHovercard = hoverModel && !open && !!current
 
   return (
     <div className="selector-menu" ref={ref}>
       <button
         className={`selector-trigger ${open ? "is-open" : ""}`}
         onClick={toggle}
-        title={triggerTitle}
+        title={current ? undefined : `Model: ${model}${variant ? ` (effort: ${variant})` : ""}\nAgent: ${agent}`}
         aria-label="Change agent, model, and effort"
         aria-expanded={open}
+        onMouseEnter={() => setHoverModel(true)}
+        onMouseLeave={() => setHoverModel(false)}
+        onFocus={() => setHoverModel(true)}
+        onBlur={() => setHoverModel(false)}
       >
         <span className="selector-prefix">Model</span>
-        <span className="selector-primary">{prettyModel}</span>
+        <span className="selector-primary">{displayModel}</span>
         <span className="selector-sep">·</span>
         <span className="selector-prefix">Effort</span>
         <span className="selector-variant">{variant ?? "default"}</span>
@@ -537,6 +595,7 @@ function SelectorMenu({
         <span className="selector-prefix">Agent</span>
         <span className="selector-secondary">{prettyAgent}</span>
       </button>
+      {showHovercard && current && <ModelHovercard entry={current} fallbackName={displayModel} />}
       {open && (
         <div className="model-picker-popover" role="dialog" aria-label="Select model, effort, and agent">
           <ModelPicker
@@ -545,6 +604,7 @@ function SelectorMenu({
             onSetModel={onSetModel}
             onSetAgent={onSetAgent}
             onSetProviderCollapsed={onSetProviderCollapsed}
+            onToggleModelFavorite={onToggleModelFavorite}
             onRefresh={onRefreshModels}
           />
         </div>
@@ -553,7 +613,7 @@ function SelectorMenu({
   )
 }
 
-export function formatModel(name: string): string {
+export function formatModel(name: string, options?: { truncate?: boolean }): string {
   if (!name || name === "default") return name || "default"
   let value = stripProvider(name)
   value = stripTrailingDate(value)
@@ -565,7 +625,7 @@ export function formatModel(name: string): string {
   const gemini = matchGemini(value)
   if (gemini) return gemini
 
-  if (value.length <= 24) return prettifyToken(value)
+  if (value.length <= 24 || options?.truncate === false) return prettifyToken(value)
   return prettifyToken(value.slice(0, 22)) + "…"
 }
 

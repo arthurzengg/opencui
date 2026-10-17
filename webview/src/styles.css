@@ -422,6 +422,7 @@ button:focus-visible {
 .agents-row-waiting .agents-row-meta { color: var(--color-warn); }
 
 .selector-menu {
+  position: relative;
   flex: 0 1 auto;
   min-width: 0;
   /* Ensure the selector never claims more than its share of the bar so the
@@ -456,9 +457,10 @@ button:focus-visible {
      covered by the trigger's `title` tooltip. */
   display: none;
 }
-/* Primary (model) keeps its natural size up to where it can fit; */
+/* Primary (model) takes all the width that is left over and ellipsis-truncates
+   only once that runs out. */
 .selector-primary {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   font-weight: 600;
   overflow: hidden;
@@ -476,14 +478,75 @@ button:focus-visible {
   flex: 0 0 auto;
   opacity: 0.75;
 }
-/* Secondary (agent) gives ground first when the bar is tight — much higher
+/* Secondary (agent) never grows: the model name above owns the leftover
+   width. It still shrinks first when the bar is tight — a much higher
    shrink factor so it ellipsis-truncates before the model name does. */
 .selector-secondary {
-  flex: 1 100 auto;
+  flex: 0 100 auto;
   min-width: 0;
   opacity: 0.75;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Hover metadata table for the current model. Anchored to the right edge of
+   the pill so a wide name never pushes it off the sidebar; non-interactive so
+   it can't steal the hover or the click that opens the picker. */
+.selector-hovercard {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-popover);
+  max-width: min(320px, calc(100vw - 20px));
+  padding: 7px 9px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+.selector-hovercard-table {
+  border-collapse: collapse;
+}
+.selector-hovercard-table th,
+.selector-hovercard-table td {
+  padding: 1px 0;
+  text-align: left;
+  vertical-align: top;
+  font-weight: 400;
+}
+.selector-hovercard-table th {
+  padding-right: 12px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+.selector-hovercard-table td {
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+/* Docked details block at the very bottom of the picker's popover: the
+   hovered row's metadata table renders here in normal flow (below the
+   Agent/Effort footers), so it never covers a row's name or favorite star
+   and its appearance only grows the popover downward without shifting the
+   list rows or the footers above it. It overrides the floating
+   `.selector-hovercard` card look with a flat footer look. */
+.model-picker-details {
+  padding: 8px 12px;
+  border-top: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+}
+.model-picker-hovercard {
+  position: static;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.model-picker-details .selector-hovercard-table td {
+  max-width: none;
 }
 /* In-panel model picker (#512, restyled #514): command-palette look — a
    borderless search line over a hairline divider, segmented effort/agent
@@ -508,9 +571,17 @@ button:focus-visible {
   background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
   box-shadow: var(--shadow-popover);
 }
+.model-picker-popover:has(.model-picker-details) {
+  /* Hover details are docked at the bottom in-flow: grow the popover by
+     their height instead of stealing it from the list, so Agent/Effort
+     stay put and the model rows never shift under the cursor. The viewport
+     term still caps it on short windows — only then does the list scroll. */
+  max-height: min(610px, calc(100vh - 70px));
+}
 .model-picker {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
 }
 .model-picker-search-wrap {
@@ -621,7 +692,8 @@ button:focus-visible {
   }
 }
 .model-picker-list {
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 120px;
   overflow-y: auto;
   /* Reserve the gutter even while the list fits: expanding a group would
      otherwise summon the scrollbar and shift every row's text left (#556). */
@@ -732,6 +804,35 @@ button:focus-visible {
   color: inherit;
   opacity: 0.75;
 }
+/* Star toggle per row — outlined (empty) normally, filled yellow when the
+   model is a favorite. Stops propagation so clicking it never selects the
+   row. */
+.model-picker-favorite {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+}
+.model-picker-favorite:hover {
+  color: var(--vscode-foreground);
+}
+.model-picker-favorite .codicon {
+  font-size: 14px;
+}
+.model-picker-favorite.is-favorite {
+  color: #e2b93b;
+}
+.model-picker-row.active .model-picker-favorite {
+  color: inherit;
+}
+.model-picker-row.active .model-picker-favorite.is-favorite {
+  color: #e2b93b;
+}
 /* Leading slot on every row, filled only on the current one, so names stay
    aligned whichever row holds the check. */
 .model-picker-check {
@@ -785,8 +886,12 @@ button:focus-visible {
 }
 .history-trigger:hover,
 .history-trigger.is-open,
-.new-chat-trigger:hover {
+.new-chat-trigger:hover:not(:disabled) {
   background: var(--hover-bg-pill);
+}
+.new-chat-trigger:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 .new-chat-trigger .codicon {
   font-size: 14px;
@@ -989,6 +1094,35 @@ button:focus-visible {
   font-family: inherit;
   font-size: 12px;
   line-height: 1.2;
+}
+
+/* ===== Home recent sessions (empty-state home view) =====
+   Shown in the transcript area while no conversation has messages yet;
+   the composer stays docked at the bottom. Reuses the history popover's
+   row/search primitives so the home list and the header history read as
+   the same surface. */
+.home-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 10px;
+  min-height: 0;
+}
+.home-recent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+}
+.home-recent-title {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+}
+.home-recent-list {
+  display: flex;
+  flex-direction: column;
 }
 
 /* ===== Todo panel ===== */
@@ -1391,6 +1525,44 @@ button:focus-visible {
 .msg.role-user.is-editable[data-edit-phase="view"]:hover .user-edit-hint {
   opacity: 1;
   color: var(--vscode-foreground);
+}
+/* Per-message revert (Undo to this turn). Sits left of the edit hint, same
+   hover-only visibility so the bubble stays clean at rest. Real <button>
+   (unlike the hint span), so it stops propagation to avoid entering edit. */
+.user-revert {
+  position: absolute;
+  top: 6px;
+  right: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.msg.role-user[data-edit-phase="view"]:hover .user-revert,
+.user-revert:focus-visible {
+  opacity: 0.5;
+}
+.user-revert:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--vscode-foreground);
+  background: var(--vscode-list-hoverBackground);
+}
+.user-revert:disabled {
+  cursor: default;
+  opacity: 0;
+}
+.user-revert:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
 }
 .user-edit {
   display: flex;
@@ -2110,6 +2282,12 @@ button:focus-visible {
   outline: none;
 }
 .question-custom:focus { border-color: var(--vscode-focusBorder); }
+/* An option is checked, so the typed text is not the answer: dim the field
+   until the "Other…" radio is picked again. The text itself is kept. */
+.question-custom:disabled {
+  opacity: .5;
+  cursor: default;
+}
 .question-actions {
   display: flex;
   gap: 6px;
@@ -2656,6 +2834,133 @@ button:focus-visible {
   min-width: 0;
 }
 .promptbox-row .spacer { flex: 1; }
+
+/* Footer Agent/Effort selectors: compact triggers sitting next to the
+   context ring so agent + effort stay at hand without opening the header
+   picker. Two separate dropdowns (Agent, Effort) reading the same
+   `selection` as the header, so top and bottom sync by construction. */
+.promptbox-footer-select {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.footer-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 140px;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.footer-select-trigger:hover,
+.footer-select-trigger.is-open {
+  background: var(--hover-bg-pill);
+  color: var(--vscode-foreground);
+}
+.footer-select-trigger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.footer-select-trigger:disabled:hover {
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+}
+.footer-select-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+.footer-select-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+.footer-select-trigger .codicon {
+  flex: 0 0 auto;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.promptbox-footer-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: var(--z-popover);
+  min-width: 160px;
+  max-width: min(260px, calc(100vw - 40px));
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+  border-radius: var(--radius);
+  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
+  box-shadow: var(--shadow-popover);
+  animation: popover-in 0.12s ease-out;
+  --popover-from: 4px;
+}
+.footer-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.footer-select-option:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+.footer-select-option.is-disabled,
+.footer-select-option:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.footer-select-option.is-disabled:hover {
+  background: transparent;
+}
+.footer-select-option.is-current .footer-select-option-name {
+  font-weight: 600;
+}
+.footer-select-check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  justify-content: center;
+  width: 14px;
+}
+.footer-select-check .codicon-check {
+  font-size: 14px;
+  color: var(--vscode-textLink-foreground);
+}
+.footer-select-option-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .promptbox-footer-popover {
+    animation: none;
+  }
+}
 
 .context-usage {
   --context-usage-color: var(--vscode-progressBar-background, var(--vscode-focusBorder));

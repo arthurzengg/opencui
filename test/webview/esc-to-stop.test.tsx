@@ -124,6 +124,7 @@ describe("Escape layer precedence over stop", () => {
           activeConversationID="c1"
           onSetAgent={vi.fn()}
           onSetModel={vi.fn()}
+          onToggleModelFavorite={vi.fn()}
           onRefreshModels={vi.fn()}
           onCreateConversation={vi.fn()}
           onOpenConversation={vi.fn()}

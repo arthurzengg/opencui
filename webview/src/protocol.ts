@@ -225,8 +225,22 @@ export type ModelCatalogEntry = {
   providerID: string
   modelID: string
   providerName?: string
+  /**
+   * opencode's display name for the model, read from the user's config
+   * (`provider.<id>.models.<id>.name`). Absent when opencode reports none,
+   * in which case the host falls back to the prettified id.
+   */
+  name?: string
   /** Effort/thinking variant keys in the provider's declared order. */
   variants: string[]
+  /** The model declares reasoning support (`capabilities.reasoning`). */
+  reasoning?: boolean
+  /** Token limits opencode reports for the model. */
+  limit?: {
+    context?: number
+    input?: number
+    output?: number
+  }
   /**
    * Last variant the user picked for this model (per-model memory, held in
    * host preferences). Re-selecting the model restores it, so a model
@@ -246,6 +260,12 @@ export type ModelCatalogInfo = {
   models: ModelCatalogEntry[]
   /** `providerID/modelID` keys, most recently used first. */
   recents: string[]
+  /**
+   * `providerID/modelID` keys the user starred in the picker. Rendered as a
+   * pinned "Favorites" section at the top of the browse list. Persisted
+   * host-side and rides the catalog push like `recents`.
+   */
+  favorites?: string[]
   /**
    * Provider IDs whose picker group the user folded. Persisted host-side
    * and rides the catalog push like `recents`.
@@ -302,7 +322,15 @@ export type DirEntry = { name: string; path: string; kind: "file" | "folder" }
  * (they open native pickers or switch conversations), so the composer lets
  * them through the busy block that swallows turn-bound commands.
  */
-export type CommandInfo = { name: string; description?: string; agent?: string; takesArguments: boolean; allowedWhileBusy?: boolean }
+export type CommandInfo = { name: string; description?: string; agent?: string; takesArguments: boolean; allowedWhileBusy?: boolean; /**
+   * True when this entry is a synthesized `/<agent>` switcher (not a real
+   * opencode command). The webview intercepts it locally: switch the agent
+   * selection and send any trailing args as a normal prompt, so @-mentions,
+   * attachments and queueing keep working. The host keeps the same flag as
+   * a fallback router when its agent list is fresher than the webview's.
+   * Custom commands shadow same-named agents, so the flag is only set when
+   * no custom/built-in claimed the name.
+   */ agentSwitch?: boolean }
 
 /**
  * Status snapshot of the optional semantic index — Phase 6 of the
@@ -557,8 +585,24 @@ export type Outbound =
 export type Inbound =
   | { type: "mounted" }
   | { type: "send"; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: ConversationMention[] }
-  | { type: "runCommand"; command: string; arguments: string }
+  /**
+   * Run a slash command. For synthesized `/<agent>` switchers the composer
+   * also forwards the prompt context (mentions/attachments) so the host can
+   * switch the agent and send the trailing prompt atomically without losing
+   * `@`-chips. Regular commands ignore these fields (`session.command`
+   * takes no parts).
+   */
+  | { type: "runCommand"; command: string; arguments: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: ConversationMention[] }
   | { type: "editMessage"; id: string; text: string; mentions?: string[]; attachments?: Attachment[]; conversationMentions?: ConversationMention[] }
+  /**
+   * Revert the conversation to an earlier user message (per-message Undo in
+   * the chat UI). `id` is the webview-side message id; the host resolves it
+   * to the opencode message id and runs the same revert + truncate flow as
+   * `/undo`, restoring the undone prompt to the composer.
+   */
+  | { type: "revertToMessage"; id: string }
+  /** Re-apply the most recently reverted turn (UI equivalent of `/redo`). */
+  | { type: "redoTurn" }
   | { type: "abort" }
   | { type: "createConversation" }
   | { type: "openConversation"; id: string }
@@ -596,6 +640,8 @@ export type Inbound =
   | { type: "refreshModels" }
   /** Fold/unfold a provider group in the model picker (persisted host-side). */
   | { type: "setProviderCollapsed"; providerID: string; collapsed: boolean }
+  /** Star/unstar a model in the picker (`providerID/modelID` key, persisted host-side). */
+  | { type: "toggleModelFavorite"; key: string }
   | { type: "fileSearch"; requestID: number; query: string }
   | { type: "listDir"; requestID: number; path: string }
   | { type: "attachFile"; requestID: number }

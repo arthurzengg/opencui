@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { externalSessionSummaries, importedMessages } from "../../src/chat/import-session"
+import { backfillUserBackendIDs, externalSessionSummaries, importedMessages } from "../../src/chat/import-session"
+import type { ChatMessage } from "../../src/protocol"
 
 describe("externalSessionSummaries", () => {
   const bound = new Set(["ses_bound"])
@@ -152,5 +153,62 @@ describe("importedMessages", () => {
       "/ws",
     )
     expect(out[0]!.blocks[0]).toEqual({ type: "patch", files: ["src/a.ts", "b.ts"] })
+  })
+})
+
+describe("backfillUserBackendIDs", () => {
+  const user = (id: string, text: string, backendID?: string): ChatMessage => ({
+    id,
+    role: "user",
+    blocks: [{ type: "text", text }],
+    backendID,
+  })
+  const assistant = (id: string): ChatMessage => ({ id, role: "assistant", blocks: [] })
+  const serverUser = (id: string, text: string) => ({
+    info: { id, role: "user" },
+    parts: [{ type: "text", text }],
+  })
+
+  it("assigns server ids to local bubbles by exact prompt text, in order", () => {
+    const out = backfillUserBackendIDs(
+      [user("u1", "first"), assistant("a1"), user("u2", "second")],
+      [serverUser("srv_u1", "first"), serverUser("srv_u2", "second")],
+    )
+    expect(out).toEqual([
+      { id: "u1", backendID: "srv_u1" },
+      { id: "u2", backendID: "srv_u2" },
+    ])
+  })
+
+  it("leaves bubbles that already carry a backendID alone", () => {
+    const out = backfillUserBackendIDs([user("u1", "first", "b_old")], [serverUser("srv_u1", "first")])
+    expect(out).toEqual([])
+  })
+
+  it("skips built-in bubbles with no server counterpart instead of misattributing", () => {
+    const out = backfillUserBackendIDs(
+      [user("u1", "first"), user("u2", "/compact")],
+      [serverUser("srv_u1", "first")],
+    )
+    expect(out).toEqual([{ id: "u1", backendID: "srv_u1" }])
+  })
+
+  it("claims each server id once, in local order", () => {
+    const out = backfillUserBackendIDs(
+      [user("u1", "yes"), user("u2", "yes")],
+      [serverUser("srv_u1", "yes"), serverUser("srv_u2", "yes")],
+    )
+    expect(out).toEqual([
+      { id: "u1", backendID: "srv_u1" },
+      { id: "u2", backendID: "srv_u2" },
+    ])
+  })
+
+  it("leaves surplus duplicates unmatched rather than reusing an id", () => {
+    const out = backfillUserBackendIDs(
+      [user("u1", "yes"), user("u2", "yes")],
+      [serverUser("srv_u1", "yes")],
+    )
+    expect(out).toEqual([{ id: "u1", backendID: "srv_u1" }])
   })
 })

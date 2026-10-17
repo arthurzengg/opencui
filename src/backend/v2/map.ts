@@ -130,7 +130,11 @@ function mapToolState(tool: SessionMessageAssistantTool): ToolState {
 }
 
 /** The 1.x Model never carried variants; the picker reads them off the raw payload. */
-type ModelWithVariants = Model & { variants: Record<string, Record<string, never>> }
+type ModelWithVariants = Model & {
+  variants: Record<string, Record<string, never>>
+  /** The 1.x type omits `input`; opencode reports it at runtime. */
+  limit: Model["limit"] & { input?: number }
+}
 
 /** The picker reads `models[id].variants` and context-usage reads `models[id].limit.context`. */
 export function mapProviders(providers: ProviderInfo[], models: ModelInfo[], integrations: IntegrationInfo[] = []): { providers: Provider[]; default: Record<string, string> } {
@@ -170,7 +174,7 @@ export function mapProviders(providers: ProviderInfo[], models: ModelInfo[], int
         output: kinds(m.capabilities.output),
       },
       cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-      limit: { context: m.limit.context, output: m.limit.output },
+      limit: { context: m.limit.context, input: m.limit.input, output: m.limit.output },
       status: m.status,
       options: {},
       headers: {},
@@ -185,8 +189,13 @@ export function mapAgents(agents: AgentInfo[]): Agent[] {
   return agents
     .filter((a) => !a.hidden)
     .map((a) => ({
-      name: a.name,
-      description: a.description,
+      // The server addresses agents by `id` ("build") while `name` is the
+      // display label ("Build") — `agent.get` 404s on the display name.
+      // The 1.x `Agent` shape the host reads only has `name`, which 1.x
+      // uses as the identifier, so the id goes here; the UI prettifies
+      // ids for display via `formatAgent`.
+      name: a.id,
+      description: a.description ?? a.name,
       mode: a.mode,
       builtIn: false,
       permission: {} as Agent["permission"],

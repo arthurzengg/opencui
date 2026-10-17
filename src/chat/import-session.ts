@@ -1,6 +1,7 @@
 import type { ChatBlock, ChatMessage, ExternalSessionSummary } from "../protocol"
 import { relativeToCwd } from "./paths"
 import { toWire } from "./wire-format"
+import { userMessageText } from "./undo"
 import type { ToolUpdate } from "./stream"
 
 /** The slice of the SDK's Session shape this module consumes. */
@@ -114,6 +115,49 @@ function textOf(parts: ServerPart[] | undefined): string {
     .map((p) => p.text!)
     .join("\n\n")
     .trim()
+}
+
+/**
+ * Server user messages with their prompt text. Used to heal local bubbles
+ * that predate backendID association (2.0 never reported them over SSE, so
+ * turns sent before the takePromptUserMessage fix carry none).
+ */
+export function serverUserMessages(items: ServerMessageItem[]): Array<{ id: string; text: string }> {
+  const out: Array<{ id: string; text: string }> = []
+  for (const item of items) {
+    if (item.info?.role !== "user" || !item.info.id) continue
+    const text = textOf(item.parts)
+    if (!text) continue
+    out.push({ id: item.info.id, text })
+  }
+  return out
+}
+
+/**
+ * Match local user bubbles that lack a backendID against server user
+ * messages by exact prompt text, in order, claiming each server id once.
+ * Returns webviewID → backendID assignments. Bubbles with no unambiguous
+ * match (built-in `/compact` bubbles, custom-command invocations, duplicate
+ * prompts beyond the server's count) are left alone rather than risk a
+ * wrong revert target.
+ */
+export function backfillUserBackendIDs(
+  local: ChatMessage[],
+  server: ServerMessageItem[],
+): Array<{ id: string; backendID: string }> {
+  const candidates = serverUserMessages(server)
+  const claimed = new Set<string>()
+  const assignments: Array<{ id: string; backendID: string }> = []
+  for (const m of local) {
+    if (m.role !== "user" || m.backendID) continue
+    const text = userMessageText(m).trim()
+    if (!text) continue
+    const match = candidates.find((c) => !claimed.has(c.id) && c.text === text)
+    if (!match) continue
+    claimed.add(match.id)
+    assignments.push({ id: m.id, backendID: match.id })
+  }
+  return assignments
 }
 
 function assistantBlocks(parts: ServerPart[], cwd: string): ChatBlock[] {

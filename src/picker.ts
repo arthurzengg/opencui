@@ -210,14 +210,31 @@ export type ModelInfo = {
   providerID: string
   modelID: string
   providerName?: string
+  /** opencode's display name for the model, as configured (else absent). */
+  name?: string
   /** Variant keys in declared order. Empty if the model has no variants. */
   variants: string[]
+  /** True when opencode reports `capabilities.reasoning`. */
+  reasoning?: boolean
+  /** Token limits opencode reports; any field may be absent. */
+  limit?: {
+    context?: number
+    input?: number
+    output?: number
+  }
 }
 
 export type ProviderShape = {
   id: string
   name?: string
-  models?: Record<string, { variants?: Record<string, unknown> } | undefined>
+  models?: Record<string, ProviderModelShape | undefined>
+}
+
+export type ProviderModelShape = {
+  name?: string
+  variants?: Record<string, unknown>
+  capabilities?: { reasoning?: boolean }
+  limit?: { context?: number; input?: number; output?: number }
 }
 
 /**
@@ -233,7 +250,10 @@ export function listModels(providers: ProviderShape[]): ModelInfo[] {
         providerID: p.id,
         modelID,
         providerName: p.name,
+        name: model?.name,
         variants: Object.keys(model?.variants ?? {}),
+        reasoning: model?.capabilities?.reasoning,
+        limit: model?.limit,
       })
     }
   }
@@ -268,6 +288,7 @@ export function buildModelCatalog(
   variantFor: (providerID: string, modelID: string) => string | undefined,
   agents: AgentCatalogEntry[],
   collapsedProviders: string[],
+  favorites: string[],
 ): ModelCatalogInfo {
   const keys = new Set(models.map((m) => `${m.providerID}/${m.modelID}`))
   const providerIDs = new Set(models.map((m) => m.providerID))
@@ -276,10 +297,14 @@ export function buildModelCatalog(
       providerID: m.providerID,
       modelID: m.modelID,
       providerName: m.providerName,
+      name: m.name,
       variants: m.variants,
+      reasoning: m.reasoning,
+      limit: m.limit,
       lastVariant: validVariant(m, variantFor(m.providerID, m.modelID)),
     })),
     recents: recents.filter((key) => keys.has(key)),
+    favorites: favorites.filter((key) => keys.has(key)),
     collapsedProviders: collapsedProviders.filter((id) => providerIDs.has(id)),
     agents,
   }

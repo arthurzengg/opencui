@@ -1,4 +1,4 @@
-import { OpenCode, type IntegrationInfo } from "@opencode/client/promise"
+import { OpenCode, type IntegrationInfo, type SessionMessageInfo } from "@opencode/client/promise"
 import type { ApiResult, BackendApi, PromptBody } from "../api"
 import { mapAgents, mapCommands, mapMcpStatus, mapMessages, mapProviders, mapSession, mapSessionStatus } from "./map"
 import { createEventTranslator, formAnswer, translateEvents } from "./events"
@@ -49,6 +49,30 @@ export function createV2Api(options: { url: string; directory: string; password:
     Promise.resolve({ error: new Error(`${what} ${id} was not seen on this connection`), status: 404 })
   const listSessions = async (filter: { parentID?: string | null; limit?: number; search?: string }) =>
     (await client.session.list({ directory, ...filter })).data
+
+  // 2.0 pages a session's log newest-first (max 200 entries per page) and
+  // refuses a cursor combined with an order; the host reads 1.x's full,
+  // oldest-first transcript. Page from the newest end — so a bounded `limit`
+  // stays a single request — then reverse into the 1.x order. The limit caps
+  // what came back, not how much was fetched, so a caller passing `limit`
+  // still gets the newest N entries in ascending order.
+  const MESSAGE_PAGE = 200
+  const messageLog = async (sessionID: string, limit?: number): Promise<SessionMessageInfo[]> => {
+    const entries: SessionMessageInfo[] = []
+    let cursor: string | undefined
+    for (;;) {
+      const page = await client.message.list(
+        cursor
+          ? { sessionID, cursor, limit: MESSAGE_PAGE }
+          : { sessionID, order: "desc", limit: MESSAGE_PAGE },
+      )
+      entries.push(...page.data)
+      if ((limit !== undefined && entries.length >= limit) || !page.cursor?.next || !page.data.length) break
+      cursor = page.cursor.next
+    }
+    entries.reverse()
+    return limit !== undefined ? entries.slice(-limit) : entries
+  }
 
   // 2.0 keeps credentials on integrations, which providers and MCP servers
   // point at; 1.x keyed everything by provider. The login methods the host
@@ -125,7 +149,7 @@ export function createV2Api(options: { url: string; directory: string; password:
   // Files travel as URIs; the panel's attachments are data URLs.
   const CONTEXT_KEY = "opencui.context"
   const contextual = new Set<string>()
-  async function deliver(sessionID: string, body: PromptBody) {
+  async function deliver(sessionID: string, body: PromptBody): Promise<string | undefined> {
     const selection = body as PromptBody & { variant?: string }
     if (selection.model) {
       await client.session.switchModel({ sessionID, model: { id: selection.model.modelID, providerID: selection.model.providerID, variant: selection.variant } })
@@ -145,8 +169,15 @@ export function createV2Api(options: { url: string; directory: string; password:
     } else if (contextual.delete(sessionID)) {
       await client.session.instructions.entry.remove({ sessionID, key: CONTEXT_KEY })
     }
-    await client.session.prompt({ sessionID, text: text.join("\n\n"), files: files.length ? files : undefined })
+    const inbox = await client.session.prompt({ sessionID, text: text.join("\n\n"), files: files.length ? files : undefined })
+    // The prompt route answers with the inbox user message — the one id the
+    // rewind features key session.revert on. 1.x reports it over SSE
+    // instead, so only this adapter surfaces it synchronously.
+    return inbox?.id
   }
+  // The inbox id of the last prompt per session, waiting for the send that
+  // issued it to consume it (see takePromptUserMessage).
+  const promptedUserMessages = new Map<string, string>()
   return {
     directory,
     session: {
@@ -161,10 +192,7 @@ export function createV2Api(options: { url: string; directory: string; password:
           return rows.map((s) => mapSession(s, directory))
         }),
       messages: (id, options) =>
-        call(async () => {
-          const page = await client.message.list({ sessionID: id, limit: options?.limit })
-          return mapMessages(id, directory, page.data)
-        }),
+        call(async () => mapMessages(id, directory, await messageLog(id, options?.limit))),
       update: (id, body) =>
         call(async () => {
           await client.session.update({ sessionID: id, title: body.title })
@@ -191,12 +219,21 @@ export function createV2Api(options: { url: string; directory: string; password:
         call(async () => {
           await deliver(id, body)
           await client.session.wait({ sessionID: id })
-          const page = await client.message.list({ sessionID: id })
-          const last = mapMessages(id, directory, page.data).filter((m) => m.info.role === "assistant").at(-1)
+          const last = mapMessages(id, directory, await messageLog(id)).filter((m) => m.info.role === "assistant").at(-1)
           if (!last) throw new Error("the turn produced no assistant message")
           return last as Awaited<ReturnType<BackendApi["session"]["prompt"]>> extends ApiResult<infer T> ? T : never
         }),
-      promptAsync: (id, body) => call(async () => (await deliver(id, body), undefined as never)),
+      promptAsync: (id, body) =>
+        call(async () => {
+          const userMessageID = await deliver(id, body)
+          if (userMessageID) promptedUserMessages.set(id, userMessageID)
+          return undefined as never
+        }),
+      takePromptUserMessage: (id) => {
+        const userMessageID = promptedUserMessages.get(id)
+        if (userMessageID) promptedUserMessages.delete(id)
+        return userMessageID
+      },
       command: (id, body) =>
         call(async () => (await client.session.command({ sessionID: id, name: body.command, text: body.arguments }), undefined as never)),
       abort: (id) => call(async () => (await client.session.interrupt({ sessionID: id }), true as const)),

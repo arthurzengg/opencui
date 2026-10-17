@@ -9,6 +9,7 @@ import { createBottomGlide, nestedScrollerTakesWheelUp, prefersReducedMotion } f
 import type { Attachment } from "./protocol"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
+import { RecentSessions } from "./components/RecentSessions"
 import { hasSubagentWork } from "./components/AgentActivity"
 import { QueuedMessages } from "./components/QueuedMessages"
 import { StatusBar, type HeaderPopoverID } from "./components/StatusBar"
@@ -37,6 +38,7 @@ export default function App() {
     setAgent,
     setModel,
     setProviderCollapsed,
+    toggleModelFavorite,
     refreshModels,
     replyPermission,
     removePermissionRule,
@@ -45,6 +47,8 @@ export default function App() {
     rejectQuestion,
     openReviewChange,
     editMessage,
+    revertToMessage,
+    redoTurn,
     reviewAllInChange,
     searchFiles,
     listDir,
@@ -217,6 +221,11 @@ export default function App() {
   // step of a turn; only the message it appeared in plays the entrance (#674).
   const agentActivityEntering = useEntrance(agentActivityMessageID ?? null)
   const promptHistoryEntries = useMemo(() => promptHistory(state.messages), [state.messages])
+  // Header undo availability mirrors the edit gate: any settled user turn.
+  const canUndo = useMemo(
+    () => state.messages.some((m) => m.role === "user" && Boolean(m.backendID)),
+    [state.messages],
+  )
 
   // Active exactly when the Stop button is clickable.
   useEscapeToStop(busy && !state.aborting, abort)
@@ -332,6 +341,7 @@ export default function App() {
         onSetAgent={setAgent}
         onSetModel={setModel}
         onSetProviderCollapsed={setProviderCollapsed}
+        onToggleModelFavorite={toggleModelFavorite}
         onRefreshModels={refreshModels}
         onCreateConversation={newSession}
         onOpenConversation={openConversation}
@@ -343,33 +353,15 @@ export default function App() {
         onRenameSession={renameSession}
         onRemovePermissionRule={removePermissionRule}
         onClearPermissionRules={clearPermissionRules}
+        canUndo={canUndo}
+        busy={busy}
+        onUndoLastTurn={() => runCommandAndPinTop("undo", "")}
+        onRedoTurn={redoTurn}
       />
       {state.indexStatus && state.indexStatus.state !== "disabled" && (
         <div className="index-status-wrap">
           <IndexStatus status={state.indexStatus} onStart={startIndex} onStop={stopIndex} />
         </div>
-      )}
-      {state.messages.length === 0 && (
-        <PromptBox
-          busy={busy}
-          aborting={state.aborting}
-          onSend={sendAndPinTop}
-          onQueue={queueMessage}
-          onAbort={abort}
-          searchFiles={searchFiles}
-          listDir={listDir}
-          attachFile={attachFile}
-          position="top"
-          conversations={state.conversations}
-          activeConversationID={state.conversationID}
-          contextUsage={state.contextUsage}
-          commands={state.commands}
-          onRunCommand={runCommandAndPinTop}
-          inject={state.injectedText}
-          injectMention={state.injectedMention}
-          history={promptHistoryEntries}
-          onOpenLink={openLink}
-        />
       )}
       <div
         className="messages"
@@ -414,6 +406,17 @@ export default function App() {
           }
         }}
       >
+        {state.messages.length === 0 && (
+          <RecentSessions
+            conversations={state.conversations}
+            externalSessions={state.externalSessions}
+            activeConversationID={state.conversationID}
+            onOpenConversation={openConversation}
+            onImportSession={importSession}
+            onCreateConversation={newSession}
+            onRefreshSessions={refreshSessions}
+          />
+        )}
         {turns.map((turn) => (
           <div className="turn" key={turn.key}>
             {turn.user && (
@@ -425,6 +428,7 @@ export default function App() {
                 busy={busy}
                 onReviewFile={openReviewFile}
                 onEditMessage={editMessage}
+                onRevertMessage={revertToMessage}
                 onBeginEdit={(id) => {
                   captureScrollForLocalLayoutChange()
                   setActiveHeaderPopover(null)
@@ -464,9 +468,8 @@ export default function App() {
       <div className="bottom-dock" ref={dockRef}>
         {/* First child on purpose: the leading-card clearance keys on
             `.bottom-dock-glass + .review-panel` adjacency. Absolute, so it adds
-            nothing to the measured dock height. Gated like the docked composer
-            below. */}
-        {state.messages.length > 0 && <div className="bottom-dock-glass" aria-hidden="true" />}
+            nothing to the measured dock height. */}
+        <div className="bottom-dock-glass" aria-hidden="true" />
         {state.pendingPermission && (
           <PermissionDialog
             id={state.pendingPermission.id}
@@ -495,29 +498,31 @@ export default function App() {
           onReviewAllInChange={reviewAllInChange}
         />
         <QueuedMessages queued={state.queued} onRemove={unqueueMessage} />
-        {state.messages.length > 0 && (
-          <div className="bottom-composer">
-            <PromptBox
-              busy={busy}
-              aborting={state.aborting}
-              onSend={sendAndPinTop}
-              onQueue={queueMessage}
-              onAbort={abort}
-              searchFiles={searchFiles}
-              listDir={listDir}
-              attachFile={attachFile}
-              conversations={state.conversations}
-              activeConversationID={state.conversationID}
-              contextUsage={state.contextUsage}
-              commands={state.commands}
-              onRunCommand={runCommandAndPinTop}
-              inject={state.injectedText}
-              injectMention={state.injectedMention}
-              history={promptHistoryEntries}
-              onOpenLink={openLink}
-            />
-          </div>
-        )}
+        <div className="bottom-composer">
+          <PromptBox
+            busy={busy}
+            aborting={state.aborting}
+            onSend={sendAndPinTop}
+            onQueue={queueMessage}
+            onAbort={abort}
+            searchFiles={searchFiles}
+            listDir={listDir}
+            attachFile={attachFile}
+            conversations={state.conversations}
+            activeConversationID={state.conversationID}
+            contextUsage={state.contextUsage}
+            commands={state.commands}
+            onRunCommand={runCommandAndPinTop}
+            selection={state.selection}
+            modelCatalog={state.modelCatalog}
+            onSetAgent={setAgent}
+            onSetModel={setModel}
+            inject={state.injectedText}
+            injectMention={state.injectedMention}
+            history={promptHistoryEntries}
+            onOpenLink={openLink}
+          />
+        </div>
       </div>
     </div>
   )
