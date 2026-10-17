@@ -603,18 +603,12 @@ function ClusterPanel({
   defaultOpen?: boolean
   onReviewFile?: (path: string) => void
 }) {
-  const [userChoice, setUserChoice] = useState<boolean | undefined>(undefined)
-  const autoOpen = pending ? true : Boolean(defaultOpen)
-  const open = userChoice !== undefined ? userChoice : autoOpen
+  const [open, setOpen] = useState(Boolean(defaultOpen))
   const [everOpened, setEverOpened] = useState(open)
-
-  useEffect(() => {
-    if (open) setEverOpened(true)
-  }, [open])
 
   const toggle = () => {
     const next = !open
-    setUserChoice(next)
+    setOpen(next)
     if (next) setEverOpened(true)
   }
 
@@ -646,9 +640,7 @@ function TurnWorkPanel({
   defaultOpen?: boolean
   onReviewFile?: (path: string) => void
 }) {
-  const [userChoice, setUserChoice] = useState<boolean | undefined>(undefined)
-  const autoOpen = pending ? true : Boolean(defaultOpen)
-  const open = userChoice !== undefined ? userChoice : autoOpen
+  const [open, setOpen] = useState(pending ? true : Boolean(defaultOpen))
   const [everOpened, setEverOpened] = useState(open)
   const [now, setNow] = useState(() => Date.now())
 
@@ -658,13 +650,9 @@ function TurnWorkPanel({
     return () => clearInterval(timer)
   }, [pending])
 
-  useEffect(() => {
-    if (open) setEverOpened(true)
-  }, [open])
-
   const toggle = () => {
     const next = !open
-    setUserChoice(next)
+    setOpen(next)
     if (next) setEverOpened(true)
   }
 
@@ -876,22 +864,18 @@ function ProcessPanel({
   defaultOpen?: boolean
   onReviewFile?: (path: string) => void
 }) {
-  const [userChoice, setUserChoice] = useState<boolean | undefined>(undefined)
-  const autoOpen = pending ? true : Boolean(defaultOpen)
-  const open = userChoice !== undefined ? userChoice : autoOpen
-  // Lazy mount: nothing renders inside a never-opened body — a long
-  // transcript's collapsed tool traces and process text would otherwise all
-  // render invisibly. Once opened it stays mounted so the 0fr fold
-  // animation has content during collapse.
+  const [open, setOpen] = useState(pending ? true : Boolean(defaultOpen))
   const [everOpened, setEverOpened] = useState(open)
 
   useEffect(() => {
-    if (open) setEverOpened(true)
-  }, [open])
+    const next = pending ? true : Boolean(defaultOpen)
+    setOpen(next)
+    if (next) setEverOpened(true)
+  }, [pending, defaultOpen])
 
   const toggle = () => {
     const next = !open
-    setUserChoice(next)
+    setOpen(next)
     if (next) setEverOpened(true)
   }
 

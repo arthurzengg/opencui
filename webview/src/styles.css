@@ -1625,14 +1625,14 @@ button:focus-visible {
 
 /* ===== Process block ===== */
 .turn-work {
-  margin: 6px 0 10px;
+  margin: 4px 0 6px;
 }
 .turn-work-head {
   font-size: 13px;
   font-weight: 600;
   color: var(--vscode-descriptionForeground);
   cursor: pointer;
-  padding: 2px 0;
+  padding: 1px 0;
 }
 .turn-work-head:hover {
   color: var(--vscode-foreground);
@@ -1643,21 +1643,22 @@ button:focus-visible {
   border-left: 1px solid var(--vscode-panel-border);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 .sub-process {
-  margin: 2px 0 4px;
+  margin: 1px 0;
 }
 .sub-process .process-head {
   font-size: 12px;
   font-weight: 500;
   opacity: 0.9;
+  line-height: 16px;
 }
 .sub-process .process-head:hover {
   opacity: 1;
 }
 .process {
-  margin: 6px 0 10px;
+  margin: 2px 0 4px;
   color: var(--vscode-descriptionForeground);
 }
 .process-head {
@@ -1722,13 +1723,16 @@ button:focus-visible {
 }
 .process.is-open .process-body-clip {
   grid-template-rows: 1fr;
-  margin-top: 8px;
+  margin-top: 4px;
   visibility: visible;
   /* Reveal instantly on expand — only the collapse delays visibility. */
   transition:
     grid-template-rows 0.18s ease,
     margin-top 0.18s ease,
     visibility 0s;
+}
+.sub-process.is-open .process-body-clip {
+  margin-top: 2px;
 }
 .process-body {
   min-height: 0;

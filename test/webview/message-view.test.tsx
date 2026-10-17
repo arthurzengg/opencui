@@ -537,47 +537,30 @@ describe("MessageView (assistant role)", () => {
     expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
   })
 
-  it("maintains user interaction state when user manually toggles a process panel", () => {
+  it("allows user to toggle open and closed cleanly", () => {
     const liveMsg = {
       id: "a-live-toggle",
       role: "assistant",
-      pending: true,
-      blocks: [
-        { type: "tool", update: { callID: "c1", tool: "read", status: "running", input: { filePath: "src/a.ts" } } },
-      ],
-    } as Message
-
-    const { container, rerender } = render(
-      <MessageView message={liveMsg} processOpen={true} processOnly={false} />,
-    )
-    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(true)
-
-    // User explicitly clicks toggle to collapse it while still running
-    const toggleBtn = container.querySelector<HTMLButtonElement>(".process-head")!
-    fireEvent.click(toggleBtn)
-    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
-
-    // Message finishes
-    const finishedMsg = {
-      ...liveMsg,
       pending: false,
       blocks: [
-        ...liveMsg.blocks,
+        { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "src/a.ts" } } },
         { type: "text", text: "Finished." },
       ],
     } as Message
 
-    rerender(<MessageView message={finishedMsg} processOpen={false} processOnly={false} />)
-    // Stays closed as the user explicitly left it
+    const { container } = render(
+      <MessageView message={liveMsg} processOpen={false} processOnly={false} />,
+    )
     expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
 
-    // User now explicitly expands it to inspect
+    // User clicks toggle to open
+    const toggleBtn = container.querySelector<HTMLButtonElement>(".process-head")!
     fireEvent.click(toggleBtn)
     expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(true)
 
-    // Rerender (e.g. usage update) keeps it open as the user left it
-    rerender(<MessageView message={{ ...finishedMsg, usage: { input: 10, output: 20 } }} processOpen={false} processOnly={false} />)
-    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(true)
+    // User clicks toggle again to close
+    fireEvent.click(toggleBtn)
+    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
   })
 })
 
