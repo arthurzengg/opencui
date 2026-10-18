@@ -13,6 +13,7 @@ const baseProps = {
   onSetAgent: vi.fn(),
   onSetModel: vi.fn(),
   onSetProviderCollapsed: vi.fn(),
+  onToggleModelFavorite: vi.fn(),
   onRefreshModels: vi.fn(),
   onCreateConversation: vi.fn(),
   onOpenConversation: vi.fn(),

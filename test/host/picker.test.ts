@@ -91,6 +91,34 @@ describe("listModels", () => {
     ])
     expect(models).toEqual([{ providerID: "q", modelID: "x", providerName: undefined, variants: [] }])
   })
+
+  it("carries the configured name, reasoning capability, and token limits", () => {
+    const models = listModels([
+      {
+        id: "openai",
+        name: "OpenAI",
+        models: {
+          "gpt-5.5": {
+            name: "GPT-5.5 Turbo",
+            capabilities: { reasoning: true },
+            limit: { context: 400_000, input: 272_000, output: 128_000 },
+            variants: { low: {}, high: {} },
+          },
+        },
+      },
+    ])
+    expect(models).toEqual([
+      {
+        providerID: "openai",
+        modelID: "gpt-5.5",
+        providerName: "OpenAI",
+        name: "GPT-5.5 Turbo",
+        variants: ["low", "high"],
+        reasoning: true,
+        limit: { context: 400_000, input: 272_000, output: 128_000 },
+      },
+    ])
+  })
 })
 
 
@@ -125,7 +153,7 @@ describe("buildModelCatalog", () => {
       "anthropic/sonnet": "max",
       "openai/gpt-5.5": "xhigh", // no longer declared — must not survive
     }
-    const catalog = buildModelCatalog(models, [], (p, m) => memory[`${p}/${m}`], [], [])
+    const catalog = buildModelCatalog(models, [], (p, m) => memory[`${p}/${m}`], [], [], [])
     expect(catalog.models.map((m) => m.lastVariant)).toEqual(["max", undefined])
   })
 
@@ -136,17 +164,50 @@ describe("buildModelCatalog", () => {
       () => undefined,
       [],
       [],
+      [],
     )
     expect(catalog.recents).toEqual(["openai/gpt-5.5", "anthropic/sonnet"])
   })
 
   it("passes the agent entries through for the picker's Agent chips", () => {
     const agents = [{ name: "build", description: "makes changes" }, { name: "plan" }]
-    expect(buildModelCatalog(models, [], () => undefined, agents, []).agents).toEqual(agents)
+    expect(buildModelCatalog(models, [], () => undefined, agents, [], []).agents).toEqual(agents)
   })
 
   it("filters folded providers to ones that still exist", () => {
-    const catalog = buildModelCatalog(models, [], () => undefined, [], ["openai", "meta"])
+    const catalog = buildModelCatalog(models, [], () => undefined, [], ["openai", "meta"], [])
     expect(catalog.collapsedProviders).toEqual(["openai"])
+  })
+
+  it("filters favorites to models that still exist, preserving order", () => {
+    const catalog = buildModelCatalog(
+      models,
+      [],
+      () => undefined,
+      [],
+      [],
+      ["meta/removed-model", "anthropic/sonnet"],
+    )
+    expect(catalog.favorites).toEqual(["anthropic/sonnet"])
+  })
+
+  it("passes the model name, reasoning, and token limits through to the catalog", () => {
+    const withMeta = [
+      {
+        providerID: "openai",
+        modelID: "gpt-5.5",
+        providerName: "OpenAI",
+        name: "GPT-5.5 Turbo",
+        variants: ["high"],
+        reasoning: true,
+        limit: { context: 400_000, input: 272_000, output: 128_000 },
+      },
+    ]
+    const catalog = buildModelCatalog(withMeta, [], () => undefined, [], [], [])
+    expect(catalog.models[0]).toMatchObject({
+      name: "GPT-5.5 Turbo",
+      reasoning: true,
+      limit: { context: 400_000, input: 272_000, output: 128_000 },
+    })
   })
 })

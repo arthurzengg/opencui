@@ -334,6 +334,76 @@ describe("BuiltinRunners: /undo", () => {
   })
 })
 
+describe("BuiltinRunners: revertToMessage", () => {
+  it("reverts to an intermediate turn and stashes everything after it", async () => {
+    const messages = [
+      user("u1", "first", "b_u1"),
+      assistant("a1", "answer one"),
+      user("u2", "second", "b_u2"),
+      assistant("a2", "answer two"),
+    ]
+    const { runners, state } = makeHarness({ messages })
+    const revert = vi.fn().mockResolvedValue({ data: {} })
+    await runners.revertToMessage("u1", makeBackend({ revert }))
+    expect(revert).toHaveBeenCalledWith("sess_1", { messageID: "b_u1" })
+    expect(state.messages).toHaveLength(0)
+    expect(state.redoStack).toHaveLength(1)
+    expect(state.redoStack[0]!.map((m) => m.id)).toEqual(["u1", "a1", "u2", "a2"])
+    expect(state.posted).toContainEqual({ type: "setComposerText", text: "first" })
+  })
+
+  it("shows a notice and does not revert for an unknown id", async () => {
+    const messages = [user("u1", "first", "b_u1"), assistant("a1", "answer")]
+    const { runners, state } = makeHarness({ messages })
+    const revert = vi.fn()
+    await runners.revertToMessage("nope", makeBackend({ revert }))
+    expect(win.showInformationMessage).toHaveBeenCalledWith("Nothing to revert for this message.")
+    expect(revert).not.toHaveBeenCalled()
+    expect(state.messages).toHaveLength(2)
+    expect(state.redoStack).toHaveLength(0)
+  })
+
+  it("shows a notice for an assistant message id", async () => {
+    const messages = [user("u1", "first", "b_u1"), assistant("a1", "answer", { backendID: "b_a1" })]
+    const { runners, state } = makeHarness({ messages })
+    const revert = vi.fn()
+    await runners.revertToMessage("a1", makeBackend({ revert }))
+    expect(win.showInformationMessage).toHaveBeenCalledWith("Nothing to revert for this message.")
+    expect(revert).not.toHaveBeenCalled()
+    expect(state.messages).toHaveLength(2)
+  })
+
+  it("shows a notice for a user message without backendID yet", async () => {
+    const messages = [user("u1", "pending")]
+    const { runners } = makeHarness({ messages })
+    const revert = vi.fn()
+    await runners.revertToMessage("u1", makeBackend({ revert }))
+    expect(win.showInformationMessage).toHaveBeenCalledWith("Nothing to revert for this message.")
+    expect(revert).not.toHaveBeenCalled()
+  })
+
+  it("undoLastTurn delegates to the last settled turn", async () => {
+    const messages = [user("u1", "first", "b_u1"), assistant("a1", "answer")]
+    const { runners, state } = makeHarness({ messages })
+    const revert = vi.fn().mockResolvedValue({ data: {} })
+    await runners.undoLastTurn(makeBackend({ revert }))
+    expect(revert).toHaveBeenCalledWith("sess_1", { messageID: "b_u1" })
+    expect(state.messages).toHaveLength(0)
+  })
+
+  it("redoTurn restores the tail like /redo", async () => {
+    const tail = [user("u2", "second", "b_u2"), assistant("a2", "answer")]
+    const { runners, state } = makeHarness({
+      messages: [user("u1", "first", "b_u1")],
+      redoStack: [tail],
+    })
+    const unrevert = vi.fn().mockResolvedValue({ data: {} })
+    await runners.redoTurn(makeBackend({ unrevert, revert: vi.fn() }))
+    expect(unrevert).toHaveBeenCalled()
+    expect(state.messages.map((m) => m.id)).toEqual(["u1", "u2", "a2"])
+  })
+})
+
 describe("BuiltinRunners: /redo", () => {
   it("shows a notice when the redo stack is empty", async () => {
     const { runners } = makeHarness()

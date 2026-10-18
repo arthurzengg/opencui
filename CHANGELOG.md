@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A question with options and a free-text answer could not be answered by hand. The options were radio buttons that could not be deselected, and the typed answer was appended after the chosen label, so the backend read only the label and dropped what had been typed. A single-select question now offers "Other…" as one of its radios: picking it moves the caret into the answer field and sends only the typed text, and picking a real option sends only that label. The text is kept while an option is checked and comes back with "Other…". Multi-select questions are unchanged, since labels and free text coexist there.
+- The dot in a checked question radio sat off-center inside its circle. It was the `●` text glyph, whose ink rests on the font's baseline and shifts with whichever fallback font renders it, so it read as scaled or mispositioned. The dot is drawn in CSS now and is exactly centered in every theme and platform.
+
+## [1.17.0] - 2026-10-15
+
+### Added
+
+- Per-message revert/restore in the chat UI: each settled user bubble gains a revert button (`MessageView`), wired through `revertToMessage`/`redoTurn` in `protocol.ts` and `ChatView` (`revertToMessage`, `redoTurn`, `revertLastTurn`, `redoViaCommand`), with palette commands `opencui.conversation.undo`/`redo`, header undo/redo buttons, and `backfillUserBackendIDs` healing for turns that predate backendID association. Includes the `takePromptUserMessage` 2.0 adapter hook, the TUI chat fix in `backend/v2/api.ts`, and the legacy agent display-name normalization (`Build`/`Plan`) in `preferences.ts`.
+- Model catalog information surface: provider/model metadata table, model display name, favorites (persisted in `preferences.ts`, toggled from `ModelPicker`/`ModelHovercard`), and an expandable info panel at the bottom of the model dropdown (`ModelHovercard.tsx`, `ModelPicker.tsx`, `StatusBar.tsx`, `picker.ts`, `backend/v2/map.ts`).
+- Home view with recent sessions (`RecentSessions.tsx`, `App.tsx`, `useChatState.ts`): the panel opens on home with the composer at the bottom, plus the `opencui.chat.restoreLastSession` setting to restore the last open chat on startup instead.
+
 ## [1.16.1] - 2026-10-14
 
 ### Fixed

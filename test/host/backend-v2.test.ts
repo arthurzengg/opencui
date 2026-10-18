@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import type { SessionMessageInfo } from "@opencode/client/promise"
 import { createV2Api } from "../../src/backend/v2/api"
 import { startMockOpencodeV2, type MockOpencodeV2 } from "./mock-opencode-v2-server"
 
@@ -76,6 +77,45 @@ describe("opencode 2.0 adapter (#693)", () => {
     const missing = await api().session.messages("ses_nope")
     expect(missing.data).toBeUndefined()
     expect(String((missing.error as Error).message)).toContain("session not found")
+  })
+
+  // 2.0 answers the newest page first; the host reads a 1.x transcript, so the
+  // adapter has to reverse it back to oldest-first.
+  it("reads the 2.0 log oldest-first even though the server pages it newest-first", async () => {
+    const res = await api().session.messages("ses_root")
+    expect(res.data?.map((m) => m.info.id)).toEqual(["u1", "a1"])
+    expect(server.requests.at(-1)).toMatchObject({ method: "GET", path: "/api/session/ses_root/message", query: { order: "desc", limit: "200" } })
+  })
+
+  it("pages the whole transcript past the 200-entry page cap, in order", async () => {
+    const rows: SessionMessageInfo[] = Array.from({ length: 250 }, (_, i) => ({ type: "user", id: `u${i}`, time: { created: i }, text: `m${i}` }))
+    server.messages.ses_root = rows
+    const res = await api().session.messages("ses_root")
+    expect(res.data?.map((m) => m.info.id)).toEqual(rows.map((r) => r.id))
+    // The first page carries the order; the next continues by cursor alone
+    // (the server refuses a cursor combined with an order).
+    const pages = server.requests.filter((r) => r.path === "/api/session/ses_root/message")
+    expect(pages).toHaveLength(2)
+    expect(pages[0]!.query).toMatchObject({ order: "desc", limit: "200" })
+    expect(pages[1]!.query).toHaveProperty("cursor")
+    expect(pages[1]!.query).not.toHaveProperty("order")
+  })
+
+  it("caps a limited read to the newest entries, still oldest-first", async () => {
+    server.messages.ses_root = Array.from({ length: 10 }, (_, i) => ({ type: "user", id: `u${i}`, time: { created: i }, text: `m${i}` }))
+    const res = await api().session.messages("ses_root", { limit: 3 })
+    expect(res.data?.map((m) => m.info.id)).toEqual(["u7", "u8", "u9"])
+  })
+
+  it("answers the synchronous prompt with the newest assistant, not the oldest", async () => {
+    server.messages.ses_root = [
+      { type: "user", id: "u1", time: { created: 1 }, text: "hi" },
+      { type: "assistant", id: "a1", time: { created: 2, completed: 3 }, agent: "build", model: { id: "m", providerID: "p" }, content: [{ type: "text", text: "first" }] },
+      { type: "user", id: "u2", time: { created: 4 }, text: "again" },
+      { type: "assistant", id: "a2", time: { created: 5, completed: 6 }, agent: "build", model: { id: "m", providerID: "p" }, content: [{ type: "text", text: "second" }] },
+    ]
+    const res = (await api().session.prompt("ses_root", { parts: [{ type: "text", text: "go" }] })) as unknown as { data?: { info?: { id?: string } } }
+    expect(res.data?.info?.id).toBe("a2")
   })
 
   it("fills the catalogs from the 2.0 routes with the location on each request", async () => {
@@ -168,6 +208,18 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(server.requests.slice(bare).map((r) => [r.method, r.path])).toEqual([
       ["POST", "/api/session/ses_root/prompt"],
     ])
+  })
+
+  it("stashes the prompted user message id for the send to consume once", async () => {
+    const a = api()
+    expect(a.session.takePromptUserMessage?.("ses_root")).toBeUndefined()
+    const res = await a.session.promptAsync("ses_root", { parts: [{ type: "text", text: "hello" }] })
+    expect(res.error).toBeUndefined()
+    const first = a.session.takePromptUserMessage?.("ses_root")
+    expect(first).toMatch(/^inbox_/)
+    // Consumed: a second take finds nothing, and other sessions are unaffected.
+    expect(a.session.takePromptUserMessage?.("ses_root")).toBeUndefined()
+    expect(a.session.takePromptUserMessage?.("ses_other")).toBeUndefined()
   })
 
   it("waits for a sync prompt's turn and answers with the last assistant message", async () => {

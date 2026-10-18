@@ -101,6 +101,14 @@ export interface BackendApi {
     abort(id: string): Promise<ApiResult<DataOf<SessionAbortResponses>>>
     revert(id: string, body: BodyOf<SessionRevertData>): Promise<ApiResult<DataOf<SessionRevertResponses>>>
     unrevert(id: string): Promise<ApiResult<DataOf<SessionUnrevertResponses>>>
+    /**
+     * Consumes the user message id created by the last promptAsync on this
+     * session, when the adapter learns it synchronously. 2.0's prompt route
+     * answers with the inbox user message; 1.x only reports it over SSE, so
+     * just the 2.0 adapter implements this — anything else reads undefined
+     * and keeps waiting on the stream.
+     */
+    takePromptUserMessage?(id: string): string | undefined
     summarize(id: string, body?: BodyOf<SessionSummarizeData>): Promise<ApiResult<DataOf<SessionSummarizeResponses>>>
     share(id: string): Promise<ApiResult<DataOf<SessionShareResponses>>>
     unshare(id: string): Promise<ApiResult<DataOf<SessionUnshareResponses>>>

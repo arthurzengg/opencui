@@ -38,6 +38,7 @@ const baseProps = {
   onSetModel: vi.fn(),
   onSetAgent: vi.fn(),
   onSetProviderCollapsed: vi.fn(),
+  onToggleModelFavorite: vi.fn(),
   onRefresh: vi.fn(),
 }
 
@@ -136,6 +137,70 @@ describe("ModelPicker", () => {
     const onRefresh = vi.fn()
     render(<ModelPicker {...baseProps} onRefresh={onRefresh} />)
     expect(onRefresh).toHaveBeenCalledOnce()
+  })
+
+  it("shows the configured model name in a row, falling back to the id", () => {
+    const named: ModelCatalogInfo = {
+      ...catalog,
+      models: catalog.models.map((m) =>
+        m.providerID === "openai" ? { ...m, name: "GPT-5.5 Turbo" } : m,
+      ),
+    }
+    render(<ModelPicker {...baseProps} catalog={named} />)
+    expect(rowNames()).toContain("GPT-5.5 Turbo")
+    // A model opencode leaves without a name keeps the raw id.
+    expect(rowNames()).toContain("claude-sonnet-4-6")
+    expect(rowNames()).not.toContain("gpt-5.5")
+  })
+
+  it("shows the metadata table while hovering a model row and hides it on leave", async () => {
+    const user = userEvent.setup()
+    const named: ModelCatalogInfo = {
+      ...catalog,
+      models: catalog.models.map((m) =>
+        m.providerID === "openai"
+          ? {
+              ...m,
+              name: "GPT-5.5 Turbo",
+              reasoning: true,
+              limit: { context: 400_000, input: 272_000, output: 128_000 },
+            }
+          : m,
+      ),
+    }
+    render(<ModelPicker {...baseProps} catalog={named} selection={{ model: "openai/gpt-5.5" }} />)
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    const row = screen
+      .getAllByRole("option")
+      .find((r) => r.querySelector(".model-picker-name")?.textContent === "GPT-5.5 Turbo")!
+    await user.hover(row)
+    const card = screen.getByRole("tooltip")
+    expect(within(card).getByText("openai/gpt-5.5")).toBeInTheDocument()
+    expect(within(card).getByText("low, medium, high")).toBeInTheDocument()
+    expect(within(card).getByText("400,000")).toBeInTheDocument()
+    expect(within(card).getByText("272,000")).toBeInTheDocument()
+    expect(within(card).getByText("128,000")).toBeInTheDocument()
+    await user.unhover(row)
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+  })
+
+  it("freezes the list height while the hover card is open so rows never shift", async () => {
+    // JSDOM has no layout (clientHeight is 0) — stand in for a capped list.
+    const spy = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(200)
+    try {
+      render(<ModelPicker {...baseProps} selection={{ model: "openai/gpt-5.5" }} />)
+      const list = screen.getByRole("listbox", { name: "Models" })
+      expect(list.style.maxHeight).toBe("")
+      const rows = screen.getAllByRole("option")
+      fireEvent.mouseEnter(rows[0]!)
+      expect(list.style.maxHeight).toBe("200px")
+      expect(screen.queryByRole("tooltip")).toBeInTheDocument()
+      fireEvent.mouseLeave(list)
+      expect(list.style.maxHeight).toBe("")
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument()
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it("clicking a model row selects it WITH its remembered variant and marks it current before the host echo", async () => {
@@ -476,6 +541,65 @@ describe("ModelPicker provider folding", () => {
     await user.click(screen.getByRole("button", { name: "Google" }))
     fireEvent.keyDown(input, { key: "Enter" })
     expect(onSetModel).toHaveBeenCalledWith(undefined, undefined, undefined)
+  })
+})
+
+describe("ModelPicker favorites", () => {
+  it("renders a Favorites section at the very top when favorites exist", () => {
+    const favCatalog = {
+      ...catalog,
+      favorites: ["google/gemini-3-pro", "anthropic/claude-sonnet-4-6"],
+    }
+    const items = buildPickerItems(favCatalog, "", noFolds)
+    expect(items.map((i) => (i.kind === "model" ? `${i.section}:${i.entry.modelID}` : i.kind))).toEqual([
+      "Favorites:gemini-3-pro",
+      "Favorites:claude-sonnet-4-6",
+      "Recent:gpt-5.5",
+      "Recent:claude-sonnet-4-6",
+      "Anthropic:claude-sonnet-4-6",
+      "Anthropic:claude-haiku-4-5",
+      "OpenAI:gpt-5.5",
+      "Google:gemini-3-pro",
+      "default",
+    ])
+  })
+
+  it("drops favorites whose model is no longer in the catalog", () => {
+    const items = buildPickerItems(
+      { ...catalog, favorites: ["openai/gone", "google/gemini-3-pro"] },
+      "",
+      noFolds,
+    )
+    const favs = items.filter((i) => i.section === "Favorites")
+    expect(favs.map((i) => (i.kind === "model" ? i.entry.modelID : i.kind))).toEqual(["gemini-3-pro"])
+  })
+
+  it("shows an outlined star for a non-favorite and a filled one for a favorite", () => {
+    render(<ModelPicker {...baseProps} catalog={{ ...catalog, favorites: ["google/gemini-3-pro"] }} />)
+    const geminiRow = screen.getAllByRole("option", { name: /gemini-3-pro/ })[0]!
+    const openaiRow = screen.getAllByRole("option", { name: /gpt-5.5/ })[0]!
+    expect(geminiRow.querySelector(".model-picker-favorite")?.classList.contains("is-favorite")).toBe(true)
+    expect(geminiRow.querySelector(".codicon-star-full")).not.toBeNull()
+    expect(openaiRow.querySelector(".model-picker-favorite")?.classList.contains("is-favorite")).toBe(false)
+    expect(openaiRow.querySelector(".codicon-star-empty")).not.toBeNull()
+  })
+
+  it("clicking the star toggles the favorite without selecting the model", async () => {
+    const user = userEvent.setup()
+    const onToggleModelFavorite = vi.fn()
+    const onSetModel = vi.fn()
+    render(
+      <ModelPicker
+        {...baseProps}
+        onToggleModelFavorite={onToggleModelFavorite}
+        onSetModel={onSetModel}
+        catalog={{ ...catalog, favorites: ["google/gemini-3-pro"] }}
+      />,
+    )
+    const geminiRow = screen.getAllByRole("option", { name: /gemini-3-pro/ })[0]!
+    await user.click(geminiRow.querySelector(".model-picker-favorite")!)
+    expect(onToggleModelFavorite).toHaveBeenCalledWith("google/gemini-3-pro")
+    expect(onSetModel).not.toHaveBeenCalled()
   })
 })
 

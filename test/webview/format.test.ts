@@ -81,6 +81,15 @@ describe("formatAgent", () => {
 describe("formatUpdated", () => {
   const now = Date.now()
 
+  // formatUpdated renders dates in the viewer's locale on purpose, so the
+  // expected string is built with the same Intl options rather than a
+  // hardcoded English abbreviation: "Oct 2025" here, "ott 2025" under it-IT.
+  // These assertions pin the *format* (which fields, which width), which is
+  // the part the function actually decides.
+  const weekday = (d: Date) => d.toLocaleDateString([], { weekday: "short" })
+  const monthDay = (d: Date) => d.toLocaleDateString([], { month: "short", day: "numeric" })
+  const monthYear = (d: Date) => d.toLocaleDateString([], { month: "short", year: "numeric" })
+
   it("renders 'just now' for very recent timestamps", () => {
     expect(formatUpdated(now - 5000)).toBe("just now")
     expect(formatUpdated(now - 28_000)).toBe("just now")
@@ -109,16 +118,16 @@ describe("formatUpdated", () => {
     const fourDaysAgo = new Date()
     fourDaysAgo.setDate(fourDaysAgo.getDate() - 4)
     fourDaysAgo.setHours(10, 0, 0, 0)
-    const result = formatUpdated(fourDaysAgo.getTime())
-    expect(result).toMatch(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/)
+    expect(formatUpdated(fourDaysAgo.getTime())).toBe(weekday(fourDaysAgo))
+    // A weekday name, not a date: no day number.
+    expect(formatUpdated(fourDaysAgo.getTime())).not.toContain(String(fourDaysAgo.getDate()))
   })
 
   it("renders Mon Day for older same-year timestamps", () => {
     const sixMonthsAgo = new Date()
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
     if (sixMonthsAgo.getFullYear() === new Date().getFullYear()) {
-      const result = formatUpdated(sixMonthsAgo.getTime())
-      expect(result).toMatch(/^[A-Z][a-z]+ \d+$/)
+      expect(formatUpdated(sixMonthsAgo.getTime())).toBe(monthDay(sixMonthsAgo))
     }
   })
 
@@ -126,6 +135,9 @@ describe("formatUpdated", () => {
     const lastYear = new Date()
     lastYear.setFullYear(lastYear.getFullYear() - 1)
     const result = formatUpdated(lastYear.getTime())
-    expect(result).toMatch(/^[A-Z][a-z]+ \d{4}$/)
+    expect(result).toBe(monthYear(lastYear))
+    // The year, not the day: this is the branch that drops the day number.
+    expect(result).toContain(String(lastYear.getFullYear()))
+    expect(result).not.toContain(String(lastYear.getDate()))
   })
 })

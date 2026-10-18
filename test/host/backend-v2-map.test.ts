@@ -91,10 +91,18 @@ describe("opencode 2.0 mappers (#693)", () => {
 
   it("drops hidden agents and keeps mode, description, and model", () => {
     const agents: AgentInfo[] = [
-      { id: "build", name: "build", mode: "primary", hidden: false, description: "Default", request: { settings: {}, headers: {} }, permissions: [], model: { id: "claude-sonnet-5", providerID: "anthropic" } },
-      { id: "title", name: "title", mode: "primary", hidden: true, request: { settings: {}, headers: {} }, permissions: [] },
+      // The real server sends id ("build") and display name ("Build") as
+      // distinct values; the host must address agents by id — the display
+      // name 404s on `agent.get` and fails the turn with
+      // `Agent not found: "Build"`.
+      { id: "build", name: "Build", mode: "primary", hidden: false, description: "Default", request: { settings: {}, headers: {} }, permissions: [], model: { id: "claude-sonnet-5", providerID: "anthropic" } },
+      { id: "plan", name: "Plan", mode: "primary", hidden: false, request: { settings: {}, headers: {} }, permissions: [] },
+      { id: "title", name: "Title", mode: "primary", hidden: true, request: { settings: {}, headers: {} }, permissions: [] },
     ]
-    expect(mapAgents(agents)).toEqual([expect.objectContaining({ name: "build", mode: "primary", description: "Default", model: { providerID: "anthropic", modelID: "claude-sonnet-5" } })])
+    expect(mapAgents(agents)).toEqual([
+      expect.objectContaining({ name: "build", mode: "primary", description: "Default", model: { providerID: "anthropic", modelID: "claude-sonnet-5" } }),
+      expect.objectContaining({ name: "plan", mode: "primary", description: "Plan" }),
+    ])
   })
 
   it("maps commands without a template, since 2.0 carries none", () => {

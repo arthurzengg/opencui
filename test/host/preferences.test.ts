@@ -83,6 +83,26 @@ describe("Preferences per-model variant memory", () => {
   })
 })
 
+describe("Preferences agent display-name migration", () => {
+  it("heals stored 2.0 display names to the ids the server resolves", async () => {
+    const prefs = makePrefs()
+    await prefs.setAgent("Build")
+    expect(prefs.get().agent).toBe("build")
+    await prefs.setAgent("Plan")
+    expect(prefs.get().agent).toBe("plan")
+  })
+
+  it("leaves ids and custom agents untouched", async () => {
+    const prefs = makePrefs()
+    await prefs.setAgent("build")
+    expect(prefs.get().agent).toBe("build")
+    await prefs.setAgent("my-reviewer")
+    expect(prefs.get().agent).toBe("my-reviewer")
+    await prefs.setAgent(undefined)
+    expect(prefs.get().agent).toBeUndefined()
+  })
+})
+
 describe("Preferences folded picker providers", () => {
   it("folds and unfolds a provider, deduping repeat folds", async () => {
     const prefs = makePrefs()

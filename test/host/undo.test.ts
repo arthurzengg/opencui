@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { lastUserTurnIndex, redoAction, userMessageText } from "../../src/chat/undo"
+import { lastUserTurnIndex, redoAction, userMessageText, userTurnIndexByID } from "../../src/chat/undo"
 import type { ChatMessage } from "../../src/protocol"
 
 function user(id: string, text: string, backendID?: string): ChatMessage {
@@ -51,5 +51,25 @@ describe("userMessageText", () => {
 
   it("returns an empty string when there is no text block", () => {
     expect(userMessageText({ id: "x", role: "user", blocks: [] })).toBe("")
+  })
+})
+
+describe("userTurnIndexByID", () => {
+  it("finds a settled user turn by webview id", () => {
+    const msgs = [user("u1", "a", "b1"), assistant("a1", "ba1"), user("u2", "b", "b2")]
+    expect(userTurnIndexByID(msgs, "u2")).toBe(2)
+    expect(userTurnIndexByID(msgs, "u1")).toBe(0)
+  })
+
+  it("returns -1 for unknown ids", () => {
+    expect(userTurnIndexByID([user("u1", "a", "b1")], "nope")).toBe(-1)
+  })
+
+  it("returns -1 for assistant messages", () => {
+    expect(userTurnIndexByID([assistant("a1", "b_a1")], "a1")).toBe(-1)
+  })
+
+  it("returns -1 when the user message has no backendID yet", () => {
+    expect(userTurnIndexByID([user("u1", "pending")], "u1")).toBe(-1)
   })
 })

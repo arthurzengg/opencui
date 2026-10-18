@@ -5,12 +5,31 @@ const KEY_MODEL = "opencui.model"
 const KEY_MODEL_RECENTS = "opencui.model.recents"
 const KEY_MODEL_VARIANT_MEMORY = "opencui.model.variantMemory"
 const KEY_MODEL_COLLAPSED_PROVIDERS = "opencui.model.collapsedProviders"
+const KEY_MODEL_FAVORITES = "opencui.model.favorites"
 
 /**
  * Enough to cover a "testing new LLM releases across 4-5 providers" rotation
  * with one slot to spare; beyond that the picker's full list is close anyway.
  */
 const MAX_RECENT_MODELS = 6
+
+/**
+ * Display labels the 2.0 adapter used to persist as the agent identifier
+ * before it mapped `AgentInfo.id` (the `mapAgents` fix): the server
+ * resolves agents by id case-sensitively, and `agent.get` 404s on the
+ * display name (`Build` → `Agent not found: "Build"`), which wedged every
+ * turn sent with such a stored agent. Normalizing on read heals those
+ * stored picks without a disk migration; new picks already store ids.
+ */
+const LEGACY_AGENT_DISPLAY_NAMES: Record<string, string> = {
+  Build: "build",
+  Plan: "plan",
+}
+
+function normalizeAgent(agent: string | undefined): string | undefined {
+  if (!agent) return undefined
+  return LEGACY_AGENT_DISPLAY_NAMES[agent] ?? agent
+}
 
 export type Selection = {
   agent?: string
@@ -34,7 +53,7 @@ export class Preferences {
 
   get(): Selection {
     return {
-      agent: this.state.get<string>(KEY_AGENT) || undefined,
+      agent: normalizeAgent(this.state.get<string>(KEY_AGENT) || undefined),
       modelProviderID: this.state.get<string>(`${KEY_MODEL}.providerID`) || undefined,
       modelID: this.state.get<string>(`${KEY_MODEL}.modelID`) || undefined,
       modelVariant: this.state.get<string>(`${KEY_MODEL}.variant`) || undefined,
@@ -63,6 +82,19 @@ export class Preferences {
   async setProviderCollapsed(providerID: string, collapsed: boolean) {
     const rest = this.collapsedProviders().filter((id) => id !== providerID)
     await this.state.update(KEY_MODEL_COLLAPSED_PROVIDERS, collapsed ? [...rest, providerID] : rest)
+  }
+
+  /** `providerID/modelID` keys the user starred in the picker. */
+  favoriteModels(): string[] {
+    const raw = this.state.get<unknown>(KEY_MODEL_FAVORITES)
+    if (!Array.isArray(raw)) return []
+    return raw.filter((v): v is string => typeof v === "string")
+  }
+
+  async toggleModelFavorite(key: string) {
+    const favorites = this.favoriteModels()
+    const next = favorites.includes(key) ? favorites.filter((k) => k !== key) : [...favorites, key]
+    await this.state.update(KEY_MODEL_FAVORITES, next)
   }
 
   async setAgent(agent: string | undefined) {

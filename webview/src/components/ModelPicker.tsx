@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ModelCatalogEntry, ModelCatalogInfo, Selection } from "../protocol"
+import { ModelHovercard } from "./ModelHovercard"
 
 /**
  * In-panel model + effort picker (issue #512). Replaces the old handoff to
@@ -19,6 +20,15 @@ export type PickerItem =
 
 export function modelKey(entry: ModelCatalogEntry): string {
   return `${entry.providerID}/${entry.modelID}`
+}
+
+/**
+ * Display label for a model: opencode's configured name when it has one,
+ * else the raw id (the picker is still where date-suffix and point-release
+ * differences matter, so the id is the honest fallback).
+ */
+export function modelLabel(entry: ModelCatalogEntry): string {
+  return entry.name?.trim() || entry.modelID
 }
 
 export type PickerSection = {
@@ -73,6 +83,13 @@ export function buildPickerSections(
   }
   const byKey = new Map(catalog.models.map((m) => [modelKey(m), m]))
   const sections: PickerSection[] = []
+  const favoriteKeys = new Set(catalog.favorites ?? [])
+  const favorites: PickerItem[] = []
+  for (const key of catalog.favorites ?? []) {
+    const entry = byKey.get(key)
+    if (entry) favorites.push({ kind: "model", entry, section: "Favorites" })
+  }
+  if (favorites.length) sections.push({ title: "Favorites", collapsed: false, rows: favorites })
   const recent: PickerItem[] = []
   for (const key of catalog.recents) {
     const entry = byKey.get(key)
@@ -196,6 +213,8 @@ type Props = {
   onSetModel: (providerID?: string, modelID?: string, variant?: string) => void
   onSetAgent: (name?: string) => void
   onSetProviderCollapsed: (providerID: string, collapsed: boolean) => void
+  /** Star/unstar a model (`providerID/modelID` key). */
+  onToggleModelFavorite: (key: string) => void
   /** Posted on mount so a freshly opened picker re-syncs the catalog. */
   onRefresh: () => void
 }
@@ -206,6 +225,7 @@ export function ModelPicker({
   onSetModel,
   onSetAgent,
   onSetProviderCollapsed,
+  onToggleModelFavorite,
   onRefresh,
 }: Props) {
   const [query, setQuery] = useState("")
@@ -256,9 +276,22 @@ export function ModelPicker({
     () => (currentKey ? catalog?.models.find((m) => modelKey(m) === currentKey) : undefined),
     [catalog, currentKey],
   )
+  const favoriteSet = useMemo(() => new Set(catalog?.favorites ?? []), [catalog])
   const isCurrentItem = (item: PickerItem | undefined) =>
     item !== undefined && (item.kind === "default" ? !currentKey : modelKey(item.entry) === currentKey)
   const [activeIndex, setActiveIndex] = useState(0)
+  // Entry whose metadata table previews in the docked details block at the
+  // very bottom of the popover (below the Agent/Effort footers) while the
+  // pointer is over its row. Docked (in-flow) at the bottom instead of
+  // floating, so it never covers the hovered row's name or favorite star —
+  // and appearing there only grows the popover downward without shifting
+  // the list rows or the footers above it.
+  const [hoveredEntry, setHoveredEntry] = useState<ModelCatalogEntry | null>(null)
+  // Rendered height of the list captured the moment a hover card opens. While
+  // the details block is mounted the popover grows by its height (via :has);
+  // capping the list at its pre-hover height stops a capped/scrolled list
+  // from growing into that new space and shifting rows under the cursor.
+  const [frozenListHeight, setFrozenListHeight] = useState<number | null>(null)
 
   // Stale-while-revalidate: render the pushed catalog immediately, ask the
   // host for a fresh one in the background (config may have changed).
@@ -304,6 +337,23 @@ export function ModelPicker({
     if (!hoverEnabledRef.current) return
     keyboardNavRef.current = false
     apply()
+  }
+  // Show the metadata table for a hovered row. Keyboard navigation keeps its
+  // synthetic mouseenter from summoning the card (hoverMove gates it here too).
+  // The list height is frozen first (see frozenListHeight): moving between
+  // rows keeps the freeze so the list never breathes mid-hover. Guarded
+  // against 0 so JSDOM (no layout) simply skips the freeze.
+  const showRowCard = (entry: ModelCatalogEntry) => {
+    const h = listRef.current?.clientHeight
+    if (h) setFrozenListHeight((prev) => prev ?? h)
+    setHoveredEntry(entry)
+  }
+  // Pointer leaving the list (or the list scrolling) dismisses the card and
+  // releases the freeze. A row-to-row move intentionally keeps the freeze —
+  // only the entry clears there.
+  const clearHoverCard = () => {
+    setHoveredEntry(null)
+    setFrozenListHeight(null)
   }
   useEffect(() => {
     const byKeyboard = keyboardNavRef.current
@@ -427,7 +477,10 @@ export function ModelPicker({
         ref={listRef}
         role="listbox"
         aria-label="Models"
+        style={frozenListHeight != null ? { maxHeight: frozenListHeight } : undefined}
         onMouseMove={onListMouseMove}
+        onMouseLeave={clearHoverCard}
+        onScroll={clearHoverCard}
       >
         {!catalog && <div className="model-picker-empty">Waiting for the model list…</div>}
         {/* Keyed off sections, not items: matches hidden behind a collapsed
@@ -480,11 +533,11 @@ export function ModelPicker({
                 const entry = item.entry
                 const key = modelKey(entry)
                 const isCurrent = key === currentKey
-                const tooltip = entry.lastVariant ? `${key} · ${entry.lastVariant}` : key
+                const isFavorite = favoriteSet.has(key)
                 // Inside a provider group the header already names the provider;
-                // repeating it per row is noise. Only Recent mixes providers,
-                // so only there the label disambiguates.
-                const showProvider = item.section === "Recent"
+                // repeating it per row is noise. Only Recent/Favorites mix
+                // providers, so only there the label disambiguates.
+                const showProvider = item.section === "Recent" || item.section === "Favorites"
                 return (
                   <button
                     key={`${item.section}:${key}`}
@@ -492,16 +545,22 @@ export function ModelPicker({
                     role="option"
                     aria-selected={i === activeIndex}
                     className={`model-picker-row ${i === activeIndex ? "active" : ""} ${isCurrent ? "is-current" : ""}`}
-                    onMouseEnter={() => hoverMove(() => setActiveIndex(i))}
+                    onMouseEnter={() =>
+                      hoverMove(() => {
+                        setActiveIndex(i)
+                        showRowCard(entry)
+                      })
+                    }
+                    onMouseLeave={() => setHoveredEntry(null)}
                     onClick={() => selectItem(item)}
-                    title={tooltip}
                   >
                     <span className="model-picker-check" aria-hidden="true">
                       {isCurrent && <span className="codicon codicon-check" />}
                     </span>
-                    {/* Raw model id, not the prettified label: the picker is where
-                        date-suffix and point-release differences matter. */}
-                    <span className="model-picker-name">{entry.modelID}</span>
+                    {/* Configured name when opencode has one, else the raw id:
+                        the picker is where date-suffix and point-release
+                        differences matter, so the id survives as the fallback. */}
+                    <span className="model-picker-name">{modelLabel(entry)}</span>
                     {entry.lastVariant && (
                       <span className="model-picker-last-variant">{entry.lastVariant}</span>
                     )}
@@ -510,6 +569,32 @@ export function ModelPicker({
                         {entry.providerName ?? entry.providerID}
                       </span>
                     )}
+                    {/* The row is a button, so the star is a role=button span
+                        (no nested <button>) that stops propagation to avoid
+                        selecting the model. */}
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      aria-label={isFavorite ? `Remove ${modelLabel(entry)} from favorites` : `Add ${modelLabel(entry)} to favorites`}
+                      aria-pressed={isFavorite}
+                      className={`model-picker-favorite ${isFavorite ? "is-favorite" : ""}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onToggleModelFavorite(key)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.stopPropagation()
+                          e.preventDefault()
+                          onToggleModelFavorite(key)
+                        }
+                      }}
+                    >
+                      <span
+                        className={`codicon ${isFavorite ? "codicon-star-full" : "codicon-star-empty"}`}
+                        aria-hidden="true"
+                      />
+                    </span>
                   </button>
                 )
               })}
@@ -537,6 +622,15 @@ export function ModelPicker({
             activeKey={activeVariant}
             defaultTitle="Use the model's default effort"
             onPick={pickVariant}
+          />
+        </div>
+      )}
+      {hoveredEntry && (
+        <div className="model-picker-details">
+          <ModelHovercard
+            entry={hoveredEntry}
+            fallbackName={modelLabel(hoveredEntry)}
+            className="model-picker-hovercard"
           />
         </div>
       )}

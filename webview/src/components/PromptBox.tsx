@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import type { Attachment, CommandInfo, ContextUsage, ConversationMention, ConversationSummary, DirEntry, FileSearchHit } from "../protocol"
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import type { Attachment, CommandInfo, ContextUsage, ConversationMention, ConversationSummary, DirEntry, FileSearchHit, ModelCatalogInfo, Selection } from "../protocol"
 import {
   extractMentions,
   findChipAtCaret,
@@ -17,6 +17,8 @@ import { useMentionPicker } from "../hooks/useMentionPicker"
 import { useCommandPicker } from "../hooks/useCommandPicker"
 import { useFileBrowser } from "../hooks/useFileBrowser"
 import { useEntrance } from "../hooks/useEntrance"
+import { useDismissableMenu } from "../hooks/useDismissableMenu"
+import { formatAgent, formatModel } from "./StatusBar"
 import {
   conversationDisplayTitle,
   conversationMatchesQuery,
@@ -91,9 +93,24 @@ type Props = {
   /**
    * Run an opencode command. Only wired for the primary send composer — the
    * in-message edit composers leave it undefined so a `/`-leading edit stays a
-   * normal prompt edit (preserving revert semantics).
+   * normal prompt edit (preserving revert semantics). The extra context fields
+   * are only populated for synthesized `/<agent>` switchers so the host can
+   * switch + send atomically; regular commands ignore them.
    */
-  onRunCommand?: (command: string, args: string) => void
+  onRunCommand?: (command: string, args: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) => void
+  /**
+   * Current agent/model/effort selection. Wired only for the bottom send
+   * composer to render the always-at-hand footer selectors; the selectors
+   * read this (same object as the header `SelectorMenu`) so top and bottom
+   * stay in sync by construction.
+   */
+  selection?: Selection
+  /** Host-pushed catalog backing the footer Agent/Effort dropdowns. */
+  modelCatalog?: ModelCatalogInfo
+  /** Direct agent selection (footer chips + `/<agent>` interception). */
+  onSetAgent?: (name?: string) => void
+  /** Direct model/effort selection (footer Effort dropdown). */
+  onSetModel?: (providerID?: string, modelID?: string, variant?: string) => void
   /**
    * One-shot host signal to set the composer text (e.g. `/undo` restoring the
    * undone prompt, `/redo` clearing it). The nonce makes identical text re-apply.
@@ -137,7 +154,7 @@ function buildInitialConversations(initial: Props["initial"]): Map<string, strin
   return map
 }
 
-export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, history, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, inject, injectMention, onOpenLink }: Props) {
+export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, searchFiles, listDir, attachFile, initial, history, variant = "send", position = "bottom", conversations, activeConversationID, contextUsage, commands = [], onRunCommand, selection, modelCatalog, onSetAgent, onSetModel, inject, injectMention, onOpenLink }: Props) {
   const { text, setText, ref, backdropRef, pendingCursor } = usePromptText(initial?.text ?? "")
   // The Stop ring joins the shared breathing clock (#621).
   const stopPhase = useLivePhase(busy && !aborting)
@@ -426,6 +443,68 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     closeCommand()
   }
 
+  const collectContext = () => {
+    const activeAttachments: Attachment[] = []
+    if (knownAttachments.current.size > 0) {
+      const labelsInText = extractMentions(text, new Set(knownAttachments.current.keys()))
+      for (const label of labelsInText) {
+        const att = knownAttachments.current.get(label)
+        if (att) activeAttachments.push(att)
+      }
+    }
+    for (const a of imageAttachments) activeAttachments.push(a)
+    const allMentions = extractMentions(text, knownMentions.current)
+    const fileMentions = allMentions.filter((m) => !knownConversations.current.has(m))
+    const convMentions = allMentions.flatMap((label) => {
+      const id = knownConversations.current.get(label)
+      return id ? [{ label, id }] : []
+    })
+    return {
+      fileMentions: fileMentions.length ? fileMentions : undefined,
+      activeAttachments: activeAttachments.length ? activeAttachments : undefined,
+      convMentions: convMentions.length ? convMentions : undefined,
+      hasAttachment: activeAttachments.length > 0,
+    }
+  }
+
+  /**
+   * Synthesized `/<agent> [prompt]`: switch the agent selection and, when a
+   * prompt follows, send it as a normal turn with the new agent. Bare
+   * `/agent` only switches. While busy the switch applies immediately and
+   * the prompt queues like a normal send (preserving @-chips); when idle
+   * the switch + send route atomically through the host so the turn can't
+   * race a stale agent read.
+   */
+  const runAgentCommandAndClear = (agentName: string, args: string) => {
+    if (!onSetAgent) return false
+    const prompt = args.trim()
+    if (!prompt) {
+      onSetAgent(agentName)
+      clearComposer()
+      return true
+    }
+    const ctx = collectContext()
+    if (sendBlocked) {
+      if (!canQueue || !onQueue) {
+        setBusyHint(`/${agentName} can't run while a turn is in progress — wait for it to finish or press Stop.`)
+        return true
+      }
+      onSetAgent(agentName)
+      onQueue(prompt, ctx.fileMentions, ctx.activeAttachments, ctx.convMentions)
+      clearComposer()
+      return true
+    }
+    if (onRunCommand) {
+      onRunCommand(agentName, prompt, ctx.fileMentions, ctx.activeAttachments, ctx.convMentions)
+      clearComposer()
+      return true
+    }
+    onSetAgent(agentName)
+    onSend(prompt, ctx.fileMentions, ctx.activeAttachments, ctx.convMentions)
+    clearComposer()
+    return true
+  }
+
   const runCommandAndClear = (command: string, args: string) => {
     if (!onRunCommand) return
     // Turn-bound commands are blocked while busy/aborting (they must not race
@@ -456,11 +535,19 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     // to a normal prompt send. Edit composers never route (no onRunCommand).
     // runCommandAndClear owns the busy gate: turn-bound commands show a hint
     // instead of running or queueing; allowedWhileBusy ones run immediately.
-    if (variant === "send" && onRunCommand) {
+    // Synthesized `/<agent>` entries intercept first so custom-command
+    // shadowing (host guarantees no agentSwitch flag on shadowed names) is
+    // honored by construction.
+    if (variant === "send" && (onRunCommand || onSetAgent)) {
       const parsed = parseCommandInput(trimmed)
-      if (parsed && commands.some((c) => c.name === parsed.name)) {
-        runCommandAndClear(parsed.name, parsed.args)
-        return
+      if (parsed) {
+        const agentEntry = commands.find((c) => c.name === parsed.name && c.agentSwitch)
+        if (agentEntry) {
+          if (runAgentCommandAndClear(agentEntry.name, parsed.args)) return
+        } else if (parsed && onRunCommand && commands.some((c) => c.name === parsed.name)) {
+          runCommandAndClear(parsed.name, parsed.args)
+          return
+        }
       }
     }
     const activeAttachments: Attachment[] = []
@@ -846,6 +933,24 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
     return findMentionRanges(text, new Set(knownAttachments.current.keys())).length > 0
   })()
 
+  // Footer selectors share the header's selection object, so top and bottom
+  // stay in sync by construction — both read `selection` and write through
+  // the same `onSetAgent` / `onSetModel` callbacks.
+  const showFooterSelectors = variant === "send" && position === "bottom" && Boolean(selection)
+  // While the catalog never arrived the footer can't list anything: show an
+  // explicit loading state instead of a lonely "default" so a still-booting
+  // server never reads as "no agents / no effort".
+  const catalogLoading = showFooterSelectors && !modelCatalog
+  const footerAgents = useMemo(() => modelCatalog?.agents ?? [], [modelCatalog])
+  const footerCurrentModel = useMemo(
+    () => (selection?.model ? modelCatalog?.models.find((m) => `${m.providerID}/${m.modelID}` === selection.model) : undefined),
+    [modelCatalog, selection?.model],
+  )
+  const footerVariants = footerCurrentModel?.variants ?? []
+  const showFooterAgent = showFooterSelectors && Boolean(onSetAgent) && (footerAgents.length > 0 || selection?.agent || catalogLoading)
+  const showFooterEffort = showFooterSelectors && Boolean(onSetModel) && (catalogLoading ? Boolean(selection?.model) : Boolean(footerCurrentModel) && footerVariants.length > 0)
+  const focusComposer = () => ref.current?.focus()
+
   const classes = [
     "promptbox",
     variant === "edit" ? "promptbox--edit" : "promptbox--send",
@@ -1049,6 +1154,30 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
           {variant === "send" && position === "bottom" && (
             <ContextUsageIndicator usage={contextUsage} />
           )}
+          {showFooterAgent && selection && (
+            <FooterAgentSelect
+              activeAgent={selection.agent}
+              agents={footerAgents}
+              loading={catalogLoading}
+              onPick={(name) => {
+                onSetAgent?.(name)
+                focusComposer()
+              }}
+            />
+          )}
+          {showFooterEffort && selection && (footerCurrentModel || catalogLoading) && (
+            <FooterEffortSelect
+              activeVariant={selection.modelVariant}
+              variants={footerVariants}
+              modelLabel={footerCurrentModel ? (footerCurrentModel.name && footerCurrentModel.name !== footerCurrentModel.modelID ? footerCurrentModel.name : formatModel(`${footerCurrentModel.providerID}/${footerCurrentModel.modelID}`, { truncate: false })) : (selection.model ?? "model")}
+              loading={catalogLoading}
+              onPick={(variant) => {
+                if (!footerCurrentModel) return
+                onSetModel?.(footerCurrentModel.providerID, footerCurrentModel.modelID, variant)
+                focusComposer()
+              }}
+            />
+          )}
           <div className="spacer" />
           {attachFile && (
             <button
@@ -1113,6 +1242,176 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function FooterAgentSelect({
+  activeAgent,
+  agents,
+  loading,
+  onPick,
+}: {
+  activeAgent?: string
+  agents: { name: string; description?: string }[]
+  loading?: boolean
+  onPick: (name?: string) => void
+}) {
+  const { open, toggle, close, ref } = useDismissableMenu()
+  const display = formatAgent(activeAgent ?? "default")
+  return (
+    <div className="promptbox-footer-select" ref={ref}>
+      <button
+        type="button"
+        className={`footer-select-trigger${open ? " is-open" : ""}`}
+        onClick={toggle}
+        aria-label={`Change agent (current: ${display})`}
+        aria-expanded={open}
+        title={loading ? "Loading agents…" : `Agent: ${activeAgent ?? "default"}`}
+      >
+        <span className="footer-select-label">Agent</span>
+        <span className="footer-select-value">{display}</span>
+        <span className="codicon codicon-chevron-up" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="promptbox-footer-popover" role="listbox" aria-label="Select agent">
+          {loading && (
+            <div className="footer-select-option is-disabled" role="presentation">
+              <span className="footer-select-option-name">Loading agents…</span>
+            </div>
+          )}
+          <button
+            type="button"
+            role="option"
+            aria-selected={!activeAgent}
+            className={`footer-select-option${!activeAgent ? " is-current" : ""}`}
+            title="Use the opencode default agent"
+            onClick={() => {
+              onPick(undefined)
+              close()
+            }}
+          >
+            <span className="footer-select-check" aria-hidden="true">
+              {!activeAgent && <span className="codicon codicon-check" />}
+            </span>
+            <span className="footer-select-option-name">default</span>
+          </button>
+          {agents.map((a) => {
+            const isCurrent = a.name === activeAgent
+            return (
+              <button
+                key={a.name}
+                type="button"
+                role="option"
+                aria-selected={isCurrent}
+                className={`footer-select-option${isCurrent ? " is-current" : ""}`}
+                title={a.description ?? a.name}
+                onClick={() => {
+                  onPick(a.name)
+                  close()
+                }}
+              >
+                <span className="footer-select-check" aria-hidden="true">
+                  {isCurrent && <span className="codicon codicon-check" />}
+                </span>
+                <span className="footer-select-option-name">{a.name}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FooterEffortSelect({
+  activeVariant,
+  variants,
+  modelLabel,
+  loading,
+  onPick,
+}: {
+  activeVariant?: string
+  variants: string[]
+  modelLabel: string
+  loading?: boolean
+  onPick: (variant?: string) => void
+}) {
+  const { open, toggle, close, ref } = useDismissableMenu()
+  const display = loading ? "…" : (activeVariant ?? "default")
+  // Without the catalog the variants are unknowable: the trigger stays
+  // visible (so the row doesn't jump when the list arrives) but disabled.
+  if (loading) {
+    return (
+      <div className="promptbox-footer-select" ref={ref}>
+        <button
+          type="button"
+          className="footer-select-trigger"
+          disabled
+          aria-label={`Loading effort for ${modelLabel}`}
+          title="Loading model list…"
+        >
+          <span className="footer-select-label">Effort</span>
+          <span className="footer-select-value">{display}</span>
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="promptbox-footer-select" ref={ref}>
+      <button
+        type="button"
+        className={`footer-select-trigger${open ? " is-open" : ""}`}
+        onClick={toggle}
+        aria-label={`Change effort for ${modelLabel} (current: ${display})`}
+        aria-expanded={open}
+        title={`Effort for ${modelLabel}: ${display}`}
+      >
+        <span className="footer-select-label">Effort</span>
+        <span className="footer-select-value">{display}</span>
+        <span className="codicon codicon-chevron-up" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="promptbox-footer-popover" role="listbox" aria-label={`Select effort for ${modelLabel}`}>
+          <button
+            type="button"
+            role="option"
+            aria-selected={!activeVariant}
+            className={`footer-select-option${!activeVariant ? " is-current" : ""}`}
+            title="Use the model's default effort"
+            onClick={() => {
+              onPick(undefined)
+              close()
+            }}
+          >
+            <span className="footer-select-check" aria-hidden="true">
+              {!activeVariant && <span className="codicon codicon-check" />}
+            </span>
+            <span className="footer-select-option-name">default</span>
+          </button>
+          {variants.map((v) => {
+            const isCurrent = v === activeVariant
+            return (
+              <button
+                key={v}
+                type="button"
+                role="option"
+                aria-selected={isCurrent}
+                className={`footer-select-option${isCurrent ? " is-current" : ""}`}
+                onClick={() => {
+                  onPick(v)
+                  close()
+                }}
+              >
+                <span className="footer-select-check" aria-hidden="true">
+                  {isCurrent && <span className="codicon codicon-check" />}
+                </span>
+                <span className="footer-select-option-name">{v}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

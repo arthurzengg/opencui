@@ -579,11 +579,17 @@ export function useChatState() {
     unqueueMessage(id: string) {
       dispatch({ type: "unqueueMessage", id })
     },
-    runCommand(command: string, args: string) {
-      vscode.post({ type: "runCommand", command, arguments: args })
+    runCommand(command: string, args: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) {
+      vscode.post({ type: "runCommand", command, arguments: args, mentions, attachments, conversationMentions })
     },
     editMessage(id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) {
       vscode.post({ type: "editMessage", id, text, mentions, attachments, conversationMentions })
+    },
+    revertToMessage(id: string) {
+      vscode.post({ type: "revertToMessage", id })
+    },
+    redoTurn() {
+      vscode.post({ type: "redoTurn" })
     },
     searchFiles(query: string): Promise<FileSearchHit[]> {
       const requestID = nextRequestID.current++
@@ -666,6 +672,9 @@ export function useChatState() {
     },
     setProviderCollapsed(providerID: string, collapsed: boolean) {
       vscode.post({ type: "setProviderCollapsed", providerID, collapsed })
+    },
+    toggleModelFavorite(key: string) {
+      vscode.post({ type: "toggleModelFavorite", key })
     },
     replyPermission(id: string, response: "once" | "always" | "reject") {
       vscode.post({ type: "permissionReply", id, response })

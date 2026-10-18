@@ -3,7 +3,7 @@
   "name": "opencui",
   "displayName": "OpenCode Panel",
   "description": "OpenCode Panel: opencode-powered AI assistant with a modern React chat UI",
-  "version": "1.16.1",
+  "version": "1.17.0",
   "private": true,
   "publisher": "haoyangzeng",
   "license": "MIT",
@@ -71,6 +71,14 @@
       {
         "command": "opencui.conversation.select",
         "title": "OpenCode Panel: Select Conversation"
+      },
+      {
+        "command": "opencui.conversation.undo",
+        "title": "OpenCode Panel: Revert Last Turn"
+      },
+      {
+        "command": "opencui.conversation.redo",
+        "title": "OpenCode Panel: Restore Turn"
       },
       {
         "command": "opencui.inlineEdit",
@@ -145,6 +153,11 @@
           "type": "string",
           "default": "",
           "description": "Default model id (provider/model)"
+        },
+        "opencui.chat.restoreLastSession": {
+          "type": "boolean",
+          "default": false,
+          "description": "Restore the last open chat on startup. When off (default), the panel opens on the home view with recent sessions and the composer at the bottom."
         },
         "opencui.opencodeConfigMode": {
           "type": "string",
