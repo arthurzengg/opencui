@@ -170,7 +170,7 @@ function QuestionItem({
                   onClick={() => onToggle(opt.label)}
                 >
                   <span className={`question-option-marker ${multiple ? "square" : "circle"}`} aria-hidden="true">
-                    {checked && (multiple ? <span className="codicon codicon-check" /> : "●")}
+                    {checked && multiple && <span className="codicon codicon-check" />}
                   </span>
                   <span className="question-option-text">
                     <span className="question-option-label">{opt.label}</span>
@@ -189,9 +189,7 @@ function QuestionItem({
                 aria-checked={answer.customChosen}
                 onClick={onChooseCustom}
               >
-                <span className="question-option-marker circle" aria-hidden="true">
-                  {answer.customChosen && "●"}
-                </span>
+                <span className="question-option-marker circle" aria-hidden="true" />
                 <span className="question-option-text">
                   <span className="question-option-label">Other…</span>
                   <span className="question-option-desc">Type your own answer</span>

@@ -71,6 +71,19 @@ describe("QuestionDialog", () => {
     expect(onReply).toHaveBeenCalledWith("q1", [["Solid"]])
   })
 
+  it("draws the radio dot in CSS instead of a text glyph", async () => {
+    render(<QuestionDialog id="q1" questions={[q()]} onReply={() => {}} onReject={() => {}} />)
+    const marker = (name: RegExp) =>
+      screen.getByRole("radio", { name }).querySelector(".question-option-marker")!
+    await userEvent.click(screen.getByRole("radio", { name: /React/ }))
+    // The `●` glyph sat on the font's baseline, so its ink landed off-center
+    // inside the circle; the dot is a `::after` disc now and the marker's own
+    // content stays empty.
+    expect(marker(/React/).textContent).toBe("")
+    await userEvent.click(screen.getByRole("radio", { name: /Other/ }))
+    expect(marker(/Other/).textContent).toBe("")
+  })
+
   it("multi-select toggles options independently", async () => {
     const onReply = vi.fn()
     render(<QuestionDialog id="q1" questions={[q({ multiple: true })]} onReply={onReply} onReject={() => {}} />)
