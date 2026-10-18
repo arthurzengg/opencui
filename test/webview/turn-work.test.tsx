@@ -119,7 +119,22 @@ describe("TurnAssistants master container", () => {
     expect(master.classList.contains("is-open")).toBe(true)
 
     // Inside the expanded body, sub-process steps are visible
-    expect(master.querySelectorAll(".sub-process").length).toBeGreaterThan(0)
+    const subProcesses = master.querySelectorAll(".sub-process")
+    expect(subProcesses.length).toBeGreaterThan(0)
+
+    const firstSub = subProcesses[0] as HTMLElement
+    const firstSubHead = firstSub.querySelector<HTMLButtonElement>(".process-head")!
+
+    // By default for non-pending completed turn, sub-process is closed
+    expect(firstSub.classList.contains("is-open")).toBe(false)
+
+    // User can open it
+    fireEvent.click(firstSubHead)
+    expect(firstSub.classList.contains("is-open")).toBe(true)
+
+    // User can close it
+    fireEvent.click(firstSubHead)
+    expect(firstSub.classList.contains("is-open")).toBe(false)
   })
 
   it("renders pure text replies directly with no turn-work panel", () => {

@@ -1721,7 +1721,7 @@ button:focus-visible {
     margin-top 0.18s ease,
     visibility 0s 0.18s;
 }
-.process.is-open .process-body-clip {
+.process.is-open > .process-body-clip {
   grid-template-rows: 1fr;
   margin-top: 4px;
   visibility: visible;
@@ -1731,7 +1731,7 @@ button:focus-visible {
     margin-top 0.18s ease,
     visibility 0s;
 }
-.sub-process.is-open .process-body-clip {
+.sub-process.is-open > .process-body-clip {
   margin-top: 2px;
 }
 .process-body {
