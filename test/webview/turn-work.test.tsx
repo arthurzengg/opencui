@@ -155,4 +155,54 @@ describe("TurnAssistants master container", () => {
     expect(container.querySelector(".turn-work")).toBeNull()
     expect(screen.getByText("Hello! How can I help?")).toBeInTheDocument()
   })
+
+  it("auto-closes work panel and sub-process when turn finishes (pending -> false)", () => {
+    const assistantsLive: Message[] = [
+      {
+        id: "a-live",
+        role: "assistant",
+        pending: true,
+        blocks: [
+          thoughtBlock("pondering next step..."),
+          toolBlock("c1", "read", "completed", { file: "src/index.ts" }),
+        ],
+      } as Message,
+    ]
+
+    const turn = {
+      key: "turn-live",
+      user: { id: "u3", role: "user", blocks: [textBlock("investigate")] } as Message,
+      assistants: assistantsLive,
+    }
+
+    const { container, rerender } = render(<TurnAssistants turn={turn} busy={true} />)
+
+    const master = container.querySelector(".turn-work")!
+    expect(master).toBeInTheDocument()
+    // Open while pending
+    expect(master.classList.contains("is-open")).toBe(true)
+
+    // Complete the turn
+    const assistantsCompleted: Message[] = [
+      {
+        ...assistantsLive[0],
+        pending: false,
+        time: { created: Date.now() - 2000, completed: Date.now() },
+        blocks: [
+          ...assistantsLive[0].blocks,
+          textBlock("Here is the final answer."),
+        ],
+      } as Message,
+    ]
+
+    rerender(
+      <TurnAssistants
+        turn={{ ...turn, assistants: assistantsCompleted }}
+        busy={false}
+      />,
+    )
+
+    // Should be automatically closed on completion
+    expect(master.classList.contains("is-open")).toBe(false)
+  })
 })

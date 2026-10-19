@@ -605,6 +605,14 @@ function ClusterPanel({
 }) {
   const [open, setOpen] = useState(Boolean(defaultOpen))
   const [everOpened, setEverOpened] = useState(open)
+  const prevPendingRef = useRef(pending)
+
+  useEffect(() => {
+    if (prevPendingRef.current && !pending) {
+      setOpen(false)
+    }
+    prevPendingRef.current = pending
+  }, [pending])
 
   const toggle = () => {
     const next = !open
@@ -643,6 +651,14 @@ function TurnWorkPanel({
   const [open, setOpen] = useState(pending ? true : Boolean(defaultOpen))
   const [everOpened, setEverOpened] = useState(open)
   const [now, setNow] = useState(() => Date.now())
+  const prevPendingRef = useRef(pending)
+
+  useEffect(() => {
+    if (prevPendingRef.current && !pending) {
+      setOpen(false)
+    }
+    prevPendingRef.current = pending
+  }, [pending])
 
   useEffect(() => {
     if (!pending) return
