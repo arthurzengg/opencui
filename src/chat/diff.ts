@@ -240,6 +240,19 @@ export function reviewLineText(line: ReviewDiffLine) {
   return line.text
 }
 
+export type HunkLocation = {
+  start: number
+  end: number
+  /**
+   * Leading whitespace the diff lost and the file still has, set when the hunk
+   * only matched after dedenting both sides. opencode's edit tool strips the
+   * indentation every content line of a diff shares (its `trimDiff`), so a
+   * hunk inside an indented block arrives without it, and `oldText` needs it
+   * back before it is written (`restoreIndent`).
+   */
+  indent?: string
+}
+
 /**
  * Locate where a hunk's `newText` lives in the current file content, returning
  * `{ start, end }` byte offsets into `current` so the caller can replace it
@@ -249,15 +262,18 @@ export function reviewLineText(line: ReviewDiffLine) {
  *   1. Line-number anchor from the hunk header (`+A,B`). Defends against the
  *      repeated-identical-text-block case — every hunk has a distinct line
  *      number, even if the surrounding text is identical.
- *   2. Unique substring match. If `newText` appears exactly once in the file
+ *   2. The same anchor compared with the indentation each side shares removed,
+ *      for a diff that lost its indentation (#713).
+ *   3. Unique substring match. If `newText` appears exactly once in the file
  *      we trust that location. Multiple occurrences = ambiguous → conflict.
+ *   4. Unique dedented run of lines, under the same rule as 3.
  *
  * Returns `undefined` when no safe location can be determined.
  */
 export function findHunkInFile(
   current: string,
   hunk: Pick<ReviewDiffHunk, "newText" | "newStart" | "newCount" | "leadingContext" | "trailingContext">,
-): { start: number; end: number } | undefined {
+): HunkLocation | undefined {
   // Pure-deletion hunks (`+N,0`): per unified-diff convention the anchor is
   // AFTER line N, so the restore point is the start of line N+1 — offset of
   // line index N, not N-1. (N=0, deletion at the very top, yields offset 0.)
@@ -270,12 +286,19 @@ export function findHunkInFile(
 
   // Primary: line-anchored exact match. We try a few variants because opencode
   // and the editor may disagree on trailing-newline normalization.
+  const matchDedented = dedentedMatcher(hunk.newText)
+  let lines: FileLine[] | undefined
   if (hunk.newStart > 0) {
     const startOffset = lineToByteOffset(current, hunk.newStart - 1)
     for (const candidate of newlineCandidates(hunk.newText)) {
       if (current.slice(startOffset, startOffset + candidate.length) === candidate) {
         return { start: startOffset, end: startOffset + candidate.length }
       }
+    }
+    if (matchDedented) {
+      lines = fileLines(current)
+      const located = matchDedented(lines, hunk.newStart - 1)
+      if (located) return located
     }
   }
 
@@ -298,7 +321,86 @@ export function findHunkInFile(
     }
     return { start: first, end: first + candidate.length }
   }
-  return undefined
+  if (!matchDedented) return undefined
+  if (!lines) lines = fileLines(current)
+  let found: HunkLocation | undefined
+  for (let index = 0; index < lines.length; index++) {
+    const located = matchDedented(lines, index)
+    if (!located) continue
+    if (found) return undefined
+    found = located
+  }
+  return found
+}
+
+/**
+ * Put back on each line of `text` the whitespace the diff lost. An empty line
+ * stays empty: trimDiff cut blank lines too, so a line that is empty now may
+ * have been empty or shorter than the cut, and only the empty reading adds no
+ * trailing whitespace.
+ */
+export function restoreIndent(text: string, indent: string | undefined): string {
+  if (!indent) return text
+  return text.split("\n").map((line) => (line === "" ? line : indent + line)).join("\n")
+}
+
+type FileLine = { text: string; start: number; end: number }
+
+/** Lines of `text` with their offsets; `end` excludes the terminator and a CR before it. */
+function fileLines(text: string): FileLine[] {
+  const lines: FileLine[] = []
+  let offset = 0
+  for (;;) {
+    const newline = text.indexOf("\n", offset)
+    const stop = newline < 0 ? text.length : newline
+    const end = stop > offset && text[stop - 1] === "\r" ? stop - 1 : stop
+    lines.push({ text: text.slice(offset, end), start: offset, end })
+    if (newline < 0) return lines
+    offset = newline + 1
+  }
+}
+
+function leadingWhitespace(line: string): string {
+  return line.slice(0, line.length - line.trimStart().length)
+}
+
+/** Strip the indentation the non-blank lines share, as opencode's trimDiff does. */
+function dedent(lines: string[]): string[] {
+  let shared = Infinity
+  for (const line of lines) {
+    if (line.trim() === "") continue
+    shared = Math.min(shared, leadingWhitespace(line).length)
+  }
+  if (!Number.isFinite(shared) || shared === 0) return lines
+  return lines.map((line) => line.slice(shared))
+}
+
+/**
+ * Matcher for `newText` against the run of file lines starting at `index`,
+ * both sides dedented. Undefined when `newText` has no non-blank line: a blank
+ * run cannot tell which indentation it lost.
+ */
+function dedentedMatcher(newText: string) {
+  const wanted = newText.split("\n").map((line) => line.replace(/\r$/, ""))
+  const first = wanted.findIndex((line) => line.trim() !== "")
+  if (first < 0) return undefined
+  const dedented = dedent(wanted)
+  const wantedIndent = leadingWhitespace(wanted[first]!).length
+  return (lines: FileLine[], index: number): HunkLocation | undefined => {
+    if (index < 0 || index + wanted.length > lines.length) return undefined
+    const window = lines.slice(index, index + wanted.length).map((line) => line.text)
+    const windowDedented = dedent(window)
+    for (let i = 0; i < wanted.length; i++) {
+      if (windowDedented[i] !== dedented[i]) return undefined
+    }
+    const lost = leadingWhitespace(window[first]!).length - wantedIndent
+    if (lost < 0) return undefined
+    return {
+      start: lines[index]!.start,
+      end: lines[index + wanted.length - 1]!.end,
+      indent: window[first]!.slice(0, lost),
+    }
+  }
 }
 
 function newlineCandidates(value: string): string[] {
