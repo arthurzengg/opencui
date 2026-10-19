@@ -292,6 +292,7 @@ async function acceptHunk(
   }
   const located = findHunkInFile(text, hunk)
   if (!located) {
+    log(`reviewHunk keep: ${change.path} ${describeMiss(text, hunk)}`)
     return reportConflict(
       change.path,
       `Cannot confirm changes in ${change.path}: the file has been modified since.`,
@@ -458,6 +459,7 @@ async function undoUpdate(
   const current = doc.getText()
   const located = findHunkInFile(current, hunk)
   if (!located) {
+    log(`reviewHunk undo: ${change.path} ${describeMiss(current, hunk)}`)
     return reportConflict(
       change.path,
       `Could not undo a hunk in ${change.path}: the file has changed since the edit was produced.`,
@@ -486,6 +488,16 @@ async function undoUpdate(
   // Reveal the file so the user sees the revert immediately; previous behavior.
   await revealDocument(doc)
   return { status: "applied" }
+}
+
+/**
+ * What a conflict compared, for the Output channel: the toast is generic, and
+ * without this a hunk that never confirms cannot be triaged from a report (#713).
+ */
+function describeMiss(text: string, hunk: ReviewDiffHunk): string {
+  const expected = hunk.newText.split("\n")[0] ?? ""
+  const found = text.split("\n")[hunk.newStart - 1] ?? ""
+  return `${hunk.header} not located; line ${hunk.newStart} expected ${JSON.stringify(expected.slice(0, 120))}, found ${JSON.stringify(found.slice(0, 120))}`
 }
 
 function reportConflict(p: string, reason: string, silent: boolean, tried?: string[]): ReviewHunkOutcome {
