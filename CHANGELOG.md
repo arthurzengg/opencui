@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.16.2] - 2026-10-19
+
+### Fixed
+
+- Keep and Undo in the Review panel failed for any edit made entirely inside an indented block, such as a function body or an R `mutate()` call. opencode strips the indentation that every line of a diff shares before storing it, so the panel could not find the hunk in the file and reported "the file has changed" on every click, with no way to clear the row. The panel now matches such a hunk with the shared indentation removed on both sides, and an Undo writes the indentation back. A Keep or Undo that still cannot locate its hunk now records what it compared in the OpenCode Panel output channel (#713, #715).
+
 ## [1.16.1] - 2026-10-14
 
 ### Fixed
