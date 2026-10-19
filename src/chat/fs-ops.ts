@@ -4,7 +4,7 @@ import * as os from "os"
 import type { ReviewChange, ReviewHunkState } from "../protocol"
 import { stripWorkspaceFolderPrefix } from "./paths"
 import { normalizePath } from "../../webview/src/review-extract"
-import { findHunkInFile, findHunkText, type ReviewDiffHunk } from "./diff"
+import { findHunkInFile, findHunkText, restoreIndent, type ReviewDiffHunk } from "./diff"
 import { log } from "../output"
 
 const SHELL_LANGS = new Set([
@@ -468,7 +468,7 @@ async function undoUpdate(
   // boundary. `hunk.oldText` is newline-JOINED (no trailing separator), so
   // add the one the join dropped: trailing mid-file, leading when appending
   // to a file that doesn't end in a newline.
-  let restored = hunk.oldText
+  let restored = restoreIndent(hunk.oldText, located.indent)
   if (located.start === located.end) {
     if (located.start < current.length) restored = `${restored}\n`
     else if (current.length > 0 && !current.endsWith("\n")) restored = `\n${restored}`

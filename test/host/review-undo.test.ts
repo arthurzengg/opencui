@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   findHunkInFile,
   parseHunkHeader,
+  restoreIndent,
   splitReviewDiff,
 } from "../../src/chat/diff"
 
@@ -261,5 +262,60 @@ describe("splitReviewDiff round-trip with findHunkInFile", () => {
     const reverted =
       afterEdit.slice(0, located!.start) + hunk.oldText + afterEdit.slice(located!.end)
     expect(reverted).toBe(before)
+  })
+})
+
+describe("findHunkInFile: a diff that lost its indentation (#713)", () => {
+  // opencode's edit tool strips the indentation every content line of the
+  // diff shares before storing it, so a hunk inside an indented block arrives
+  // without it and used to be unlocatable: Keep and Undo both reported the
+  // file as changed, forever.
+  const before = [
+    "f <- function(df) {",
+    "  a <- 1",
+    "  res <- df |>",
+    "    filter(a > 1)",
+    "",
+    "  res",
+    "}",
+  ].join("\n")
+  const after = before.replace("|>", "%>%")
+  const patch = [
+    "@@ -2,5 +2,5 @@",
+    " a <- 1",
+    "-res <- df |>",
+    "+res <- df %>%",
+    "   filter(a > 1)",
+    " ",
+    " res",
+  ].join("\n")
+  const block = "  a <- 1\n  res <- df %>%\n    filter(a > 1)\n\n  res"
+
+  it("locates the hunk at its anchor, reports the lost indentation, and Undo writes it back", () => {
+    const hunk = splitReviewDiff(patch).hunks[0]!
+    const located = findHunkInFile(after, hunk)
+    expect(located).toBeDefined()
+    expect(after.slice(located!.start, located!.end)).toBe(block)
+    expect(located!.indent).toBe("  ")
+    const reverted =
+      after.slice(0, located!.start) + restoreIndent(hunk.oldText, located!.indent) + after.slice(located!.end)
+    expect(reverted).toBe(before)
+  })
+
+  it("matches a CRLF file the same way", () => {
+    const hunk = splitReviewDiff(patch).hunks[0]!
+    const crlf = after.replace(/\n/g, "\r\n")
+    const located = findHunkInFile(crlf, hunk)
+    expect(located).toBeDefined()
+    expect(crlf.slice(located!.start, located!.end)).toBe(block.replace(/\n/g, "\r\n"))
+    expect(located!.indent).toBe("  ")
+  })
+
+  it("falls back to a unique dedented block when the anchor is off, and refuses an ambiguous one", () => {
+    const hunk = { ...splitReviewDiff(patch).hunks[0]!, newStart: 1 }
+    const located = findHunkInFile(after, hunk)
+    expect(located).toBeDefined()
+    expect(after.slice(located!.start, located!.end)).toBe(block)
+    expect(findHunkInFile(`${after}\n${after}`, hunk)).toBeUndefined()
   })
 })
