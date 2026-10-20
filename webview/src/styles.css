@@ -183,6 +183,9 @@ button:focus-visible {
    places it directly. */
 .status-indicator-dot {
   display: inline-block;
+  /* No shrink: in a deficit the bar would take width off the dot and the
+     pill radius would draw an ellipse, as it once did to .new-chat-trigger. */
+  flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: var(--radius-pill);

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { describe, it, expect, afterEach } from "vitest"
 import { render, cleanup } from "@testing-library/react"
 import { StatusIndicator } from "../../webview/src/components/StatusIndicator"
@@ -36,5 +38,13 @@ describe("StatusIndicator", () => {
     const { container } = render(<StatusIndicator kind="err" title="error · boom" />)
     const dot = container.querySelector(".status-indicator-dot")
     expect(dot?.getAttribute("title")).toBe("error · boom")
+  })
+
+  it("never shrinks in the header's flex row: a squeezed dot renders as an ellipse (#717)", () => {
+    const css = readFileSync(path.resolve(__dirname, "../../webview/src/styles.css"), "utf8")
+    const start = css.indexOf("\n.status-indicator-dot {")
+    expect(start).toBeGreaterThan(-1)
+    const body = css.slice(start, css.indexOf("\n}", start))
+    expect(body).toMatch(/flex:\s*0 0 auto/)
   })
 })
