@@ -27,7 +27,7 @@ describe("collapsed panels are excluded from selection copy (#575)", () => {
   })
 
   it("open process bodies reveal instantly", () => {
-    const open = ruleBody(".process.is-open .process-body-clip")
+    const open = ruleBody(".process.is-open > .process-body-clip")
     expect(open).toMatch(/visibility:\s*visible/)
     expect(open).toMatch(/visibility 0s(?!\s+0)/)
   })

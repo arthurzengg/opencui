@@ -739,6 +739,40 @@ describe("SubagentTracker.registerChildSession", () => {
     expect(task!.title).toBe("Subagent")
   })
 
+  it("takes the agent slug from the session's own `agent` field", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.registerChildSession({
+      id: "ses_child_agent",
+      parentID: "ses_parent",
+      title: "Anything",
+      agent: "explorer",
+    })
+    const task = store.get(subagentTaskIDByChildSession("ses_child_agent"))
+    expect(task!.subagent).toBe("explorer")
+  })
+
+  it("falls back to the title's `(@<agent> subagent)` when the session omits `agent`", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.registerChildSession({
+      id: "ses_child_title_agent",
+      parentID: "ses_parent",
+      title: "Find the auth flow (@librarian subagent)",
+    })
+    const task = store.get(subagentTaskIDByChildSession("ses_child_title_agent"))
+    expect(task!.subagent).toBe("librarian")
+  })
+
+  it("leaves the slug undefined when neither the agent field nor the title carries it", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.registerChildSession({
+      id: "ses_child_no_agent",
+      parentID: "ses_parent",
+      title: "Plain title",
+    })
+    const task = store.get(subagentTaskIDByChildSession("ses_child_no_agent"))
+    expect(task!.subagent).toBeUndefined()
+  })
+
   it("ignores discoveries with a parent that isn't ours", async () => {
     const { tracker, store } = setupTracker({ sessionID: "ses_parent" })
     await tracker.registerChildSession({ id: "ses_orphan", parentID: "ses_someone_else" })
@@ -929,5 +963,59 @@ describe("SubagentTracker tool name gate", () => {
     for (const tool of ["read", "edit", "tasks", "background_output", "background_cancel"]) {
       expect(SubagentTracker.isSubagentDispatchTool(tool)).toBe(false)
     }
+  })
+})
+
+describe("SubagentTracker toolCount and heartbeat", () => {
+  it("increments toolCount on toolStart child events", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c1",
+        tool: "task",
+        status: "running",
+        metadata: { sessionId: "ses_child_tc" },
+      }),
+      "msg1",
+    )
+    const taskID = subagentTaskIDByChildSession("ses_child_tc")
+    expect(store.get(taskID)?.toolCount).toBeUndefined()
+
+    await tracker.handleChildSessionEvent({
+      type: "toolStart",
+      sessionID: "ses_child_tc",
+      tool: "bash",
+    })
+    expect(store.get(taskID)?.toolCount).toBe(1)
+
+    await tracker.handleChildSessionEvent({
+      type: "toolStart",
+      sessionID: "ses_child_tc",
+      tool: "read",
+    })
+    expect(store.get(taskID)?.toolCount).toBe(2)
+  })
+
+  it("refreshes updatedAt on busy if more than 15s elapsed", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.handleToolUpdate(
+      makeUpdate({
+        callID: "c1",
+        tool: "task",
+        status: "running",
+        metadata: { sessionId: "ses_child_hb" },
+      }),
+      "msg1",
+    )
+    const taskID = subagentTaskIDByChildSession("ses_child_hb")
+    const oldTime = Date.now() - 20_000
+    store.touch(taskID, oldTime)
+    expect(store.get(taskID)?.updatedAt).toBe(oldTime)
+
+    await tracker.handleChildSessionEvent({
+      type: "busy",
+      sessionID: "ses_child_hb",
+    })
+    expect(store.get(taskID)!.updatedAt).toBeGreaterThan(oldTime)
   })
 })

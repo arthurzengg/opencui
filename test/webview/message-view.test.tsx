@@ -507,6 +507,61 @@ describe("MessageView (assistant role)", () => {
     expect(container.querySelector(".process-text h2")?.textContent).toBe("Sub-Heading")
     expect(container.querySelectorAll(".process-text li").length).toBe(2)
   })
+
+  it("opens process panel when pending and auto-collapses when finished", () => {
+    const liveMsg = {
+      id: "a-live",
+      role: "assistant",
+      pending: true,
+      blocks: [
+        { type: "tool", update: { callID: "c1", tool: "read", status: "running", input: { filePath: "src/a.ts" } } },
+      ],
+    } as Message
+
+    const { container, rerender } = render(
+      <MessageView message={liveMsg} processOpen={true} processOnly={false} />,
+    )
+    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(true)
+
+    // When the turn finishes and pending becomes false:
+    const finishedMsg = {
+      ...liveMsg,
+      pending: false,
+      blocks: [
+        ...liveMsg.blocks,
+        { type: "text", text: "Here is the result." },
+      ],
+    } as Message
+
+    rerender(<MessageView message={finishedMsg} processOpen={false} processOnly={false} />)
+    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
+  })
+
+  it("allows user to toggle open and closed cleanly", () => {
+    const liveMsg = {
+      id: "a-live-toggle",
+      role: "assistant",
+      pending: false,
+      blocks: [
+        { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "src/a.ts" } } },
+        { type: "text", text: "Finished." },
+      ],
+    } as Message
+
+    const { container } = render(
+      <MessageView message={liveMsg} processOpen={false} processOnly={false} />,
+    )
+    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
+
+    // User clicks toggle to open
+    const toggleBtn = container.querySelector<HTMLButtonElement>(".process-head")!
+    fireEvent.click(toggleBtn)
+    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(true)
+
+    // User clicks toggle again to close
+    fireEvent.click(toggleBtn)
+    expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
+  })
 })
 
 describe("MessageView edit preserves mentions + attachments", () => {

@@ -147,6 +147,12 @@ export type ChildSessionInfo = {
   id: string
   parentID: string
   title?: string
+  /**
+   * Agent slug opencode stamped on the child session at creation
+   * (`task`/`subagent` tool sets `agent: <name>`). Absent when a host
+   * omits it; callers fall back to the title's `(@<agent> subagent)`.
+   */
+  agent?: string
 }
 
 /**
@@ -190,6 +196,14 @@ export type ChildSessionEvent =
       files: string[]
       diff?: string
     }
+  | { type: "text"; sessionID: string; text: string }
+  | { type: "toolStart"; sessionID: string; tool: string; input?: string }
+
+/**
+ * Cap for `toolStart.input` and `toolResult.output` stringified fields on
+ * the activity stream wire. Matches the compact transcript's per-field cap.
+ */
+export const ACTIVITY_STREAM_FIELD_MAX = 512
 
 export type Subscription = {
   ready: Promise<void>
@@ -394,6 +408,7 @@ export function subscribeSession(
           id: info.id,
           parentID: info.parentID,
           title: typeof info.title === "string" ? info.title : undefined,
+          agent: typeof info.agent === "string" ? info.agent : undefined,
         })
       }
     }
@@ -590,6 +605,13 @@ export function subscribeSession(
                 error: part.state.error,
               },
             })
+          } else if (status === "running" || status === "pending") {
+            childCb({
+              type: "toolStart",
+              sessionID: childSid,
+              tool: part.tool,
+              input: formatActivityInput(part.state?.input),
+            })
           }
           return
         }
@@ -606,6 +628,9 @@ export function subscribeSession(
       }
       case "message.part.delta":
         childCb({ type: "busy", sessionID: childSid })
+        if (props?.field === "text" && typeof props.delta === "string") {
+          childCb({ type: "text", sessionID: childSid, text: props.delta })
+        }
         return
       case "session.updated":
       case "session.created":
@@ -627,6 +652,14 @@ export function subscribeSession(
     if (type === "message.updated") return props?.info?.sessionID
     if (type === "message.part.updated") return props?.part?.sessionID
     return props?.sessionID
+  }
+
+  function formatActivityInput(input: unknown): string | undefined {
+    if (input === undefined) return undefined
+    const text = typeof input === "string" ? input : JSON.stringify(input)
+    return text.length > ACTIVITY_STREAM_FIELD_MAX
+      ? text.slice(0, ACTIVITY_STREAM_FIELD_MAX)
+      : text
   }
 
   /**
@@ -856,8 +889,10 @@ export function subscribeSession(
     // live subscription mid-turn.
     if (p.field !== "text" || typeof p.delta !== "string") return
     // A part whose creation event this subscription never saw (it started
-    // before a reload) can only be assumed to be answer text.
-    emitDelta(messageID, partKinds.get(partID) ?? "text", p.delta)
+    // before a reload) can only be assumed to be answer text unless its id
+    // encodes reasoning.
+    const kind = partKinds.get(partID) ?? (partID.includes(":reasoning:") ? "reasoning" : "text")
+    emitDelta(messageID, kind, p.delta)
     seenLen.set(partID, (seenLen.get(partID) ?? 0) + p.delta.length)
   }
 

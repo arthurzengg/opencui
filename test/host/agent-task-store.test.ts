@@ -143,6 +143,18 @@ describe("AgentTaskStore", () => {
     expect(persisted?.[0]?.updatedAt).toBe(1000)
   })
 
+  it("touch updates in-memory updatedAt and emits onDidChange without persisting", async () => {
+    const store = new AgentTaskStore(memento)
+    await store.upsert(fixedTask({ updatedAt: 1000 }))
+    let fires = 0
+    store.onDidChange(() => (fires += 1))
+    store.touch("main:conv:sess", 2000)
+    expect(fires).toBe(1)
+    expect(store.get("main:conv:sess")!.updatedAt).toBe(2000)
+    const persisted = memento.get<AgentTask[]>(AGENT_TASKS_KEY)
+    expect(persisted?.[0]?.updatedAt).toBe(1000)
+  })
+
   it("upsert preserves startedAt across mutations", async () => {
     const store = new AgentTaskStore(memento)
     await store.upsert(fixedTask({ startedAt: 1000, updatedAt: 1000 }))

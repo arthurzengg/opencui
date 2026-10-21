@@ -145,14 +145,14 @@ describe("subscribeSession over opencode 2.0 (#684)", () => {
 
   it("discovers a subagent from a 2.0 session created under the parent", async () => {
     const backend = { url: server.url, api: createV2Api({ url: server.url, directory: "/ws", password: server.password }), directory: "/ws" } as Backend
-    const discovered: Array<{ id: string; parentID?: string; title?: string }> = []
+    const discovered: Array<{ id: string; parentID?: string; title?: string; agent?: string }> = []
     const subscription = subscribeSession(backend, S, { onTextDelta: () => {}, onChildSessionDiscovered: (info) => discovered.push(info) }, { watchdogMs: 10_000 })
     await subscription.ready
     await server.awaitClient()
-    push("session.created", { sessionID: "ses_child", projectID: "p", location: { directory: "/ws" }, parentID: S, slug: "worker", title: "Worker", version: "2" })
+    push("session.created", { sessionID: "ses_child", projectID: "p", location: { directory: "/ws" }, parentID: S, slug: "worker", title: "Worker", agent: "explorer", version: "2" })
     push("session.created", { sessionID: "ses_unrelated", projectID: "p", location: { directory: "/ws" }, slug: "other", version: "2" })
     await until(() => discovered.length === 1)
-    expect(discovered[0]).toEqual({ id: "ses_child", parentID: S, title: "Worker" })
+    expect(discovered[0]).toEqual({ id: "ses_child", parentID: S, title: "Worker", agent: "explorer" })
     subscription.abort()
   })
 
