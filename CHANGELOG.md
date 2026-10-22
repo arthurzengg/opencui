@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.16.3] - 2026-10-21
+
+### Fixed
+
+- The status dot in the chat header was squeezed into an ellipse when the sidebar narrowed. The dot had no flex rule, so it gave up width with the rest of the header from the first pixel of deficit. It now keeps its 8px width and the model selector absorbs the deficit alone (#717, #718).
+
 ## [1.16.2] - 2026-10-19
 
 ### Fixed
