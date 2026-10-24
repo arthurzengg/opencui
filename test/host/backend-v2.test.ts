@@ -30,7 +30,7 @@ const api = (password = server.password) => createV2Api({ url: server.url, direc
 describe("opencode 2.0 adapter (#693)", () => {
   it("authenticates with the start password and reports the version as health", async () => {
     const res = await api().health()
-    expect(res.data).toEqual({ healthy: true, version: "2.0.24" })
+    expect(res.data).toEqual({ healthy: true, version: "2.1.4" })
     expect(res.status).toBe(200)
   })
 

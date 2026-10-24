@@ -66,6 +66,10 @@ describe("opencode 2.0 event translator (#684)", () => {
       { type: "session.error", properties: { sessionID: S, error: { name: "ProviderError", data: { message: "boom" } } } },
       { type: "session.idle", properties: { sessionID: S } },
     ])
+    // 2.1 reports the provider's retry timing on quota and rate-limit failures.
+    expect(t(ev("session.execution.failed", { sessionID: S, error: { type: "RateLimitError", message: "Rate limited.", retryAfterMs: 42_500 } }))[0]!.properties).toMatchObject({
+      error: { data: { message: "Rate limited. Retry after 43s." } },
+    })
     expect(t(ev("session.execution.interrupted", { sessionID: S, reason: "user" }))).toEqual([{ type: "session.idle", properties: { sessionID: S } }])
     t(ev("session.step.started", { sessionID: S, assistantMessageID: M, agent: "build", model, started: 1 }))
     const interrupted = t(ev("session.execution.interrupted", { sessionID: S, reason: "user" }))

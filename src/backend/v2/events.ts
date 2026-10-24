@@ -16,6 +16,18 @@ type Data<T extends OpenCodeEvent["type"]> = Extract<OpenCodeEvent, { type: T }>
  * the little state that bridging needs: the name and input of each tool
  * call, and the assistant message each session is currently writing.
  */
+/**
+ * 2.1 attaches the provider's retry timing to quota and rate-limit failures.
+ * 1.x has no field for it, so it rides in the message the toast and the
+ * bubble already show.
+ */
+function withRetryDelay(message: string, retryAfterMs: number | undefined): string {
+  if (typeof retryAfterMs !== "number" || !(retryAfterMs > 0)) return message
+  const seconds = Math.ceil(retryAfterMs / 1000)
+  const delay = seconds < 120 ? `${seconds}s` : `${Math.ceil(seconds / 60)}m`
+  return `${message} Retry after ${delay}.`
+}
+
 export function createEventTranslator() {
   const tools = new Map<string, { name: string; messageID: string; input: Record<string, unknown>; start: number }>()
   const writing = new Map<string, string>()
@@ -185,7 +197,7 @@ export function createEventTranslator() {
       case "session.execution.failed": {
         const d = event.data as Data<"session.execution.failed">
         return [
-          { type: "session.error", properties: { sessionID: d.sessionID, error: { name: d.error.type, data: { message: d.error.message } } } },
+          { type: "session.error", properties: { sessionID: d.sessionID, error: { name: d.error.type, data: { message: withRetryDelay(d.error.message, d.error.retryAfterMs) } } } },
           ...idle(d.sessionID),
         ]
       }
