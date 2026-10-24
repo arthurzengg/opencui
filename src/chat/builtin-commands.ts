@@ -1,5 +1,5 @@
 /**
- * opencode's built-in commands (`/compact`, `/share`, …) are NOT returned by
+ * opencode's built-in commands (`/compact`, `/undo`, …) are NOT returned by
  * `command.list` — that endpoint only lists user-defined custom commands (the
  * `.opencode/command/*.md` templates). The built-ins live in opencode's TUI
  * layer and map to dedicated session endpoints. We surface a useful subset in
@@ -19,8 +19,6 @@ import type { CommandInfo } from "../protocol"
 export const BUILTIN_COMMANDS: ReadonlyArray<CommandInfo> = [
   { name: "compact", description: "Summarize and compact the session", takesArguments: false },
   { name: "init", description: "Analyze the codebase and write AGENTS.md", takesArguments: false },
-  { name: "share", description: "Create a shareable link for this session", takesArguments: false },
-  { name: "unshare", description: "Disable sharing for this session", takesArguments: false },
   // allowedWhileBusy: /mcp and /provider only open native pickers, and /new
   // takes the same path as the + New chat button (not busy-gated) — none of
   // them touch the running session turn, so the composer's busy block that

@@ -29,7 +29,6 @@ export const CATALOG = {
 export const COMMANDS = [
   { name: "compact", description: "Summarize the session to free context", takesArguments: false },
   { name: "init", description: "Create or update AGENTS.md for this project", takesArguments: false },
-  { name: "share", description: "Create a shareable link for this session", takesArguments: false },
   { name: "undo", description: "Revert the last turn and its file changes", takesArguments: false },
   { name: "redo", description: "Restore the turn that /undo reverted", takesArguments: false },
   { name: "fork", description: "Branch a new session from this point", takesArguments: false },

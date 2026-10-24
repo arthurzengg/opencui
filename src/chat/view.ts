@@ -184,8 +184,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   private subagentDispatch: SubagentDispatch
   /**
    * Implementations of the backend-bound built-in slash commands
-   * (`/compact`, `/init`, `/share`, `/unshare`, `/undo`, `/redo`,
-   * `/fork`). See {@link BuiltinRunners}.
+   * (`/compact`, `/init`, `/undo`, `/redo`, `/fork`). See {@link BuiltinRunners}.
    */
   private builtinRunners: BuiltinRunners
   /**
@@ -1301,7 +1300,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         takesArguments: c.template === undefined || /\$ARGUMENTS\b/.test(c.template),
       }))
       this.customCommandNames = new Set(custom.map((c) => c.name))
-      // Merge opencode's built-ins (/compact, /share, …); a custom command of
+      // Merge opencode's built-ins (/compact, /undo, …); a custom command of
       // the same name wins and is dispatched through session.command instead.
       this.post({ type: "commands", commands: withBuiltinCommands(custom) })
     } catch (e) {
@@ -1987,7 +1986,7 @@ export class ChatView implements vscode.WebviewViewProvider {
    * substitutions) and runs the turn. The existing SSE subscription renders it.
    */
   private async handleRunCommand(command: string, args: string) {
-    // A built-in (/compact, /share, …) maps to a dedicated session endpoint,
+    // A built-in (/compact, /undo, …) maps to a dedicated session endpoint,
     // not session.command — unless a custom command of the same name shadows it.
     if (!this.customCommandNames.has(command) && BUILTIN_COMMAND_NAMES.has(command)) {
       await this.handleBuiltinCommand(command)
@@ -2069,8 +2068,7 @@ export class ChatView implements vscode.WebviewViewProvider {
   /**
    * Dispatch an opencode built-in command to its dedicated session endpoint.
    * `/compact` and `/init` run a server-side turn (rendered via the existing
-   * SSE subscription); `/share` and `/unshare` are one-shot actions surfaced
-   * through a VS Code notification.
+   * SSE subscription).
    */
   private async handleBuiltinCommand(command: string) {
     // `/mcp` opens the native MCP management picker — it is NOT a session turn,

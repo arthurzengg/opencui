@@ -250,11 +250,4 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(server.requests.at(-1)).toMatchObject({ method: "GET", path: "/api/integration/p-int/connect/oauth/att_1" })
     expect(String((await a.provider.oauth.authorize("p", { method: 0 })).error)).toContain("not OAuth")
   })
-
-  it("answers the operations the later steps own with a failure, not a hang", async () => {
-    const res = await api().session.share("ses_root")
-    expect(res.data).toBeUndefined()
-    expect(res.status).toBe(501)
-    expect(String((res.error as Error).message)).toContain("not available on opencode 2.0 yet")
-  })
 })
