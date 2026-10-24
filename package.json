@@ -239,7 +239,7 @@
   },
   "dependencies": {
     "@opencode-ai/sdk": "^1.18.30",
-    "@opencode/client": "2.0.24"
+    "@opencode/client": "2.1.4"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",

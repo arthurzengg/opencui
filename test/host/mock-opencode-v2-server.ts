@@ -5,7 +5,7 @@ import type { AgentInfo, CommandInfo, CredentialEntry, IntegrationAttemptStatus,
  * The slice of an opencode 2.0 server the adapter reads (#693): Basic auth
  * with the password the server was started with, the info route, session
  * and message listing, the catalogs, and the SSE event feed. Routes and
- * query shapes were recorded from @opencode/client 2.0.24.
+ * query shapes were recorded from @opencode/client 2.0.24 and hold on 2.1.4.
  */
 export type MockOpencodeV2 = {
   url: string
@@ -100,7 +100,7 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     const location = { directory: query["location[directory]"] ?? "" }
     const path = url.pathname
 
-    if (path === "/api/info") return json(res, 200, { version: "2.0.24", pid: process.pid, urls: [], paths: { tmp: "/tmp" } })
+    if (path === "/api/info") return json(res, 200, { version: "2.1.4", pid: process.pid, urls: [], paths: { tmp: "/tmp" } })
     if (path === "/api/event") {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
       res.write(`data: ${JSON.stringify({ id: "evt_0", created: Date.now(), type: "server.connected", data: {} })}\n\n`)
