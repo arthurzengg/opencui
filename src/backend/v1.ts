@@ -41,8 +41,6 @@ export function createV1Api(url: string, directory: string): BackendApi {
       revert: (id, body) => call(client.session.revert({ path: { id }, query, body })),
       unrevert: (id) => call(client.session.unrevert({ path: { id }, query })),
       summarize: (id, body) => call(client.session.summarize({ path: { id }, query, body })),
-      share: (id) => call(client.session.share({ path: { id }, query })),
-      unshare: (id) => call(client.session.unshare({ path: { id }, query })),
       init: (id, body) => call(client.session.init({ path: { id }, query, body })),
       fork: (id, body) => call(client.session.fork({ path: { id }, query, body })),
     },

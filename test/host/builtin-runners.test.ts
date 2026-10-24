@@ -229,67 +229,6 @@ describe("BuiltinRunners: /init", () => {
   })
 })
 
-describe("BuiltinRunners: /share", () => {
-  it("shows a notice without a session", async () => {
-    const { runners } = makeHarness({ sessionID: undefined })
-    const share = vi.fn()
-    await runners.run("share", makeBackend({ share }))
-    expect(win.showInformationMessage).toHaveBeenCalledWith("Start a conversation before sharing.")
-    expect(share).not.toHaveBeenCalled()
-  })
-
-  it("offers the share link and copies it when the user picks Copy Link", async () => {
-    const { runners } = makeHarness()
-    const share = vi.fn().mockResolvedValue({ data: { share: { url: "https://opncd.ai/s/abc" } } })
-    win.showInformationMessage.mockResolvedValueOnce("Copy Link")
-    await runners.run("share", makeBackend({ share }))
-    expect(win.showInformationMessage).toHaveBeenCalledWith(
-      "Session shared: https://opncd.ai/s/abc",
-      "Copy Link",
-    )
-    expect(writeText).toHaveBeenCalledWith("https://opncd.ai/s/abc")
-  })
-
-  it("confirms plainly when the server returns no url", async () => {
-    const { runners } = makeHarness()
-    const share = vi.fn().mockResolvedValue({ data: {} })
-    await runners.run("share", makeBackend({ share }))
-    expect(win.showInformationMessage).toHaveBeenCalledWith("Session shared.")
-    expect(writeText).not.toHaveBeenCalled()
-  })
-
-  it("shows an error when the share call fails", async () => {
-    const { runners } = makeHarness()
-    const share = vi.fn().mockResolvedValue({ error: "nope" })
-    await runners.run("share", makeBackend({ share }))
-    expect(win.showErrorMessage).toHaveBeenCalledWith("Failed to share session.")
-  })
-})
-
-describe("BuiltinRunners: /unshare", () => {
-  it("returns silently without a session", async () => {
-    const { runners } = makeHarness({ sessionID: undefined })
-    const unshare = vi.fn()
-    await runners.run("unshare", makeBackend({ unshare }))
-    expect(unshare).not.toHaveBeenCalled()
-    expect(win.showInformationMessage).not.toHaveBeenCalled()
-  })
-
-  it("confirms when sharing is disabled", async () => {
-    const { runners } = makeHarness()
-    const unshare = vi.fn().mockResolvedValue({ data: {} })
-    await runners.run("unshare", makeBackend({ unshare }))
-    expect(win.showInformationMessage).toHaveBeenCalledWith("Session sharing disabled.")
-  })
-
-  it("shows an error when the call fails", async () => {
-    const { runners } = makeHarness()
-    const unshare = vi.fn().mockResolvedValue({ error: "nope" })
-    await runners.run("unshare", makeBackend({ unshare }))
-    expect(win.showErrorMessage).toHaveBeenCalledWith("Failed to disable sharing.")
-  })
-})
-
 describe("BuiltinRunners: /undo", () => {
   it("shows a notice when no settled user turn exists", async () => {
     const { runners } = makeHarness({ messages: [user("u1", "hello")] })

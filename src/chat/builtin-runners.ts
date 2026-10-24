@@ -45,9 +45,8 @@ export type BuiltinRunnerDeps = {
 /**
  * Implementations of the opencode built-in slash commands that run against
  * a backend session endpoint. `/compact` and `/init` run a server-side turn
- * (rendered via the existing SSE subscription); `/share` and `/unshare` are
- * one-shot actions surfaced through a VS Code notification; `/undo`, `/redo`
- * and `/fork` mutate local conversation state around a server revert/fork.
+ * (rendered via the existing SSE subscription); `/undo`, `/redo` and `/fork`
+ * mutate local conversation state around a server revert/fork.
  *
  * ChatView handles `/mcp`, `/provider` and `/new` itself (they are not
  * session turns and must not ensure a backend), then delegates here.
@@ -61,10 +60,6 @@ export class BuiltinRunners {
         return this.runCompact(backend)
       case "init":
         return this.runInit(backend)
-      case "share":
-        return this.runShare(backend)
-      case "unshare":
-        return this.runUnshare(backend)
       case "undo":
         return this.runUndo(backend)
       case "redo":
@@ -137,47 +132,6 @@ export class BuiltinRunners {
     } catch (e) {
       log("init threw", e)
       this.deps.failTurn((e as Error).message || "Could not reach the opencode server.")
-    }
-  }
-
-  private async runShare(backend: Backend) {
-    const sessionID = this.deps.getSessionID()
-    if (!sessionID) {
-      void vscode.window.showInformationMessage("Start a conversation before sharing.")
-      return
-    }
-    try {
-      const res = await backend.api.session.share(sessionID)
-      if (res.error || !res.data) {
-        log("share failed", res.error)
-        void vscode.window.showErrorMessage("Failed to share session.")
-        return
-      }
-      const url = res.data.share?.url
-      if (!url) {
-        void vscode.window.showInformationMessage("Session shared.")
-        return
-      }
-      const pick = await vscode.window.showInformationMessage(`Session shared: ${url}`, "Copy Link")
-      if (pick === "Copy Link") await vscode.env.clipboard.writeText(url)
-    } catch (e) {
-      log("share threw", e)
-    }
-  }
-
-  private async runUnshare(backend: Backend) {
-    const sessionID = this.deps.getSessionID()
-    if (!sessionID) return
-    try {
-      const res = await backend.api.session.unshare(sessionID)
-      if (res.error) {
-        log("unshare failed", res.error)
-        void vscode.window.showErrorMessage("Failed to disable sharing.")
-        return
-      }
-      void vscode.window.showInformationMessage("Session sharing disabled.")
-    } catch (e) {
-      log("unshare threw", e)
     }
   }
 

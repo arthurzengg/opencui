@@ -31,7 +31,7 @@ describe("withBuiltinCommands", () => {
 
   it("exposes the built-in names as a set for routing", () => {
     expect(BUILTIN_COMMAND_NAMES.has("compact")).toBe(true)
-    expect(BUILTIN_COMMAND_NAMES.has("share")).toBe(true)
+    expect(BUILTIN_COMMAND_NAMES.has("undo")).toBe(true)
     expect(BUILTIN_COMMAND_NAMES.has("nope")).toBe(false)
   })
 

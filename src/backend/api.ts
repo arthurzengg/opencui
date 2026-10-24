@@ -33,12 +33,10 @@ import type {
   SessionPromptResponses,
   SessionRevertData,
   SessionRevertResponses,
-  SessionShareResponses,
   SessionStatusResponses,
   SessionSummarizeData,
   SessionSummarizeResponses,
   SessionUnrevertResponses,
-  SessionUnshareResponses,
   SessionUpdateData,
   SessionUpdateResponses,
 } from "@opencode-ai/sdk"
@@ -102,8 +100,6 @@ export interface BackendApi {
     revert(id: string, body: BodyOf<SessionRevertData>): Promise<ApiResult<DataOf<SessionRevertResponses>>>
     unrevert(id: string): Promise<ApiResult<DataOf<SessionUnrevertResponses>>>
     summarize(id: string, body?: BodyOf<SessionSummarizeData>): Promise<ApiResult<DataOf<SessionSummarizeResponses>>>
-    share(id: string): Promise<ApiResult<DataOf<SessionShareResponses>>>
-    unshare(id: string): Promise<ApiResult<DataOf<SessionUnshareResponses>>>
     init(id: string, body: BodyOf<SessionInitData>): Promise<ApiResult<DataOf<SessionInitResponses>>>
     fork(id: string, body: BodyOf<SessionForkData>): Promise<ApiResult<DataOf<SessionForkResponses>>>
   }

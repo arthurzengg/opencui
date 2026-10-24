@@ -24,11 +24,6 @@ async function call<T>(run: () => Promise<T>): Promise<ApiResult<T>> {
   }
 }
 
-/** What 2.0.24 has no route for; the caller sees a failure, not a hang. */
-function unavailable<T>(operation: string): Promise<ApiResult<T>> {
-  return Promise.resolve({ error: new Error(`${operation} is not available on opencode 2.0 yet (#684)`), status: 501 })
-}
-
 /**
  * opencode 2.0 (#684). The server wants HTTP Basic auth with the password
  * it was started with, and scopes requests by a location rather than a
@@ -215,8 +210,6 @@ export function createV2Api(options: { url: string; directory: string; password:
           return mapSession(await client.session.get({ sessionID: id }), directory)
         }),
       summarize: (id) => call(async () => (await client.session.compact({ sessionID: id }), true as const)),
-      share: () => unavailable("sharing a session"),
-      unshare: () => unavailable("sharing a session"),
       // 2.0 keeps /init as a built-in command rather than a route of its own.
       init: (id) => call(async () => (await client.session.command({ sessionID: id, name: "init", text: "" }), true as const)),
       fork: (id, body) => call(async () => mapSession(await client.session.fork({ sessionID: id, before: body.messageID }), directory)),
