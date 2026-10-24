@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-10-24
+
+### Added
+
+- On opencode 2.1 and later, a turn that fails on a quota or rate limit ends its error with the provider's retry delay, such as "Retry after 43s." (#723, #724).
+
+### Changed
+
+- The opencode 2.x client is now 2.1.4. The adapter reads none of the fields 2.1.0 renamed, and it was verified against 2.1.4 and 2.0.24 servers (#723, #724).
+
+### Removed
+
+- The `/share` and `/unshare` commands. opencode discontinued session sharing in 1.19.1 and removed it from the 2.x line, so the commands could only fail (#721, #722).
+
 ## [1.16.3] - 2026-10-21
 
 ### Fixed
