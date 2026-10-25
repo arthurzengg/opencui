@@ -91,6 +91,7 @@ export class SubagentTracker {
   private readonly getConversationID: () => string
   private readonly getParentSessionID: () => string | undefined
   private readonly dispatches = new Map<string, DispatchState>()
+  private readonly childToolCalls = new Map<string, Set<string>>()
   /**
    * Child sessions re-activated by a task_id-reuse resume. Their store rows
    * are already terminal and the terminal-state guard (correctly) refuses to
@@ -307,6 +308,13 @@ export class SubagentTracker {
         await this.store.update(taskID, { status: "running", updatedAt: now })
         return
       case "toolStart": {
+        let seen = this.childToolCalls.get(taskID)
+        if (!seen) {
+          seen = new Set()
+          this.childToolCalls.set(taskID, seen)
+        }
+        if (seen.has(event.callID)) return
+        seen.add(event.callID)
         const nextCount = (existing.toolCount ?? 0) + 1
         await this.store.update(taskID, { toolCount: nextCount, updatedAt: now })
         return
@@ -529,6 +537,7 @@ export class SubagentTracker {
   reset(): void {
     this.dispatches.clear()
     this.resumedActive.clear()
+    this.childToolCalls.clear()
   }
 
   /**
@@ -629,6 +638,7 @@ export class SubagentTracker {
     for (const [callID, state] of this.dispatches) {
       if (state.taskID === taskID) this.dispatches.delete(callID)
     }
+    this.childToolCalls.delete(taskID)
   }
 }
 

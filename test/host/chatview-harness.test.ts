@@ -1347,6 +1347,42 @@ describe("ChatView harness: agentActivityStream", () => {
     expect(busy).toHaveLength(1)
     expect(streams.filter((m) => m.event.kind === "text")).toHaveLength(2)
   })
+
+  it("dedups repeated toolStart for the same callID in live activity stream", async () => {
+    await seedSubscription()
+    const pushTool = (status: "pending" | "running") =>
+      server.push({
+        type: "message.part.updated",
+        part: {
+          id: "p_tool_1",
+          sessionID: childSessionID,
+          messageID: "msg_child",
+          type: "tool",
+          callID: "call_tool_1",
+          tool: "bash",
+          state: {
+            status,
+            input: { command: "ls" },
+          },
+        },
+      })
+
+    pushTool("pending")
+    pushTool("running")
+    pushTool("running")
+
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "agentActivityStream" && m.event.kind === "tool",
+      ),
+    )
+    await new Promise((r) => setTimeout(r, 60))
+
+    const toolEvents = harness.posted.filter(
+      (m) => m.type === "agentActivityStream" && m.event.kind === "tool",
+    )
+    expect(toolEvents).toHaveLength(1)
+  })
 })
 
 describe("ChatView harness: webview HTML", () => {

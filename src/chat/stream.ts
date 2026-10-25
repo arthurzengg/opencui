@@ -197,7 +197,7 @@ export type ChildSessionEvent =
       diff?: string
     }
   | { type: "text"; sessionID: string; text: string }
-  | { type: "toolStart"; sessionID: string; tool: string; input?: string }
+  | { type: "toolStart"; sessionID: string; callID: string; tool: string; input?: string }
 
 /**
  * Cap for `toolStart.input` and `toolResult.output` stringified fields on
@@ -609,6 +609,7 @@ export function subscribeSession(
             childCb({
               type: "toolStart",
               sessionID: childSid,
+              callID: part.callID,
               tool: part.tool,
               input: formatActivityInput(part.state?.input),
             })

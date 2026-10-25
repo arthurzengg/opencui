@@ -967,7 +967,7 @@ describe("SubagentTracker tool name gate", () => {
 })
 
 describe("SubagentTracker toolCount and heartbeat", () => {
-  it("increments toolCount on toolStart child events", async () => {
+  it("increments toolCount on toolStart child events and dedupes repeated updates per callID", async () => {
     const { tracker, store } = setupTracker()
     await tracker.handleToolUpdate(
       makeUpdate({
@@ -981,9 +981,20 @@ describe("SubagentTracker toolCount and heartbeat", () => {
     const taskID = subagentTaskIDByChildSession("ses_child_tc")
     expect(store.get(taskID)?.toolCount).toBeUndefined()
 
+    // First callID: initial pending / running events (opencode sends pending, then running, then running with title)
     await tracker.handleChildSessionEvent({
       type: "toolStart",
       sessionID: "ses_child_tc",
+      callID: "call_bash_1",
+      tool: "bash",
+    })
+    expect(store.get(taskID)?.toolCount).toBe(1)
+
+    // Repeat for the same callID must not increment
+    await tracker.handleChildSessionEvent({
+      type: "toolStart",
+      sessionID: "ses_child_tc",
+      callID: "call_bash_1",
       tool: "bash",
     })
     expect(store.get(taskID)?.toolCount).toBe(1)
@@ -991,6 +1002,16 @@ describe("SubagentTracker toolCount and heartbeat", () => {
     await tracker.handleChildSessionEvent({
       type: "toolStart",
       sessionID: "ses_child_tc",
+      callID: "call_bash_1",
+      tool: "bash",
+    })
+    expect(store.get(taskID)?.toolCount).toBe(1)
+
+    // Second callID increments toolCount
+    await tracker.handleChildSessionEvent({
+      type: "toolStart",
+      sessionID: "ses_child_tc",
+      callID: "call_read_1",
       tool: "read",
     })
     expect(store.get(taskID)?.toolCount).toBe(2)

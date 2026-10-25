@@ -201,7 +201,10 @@ export class ChatView implements vscode.WebviewViewProvider {
   /** Disk home for attachment bytes; conversation state keeps references only. */
   private attachmentStore: AttachmentStore
 
-  private activitySubscribers = new Map<string, { childSessionID?: string; lastStatus?: string }>()
+  private activitySubscribers = new Map<
+    string,
+    { childSessionID?: string; lastStatus?: string; seenToolCalls?: Set<string> }
+  >()
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -354,7 +357,11 @@ export class ChatView implements vscode.WebviewViewProvider {
       if (task && task.kind === "subagent") {
         // Subagent task is known but childSessionID has not landed yet (spawning race).
         // Hold the subscriber slot so it auto-binds once discovered.
-        this.activitySubscribers.set(taskID, { childSessionID: undefined, lastStatus: undefined })
+        this.activitySubscribers.set(taskID, {
+          childSessionID: undefined,
+          lastStatus: undefined,
+          seenToolCalls: new Set(),
+        })
         return
       }
       this.post({
@@ -364,7 +371,11 @@ export class ChatView implements vscode.WebviewViewProvider {
       })
       return
     }
-    this.activitySubscribers.set(taskID, { childSessionID, lastStatus: undefined })
+    this.activitySubscribers.set(taskID, {
+      childSessionID,
+      lastStatus: undefined,
+      seenToolCalls: new Set(),
+    })
   }
 
   private handleActivityUnsubscribe(taskID: string) {
@@ -407,6 +418,9 @@ export class ChatView implements vscode.WebviewViewProvider {
         continue
       }
       if (event.type === "toolStart") {
+        if (!sub.seenToolCalls) sub.seenToolCalls = new Set()
+        if (sub.seenToolCalls.has(event.callID)) continue
+        sub.seenToolCalls.add(event.callID)
         this.post({
           type: "agentActivityStream",
           taskID,
