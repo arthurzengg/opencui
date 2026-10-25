@@ -458,10 +458,16 @@ export function toolHeadline(updates: ToolUpdate[]) {
     if (deleted && deleted === trace.edits.length) return `Deleted ${deleted} files`
     return `Changed ${trace.edits.length} files`
   }
-  if (trace.reads.length && trace.others.length) return `Explored ${trace.reads.length} files, ${trace.others.length} ops`
+  if (trace.reads.length && trace.others.length) {
+    return `Explored ${count(trace.reads.length, "file")}, ${count(trace.others.length, "op")}`
+  }
   if (trace.reads.length) return `Read ${trace.reads.length} ${trace.reads.length === 1 ? "file" : "files"}`
   if (trace.others.length) return `Used ${trace.others.length} ${trace.others.length === 1 ? "tool" : "tools"}`
   return `Used ${updates.length} ${updates.length === 1 ? "tool" : "tools"}`
+}
+
+function count(n: number, unit: string): string {
+  return `${n} ${n === 1 ? unit : `${unit}s`}`
 }
 
 function kindWord(action: FileAction): string {
