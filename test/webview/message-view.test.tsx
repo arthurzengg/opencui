@@ -484,23 +484,26 @@ describe("MessageView (assistant role)", () => {
     expect(panel?.contains(answer)).toBe(false) // answer outside the panel
   })
 
-  it("renders markdown in reasoning body when a title is extracted", () => {
-    const msg = {
-      id: "a-reason-titled",
-      role: "assistant",
-      blocks: [
-        {
-          type: "reasoning",
-          text: "## Approach\n\n- decode the input\n- dispatch to `handler`\n- emit a result",
-        },
-      ],
-    } as Message
-    const { container } = render(
-      <MessageView message={msg} processOpen={true} processOnly={false} />,
+  it("shows a reasoning title once: in the head when it is the headline, in the body otherwise", () => {
+    const approach = {
+      type: "reasoning",
+      text: "## Approach\n\n- decode the input\n- dispatch to `handler`\n- emit a result",
+    }
+    const titled = render(
+      <MessageView message={{ id: "a-reason-titled", role: "assistant", blocks: [approach] } as Message} processOpen processOnly={false} />,
     )
-    expect(container.querySelector(".process-text-title")?.textContent).toBe("Approach")
-    expect(container.querySelectorAll(".process-text li").length).toBe(3)
-    expect(container.querySelector(".process-text code")?.textContent).toBe("handler")
+    expect(titled.container.querySelector(".process-title")?.textContent).toBe("Approach")
+    expect(titled.container.querySelector(".process-text-title")).toBeNull()
+    expect(titled.container.querySelectorAll(".process-text li").length).toBe(3)
+    expect(titled.container.querySelector(".process-text code")?.textContent).toBe("handler")
+    titled.unmount()
+
+    const read = { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "src/foo.ts" } } }
+    const summarized = render(
+      <MessageView message={{ id: "a-reason-tools", role: "assistant", blocks: [approach, read] } as Message} processOpen processOnly={false} />,
+    )
+    expect(summarized.container.querySelector(".process-title")?.textContent).toBe("Read 1")
+    expect(summarized.container.querySelector(".process-text-title")?.textContent).toBe("Approach")
   })
 
   it("renders markdown headings in reasoning body when no title is extracted", () => {

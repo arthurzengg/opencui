@@ -120,6 +120,27 @@ describe("ProcessPanel lazy body", () => {
   })
 })
 
+describe("live process title", () => {
+  const live = (text: string): Message =>
+    ({ id: "a-stream", role: "assistant", pending: true, blocks: [{ type: "reasoning", text }] }) as Message
+
+  it("holds the fallback until the streaming first line completes, then shows that line once", () => {
+    vi.useFakeTimers()
+    const { container, rerender } = render(<MessageView message={live("Let me look at the")} processOpen processOnly={false} />)
+    expect(container.querySelector(".process-title")?.textContent).toBe("Working")
+    expect(container.querySelector(".process-text-title")).toBeNull()
+    expect(container.querySelector(".process-text")?.textContent).toContain("Let me look at the")
+
+    rerender(<MessageView message={live("Let me look at the stream\n\nIt subscribes once.")} processOpen processOnly={false} />)
+    act(() => {
+      vi.advanceTimersByTime(60)
+    })
+    expect(container.querySelector(".process-title")?.textContent).toBe("Let me look at the stream")
+    expect(container.querySelector(".process-text-title")).toBeNull()
+    expect(container.querySelector(".process-text")?.textContent).toBe("It subscribes once.")
+  })
+})
+
 // The answer boundary moves on every tool call; the bubble must keep one
 // tree shape across it or React remounts the panel and everything rendered
 // inside it (#601).
