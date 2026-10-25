@@ -475,7 +475,7 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   const pending = Boolean(message.pending)
   if (processOnly) {
     if (!hasProcessBlocks(message.blocks)) return null
-    return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+    return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
   // Deterministic split: the answer is the trailing run of text after the last
@@ -497,12 +497,12 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   let answerBlocks = answer
   if (answerHasText) {
     if (hasProcessBlocks(process)) {
-      panel = <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}-${start}`} defaultOpen={false} onReviewFile={onReviewFile} />
+      panel = <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}`} defaultOpen={false} onReviewFile={onReviewFile} />
     }
   } else if (hasProcessBlocks(message.blocks)) {
     // Ends on activity/reasoning — no distinct answer to surface yet, so the
     // whole message is the live process.
-    panel = <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+    panel = <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
     answerBlocks = []
   }
   return (
@@ -533,6 +533,9 @@ function ProcessPanel({
   // animation has content during collapse.
   const [everOpened, setEverOpened] = useState(defaultOpen)
 
+  // The reset tracks the panel's phase (live work, final summary) and the
+  // active message, never the block count: keyed on the count, every tool
+  // call reopened a live panel the user had just folded.
   useEffect(() => {
     setOpen(defaultOpen)
     if (defaultOpen) setEverOpened(true)

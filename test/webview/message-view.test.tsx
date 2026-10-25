@@ -416,6 +416,21 @@ describe("MessageView (assistant role)", () => {
     expect(container.querySelector(".process")?.classList.contains("is-open")).toBe(false)
   })
 
+  it("keeps a live panel the user folded closed when the next block lands", () => {
+    const tool = (callID: string) => ({
+      type: "tool",
+      update: { callID, tool: "read", status: "completed", input: { filePath: "src/foo.ts" } },
+    })
+    const live = (blocks: unknown[]) => ({ id: "a-live", role: "assistant", pending: true, blocks } as Message)
+    const { container, rerender } = render(<MessageView message={live([tool("c1")])} processOpen processOnly={false} />)
+    const panel = container.querySelector(".process")!
+    expect(panel.classList.contains("is-open")).toBe(true)
+    fireEvent.click(panel.querySelector<HTMLButtonElement>(".process-head")!)
+    expect(panel.classList.contains("is-open")).toBe(false)
+    rerender(<MessageView message={live([tool("c1"), tool("c2")])} processOpen processOnly={false} />)
+    expect(panel.classList.contains("is-open")).toBe(false)
+  })
+
   it("shows a short trailing text after a tool as the answer, not buried in the work panel", () => {
     const msg = {
       id: "a-trail",
