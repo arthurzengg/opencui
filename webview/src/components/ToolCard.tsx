@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
-import type { Todo, ToolStatus, ToolUpdate } from "../protocol"
+import type { ReviewChangeActor, Todo, ToolStatus, ToolUpdate } from "../protocol"
 import { basename, isRecord, patchKind } from "../review-extract"
 import { vscode } from "../vscode"
 import { formatElapsed } from "./AgentActivity"
+import { formatAgent } from "./StatusBar"
 
 /**
  * Grace period before a running row starts showing elapsed time. Most tools
@@ -59,21 +60,56 @@ type OtherOp = {
 }
 
 type PatchInput = { files: string[]; diff?: string }
+export type TraceTool = { update: ToolUpdate; actor?: ReviewChangeActor }
+export type TracePatch = PatchInput & { actor?: ReviewChangeActor }
+type Trace = ReturnType<typeof buildTrace>
+type SubagentWork = { key: string; actor: ReviewChangeActor; updates: ToolUpdate[]; patches: PatchInput[] }
 
 export function ToolTrace({
-  updates,
+  tools,
   patches = [],
   onReviewFile,
 }: {
-  updates: ToolUpdate[]
-  patches?: PatchInput[]
+  tools: TraceTool[]
+  patches?: TracePatch[]
   onReviewFile?: (path: string) => void
 }) {
-  const trace = buildTrace(updates, patches)
-  if (!trace.edits.length && !trace.reads.length && !trace.others.length && !trace.todos) return null
+  const work = splitSubagentWork(tools, patches)
+  const trace = buildTrace(work.updates, work.patches)
+  const rows = new Set(trace.others.map((op) => op.key))
+  const nested = new Map<string, SubagentWork>()
+  const loose: SubagentWork[] = []
+  for (const group of work.groups) {
+    if (group.actor.callID && rows.has(group.actor.callID)) nested.set(group.actor.callID, group)
+    else loose.push(group)
+  }
+  if (!hasRows(trace) && !loose.length) return null
 
   return (
     <div className="trace">
+      <TraceRows trace={trace} nested={nested} onReviewFile={onReviewFile} />
+      {loose.map((group) => (
+        <SubagentRows key={group.key} work={group} labelled onReviewFile={onReviewFile} />
+      ))}
+    </div>
+  )
+}
+
+function hasRows(trace: Trace) {
+  return trace.edits.length > 0 || trace.reads.length > 0 || trace.others.length > 0 || !!trace.todos
+}
+
+function TraceRows({
+  trace,
+  nested,
+  onReviewFile,
+}: {
+  trace: Trace
+  nested?: Map<string, SubagentWork>
+  onReviewFile?: (path: string) => void
+}) {
+  return (
+    <>
       {trace.edits.length > 0 && (
         <div className="trace-edits">
           {trace.edits.map((op) => (
@@ -85,13 +121,78 @@ export function ToolTrace({
       {trace.todos && <TodoBlock todos={trace.todos} />}
       {trace.others.length > 0 && (
         <div className="trace-others">
-          {trace.others.map((op) => (
-            <OtherRow key={op.key} op={op} />
-          ))}
+          {trace.others.map((op) => {
+            const work = nested?.get(op.key)
+            if (!work) return <OtherRow key={op.key} op={op} />
+            return (
+              <div key={op.key} className="trace-dispatch">
+                <OtherRow op={op} />
+                <SubagentRows work={work} onReviewFile={onReviewFile} />
+              </div>
+            )
+          })}
         </div>
       )}
+    </>
+  )
+}
+
+/**
+ * One child session's calls, indented under the row that dispatched it. A
+ * group the host could not tie to a dispatch row here (the child surfaced
+ * before its task row, or that row sits in an earlier cluster) stands on
+ * its own and names the agent instead.
+ */
+function SubagentRows({
+  work,
+  labelled = false,
+  onReviewFile,
+}: {
+  work: SubagentWork
+  labelled?: boolean
+  onReviewFile?: (path: string) => void
+}) {
+  const trace = buildTrace(work.updates, work.patches)
+  if (!hasRows(trace)) return null
+  return (
+    <div className="trace-subagent">
+      {labelled && <div className="trace-subagent-label">{agentLabel(work.actor)}</div>}
+      <TraceRows trace={trace} onReviewFile={onReviewFile} />
     </div>
   )
+}
+
+function agentLabel(actor: ReviewChangeActor) {
+  return actor.subagent ? `${formatAgent(actor.subagent)} agent` : "Subagent"
+}
+
+/**
+ * Split a cluster into the parent's own calls and one group per child
+ * session, keyed by the dispatch call when the host knew it.
+ */
+function splitSubagentWork(tools: TraceTool[], patches: TracePatch[]) {
+  const updates: ToolUpdate[] = []
+  const own: PatchInput[] = []
+  const groups = new Map<string, SubagentWork>()
+  const groupFor = (actor: ReviewChangeActor) => {
+    const key = actor.callID ?? actor.sessionID ?? "subagent"
+    let group = groups.get(key)
+    if (!group) {
+      group = { key, actor, updates: [], patches: [] }
+      groups.set(key, group)
+    }
+    return group
+  }
+  for (const tool of tools) {
+    if (tool.actor?.kind === "subagent") groupFor(tool.actor).updates.push(tool.update)
+    else updates.push(tool.update)
+  }
+  for (const patch of patches) {
+    const entry = { files: patch.files, diff: patch.diff }
+    if (patch.actor?.kind === "subagent") groupFor(patch.actor).patches.push(entry)
+    else own.push(entry)
+  }
+  return { updates, patches: own, groups: [...groups.values()] }
 }
 
 function TodoBlock({ todos }: { todos: Todo[] }) {
@@ -458,10 +559,16 @@ export function toolHeadline(updates: ToolUpdate[]) {
     if (deleted && deleted === trace.edits.length) return `Deleted ${deleted} files`
     return `Changed ${trace.edits.length} files`
   }
-  if (trace.reads.length && trace.others.length) return `Explored ${trace.reads.length} files, ${trace.others.length} ops`
+  if (trace.reads.length && trace.others.length) {
+    return `Explored ${count(trace.reads.length, "file")}, ${count(trace.others.length, "op")}`
+  }
   if (trace.reads.length) return `Read ${trace.reads.length} ${trace.reads.length === 1 ? "file" : "files"}`
   if (trace.others.length) return `Used ${trace.others.length} ${trace.others.length === 1 ? "tool" : "tools"}`
   return `Used ${updates.length} ${updates.length === 1 ? "tool" : "tools"}`
+}
+
+function count(n: number, unit: string): string {
+  return `${n} ${n === 1 ? unit : `${unit}s`}`
 }
 
 function kindWord(action: FileAction): string {

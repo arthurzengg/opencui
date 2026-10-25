@@ -6,6 +6,7 @@ import type { AgentsStatusInfo, Attachment, ConversationMention, ConversationSum
 import { findTokenRanges, makeAttachmentLabel } from "../mention-tokens"
 import {
   answerStartIndex,
+  firstLineSettled,
   hasProcessBlocks,
   isSystemReminderTool,
   processSummary,
@@ -475,7 +476,7 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   const pending = Boolean(message.pending)
   if (processOnly) {
     if (!hasProcessBlocks(message.blocks)) return null
-    return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+    return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
   // Deterministic split: the answer is the trailing run of text after the last
@@ -497,12 +498,12 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   let answerBlocks = answer
   if (answerHasText) {
     if (hasProcessBlocks(process)) {
-      panel = <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}-${start}`} defaultOpen={false} onReviewFile={onReviewFile} />
+      panel = <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}`} defaultOpen={false} onReviewFile={onReviewFile} />
     }
   } else if (hasProcessBlocks(message.blocks)) {
     // Ends on activity/reasoning — no distinct answer to surface yet, so the
     // whole message is the live process.
-    panel = <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}-${message.blocks.length}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
+    panel = <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
     answerBlocks = []
   }
   return (
@@ -533,6 +534,9 @@ function ProcessPanel({
   // animation has content during collapse.
   const [everOpened, setEverOpened] = useState(defaultOpen)
 
+  // The reset tracks the panel's phase (live work, final summary) and the
+  // active message, never the block count: keyed on the count, every tool
+  // call reopened a live panel the user had just folded.
   useEffect(() => {
     setOpen(defaultOpen)
     if (defaultOpen) setEverOpened(true)
@@ -543,7 +547,11 @@ function ProcessPanel({
     setOpen(!open)
   }
 
-  const title = pending ? processTitle(blocks) : processSummary(blocks) ?? processTitle(blocks)
+  const headline = processTitle(blocks, pending)
+  const summary = pending ? undefined : processSummary(blocks)
+  const title = summary ?? headline.title
+  // The head shows that block's first line, so the body carries only the rest.
+  const headlined = summary === undefined ? headline.source : -1
 
   return (
     <div className={`process ${open ? "is-open" : ""}`}>
@@ -554,7 +562,7 @@ function ProcessPanel({
       {/* The clip wrapper stays mounted; the grid clips it to 0fr when
           collapsed so expand/collapse animates height instead of snapping. */}
       <div className="process-body-clip">
-        <div className="process-body">{everOpened ? renderBlocks(blocks, true, onReviewFile, pending) : null}</div>
+        <div className="process-body">{everOpened ? renderBlocks(blocks, true, onReviewFile, pending, headlined) : null}</div>
       </div>
     </div>
   )
@@ -606,24 +614,22 @@ function CompactionMarker({ message, onReviewFile }: { message: Message; onRevie
   )
 }
 
-function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path: string) => void, streaming = false) {
+function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path: string) => void, streaming = false, headlined = -1) {
   const nodes: ReactNode[] = []
   let tools: Extract<Block, { type: "tool" }>[] = []
   let patches: Extract<Block, { type: "patch" }>[] = []
   const flushTrace = () => {
     if (!tools.length && !patches.length) return
     nodes.push(
-      <ToolTrace
-        key={`trace-${nodes.length}`}
-        updates={tools.map((b) => b.update)}
-        patches={patches.map((b) => ({ files: b.files, diff: b.diff }))}
-        onReviewFile={onReviewFile}
-      />,
+      <ToolTrace key={`trace-${nodes.length}`} tools={tools} patches={patches} onReviewFile={onReviewFile} />,
     )
     tools = []
     patches = []
   }
+  const last = blocks.length - 1
   blocks.forEach((b, i) => {
+    // Deltas append to the last block, so only that one is still growing.
+    const live = streaming && i === last
     if (b.type === "tool") {
       // Hephaestus and other deep agents sometimes emit "system-reminder"
       // as a synthetic tool block instead of as an inline `<system-reminder>`
@@ -655,7 +661,9 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
       // rendering, surface them as collapsible callouts.
       if (processMode) {
         const cleaned = stripInternalMarkers(b.text)
-        if (cleaned.trim()) nodes.push(<ProcessText key={i} text={cleaned} streaming={streaming} />)
+        if (cleaned.trim()) {
+          nodes.push(<ProcessText key={i} text={cleaned} streaming={live} settled={!live || firstLineSettled(b.text)} inHead={i === headlined} />)
+        }
       } else {
         const segments = splitWithReminders(b.text)
         segments.forEach((seg, j) => {
@@ -663,7 +671,7 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
           if (seg.type === "reminder") {
             nodes.push(<SystemReminderCallout key={key} text={seg.content} />)
           } else {
-            nodes.push(<Markdown key={key} text={seg.content} streaming={streaming} />)
+            nodes.push(<Markdown key={key} text={seg.content} streaming={live} />)
           }
         })
       }
@@ -671,21 +679,37 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
     if (b.type === "reasoning") {
       const cleaned = stripInternalMarkers(b.text)
       if (!cleaned.trim()) return
-      nodes.push(<ProcessText key={i} text={cleaned} streaming={streaming} />)
+      nodes.push(<ProcessText key={i} text={cleaned} streaming={live} settled={!live || firstLineSettled(b.text)} inHead={i === headlined} />)
     }
   })
   flushTrace()
   return nodes
 }
 
-function ProcessText({ text, streaming = false }: { text: string; streaming?: boolean }) {
+/**
+ * `settled` says the first line may be read as a title (a live block's line
+ * is still being typed until a newline closes it); `inHead` says the panel
+ * head already shows that title, so the body carries only what follows it.
+ */
+function ProcessText({
+  text,
+  streaming = false,
+  settled = true,
+  inHead = false,
+}: {
+  text: string
+  streaming?: boolean
+  settled?: boolean
+  inHead?: boolean
+}) {
   if (!text.trim()) return null
-  const title = textTitle(text)
+  const title = settled ? textTitle(text) : undefined
   if (!title) return <div className="process-text"><Markdown text={text} streaming={streaming} /></div>
   const body = stripDuplicateTitle(text, title)
+  if (inHead && !body) return null
   return (
     <div className="process-text">
-      <div className="process-text-title">{title}</div>
+      {!inHead && <div className="process-text-title">{title}</div>}
       {body && <Markdown text={body} streaming={streaming} />}
     </div>
   )

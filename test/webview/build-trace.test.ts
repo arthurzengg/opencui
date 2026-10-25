@@ -151,6 +151,14 @@ describe("toolHeadline", () => {
     expect(h).toContain("3")
   })
 
+  it("uses singular units when one file and one op were explored", () => {
+    const h = toolHeadline([
+      update({ tool: "read", input: { filePath: "a.ts" } }),
+      update({ tool: "bash", input: { command: "ls" } }),
+    ])
+    expect(h).toBe("Explored 1 file, 1 op")
+  })
+
   it("falls back to read count when no edits", () => {
     const h = toolHeadline([
       update({ tool: "read", input: { filePath: "a.ts" } }),

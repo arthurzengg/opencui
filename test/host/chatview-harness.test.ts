@@ -1863,3 +1863,46 @@ describe("ChatView harness: user message ids (#706)", () => {
     expect(ids[0]).not.toBe(ids[1])
   })
 })
+
+describe("ChatView harness: subagent tool blocks name their dispatch call", () => {
+  it("attributes a child session's tool to the task row that dispatched it", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "find the stream subscription" })
+    server.push({ type: "message.updated", info: { id: "usr_1", role: "user", sessionID: SESSION_ID } })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID } })
+    server.push({
+      type: "message.part.updated",
+      part: {
+        id: "p_task",
+        messageID: "msg_a",
+        sessionID: SESSION_ID,
+        type: "tool",
+        callID: "call_task",
+        tool: "task",
+        state: { status: "running", input: { description: "Find the stream subscription", subagent_type: "explore" } },
+      },
+    })
+    server.push({ type: "session.created", info: { id: "ses_child", parentID: SESSION_ID, title: "explore" } })
+    await until(() => harness.taskStore.list().some((t) => t.childSessionID === "ses_child"))
+    server.push({
+      type: "message.part.updated",
+      part: {
+        id: "p_read",
+        messageID: "msg_c",
+        sessionID: "ses_child",
+        type: "tool",
+        callID: "call_child_read",
+        tool: "read",
+        state: { status: "completed", input: { filePath: "/ws/src/chat/stream.ts" }, output: "" },
+      },
+    })
+    await until(() => harness.posted.some((m) => m.type === "tool" && m.update.callID === "call_child_read"))
+
+    const block = harness.posted.find((m) => m.type === "tool" && m.update.callID === "call_child_read")
+    expect(block?.type === "tool" ? block.actor : undefined).toMatchObject({
+      kind: "subagent",
+      sessionID: "ses_child",
+      callID: "call_task",
+    })
+  })
+})

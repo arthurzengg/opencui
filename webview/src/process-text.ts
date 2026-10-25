@@ -54,29 +54,56 @@ export function answerStartIndex(blocks: Block[]): number {
   return 0
 }
 
-export function processTitle(blocks: Block[]) {
-  const fromText = blocks.flatMap((block) => {
-    if (block.type !== "text" && block.type !== "reasoning") return []
+export type ProcessTitle = {
+  title: string
+  /**
+   * Index of the text or reasoning block the title was read from, so the
+   * panel body can leave that line to the head; -1 when the title came from
+   * the tool headline or the fallback.
+   */
+  source: number
+}
+
+export function processTitle(blocks: Block[], streaming = false): ProcessTitle {
+  const last = blocks.length - 1
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]!
+    if (block.type !== "text" && block.type !== "reasoning") continue
+    // The last block of a live message is still arriving. Read before a
+    // newline closes its first line, the head retypes itself on every delta
+    // and then drops to the fallback once the line outgrows the title rules.
+    if (streaming && i === last && !firstLineSettled(block.text)) continue
     // Strip `<system-reminder>` / command-name / HTML-comment scaffolding
     // BEFORE picking a title — otherwise the first line of a reminder-only
     // block leaks through as the literal `<system-reminder>` title.
     const cleaned = stripInternalMarkers(block.text)
-    if (!cleaned.trim()) return []
-    return [textTitle(cleaned) ?? inferredTextTitle(cleaned)]
-  }).find(Boolean)
-  if (fromText) return fromText
+    if (!cleaned.trim()) continue
+    const title = textTitle(cleaned) ?? inferredTextTitle(cleaned)
+    if (title) return { title, source: i }
+  }
 
   // Real tool calls become a tool-headline title; pure system-reminder tool
   // blocks don't count as work and shouldn't drive the headline.
-  const tools = blocks.flatMap((block) =>
-    block.type === "tool" && !isSystemReminderTool(block.update.tool) ? [block.update] : [],
-  )
-  if (tools.length) return toolHeadline(tools)
-  return "Working"
+  const tools = ownToolUpdates(blocks).filter((update) => !isSystemReminderTool(update.tool))
+  if (tools.length) return { title: toolHeadline(tools), source: -1 }
+  return { title: "Working", source: -1 }
+}
+
+/**
+ * The parent's own tool calls. A subagent's calls nest under the row that
+ * dispatched them and must not count toward the parent's headline.
+ */
+function ownToolUpdates(blocks: Block[]) {
+  return blocks.flatMap((block) => (block.type === "tool" && block.actor?.kind !== "subagent" ? [block.update] : []))
+}
+
+/** A streaming block's first line is final once a newline follows it. */
+export function firstLineSettled(text: string) {
+  return text.trimStart().includes("\n")
 }
 
 export function processSummary(blocks: Block[]) {
-  const tools = blocks.flatMap((block) => block.type === "tool" ? [block.update] : [])
+  const tools = ownToolUpdates(blocks)
   if (!tools.length) return undefined
 
   const reads = new Set<string>()

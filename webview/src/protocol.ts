@@ -18,6 +18,12 @@ export type ReviewChangeActor = {
   kind: "main" | "subagent"
   sessionID?: string
   subagent?: string
+  /**
+   * The parent's tool call that dispatched this subagent, when the host
+   * could tie the child session to one. The trace nests the child's calls
+   * under that row.
+   */
+  callID?: string
 }
 
 export type ReviewChange = {
