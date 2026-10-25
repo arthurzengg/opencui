@@ -91,6 +91,7 @@ export class SubagentTracker {
   private readonly getConversationID: () => string
   private readonly getParentSessionID: () => string | undefined
   private readonly dispatches = new Map<string, DispatchState>()
+  private readonly childToolCalls = new Map<string, Set<string>>()
   /**
    * Child sessions re-activated by a task_id-reuse resume. Their store rows
    * are already terminal and the terminal-state guard (correctly) refuses to
@@ -294,14 +295,34 @@ export class SubagentTracker {
         if (existing.status === "error" || existing.status === "completed" || existing.status === "cancelled") {
           return
         }
-        // Already running: skip the write. Busy signals arrive per streamed
-        // token (message.part.delta et al.), and each store.update() is a
-        // full workspaceState persist + onDidChange broadcast + agentsStatus
-        // IPC post. Nothing reads updatedAt on a live row (AgentsRow derives
-        // elapsed from startedAt) — the only transition left to make here is
-        // waiting -> running.
-        if (existing.status === "running") return
+        // Already running: throttle the write. Busy signals arrive per streamed
+        // token (message.part.delta et al.), so skip writes during rapid streaming,
+        // but refresh updatedAt every 15s so healthy active tasks do not trip the
+        // 60s stuck detector (#AgentActivity).
+        if (existing.status === "running") {
+          if (now - existing.updatedAt >= 15_000) {
+            this.store.touch(taskID, now)
+          }
+          return
+        }
         await this.store.update(taskID, { status: "running", updatedAt: now })
+        return
+      case "toolStart": {
+        let seen = this.childToolCalls.get(taskID)
+        if (!seen) {
+          seen = new Set()
+          this.childToolCalls.set(taskID, seen)
+        }
+        if (seen.has(event.callID)) return
+        seen.add(event.callID)
+        const nextCount = (existing.toolCount ?? 0) + 1
+        await this.store.update(taskID, { toolCount: nextCount, updatedAt: now })
+        return
+      }
+      case "tool":
+        if (now - existing.updatedAt >= 5_000) {
+          this.store.touch(taskID, now)
+        }
         return
       case "idle":
         // Final state. Drop the child session from the interest set so
@@ -400,6 +421,7 @@ export class SubagentTracker {
       sessionID: parentSessionID,
       childSessionID: info.id,
       title: info.title?.trim() ? info.title.trim() : "Subagent",
+      subagent: agentFromChildSession(info),
       status: "running",
       startedAt: now,
       updatedAt: now,
@@ -515,6 +537,7 @@ export class SubagentTracker {
   reset(): void {
     this.dispatches.clear()
     this.resumedActive.clear()
+    this.childToolCalls.clear()
   }
 
   /**
@@ -615,6 +638,7 @@ export class SubagentTracker {
     for (const [callID, state] of this.dispatches) {
       if (state.taskID === taskID) this.dispatches.delete(callID)
     }
+    this.childToolCalls.delete(taskID)
   }
 }
 
@@ -628,8 +652,21 @@ type ReadMetadata = {
   description?: string
 }
 
-export function readMetadata(metadata: Record<string, unknown> | undefined): ReadMetadata {
-  if (!metadata) return {}
+/**
+ * Agent slug for a discovered child session, without depending on any
+ * plugin. opencode's `task`/`subagent` tool sets `agent` on the child
+ * session at creation (carried through on `session.created`); older hosts
+ * only stamp the title with `(@<agent> subagent)`. Both are host-native,
+ * so this works for stock opencode and any plugin that delegates through
+ * the built-in tool.
+ */
+function agentFromChildSession(info: ChildSessionInfo): string | undefined {
+  if (info.agent?.trim()) return info.agent.trim()
+  const match = info.title?.match(/\(@([^\s()]+)\s+subagent\)/i)
+  return match?.[1]
+}
+
+export function readMetadata(metadata: Record<string, unknown> | undefined): ReadMetadata {  if (!metadata) return {}
   // omo writes both `sessionId` and `taskId`; opencode itself uses
   // camelCase too. We accept any common spelling so this works even if
   // a future omo refactor renames fields.
@@ -651,8 +688,7 @@ export function readMetadata(metadata: Record<string, unknown> | undefined): Rea
   }
 }
 
-function readStr(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined
+function readStr(value: unknown): string | undefined {  if (typeof value !== "string") return undefined
   const trimmed = value.trim()
   return trimmed ? trimmed : undefined
 }

@@ -72,6 +72,7 @@ export function processTitle(blocks: Block[]) {
     block.type === "tool" && !isSystemReminderTool(block.update.tool) ? [block.update] : [],
   )
   if (tools.length) return toolHeadline(tools)
+  if (blocks.some((b) => b.type === "reasoning")) return "Thinking"
   return "Working"
 }
 
@@ -120,8 +121,8 @@ export function processSummary(blocks: Block[]) {
       continue
     }
     if (update.tool === "grep" || update.tool === "glob") { searches++; continue }
-    if (update.tool === "bash") { runs++; continue }
-    if (update.tool === "webfetch") { fetches++; continue }
+    if (update.tool === "bash" || update.tool === "shell" || update.tool === "sh" || update.tool === "terminal" || update.tool === "exec") { runs++; continue }
+    if (update.tool === "webfetch" || update.tool === "fetch") { fetches++; continue }
     other++
   }
 

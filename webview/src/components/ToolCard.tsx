@@ -54,6 +54,7 @@ type OtherOp = {
   action: string
   detail?: string
   title?: string
+  output?: string
   status: ToolStatus
   errorText?: string
 }
@@ -163,13 +164,28 @@ function ReadsLine({ reads }: { reads: FileOp[] }) {
 }
 
 function OtherRow({ op }: { op: OtherOp }) {
+  const [open, setOpen] = useState(false)
   const elapsed = useRunningElapsed(op.status === "running")
+  const hasOutput = Boolean(op.output && op.output.trim().length > 0)
   return (
-    <div className={`other-row status-${op.status}`} title={op.title}>
-      <span className="other-action">{op.action}</span>
-      {op.detail && <span className="other-detail">{op.detail}</span>}
-      {op.status === "running" && <span className="other-meta">running{elapsed ? ` · ${elapsed}` : ""}</span>}
-      {op.errorText && <span className="other-error">{op.errorText}</span>}
+    <div className={`other-row status-${op.status}${hasOutput ? " has-output" : ""}`}>
+      <div
+        className="other-row-head"
+        onClick={hasOutput ? () => setOpen(!open) : undefined}
+        role={hasOutput ? "button" : undefined}
+        tabIndex={hasOutput ? 0 : undefined}
+        onKeyDown={hasOutput ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(!open) } } : undefined}
+        title={op.title ?? (hasOutput ? "Click to view output" : undefined)}
+      >
+        <span className="other-action">{op.action}</span>
+        {op.detail && <span className="other-detail" title={op.detail}>{op.detail}</span>}
+        {op.status === "running" && <span className="other-meta">running{elapsed ? ` · ${elapsed}` : ""}</span>}
+        {hasOutput && <span className="other-caret">{open ? "▾" : "▸"}</span>}
+        {op.errorText && <span className="other-error">{op.errorText}</span>}
+      </div>
+      {open && op.output && (
+        <pre className="other-output">{op.output.trim()}</pre>
+      )}
     </div>
   )
 }
@@ -341,20 +357,22 @@ function deriveOther(update: ToolUpdate): OtherOp {
       errorText: update.error,
     }
   }
-  if (update.tool === "bash") {
+  if (update.tool === "bash" || update.tool === "shell" || update.tool === "sh" || update.tool === "terminal" || update.tool === "exec") {
     return {
       key: update.callID,
       action: "Ran",
-      detail: stringInput(update, "command") ?? update.title,
+      detail: stringInput(update, "command") ?? stringInput(update, "cmd") ?? (update.title && update.title !== update.tool ? update.title : undefined),
+      output: update.output,
       status: update.status,
       errorText: update.error,
     }
   }
-  if (update.tool === "webfetch") {
+  if (update.tool === "webfetch" || update.tool === "fetch") {
     return {
       key: update.callID,
       action: "Fetched",
       detail: stringInput(update, "url") ?? update.title,
+      output: update.output,
       status: update.status,
       errorText: update.error,
     }
@@ -364,6 +382,7 @@ function deriveOther(update: ToolUpdate): OtherOp {
       key: update.callID,
       action: "Investigated",
       detail: stringInput(update, "description") ?? update.title,
+      output: update.output,
       status: update.status,
       errorText: update.error,
     }
@@ -372,10 +391,12 @@ function deriveOther(update: ToolUpdate): OtherOp {
 }
 
 function genericOther(update: ToolUpdate): OtherOp {
+  const detail = stringInput(update, "command") ?? stringInput(update, "description") ?? (update.title !== update.tool ? update.title : undefined)
   return {
     key: update.callID,
     action: pastTense(update.tool),
-    detail: update.title ?? stringInput(update, "description"),
+    detail,
+    output: update.output,
     status: update.status,
     errorText: update.error,
   }
@@ -460,7 +481,14 @@ export function toolHeadline(updates: ToolUpdate[]) {
   }
   if (trace.reads.length && trace.others.length) return `Explored ${trace.reads.length} files, ${trace.others.length} ops`
   if (trace.reads.length) return `Read ${trace.reads.length} ${trace.reads.length === 1 ? "file" : "files"}`
-  if (trace.others.length) return `Used ${trace.others.length} ${trace.others.length === 1 ? "tool" : "tools"}`
+  if (trace.others.length === 1 && trace.others[0]!.detail) {
+    return `${trace.others[0]!.action} ${trace.others[0]!.detail}`
+  }
+  if (trace.others.length > 0) {
+    const runs = trace.others.filter((op) => op.action === "Ran").length
+    if (runs === trace.others.length) return `Ran ${runs} ${runs === 1 ? "command" : "commands"}`
+    return `Used ${trace.others.length} ${trace.others.length === 1 ? "tool" : "tools"}`
+  }
   return `Used ${updates.length} ${updates.length === 1 ? "tool" : "tools"}`
 }
 

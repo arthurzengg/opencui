@@ -1161,6 +1161,230 @@ describe("ChatView harness: stale-row reconcile on conversation entry", () => {
   })
 })
 
+describe("ChatView harness: agentActivity", () => {
+  it("fetches the child session transcript and replies compacted", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.taskStore.upsert({
+      id: "subagent:child:ses_child_act",
+      kind: "subagent",
+      conversationID: harness.chatView.activeConversationID(),
+      sessionID: SESSION_ID,
+      childSessionID: "ses_child_act",
+      title: "Stuck agent",
+      status: "running",
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    server.setSessionMessages("ses_child_act", [
+      { info: { id: "m1", role: "user" }, parts: [{ type: "text", text: "go" }] },
+      {
+        info: { id: "m2", role: "assistant" },
+        parts: [
+          { type: "tool", tool: "bash", callID: "c1", state: { status: "running" } },
+          { type: "text", text: "working" },
+        ],
+      },
+    ])
+
+    await harness.send({ type: "agentActivityRequest", requestID: 7, taskID: "subagent:child:ses_child_act" })
+
+    const res = harness.posted.find((m) => m.type === "agentActivityResponse")
+    expect(res).toEqual({
+      type: "agentActivityResponse",
+      requestID: 7,
+      ok: true,
+      messages: [
+        { role: "user", text: "go", tools: [] },
+        { role: "assistant", text: "working", tools: ["bash"] },
+      ],
+    })
+  })
+
+  it("replies ok:false unknown task for an unknown taskID", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "agentActivityRequest", requestID: 3, taskID: "nope" })
+    const res = harness.posted.find((m) => m.type === "agentActivityResponse")
+    expect(res).toEqual({
+      type: "agentActivityResponse",
+      requestID: 3,
+      ok: false,
+      error: "unknown task",
+    })
+  })
+
+  it("replies ok:false unknown task when the task has no child session yet", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.taskStore.upsert({
+      id: "main:c:s",
+      kind: "main",
+      conversationID: harness.chatView.activeConversationID(),
+      sessionID: SESSION_ID,
+      title: "Main",
+      status: "running",
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    await harness.send({ type: "agentActivityRequest", requestID: 4, taskID: "main:c:s" })
+    const res = harness.posted.find((m) => m.type === "agentActivityResponse")
+    expect(res).toEqual({
+      type: "agentActivityResponse",
+      requestID: 4,
+      ok: false,
+      error: "unknown task",
+    })
+  })
+})
+
+describe("ChatView harness: agentActivityStream", () => {
+  const taskID = "subagent:child:ses_child_live"
+  const childSessionID = "ses_child_live"
+
+  async function seedSubscription() {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "warmup" })
+    await harness.taskStore.upsert({
+      id: taskID,
+      kind: "subagent",
+      conversationID: harness.chatView.activeConversationID(),
+      sessionID: SESSION_ID,
+      childSessionID,
+      title: "Live agent",
+      status: "running",
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+    })
+    await harness.send({ type: "agentActivitySubscribe", taskID })
+    server.push({
+      type: "session.created",
+      info: { id: childSessionID, parentID: SESSION_ID, title: "Live agent" },
+    })
+    await new Promise((r) => setTimeout(r, 30))
+  }
+
+  it("pushes live text/status/end events for a subscribed child session", async () => {
+    await seedSubscription()
+
+    server.push({
+      type: "message.part.delta",
+      sessionID: childSessionID,
+      messageID: "msg_child",
+      partID: "p1",
+      field: "text",
+      delta: "chunk-1",
+    })
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "agentActivityStream" && m.event.kind === "text" && m.event.text === "chunk-1",
+      ),
+    )
+
+    server.push({ type: "session.idle", sessionID: childSessionID })
+    await until(() =>
+      harness.posted.some((m) => m.type === "agentActivityStream" && m.event.kind === "end"),
+    )
+
+    const streams = harness.posted.filter((m) => m.type === "agentActivityStream")
+    expect(streams.every((m) => m.taskID === taskID)).toBe(true)
+    expect(streams.map((m) => m.event.kind)).toEqual(["status", "text", "status", "end"])
+    expect(streams[0]!.event).toEqual({ kind: "status", status: "busy" })
+    expect(streams[2]!.event).toEqual({ kind: "status", status: "idle" })
+  })
+
+  it("stops pushing after unsubscribe", async () => {
+    await seedSubscription()
+    await harness.send({ type: "agentActivityUnsubscribe", taskID })
+
+    const before = harness.posted.filter((m) => m.type === "agentActivityStream").length
+    server.push({
+      type: "message.part.delta",
+      sessionID: childSessionID,
+      messageID: "msg_child",
+      partID: "p1",
+      field: "text",
+      delta: "after-unsub",
+    })
+    server.push({ type: "session.idle", sessionID: childSessionID })
+    await new Promise((r) => setTimeout(r, 80))
+    const after = harness.posted.filter((m) => m.type === "agentActivityStream").length
+    expect(after).toBe(before)
+  })
+
+  it("answers status error immediately for an unknown taskID", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "agentActivitySubscribe", taskID: "nope" })
+    const res = harness.posted.find((m) => m.type === "agentActivityStream")
+    expect(res).toEqual({
+      type: "agentActivityStream",
+      taskID: "nope",
+      event: { kind: "status", status: "error" },
+    })
+  })
+
+  it("dedups repeated busy status while still forwarding text", async () => {
+    await seedSubscription()
+    const pushDelta = (text: string) =>
+      server.push({
+        type: "message.part.delta",
+        sessionID: childSessionID,
+        messageID: "msg_child",
+        partID: text,
+        field: "text",
+        delta: text,
+      })
+    pushDelta("a")
+    await until(() =>
+      harness.posted.some((m) => m.type === "agentActivityStream" && m.event.kind === "text"),
+    )
+    pushDelta("b")
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "agentActivityStream" && m.event.kind === "text" && m.event.text === "b",
+      ),
+    )
+
+    const streams = harness.posted.filter((m) => m.type === "agentActivityStream")
+    const busy = streams.filter((m) => m.event.kind === "status" && m.event.status === "busy")
+    expect(busy).toHaveLength(1)
+    expect(streams.filter((m) => m.event.kind === "text")).toHaveLength(2)
+  })
+
+  it("dedups repeated toolStart for the same callID in live activity stream", async () => {
+    await seedSubscription()
+    const pushTool = (status: "pending" | "running") =>
+      server.push({
+        type: "message.part.updated",
+        part: {
+          id: "p_tool_1",
+          sessionID: childSessionID,
+          messageID: "msg_child",
+          type: "tool",
+          callID: "call_tool_1",
+          tool: "bash",
+          state: {
+            status,
+            input: { command: "ls" },
+          },
+        },
+      })
+
+    pushTool("pending")
+    pushTool("running")
+    pushTool("running")
+
+    await until(() =>
+      harness.posted.some(
+        (m) => m.type === "agentActivityStream" && m.event.kind === "tool",
+      ),
+    )
+    await new Promise((r) => setTimeout(r, 60))
+
+    const toolEvents = harness.posted.filter(
+      (m) => m.type === "agentActivityStream" && m.event.kind === "tool",
+    )
+    expect(toolEvents).toHaveLength(1)
+  })
+})
+
 describe("ChatView harness: webview HTML", () => {
   it("injects the grammars base URI and lets connect-src reach it", async () => {
     const fsFiles = (vscode as unknown as { __fsFiles: Map<string, Uint8Array> }).__fsFiles

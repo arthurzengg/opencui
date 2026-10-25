@@ -1,5 +1,6 @@
 import type { ToolUpdate } from "../chat/stream"
-import type { AgentsStatusInfo, AgentsTaskInfo } from "../protocol"
+import type { ServerMessageItem } from "../chat/import-session"
+import type { AgentActivityMessage, AgentsStatusInfo, AgentsTaskInfo } from "../protocol"
 import {
   ATTENTION_STATUSES,
   isAttentionStatus,
@@ -13,6 +14,8 @@ import {
  * omo background-task and delegate-task families:
  *   - `task` / `Task` / `task_tool` — opencode's built-in task tool (and
  *     omo's `delegateTask` which is registered under the name `task`).
+ *   - `subagent` — opencode 2.0's built-in delegation tool (the v2 host
+ *     renamed `task` → `subagent`).
  *   - `delegate_task` — defensive: if a future omo version re-registers
  *     this with its lowercase name we still catch it.
  *   - `call_omo_agent` — omo's parallel subagent dispatcher used by the
@@ -25,6 +28,7 @@ export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set([
   "task",
   "Task",
   "task_tool",
+  "subagent",
   "delegate_task",
   "call_omo_agent",
   "background_task",
@@ -66,6 +70,8 @@ export function summarizeAgentTasks(
       subagent: task.kind === "subagent" ? task.subagent : undefined,
       category: task.kind === "subagent" ? task.category : undefined,
       model: task.kind === "subagent" ? task.model : undefined,
+      childSessionID: task.childSessionID,
+      toolCount: task.kind === "subagent" ? task.toolCount : undefined,
     })
   }
   // Stable order: main tasks first (the user's prompt anchor), then
@@ -92,4 +98,40 @@ export function taskTitleFromUpdate(update: ToolUpdate): string {
   }
   if (update.title && update.title.trim()) return update.title.trim()
   return "Background agent"
+}
+
+/** Per-field caps on the compact activity transcript (~2KB on the wire). */
+export const MAX_ACTIVITY_TEXT_CHARS = 2048
+export const MAX_ACTIVITY_TOOLS = 100
+
+/**
+ * Reduce a child session's full server transcript to the stuck-agent
+ * detail rows: role + text + tool names only. Reasoning, tool I/O,
+ * patches, and system/summary messages are dropped; running tool parts
+ * are kept (an agent stuck mid-tool is exactly what this view exists to
+ * show). Text joins across parts and both fields are capped so a huge
+ * child session cannot flood the webview.
+ */
+export function compactSessionMessages(items: ServerMessageItem[]): AgentActivityMessage[] {
+  const out: AgentActivityMessage[] = []
+  for (const item of items) {
+    const role = item.info?.role
+    if (role !== "user" && role !== "assistant") continue
+    const textParts: string[] = []
+    const tools: string[] = []
+    for (const part of item.parts ?? []) {
+      if (part.type === "text" && !part.synthetic && !part.ignored && typeof part.text === "string") {
+        textParts.push(part.text)
+      }
+      if (part.type === "tool" && part.tool) tools.push(part.tool)
+    }
+    const text = textParts.join("\n\n")
+    if (!text && tools.length === 0) continue
+    out.push({
+      role,
+      text: text.slice(0, MAX_ACTIVITY_TEXT_CHARS),
+      tools: tools.slice(0, MAX_ACTIVITY_TOOLS),
+    })
+  }
+  return out
 }
