@@ -2519,6 +2519,7 @@ export class ChatView implements vscode.WebviewViewProvider {
       kind: "subagent" as const,
       sessionID: childSessionID,
       subagent: task?.subagent,
+      callID: task?.callID,
     }
   }
 

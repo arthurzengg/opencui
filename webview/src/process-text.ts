@@ -84,11 +84,17 @@ export function processTitle(blocks: Block[], streaming = false): ProcessTitle {
 
   // Real tool calls become a tool-headline title; pure system-reminder tool
   // blocks don't count as work and shouldn't drive the headline.
-  const tools = blocks.flatMap((block) =>
-    block.type === "tool" && !isSystemReminderTool(block.update.tool) ? [block.update] : [],
-  )
+  const tools = ownToolUpdates(blocks).filter((update) => !isSystemReminderTool(update.tool))
   if (tools.length) return { title: toolHeadline(tools), source: -1 }
   return { title: "Working", source: -1 }
+}
+
+/**
+ * The parent's own tool calls. A subagent's calls nest under the row that
+ * dispatched them and must not count toward the parent's headline.
+ */
+function ownToolUpdates(blocks: Block[]) {
+  return blocks.flatMap((block) => (block.type === "tool" && block.actor?.kind !== "subagent" ? [block.update] : []))
 }
 
 /** A streaming block's first line is final once a newline follows it. */
@@ -97,7 +103,7 @@ export function firstLineSettled(text: string) {
 }
 
 export function processSummary(blocks: Block[]) {
-  const tools = blocks.flatMap((block) => block.type === "tool" ? [block.update] : [])
+  const tools = ownToolUpdates(blocks)
   if (!tools.length) return undefined
 
   const reads = new Set<string>()

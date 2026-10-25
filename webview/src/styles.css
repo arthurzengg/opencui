@@ -1993,6 +1993,26 @@ button:focus-visible {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* A subagent's calls sit under the row that dispatched it, indented the
+   way the process body is. A group with no dispatch row names its agent. */
+.trace-dispatch {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.trace-subagent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--vscode-panel-border);
+}
+.trace-subagent-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+}
 
 /* ===== Permission dialog ===== */
 .permission {

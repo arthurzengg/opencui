@@ -621,12 +621,7 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
   const flushTrace = () => {
     if (!tools.length && !patches.length) return
     nodes.push(
-      <ToolTrace
-        key={`trace-${nodes.length}`}
-        updates={tools.map((b) => b.update)}
-        patches={patches.map((b) => ({ files: b.files, diff: b.diff }))}
-        onReviewFile={onReviewFile}
-      />,
+      <ToolTrace key={`trace-${nodes.length}`} tools={tools} patches={patches} onReviewFile={onReviewFile} />,
     )
     tools = []
     patches = []
