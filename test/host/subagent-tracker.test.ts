@@ -739,6 +739,20 @@ describe("SubagentTracker.registerChildSession", () => {
     expect(task!.title).toBe("Subagent")
   })
 
+  it("takes the agent from the session's own agent field (opencode 2.x)", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.registerChildSession({ id: "ses_child_agent", parentID: "ses_parent", title: "Anything", agent: "explorer" })
+    const task = store.get(subagentTaskIDByChildSession("ses_child_agent"))
+    expect(task!.subagent).toBe("explorer")
+  })
+
+  it("falls back to the title's (@<agent> subagent) stamp when the session has no agent field", async () => {
+    const { tracker, store } = setupTracker()
+    await tracker.registerChildSession({ id: "ses_child_title_agent", parentID: "ses_parent", title: "Find the auth flow (@librarian subagent)" })
+    const task = store.get(subagentTaskIDByChildSession("ses_child_title_agent"))
+    expect(task!.subagent).toBe("librarian")
+  })
+
   it("ignores discoveries with a parent that isn't ours", async () => {
     const { tracker, store } = setupTracker({ sessionID: "ses_parent" })
     await tracker.registerChildSession({ id: "ses_orphan", parentID: "ses_someone_else" })
@@ -922,8 +936,8 @@ describe("SubagentTracker tool name gate", () => {
     expect(store.list()).toEqual([])
   })
 
-  it("recognizes every dispatch tool name (task, call_omo_agent, background_task, delegate_task, defensives)", () => {
-    for (const tool of ["task", "Task", "task_tool", "delegate_task", "call_omo_agent", "background_task"]) {
+  it("recognizes every dispatch tool name (task, subagent, call_omo_agent, background_task, delegate_task, defensives)", () => {
+    for (const tool of ["task", "Task", "task_tool", "delegate_task", "call_omo_agent", "background_task", "subagent"]) {
       expect(SubagentTracker.isSubagentDispatchTool(tool)).toBe(true)
     }
     for (const tool of ["read", "edit", "tasks", "background_output", "background_cancel"]) {

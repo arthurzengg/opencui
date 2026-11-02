@@ -400,6 +400,7 @@ export class SubagentTracker {
       sessionID: parentSessionID,
       childSessionID: info.id,
       title: info.title?.trim() ? info.title.trim() : "Subagent",
+      subagent: agentFromChildSession(info),
       status: "running",
       startedAt: now,
       updatedAt: now,
@@ -626,6 +627,16 @@ type ReadMetadata = {
   model?: AgentTaskModel
   runInBackground?: boolean
   description?: string
+}
+
+/**
+ * Agent slug of a discovered child session. opencode 2.x sets `agent` on
+ * the session at creation; the 1.x `task` tool only stamps the title with
+ * `(@<agent> subagent)`. Both come from opencode itself, so no plugin
+ * metadata is needed.
+ */
+function agentFromChildSession(info: ChildSessionInfo): string | undefined {
+  return readStr(info.agent) ?? info.title?.match(/\(@([^\s()]+)\s+subagent\)/i)?.[1]
 }
 
 export function readMetadata(metadata: Record<string, unknown> | undefined): ReadMetadata {

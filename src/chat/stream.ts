@@ -147,6 +147,11 @@ export type ChildSessionInfo = {
   id: string
   parentID: string
   title?: string
+  /**
+   * Agent the child runs as. opencode 2.x stamps it on the session at
+   * creation; 1.x only encodes it in the title (`(@<agent> subagent)`).
+   */
+  agent?: string
 }
 
 /**
@@ -394,6 +399,7 @@ export function subscribeSession(
           id: info.id,
           parentID: info.parentID,
           title: typeof info.title === "string" ? info.title : undefined,
+          agent: typeof info.agent === "string" ? info.agent : undefined,
         })
       }
     }
@@ -856,8 +862,10 @@ export function subscribeSession(
     // live subscription mid-turn.
     if (p.field !== "text" || typeof p.delta !== "string") return
     // A part whose creation event this subscription never saw (it started
-    // before a reload) can only be assumed to be answer text.
-    emitDelta(messageID, partKinds.get(partID) ?? "text", p.delta)
+    // before a reload) is answer text unless its id says otherwise: the 2.x
+    // translator keys spans `<msg>:<kind>:<ordinal>`.
+    const kind = partKinds.get(partID) ?? (partID.includes(":reasoning:") ? "reasoning" : "text")
+    emitDelta(messageID, kind, p.delta)
     seenLen.set(partID, (seenLen.get(partID) ?? 0) + p.delta.length)
   }
 
