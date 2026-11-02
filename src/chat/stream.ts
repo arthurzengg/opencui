@@ -147,6 +147,11 @@ export type ChildSessionInfo = {
   id: string
   parentID: string
   title?: string
+  /**
+   * Agent the child runs as. opencode 2.x stamps it on the session at
+   * creation; 1.x only encodes it in the title (`(@<agent> subagent)`).
+   */
+  agent?: string
 }
 
 /**
@@ -394,6 +399,7 @@ export function subscribeSession(
           id: info.id,
           parentID: info.parentID,
           title: typeof info.title === "string" ? info.title : undefined,
+          agent: typeof info.agent === "string" ? info.agent : undefined,
         })
       }
     }
