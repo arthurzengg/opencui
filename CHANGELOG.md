@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.17.1] - 2026-11-02
+
+### Fixed
+
+- The live process panel reopened at every new tool call after being folded, replaying its fold animation, and retyped its title on every reasoning delta before dropping to "Working". The panel now resets only when the message changes phase, and takes its title from a streaming line only once a newline closes it, without repeating that line in the body. Units in the explored headline are singular ("Explored 1 file, 1 op") (#727, #729).
+- A subagent's tool calls were shown as the parent's own rows and counted towards the parent's headline and summary, so a turn that read one file itself could show "Explored 5 files". The trace now nests a child session's calls under the row that dispatched it, labels a child it cannot tie to a row with the agent name, and the parent counts only its own calls (#728, #729).
+- A question with options and a free-text answer could not be answered by hand: the options could not be deselected, and the typed text was appended after the chosen label, so opencode 2.x kept the label and dropped the text. A single-select question now offers "Other…" as one of its radios. Picking it sends only the typed text, picking an option sends only that label, and the typed text is kept while an option is checked. The checked radio dot is drawn in CSS, so it sits centred instead of drifting with the font (#730, #711).
+- Subagent dispatches were not recognised on opencode 2.x, which renamed its delegation tool from `task` to `subagent`: a delegation showed no Agents pill or subagent row, and the child's tool rows were not nested under the dispatching call. A discovered child session now also takes its agent name from the session itself, and a reasoning delta for a span that opened before a reconnect is routed by its part id instead of being shown as answer text (#731, #712).
+
 ## [1.17.0] - 2026-10-24
 
 ### Added
