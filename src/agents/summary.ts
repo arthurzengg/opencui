@@ -19,6 +19,8 @@ import {
  *     deep-agent stack (Hephaestus / Sisyphus / Prometheus).
  *   - `background_task` — omo's pure background dispatcher, used by
  *     Hephaestus prompts for fire-and-forget worker tasks.
+ *   - `subagent` — opencode 2.x's built-in delegation tool; 2.0 renamed
+ *     `task`, and its `subagent_type` input became `agent`.
  * `SubagentTracker.isSubagentDispatchTool` consults this same set.
  */
 export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set([
@@ -28,6 +30,7 @@ export const SUBAGENT_TOOLS: ReadonlySet<string> = new Set([
   "delegate_task",
   "call_omo_agent",
   "background_task",
+  "subagent",
 ])
 
 export function isSubagentTool(toolName: string): boolean {

@@ -922,8 +922,8 @@ describe("SubagentTracker tool name gate", () => {
     expect(store.list()).toEqual([])
   })
 
-  it("recognizes every dispatch tool name (task, call_omo_agent, background_task, delegate_task, defensives)", () => {
-    for (const tool of ["task", "Task", "task_tool", "delegate_task", "call_omo_agent", "background_task"]) {
+  it("recognizes every dispatch tool name (task, subagent, call_omo_agent, background_task, delegate_task, defensives)", () => {
+    for (const tool of ["task", "Task", "task_tool", "delegate_task", "call_omo_agent", "background_task", "subagent"]) {
       expect(SubagentTracker.isSubagentDispatchTool(tool)).toBe(true)
     }
     for (const tool of ["read", "edit", "tasks", "background_output", "background_cancel"]) {
