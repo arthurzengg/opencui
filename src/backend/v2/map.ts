@@ -84,7 +84,15 @@ function mapUser(sessionID: string, entry: SessionMessageUser): MessageItem {
     agent: "",
     model: { providerID: "", modelID: "" },
   }
-  return { info, parts: [{ id: `${entry.id}:text`, sessionID, messageID: entry.id, type: "text", text: entry.text }] }
+  const parts: Part[] = [{ id: `${entry.id}:text`, sessionID, messageID: entry.id, type: "text", text: entry.text }]
+  // 2.x keeps every attachment's bytes on the entry, a file:// upload too
+  // (recorded from 2.1.4 and 2.2.5), and 1.x stores a file part as a data
+  // URL (recorded from 1.19.5), so a data URL is what the importer reads
+  // from both lines (#736).
+  entry.files?.forEach((file, index) => {
+    parts.push({ id: `${entry.id}:file:${index}`, sessionID, messageID: entry.id, type: "file", mime: file.mime, filename: file.name, url: `data:${file.mime};base64,${file.data}` })
+  })
+  return { info, parts }
 }
 
 function mapAssistant(sessionID: string, directory: string, entry: SessionMessageAssistant): MessageItem {

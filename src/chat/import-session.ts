@@ -38,6 +38,9 @@ type ServerPart = {
     error?: string
   }
   files?: unknown[]
+  mime?: string
+  filename?: string
+  url?: string
 }
 
 export const MAX_EXTERNAL_SESSIONS = 50
@@ -79,12 +82,13 @@ export function importedMessages(items: ServerMessageItem[], cwd: string): ChatM
     if (!info?.id) continue
     if (info.role === "user") {
       const text = textOf(item.parts)
-      if (!text) continue
+      const attachments = attachmentBlocks(item.parts)
+      if (!text && !attachments.length) continue
       messages.push({
         id: info.id,
         role: "user",
         backendID: info.id,
-        blocks: [{ type: "text", text }],
+        blocks: [...attachments, { type: "text", text }],
       })
       continue
     }
@@ -114,6 +118,31 @@ function textOf(parts: ServerPart[] | undefined): string {
     .map((p) => p.text!)
     .join("\n\n")
     .trim()
+}
+
+/**
+ * Both lines hand an attachment back as a data URL: a 1.x server reads a
+ * file:// part into one at prompt time (a text file becomes synthetic text
+ * instead) and the 2.x adapter builds one from the bytes the server stored
+ * (#736). The block keeps the URL for the thumbnail and the edit flow; the
+ * attachment store takes the bytes over on the next mount, as for a legacy
+ * message.
+ */
+function attachmentBlocks(parts: ServerPart[] | undefined): ChatBlock[] {
+  const blocks: ChatBlock[] = []
+  for (const part of parts ?? []) {
+    if (part.type !== "file" || typeof part.mime !== "string" || typeof part.url !== "string") continue
+    const dataUrl = part.url.startsWith("data:") ? part.url : undefined
+    const payload = dataUrl?.slice(dataUrl.indexOf(",") + 1)
+    blocks.push({
+      type: "attachment",
+      mime: part.mime,
+      filename: part.filename ?? "attachment",
+      dataUrl,
+      bytes: payload ? Buffer.from(payload, "base64").byteLength : 0,
+    })
+  }
+  return blocks
 }
 
 function assistantBlocks(parts: ServerPart[], cwd: string): ChatBlock[] {

@@ -76,6 +76,28 @@ describe("opencode 2.0 mappers (#693)", () => {
     expect(assistant.parts[3]).toMatchObject({ state: { status: "pending", raw: "{\"pat" } })
   })
 
+  // The entry is one recorded from 2.1.4 and 2.2.5 scratch servers: a data:
+  // upload and a file:// upload are both stored as their bytes.
+  it("maps a user entry's files to file parts that carry the bytes as a data URL (#736)", () => {
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    const entries: SessionMessageInfo[] = [
+      {
+        id: "u1",
+        time: { created: 1793799220178 },
+        text: "look at these",
+        files: [
+          { data: png, mime: "image/png", source: { type: "inline" }, name: "dot.png" },
+          { data: "aGVsbG8gZnJvbSBub3RlCg==", mime: "text/plain", source: { type: "uri", uri: "file:///ws/note.txt" }, name: "note.txt" },
+        ],
+        type: "user",
+      },
+    ]
+    const [item] = mapMessages("ses_1", "/ws", entries)
+    expect(item!.parts.map((p) => p.type)).toEqual(["text", "file", "file"])
+    expect(item!.parts[1]).toEqual({ id: "u1:file:0", sessionID: "ses_1", messageID: "u1", type: "file", mime: "image/png", filename: "dot.png", url: `data:image/png;base64,${png}` })
+    expect(item!.parts[2]).toMatchObject({ id: "u1:file:1", filename: "note.txt", url: "data:text/plain;base64,aGVsbG8gZnJvbSBub3RlCg==" })
+  })
+
   it("merges providers and models into the 1.x catalog, with variants and context limits", () => {
     const providers: ProviderInfo[] = [{ id: "anthropic", name: "Anthropic", activation: "enabled", package: "@ai-sdk/anthropic" }]
     const integrations: IntegrationInfo[] = [{ id: "anthropic", name: "Anthropic", methods: [], connections: [{ type: "env", name: "ANTHROPIC_API_KEY" }] }]
