@@ -128,6 +128,38 @@ describe("importedMessages", () => {
     expect(out[0]!.blocks).toEqual([{ type: "text", text: "how hard is this project" }])
   })
 
+  // The first message is one recorded from a 1.19.5 scratch server: a data:
+  // image is stored as sent, and a file:// image comes back as a synthetic
+  // Read line plus a file part holding the bytes as a data URL.
+  it("turns a user message's file parts into attachment blocks (#736)", () => {
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    const out = importedMessages(
+      [
+        {
+          info: { id: "msg_u1", role: "user" },
+          parts: [
+            { type: "text", text: "look at these" },
+            { type: "file", mime: "image/png", filename: "dot.png", url: `data:image/png;base64,${png}` },
+            { type: "text", text: 'Called the Read tool with the following input: {"filePath":"/ws/dot2.png"}', synthetic: true },
+            { type: "file", mime: "image/png", filename: "dot2.png", url: `data:image/png;base64,${png}` },
+          ],
+        },
+        { info: { id: "msg_u2", role: "user" }, parts: [{ type: "file", mime: "text/plain", filename: "a.txt", url: "data:text/plain;base64,aGVsbG8K" }] },
+      ],
+      "/ws",
+    )
+    expect(out.map((m) => m.id)).toEqual(["msg_u1", "msg_u2"])
+    expect(out[0]!.blocks).toEqual([
+      { type: "attachment", mime: "image/png", filename: "dot.png", dataUrl: `data:image/png;base64,${png}`, bytes: 68 },
+      { type: "attachment", mime: "image/png", filename: "dot2.png", dataUrl: `data:image/png;base64,${png}`, bytes: 68 },
+      { type: "text", text: "look at these" },
+    ])
+    expect(out[1]!.blocks).toEqual([
+      { type: "attachment", mime: "text/plain", filename: "a.txt", dataUrl: "data:text/plain;base64,aGVsbG8K", bytes: 6 },
+      { type: "text", text: "" },
+    ])
+  })
+
   it("keeps the compaction summary flag and skips empty messages", () => {
     const out = importedMessages(
       [
