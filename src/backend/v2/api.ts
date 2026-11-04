@@ -8,11 +8,15 @@ export type V2Client = ReturnType<typeof OpenCode.make>
 /**
  * A status the endpoint declares comes back as the decoded error body, with
  * no number attached; only an undeclared one arrives as a ClientError that
- * carries it. So this is best effort, and 0 means "a failure, status unknown".
+ * carries it. The declared not-found errors are tagged (SessionNotFoundError,
+ * IntegrationNotFoundError, recorded from 2.1.4 and 2.2.5), and the host
+ * reads their 404 to drop a vanished session. Otherwise this is best effort,
+ * and 0 means "a failure, status unknown".
  */
 function statusOf(error: unknown): number {
-  const { cause, detail } = (error ?? {}) as { cause?: { status?: unknown }; detail?: unknown }
+  const { _tag, cause, detail } = (error ?? {}) as { _tag?: unknown; cause?: { status?: unknown }; detail?: unknown }
   if (typeof cause?.status === "number") return cause.status
+  if (typeof _tag === "string" && _tag.endsWith("NotFoundError")) return 404
   return typeof detail === "string" && /^[1-5]\d\d$/.test(detail) ? Number(detail) : 0
 }
 
