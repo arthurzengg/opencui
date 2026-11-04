@@ -72,6 +72,11 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     res.statusCode = 204
     res.end()
   }
+  // A missing session or integration answers the declared 404 with a tagged
+  // body, recorded from 2.1.4 and 2.2.5 servers; the client decodes it into
+  // the tagged error with no status number, which the adapter maps back.
+  const notFound = (res: ServerResponse, kind: "Session" | "Integration", id: string) =>
+    json(res, 404, { _tag: `${kind}NotFoundError`, [`${kind.toLowerCase()}ID`]: id, message: `${kind} not found: ${id}` })
   const json = (res: ServerResponse, status: number, body: unknown) => {
     res.statusCode = status
     res.setHeader("content-type", "application/json")
@@ -141,7 +146,7 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     const one = path.match(/^\/api\/session\/([^/]+)$/)
     if (one) {
       const row = state.sessions.find((s) => s.id === one[1])
-      if (!row) return json(res, 404, { message: "session not found" })
+      if (!row) return notFound(res, "Session", one[1]!)
       if (req.method === "GET") return json(res, 200, { data: row })
       if (req.method === "PATCH") {
         const title = (body as { title?: string } | undefined)?.title
@@ -175,7 +180,7 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     const messages = path.match(/^\/api\/session\/([^/]+)\/message$/)
     if (messages && req.method === "GET") {
       const rows = state.messages[messages[1]!]
-      if (!rows) return json(res, 404, { message: "session not found" })
+      if (!rows) return notFound(res, "Session", messages[1]!)
       return json(res, 200, { data: rows, cursor: {} })
     }
     // Replies answer 204 with no body, as the server does.
@@ -204,7 +209,7 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     const connect = path.match(/^\/api\/integration\/([^/]+)\/connect\/(key|oauth)(?:\/([^/]+))?(\/complete)?$/)
     if (connect) {
       const integration = state.integrations.find((i) => i.id === connect[1])
-      if (!integration) return json(res, 404, { message: "integration not found" })
+      if (!integration) return notFound(res, "Integration", connect[1]!)
       if (connect[2] === "key" && req.method === "POST") {
         const id = `cred_${state.credentials.length + 1}`
         state.credentials.push({ id, integrationID: integration.id, label: "API key", active: true, value: { type: "key" } as CredentialEntry["value"] })
