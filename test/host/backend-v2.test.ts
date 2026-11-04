@@ -75,7 +75,8 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(res.data?.[1]?.parts).toEqual([expect.objectContaining({ type: "text", text: "hello" })])
     const missing = await api().session.messages("ses_nope")
     expect(missing.data).toBeUndefined()
-    expect(String((missing.error as Error).message)).toContain("session not found")
+    expect(missing.status).toBe(404)
+    expect(String((missing.error as Error).message)).toBe("Session not found: ses_nope")
   })
 
   it("fills the catalogs from the 2.0 routes with the location on each request", async () => {
