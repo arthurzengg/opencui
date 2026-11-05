@@ -87,9 +87,13 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(agents.data).toEqual([expect.objectContaining({ name: "build", mode: "primary" })])
     expect(commands.data).toEqual([{ name: "review", description: undefined }])
     expect(mcp.data).toEqual({ github: { status: "connected" } })
-    for (const path of ["/api/model", "/api/provider", "/api/agent", "/api/command", "/api/mcp"]) {
+    for (const path of ["/api/provider", "/api/agent", "/api/command", "/api/mcp"]) {
       expect(server.requests.find((r) => r.path === path)?.query).toEqual({ "location[directory]": "/ws" })
     }
+    // A 2.2 server lists chat models by default and its image and decision
+    // models only on request; asking for chat keeps the picker chat-only
+    // when that default moves (#738).
+    expect(server.requests.find((r) => r.path === "/api/model")?.query).toEqual({ "location[directory]": "/ws", types: "chat" })
   })
 
   it("streams events until the signal aborts", async () => {
