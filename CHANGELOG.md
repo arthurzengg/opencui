@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.17.2] - 2026-11-06
+
+### Fixed
+
+- On opencode 2.x, a session that no longer existed on the server was reported with status 0 instead of 404, so a conversation whose session had vanished could not be removed from the history list, and a prompt to it showed the generic rejection instead of naming the missing session. The adapter now reads the server's tagged not-found error as the 404 the host expects (#734, #735).
+- A session rebuilt from the server lost its attachments: the 2.x adapter dropped the files stored on a user message, and the importer read only the text parts on both lines. Each file now comes back as an attachment with its bytes, an image shows its thumbnail, the edit flow can re-send it, and a message that carries only attachments is imported instead of skipped (#736, #737).
+
+### Changed
+
+- The opencode 2.x client is now 2.2.5. The catalog request asks a 2.x server for chat models explicitly, so the image and decision models a 2.2 server lists on request stay out of the model picker; 2.1.4 and 2.0.24 ignore the parameter, and the adapter was verified live against 2.2.5 and 2.1.4 (#738, #739).
+
 ## [1.17.1] - 2026-11-02
 
 ### Fixed
