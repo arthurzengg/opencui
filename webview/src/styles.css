@@ -1523,10 +1523,23 @@ button:focus-visible {
   line-height: 1.35;
   white-space: nowrap;
   text-align: left;
-  pointer-events: none;
+  visibility: hidden;
   opacity: 0;
   transform: translateY(2px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  /* Hides after a short delay and stays hit-testable until then: the overlay
+     is a descendant of the chip, so a pointer that reaches it keeps the chip
+     hovered, and the delay covers a hand drifting off the chip sideways. */
+  transition: opacity 0.12s ease 0.12s, transform 0.12s ease 0.12s, visibility 0s linear 0.24s;
+}
+/* Closes the gap between the chip and the overlay so the hover survives the
+   straight crossing. */
+.msg-usage-popover::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 6px;
 }
 /* Set by the chip when the scroller has no room above it (#742). */
 .msg-usage-popover.is-below {
@@ -1534,10 +1547,16 @@ button:focus-visible {
   bottom: auto;
   transform: translateY(-2px);
 }
+.msg-usage-popover.is-below::after {
+  top: auto;
+  bottom: 100%;
+}
 .msg-usage:hover .msg-usage-popover,
 .msg-usage:focus-visible .msg-usage-popover {
+  visibility: visible;
   opacity: 1;
   transform: translateY(0);
+  transition-delay: 0s;
 }
 .msg-usage-model {
   overflow: hidden;
