@@ -393,6 +393,29 @@ describe("MessageView (assistant role)", () => {
     expect(chip.tabIndex).toBe(0)
   })
 
+  it("opens the breakdown downward when the scroller has no room above the chip (#742)", () => {
+    const msg = {
+      ...assistantMessage("response"),
+      usage: { model: "m", cost: 0.0025, tokens: { input: 100, output: 50, reasoning: 0 } },
+    } as Message
+    const { container } = render(
+      <div className="messages">
+        <MessageView message={msg} processOpen={false} processOnly={false} />
+      </div>,
+    )
+    const chip = container.querySelector(".msg-usage") as HTMLElement
+    const popover = chip.querySelector(".msg-usage-popover") as HTMLElement
+    Object.defineProperty(popover, "offsetHeight", { value: 150 })
+    const at = (top: number) => () => ({ top, bottom: top + 16, left: 0, right: 0, width: 0, height: 16, x: 0, y: top, toJSON() {} }) as DOMRect
+    chip.getBoundingClientRect = at(40)
+    fireEvent.mouseEnter(chip)
+    expect(popover.classList.contains("is-below")).toBe(true)
+    chip.getBoundingClientRect = at(400)
+    fireEvent.mouseLeave(chip)
+    fireEvent.mouseEnter(chip)
+    expect(popover.classList.contains("is-below")).toBe(false)
+  })
+
   it("shows the token total at rest when the model reports no cost", () => {
     const msg = {
       ...assistantMessage("response"),

@@ -1468,8 +1468,10 @@ button:focus-visible {
   display: flex;
   justify-content: flex-end;
   margin-top: 6px;
-  /* Fade in on completion so the chip settles in rather than popping. */
-  animation: msg-usage-in 0.2s ease both;
+  /* Fade in on completion so the chip settles in rather than popping. No
+     fill mode: a filled opacity animation keeps the row a stacking context,
+     which painted the overlay under the sticky user bubble (#742). */
+  animation: msg-usage-in 0.2s ease;
 }
 @keyframes msg-usage-in {
   from { opacity: 0; }
@@ -1525,6 +1527,12 @@ button:focus-visible {
   opacity: 0;
   transform: translateY(2px);
   transition: opacity 0.12s ease, transform 0.12s ease;
+}
+/* Set by the chip when the scroller has no room above it (#742). */
+.msg-usage-popover.is-below {
+  top: calc(100% + 6px);
+  bottom: auto;
+  transform: translateY(-2px);
 }
 .msg-usage:hover .msg-usage-popover,
 .msg-usage:focus-visible .msg-usage-popover {

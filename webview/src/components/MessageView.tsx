@@ -192,15 +192,30 @@ function MessageViewComponent({
  * assistive tech.
  */
 function UsageChip({ usage }: { usage: NonNullable<Message["usage"]> }) {
+  const chipRef = useRef<HTMLSpanElement>(null)
+  const popoverRef = useRef<HTMLSpanElement>(null)
+  const [below, setBelow] = useState(false)
   const summary = usageSummary(usage)
   if (!summary) return null
   const { model, totals, kinds } = usageBreakdown(usage)
+  // The overlay opens upward, where the scroller's top edge would clip it
+  // under the first short reply of a conversation; the empty transcript
+  // below has the room then. Measured on each reveal because the chip's
+  // place in the scroller changes as the transcript grows.
+  const place = () => {
+    const chip = chipRef.current
+    const popover = popoverRef.current
+    if (!chip || !popover) return
+    const scroller = chip.closest(".messages")
+    const room = chip.getBoundingClientRect().top - (scroller?.getBoundingClientRect().top ?? 0)
+    setBelow(room < popover.offsetHeight + USAGE_POPOVER_GAP)
+  }
   return (
     <div className="msg-usage-row">
-      <span className="msg-usage" role="note" tabIndex={0} aria-label={usageDetail(usage)}>
+      <span ref={chipRef} className="msg-usage" role="note" tabIndex={0} aria-label={usageDetail(usage)} onMouseEnter={place} onFocus={place}>
         {summary}
         {totals.length + kinds.length > 0 && (
-          <span className="msg-usage-popover" aria-hidden="true">
+          <span ref={popoverRef} className={below ? "msg-usage-popover is-below" : "msg-usage-popover"} aria-hidden="true">
             {model && <span className="msg-usage-model">{model}</span>}
             {totals.length > 0 && <UsageRows rows={totals} />}
             {kinds.length > 0 && <UsageRows rows={kinds} className="msg-usage-kinds" />}
@@ -210,6 +225,9 @@ function UsageChip({ usage }: { usage: NonNullable<Message["usage"]> }) {
     </div>
   )
 }
+
+/** The gap between the chip and its overlay, as `.msg-usage-popover` sets it. */
+const USAGE_POPOVER_GAP = 6
 
 function UsageRows({ rows, className }: { rows: UsageRow[]; className?: string }) {
   return (

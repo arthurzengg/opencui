@@ -33,6 +33,11 @@ describe("usage chip stylesheet", () => {
     expect(css).toContain(".msg-usage:hover .msg-usage-popover,\n.msg-usage:focus-visible .msg-usage-popover {")
   })
 
+  it("keeps the chip row free of a forward fill, which would stack the overlay under the sticky bubble (#742)", () => {
+    expect(ruleBody(".msg-usage-row")).not.toMatch(/animation:.*(both|forwards)/)
+    expect(ruleBody(".msg-usage-popover.is-below")).toContain("top: calc(100% + 6px)")
+  })
+
   it("lays the rows out as a label/value grid with right-aligned tabular values (#742)", () => {
     expect(ruleBody(".msg-usage-table")).toContain("display: grid")
     const value = ruleBody(".msg-usage-value")
