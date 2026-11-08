@@ -1468,8 +1468,10 @@ button:focus-visible {
   display: flex;
   justify-content: flex-end;
   margin-top: 6px;
-  /* Fade in on completion so the chip settles in rather than popping. */
-  animation: msg-usage-in 0.2s ease both;
+  /* Fade in on completion so the chip settles in rather than popping. No
+     fill mode: a filled opacity animation keeps the row a stacking context,
+     which painted the overlay under the sticky user bubble (#742). */
+  animation: msg-usage-in 0.2s ease;
 }
 @keyframes msg-usage-in {
   from { opacity: 0; }
@@ -1498,16 +1500,20 @@ button:focus-visible {
 }
 /* The breakdown is an overlay, never an inline expansion: hovering must not
    change the message height under the pointer (#656). Right-anchored and
-   opening upward so it stays inside the transcript and clear of the dock. */
-.msg-usage::before {
-  content: attr(data-tooltip);
+   opening upward so it stays inside the transcript and clear of the dock.
+   A real element rather than a data-tooltip pseudo-element so the rows can
+   be laid out as a label/value grid (#742). */
+.msg-usage-popover {
   position: absolute;
   right: 0;
   bottom: calc(100% + 6px);
   z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   width: max-content;
   max-width: min(320px, calc(100vw - 48px));
-  padding: 5px 8px;
+  padding: 6px 8px;
   border: 1px solid var(--vscode-editorWidget-border, var(--color-border));
   border-radius: var(--radius-sm);
   background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
@@ -1515,17 +1521,65 @@ button:focus-visible {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   font-size: 11px;
   line-height: 1.35;
-  white-space: pre-line;
+  white-space: nowrap;
   text-align: left;
-  pointer-events: none;
+  visibility: hidden;
   opacity: 0;
   transform: translateY(2px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  /* Hides after a short delay and stays hit-testable until then: the overlay
+     is a descendant of the chip, so a pointer that reaches it keeps the chip
+     hovered, and the delay covers a hand drifting off the chip sideways. */
+  transition: opacity 0.12s ease 0.12s, transform 0.12s ease 0.12s, visibility 0s linear 0.24s;
 }
-.msg-usage:hover::before,
-.msg-usage:focus-visible::before {
+/* Closes the gap between the chip and the overlay so the hover survives the
+   straight crossing. */
+.msg-usage-popover::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 6px;
+}
+/* Set by the chip when the scroller has no room above it (#742). */
+.msg-usage-popover.is-below {
+  top: calc(100% + 6px);
+  bottom: auto;
+  transform: translateY(-2px);
+}
+.msg-usage-popover.is-below::after {
+  top: auto;
+  bottom: 100%;
+}
+.msg-usage:hover .msg-usage-popover,
+.msg-usage:focus-visible .msg-usage-popover {
+  visibility: visible;
   opacity: 1;
   transform: translateY(0);
+  transition-delay: 0s;
+}
+.msg-usage-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vscode-descriptionForeground);
+}
+.msg-usage-table {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 16px;
+  row-gap: 2px;
+}
+/* The per-kind split sits under a hairline so the totals read first. */
+.msg-usage-kinds {
+  padding-top: 4px;
+  border-top: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35));
+}
+.msg-usage-kinds .msg-usage-label {
+  color: var(--vscode-descriptionForeground);
+}
+.msg-usage-value {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Semantic-index status pill — sits in the status bar / header area. */
@@ -2542,7 +2596,7 @@ button:focus-visible {
   .msg-usage-row {
     animation: none;
   }
-  .msg-usage::before {
+  .msg-usage-popover {
     transition: none;
   }
 }

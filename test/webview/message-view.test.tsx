@@ -365,19 +365,55 @@ describe("MessageView (assistant role)", () => {
     expect(line().style.animationDelay).toBe("")
   })
 
-  it("shows only the cost at rest and keeps model and token split for the tooltip", () => {
+  /** Each table's rows as [label, value] pairs, in order. */
+  function usageRows(popover: HTMLElement): string[][][] {
+    return Array.from(popover.querySelectorAll(".msg-usage-table")).map((table) => {
+      const labels = Array.from(table.querySelectorAll(".msg-usage-label"), (el) => el.textContent ?? "")
+      const values = Array.from(table.querySelectorAll(".msg-usage-value"), (el) => el.textContent ?? "")
+      return labels.map((label, i) => [label, values[i]])
+    })
+  }
+
+  it("shows only the cost at rest and lays the breakdown out as labelled rows (#742)", () => {
     const msg = {
       ...assistantMessage("response"),
       usage: { model: "claude-opus-4-7", cost: 0.0025, tokens: { input: 100, output: 50, reasoning: 0 } },
     } as Message
     const { container } = render(<MessageView message={msg} processOpen={false} processOnly={false} />)
     const chip = container.querySelector(".msg-usage") as HTMLElement
-    expect(chip.textContent).toBe("$0.0025")
-    expect(screen.queryByText("claude-opus-4-7")).toBeNull()
-    expect(screen.queryByText(/150 tokens/)).toBeNull()
-    expect(chip.getAttribute("data-tooltip")).toBe("claude-opus-4-7\n$0.0025 · 150 tokens\n100 in · 50 out")
-    expect(chip.getAttribute("aria-label")).toBe(chip.getAttribute("data-tooltip"))
+    expect(chip.firstChild?.textContent).toBe("$0.0025")
+    const popover = chip.querySelector(".msg-usage-popover") as HTMLElement
+    expect(popover.getAttribute("aria-hidden")).toBe("true")
+    expect(popover.querySelector(".msg-usage-model")?.textContent).toBe("claude-opus-4-7")
+    expect(usageRows(popover)).toEqual([
+      [["Cost", "$0.0025"], ["Tokens", "150"]],
+      [["Input", "100"], ["Output", "50"]],
+    ])
+    expect(chip.getAttribute("aria-label")).toBe("claude-opus-4-7, Cost $0.0025, Tokens 150, Input 100, Output 50")
     expect(chip.tabIndex).toBe(0)
+  })
+
+  it("opens the breakdown downward when the scroller has no room above the chip (#742)", () => {
+    const msg = {
+      ...assistantMessage("response"),
+      usage: { model: "m", cost: 0.0025, tokens: { input: 100, output: 50, reasoning: 0 } },
+    } as Message
+    const { container } = render(
+      <div className="messages">
+        <MessageView message={msg} processOpen={false} processOnly={false} />
+      </div>,
+    )
+    const chip = container.querySelector(".msg-usage") as HTMLElement
+    const popover = chip.querySelector(".msg-usage-popover") as HTMLElement
+    Object.defineProperty(popover, "offsetHeight", { value: 150 })
+    const at = (top: number) => () => ({ top, bottom: top + 16, left: 0, right: 0, width: 0, height: 16, x: 0, y: top, toJSON() {} }) as DOMRect
+    chip.getBoundingClientRect = at(40)
+    fireEvent.mouseEnter(chip)
+    expect(popover.classList.contains("is-below")).toBe(true)
+    chip.getBoundingClientRect = at(400)
+    fireEvent.mouseLeave(chip)
+    fireEvent.mouseEnter(chip)
+    expect(popover.classList.contains("is-below")).toBe(false)
   })
 
   it("shows the token total at rest when the model reports no cost", () => {
@@ -386,7 +422,7 @@ describe("MessageView (assistant role)", () => {
       usage: { model: "local/llama", cost: 0, tokens: { input: 9000, output: 930, reasoning: 0 } },
     } as Message
     const { container } = render(<MessageView message={msg} processOpen={false} processOnly={false} />)
-    expect(container.querySelector(".msg-usage")?.textContent).toBe("9,930 tokens")
+    expect(container.querySelector(".msg-usage")?.firstChild?.textContent).toBe("9,930 tokens")
   })
 
   it("hides the usage chip while the chat is busy", () => {

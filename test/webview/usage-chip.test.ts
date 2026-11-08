@@ -21,18 +21,31 @@ function ruleBody(selector: string): string {
 // The chip's breakdown is an overlay, not an inline expansion: hovering must
 // never change the message height (#656).
 describe("usage chip stylesheet", () => {
-  it("renders the breakdown as an absolutely positioned tooltip from data-tooltip", () => {
-    const body = ruleBody(".msg-usage::before")
-    expect(body).toContain("content: attr(data-tooltip)")
+  it("renders the breakdown as an absolutely positioned overlay, out of hit testing until shown", () => {
+    const body = ruleBody(".msg-usage-popover")
     expect(body).toContain("position: absolute")
     expect(body).toContain("bottom: calc(100% + 6px)")
-    expect(body).toContain("white-space: pre-line")
-    expect(body).toContain("pointer-events: none")
+    expect(body).toContain("visibility: hidden")
+    expect(body).not.toContain("pointer-events")
   })
 
-  it("anchors the tooltip to the chip and reveals it on hover and keyboard focus", () => {
+  it("anchors the overlay to the chip, reveals it on hover and keyboard focus, and bridges the gap so the pointer can cross into it", () => {
     expect(ruleBody(".msg-usage")).toContain("position: relative")
-    expect(css).toContain(".msg-usage:hover::before,\n.msg-usage:focus-visible::before {")
+    expect(css).toContain(".msg-usage:hover .msg-usage-popover,\n.msg-usage:focus-visible .msg-usage-popover {")
+    expect(ruleBody(".msg-usage-popover::after")).toContain("top: 100%")
+    expect(ruleBody(".msg-usage-popover.is-below::after")).toContain("bottom: 100%")
+  })
+
+  it("keeps the chip row free of a forward fill, which would stack the overlay under the sticky bubble (#742)", () => {
+    expect(ruleBody(".msg-usage-row")).not.toMatch(/animation:.*(both|forwards)/)
+    expect(ruleBody(".msg-usage-popover.is-below")).toContain("top: calc(100% + 6px)")
+  })
+
+  it("lays the rows out as a label/value grid with right-aligned tabular values (#742)", () => {
+    expect(ruleBody(".msg-usage-table")).toContain("display: grid")
+    const value = ruleBody(".msg-usage-value")
+    expect(value).toContain("justify-self: end")
+    expect(value).toContain("font-variant-numeric: tabular-nums")
   })
 
   it("keeps the chip right-aligned in its own row", () => {

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Fragment, memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { RetryStatus } from "./RetryStatus"
 import { useLivePhase } from "../hooks/useLivePhase"
 import type { Block, Message } from "../hooks/useChatState"
@@ -23,7 +23,7 @@ import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace } from "./ToolCard"
 import { ICON_SIZE } from "../design-tokens"
-import { usageDetail, usageSummary } from "../usage-format"
+import { usageBreakdown, usageDetail, usageSummary, type UsageRow } from "../usage-format"
 import { AgentActivity } from "./AgentActivity"
 
 /**
@@ -185,19 +185,60 @@ function MessageViewComponent({
 
 /**
  * One figure at rest, the full breakdown in an overlay on hover or focus.
- * The detail is a tooltip rather than an inline expansion so the message
- * never changes height under the pointer (#656).
+ * The detail is an overlay rather than an inline expansion so the message
+ * never changes height under the pointer (#656). It is a real element laid
+ * out as labelled rows rather than a data-tooltip pseudo-element (#742); the
+ * chip's label carries the same rows as text, so the overlay is hidden from
+ * assistive tech.
  */
 function UsageChip({ usage }: { usage: NonNullable<Message["usage"]> }) {
+  const chipRef = useRef<HTMLSpanElement>(null)
+  const popoverRef = useRef<HTMLSpanElement>(null)
+  const [below, setBelow] = useState(false)
   const summary = usageSummary(usage)
   if (!summary) return null
-  const detail = usageDetail(usage)
+  const { model, totals, kinds } = usageBreakdown(usage)
+  // The overlay opens upward, where the scroller's top edge would clip it
+  // under the first short reply of a conversation; the empty transcript
+  // below has the room then. Measured on each reveal because the chip's
+  // place in the scroller changes as the transcript grows.
+  const place = () => {
+    const chip = chipRef.current
+    const popover = popoverRef.current
+    if (!chip || !popover) return
+    const scroller = chip.closest(".messages")
+    const room = chip.getBoundingClientRect().top - (scroller?.getBoundingClientRect().top ?? 0)
+    setBelow(room < popover.offsetHeight + USAGE_POPOVER_GAP)
+  }
   return (
     <div className="msg-usage-row">
-      <span className="msg-usage" role="note" tabIndex={0} aria-label={detail} data-tooltip={detail}>
+      <span ref={chipRef} className="msg-usage" role="note" tabIndex={0} aria-label={usageDetail(usage)} onMouseEnter={place} onFocus={place}>
         {summary}
+        {totals.length + kinds.length > 0 && (
+          <span ref={popoverRef} className={below ? "msg-usage-popover is-below" : "msg-usage-popover"} aria-hidden="true">
+            {model && <span className="msg-usage-model">{model}</span>}
+            {totals.length > 0 && <UsageRows rows={totals} />}
+            {kinds.length > 0 && <UsageRows rows={kinds} className="msg-usage-kinds" />}
+          </span>
+        )}
       </span>
     </div>
+  )
+}
+
+/** The gap between the chip and its overlay, as `.msg-usage-popover` sets it. */
+const USAGE_POPOVER_GAP = 6
+
+function UsageRows({ rows, className }: { rows: UsageRow[]; className?: string }) {
+  return (
+    <span className={className ? `msg-usage-table ${className}` : "msg-usage-table"}>
+      {rows.map((row) => (
+        <Fragment key={row.label}>
+          <span className="msg-usage-label">{row.label}</span>
+          <span className="msg-usage-value">{row.value}</span>
+        </Fragment>
+      ))}
+    </span>
   )
 }
 
