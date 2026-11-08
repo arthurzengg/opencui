@@ -21,18 +21,23 @@ function ruleBody(selector: string): string {
 // The chip's breakdown is an overlay, not an inline expansion: hovering must
 // never change the message height (#656).
 describe("usage chip stylesheet", () => {
-  it("renders the breakdown as an absolutely positioned tooltip from data-tooltip", () => {
-    const body = ruleBody(".msg-usage::before")
-    expect(body).toContain("content: attr(data-tooltip)")
+  it("renders the breakdown as an absolutely positioned overlay the pointer cannot reach", () => {
+    const body = ruleBody(".msg-usage-popover")
     expect(body).toContain("position: absolute")
     expect(body).toContain("bottom: calc(100% + 6px)")
-    expect(body).toContain("white-space: pre-line")
     expect(body).toContain("pointer-events: none")
   })
 
-  it("anchors the tooltip to the chip and reveals it on hover and keyboard focus", () => {
+  it("anchors the overlay to the chip and reveals it on hover and keyboard focus", () => {
     expect(ruleBody(".msg-usage")).toContain("position: relative")
-    expect(css).toContain(".msg-usage:hover::before,\n.msg-usage:focus-visible::before {")
+    expect(css).toContain(".msg-usage:hover .msg-usage-popover,\n.msg-usage:focus-visible .msg-usage-popover {")
+  })
+
+  it("lays the rows out as a label/value grid with right-aligned tabular values (#742)", () => {
+    expect(ruleBody(".msg-usage-table")).toContain("display: grid")
+    const value = ruleBody(".msg-usage-value")
+    expect(value).toContain("justify-self: end")
+    expect(value).toContain("font-variant-numeric: tabular-nums")
   })
 
   it("keeps the chip right-aligned in its own row", () => {

@@ -1498,16 +1498,20 @@ button:focus-visible {
 }
 /* The breakdown is an overlay, never an inline expansion: hovering must not
    change the message height under the pointer (#656). Right-anchored and
-   opening upward so it stays inside the transcript and clear of the dock. */
-.msg-usage::before {
-  content: attr(data-tooltip);
+   opening upward so it stays inside the transcript and clear of the dock.
+   A real element rather than a data-tooltip pseudo-element so the rows can
+   be laid out as a label/value grid (#742). */
+.msg-usage-popover {
   position: absolute;
   right: 0;
   bottom: calc(100% + 6px);
   z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   width: max-content;
   max-width: min(320px, calc(100vw - 48px));
-  padding: 5px 8px;
+  padding: 6px 8px;
   border: 1px solid var(--vscode-editorWidget-border, var(--color-border));
   border-radius: var(--radius-sm);
   background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
@@ -1515,17 +1519,40 @@ button:focus-visible {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   font-size: 11px;
   line-height: 1.35;
-  white-space: pre-line;
+  white-space: nowrap;
   text-align: left;
   pointer-events: none;
   opacity: 0;
   transform: translateY(2px);
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
-.msg-usage:hover::before,
-.msg-usage:focus-visible::before {
+.msg-usage:hover .msg-usage-popover,
+.msg-usage:focus-visible .msg-usage-popover {
   opacity: 1;
   transform: translateY(0);
+}
+.msg-usage-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vscode-descriptionForeground);
+}
+.msg-usage-table {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 16px;
+  row-gap: 2px;
+}
+/* The per-kind split sits under a hairline so the totals read first. */
+.msg-usage-kinds {
+  padding-top: 4px;
+  border-top: 1px solid var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35));
+}
+.msg-usage-kinds .msg-usage-label {
+  color: var(--vscode-descriptionForeground);
+}
+.msg-usage-value {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Semantic-index status pill — sits in the status bar / header area. */
@@ -2542,7 +2569,7 @@ button:focus-visible {
   .msg-usage-row {
     animation: none;
   }
-  .msg-usage::before {
+  .msg-usage-popover {
     transition: none;
   }
 }
