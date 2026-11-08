@@ -375,7 +375,7 @@ describe("MessageView (assistant role)", () => {
     expect(chip.textContent).toBe("$0.0025")
     expect(screen.queryByText("claude-opus-4-7")).toBeNull()
     expect(screen.queryByText(/150 tokens/)).toBeNull()
-    expect(chip.getAttribute("data-tooltip")).toBe("claude-opus-4-7\n$0.0025 · 150 tokens\n100 in · 50 out")
+    expect(chip.getAttribute("data-tooltip")).toBe("claude-opus-4-7, Cost $0.0025, Tokens 150, Input 100, Output 50")
     expect(chip.getAttribute("aria-label")).toBe(chip.getAttribute("data-tooltip"))
     expect(chip.tabIndex).toBe(0)
   })
