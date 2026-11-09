@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.17.3] - 2026-11-09
+
+### Changed
+
+- The usage chip's breakdown under a finished reply is laid out as labelled rows instead of three lines of prose: the model heads the overlay, then Cost and Tokens, then the per-kind split (Input, Output, Reasoning, Cache read, Cache write) under a hairline, with the values right-aligned. The overlay opens downward when the top of the transcript would clip it, stays open while the pointer moves into it, and no longer paints under the sticky user bubble (#742, #743).
+
 ## [1.17.2] - 2026-11-06
 
 ### Fixed
