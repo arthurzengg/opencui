@@ -919,7 +919,7 @@ button:focus-visible {
   outline: none;
 }
 .history-search:focus {
-  border-color: var(--vscode-focusBorder);
+  border-color: var(--accent);
 }
 .history-list {
   margin-top: 6px;
@@ -2145,8 +2145,8 @@ button:focus-visible {
   z-index: var(--z-overlay);
   margin: 0 10px 8px;
   padding: 10px;
-  border: 1px solid var(--vscode-focusBorder);
-  border-left: 3px solid var(--vscode-focusBorder);
+  border: 1px solid var(--accent-line);
+  border-left: 3px solid var(--accent-line);
   background: var(--vscode-editorWidget-background);
   border-radius: var(--radius);
   box-shadow: var(--shadow-dock);
@@ -2178,8 +2178,8 @@ button:focus-visible {
   z-index: var(--z-overlay);
   margin: 0 10px 8px;
   padding: 10px;
-  border: 1px solid var(--vscode-focusBorder);
-  border-left: 3px solid var(--vscode-focusBorder);
+  border: 1px solid var(--accent-line);
+  border-left: 3px solid var(--accent-line);
   background: var(--vscode-editorWidget-background);
   border-radius: var(--radius);
   box-shadow: var(--shadow-dock);
@@ -2213,7 +2213,7 @@ button:focus-visible {
 }
 .question-option:hover { background: var(--hover-bg-row); }
 .question-option.is-checked {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  background: var(--selection-bg);
 }
 .question-option-marker {
   flex: 0 0 auto;
@@ -2232,8 +2232,8 @@ button:focus-visible {
 .question-option-marker.square { border-radius: var(--radius-sm); }
 .question-option-marker .codicon { font-size: 11px; }
 .question-option.is-checked .question-option-marker {
-  border-color: var(--vscode-focusBorder);
-  color: var(--vscode-focusBorder);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 /* The dot is drawn, not typed: a `●` glyph sits on the font's baseline, so its
    ink lands off-center inside the 14px circle and shifts with font fallback. A
@@ -2267,7 +2267,7 @@ button:focus-visible {
   resize: vertical;
   outline: none;
 }
-.question-custom:focus { border-color: var(--vscode-focusBorder); }
+.question-custom:focus { border-color: var(--accent); }
 /* An option is checked, so the typed text is not the answer: dim the field
    until the "Other…" radio is picked again. The text itself is kept. */
 .question-custom:disabled {
@@ -2828,7 +2828,7 @@ button:focus-visible {
 .promptbox-row .spacer { flex: 1; }
 
 .context-usage {
-  --context-usage-color: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+  --context-usage-color: var(--accent);
   --context-usage-track: var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35));
   position: relative;
   display: inline-flex;
@@ -3311,7 +3311,7 @@ button:focus-visible {
   background-position: 0 0, 0 4px, 4px -4px, -4px 0;
 }
 .image-thumb-open:hover {
-  border-color: var(--vscode-focusBorder, var(--vscode-widget-border));
+  border-color: var(--accent-line);
 }
 .image-thumb-open img {
   display: block;
@@ -3691,10 +3691,10 @@ button:focus-visible {
 }
 .btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .btn.primary {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  background: var(--accent-fill);
+  color: var(--accent-on-fill);
 }
-.btn.primary:hover { background: var(--vscode-button-hoverBackground); }
+.btn.primary:hover { background: var(--accent-fill-hover); }
 .btn.danger {
   background: var(--vscode-inputValidation-errorBackground, #a1260d);
   color: white;
