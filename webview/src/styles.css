@@ -47,13 +47,32 @@
   --surface-input:      linear-gradient(0deg, var(--color-bg-input), var(--color-bg-input)), var(--color-bg-panel);
   --color-border:       var(--vscode-input-border, transparent);
   --color-border-focus: var(--vscode-foreground); /* intentional: text colour, not focusBorder blue */
-  --color-accent:       var(--vscode-focusBorder);
+
+  /* === Accent ===
+     The panel's accent is the theme's text colour, not its accent hue, so the
+     hues left on screen are the ones that carry meaning: links, diff green
+     and red, warning amber, the status dot (#748). Text links, keyboard focus
+     outlines and text selection stay on the theme's own colours, and a
+     high-contrast theme keeps its accent (see the override after `:root`).
+       --accent       full-strength strokes and marks: a tick, a checked
+                      marker, the context ring, an input's focus border
+       --accent-line  the same at reduced strength: a card that asks for an
+                      answer, a stripe, a hovered thumbnail
+       --accent-fill  the primary button, with --accent-on-fill as its text
+       --selection-*  the highlighted row of a list; translucent, so it shows
+                      on whichever popover surface it lies */
+  --accent:             var(--vscode-foreground);
+  --accent-line:        color-mix(in srgb, var(--vscode-foreground) 55%, transparent);
+  --accent-fill:        var(--vscode-foreground);
+  --accent-fill-hover:  color-mix(in srgb, var(--vscode-foreground) 86%, var(--color-bg-panel));
+  --accent-on-fill:     var(--color-bg-panel);
+  --selection-bg:       color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  --selection-fg:       var(--vscode-foreground);
 
   /* === Hover backgrounds ===
      Three distinct surfaces share a hover treatment across the webview.
      Tweaking how a category feels (e.g. "soften icon hovers") is a one-line
-     change here. The `.history-new` button intentionally opts out — its
-     green tint is part of its meaning, not a generic hover. */
+     change here. */
   --hover-bg-pill: var(--vscode-button-secondaryHoverBackground);
   --hover-bg-icon: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   --hover-bg-row:  var(--vscode-list-hoverBackground);
@@ -133,6 +152,20 @@
 
   /* === Legacy aliases === */
   --gap: var(--space-3);
+}
+
+/* A high-contrast theme keeps its own accent: there the hue is the signal,
+   and a fill in the text colour could not be told from text (#748). VS Code
+   puts the theme kind on the webview's body. */
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --accent:            var(--vscode-focusBorder);
+  --accent-line:       var(--vscode-focusBorder);
+  --accent-fill:       var(--vscode-button-background);
+  --accent-fill-hover: var(--vscode-button-hoverBackground);
+  --accent-on-fill:    var(--vscode-button-foreground);
+  --selection-bg:      var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  --selection-fg:      var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
 }
 
 html, body, #root {
