@@ -7,15 +7,21 @@ afterEach(cleanup)
 
 describe("PermissionDialog", () => {
   it("renders the title and the pattern", () => {
-    render(<PermissionDialog id="p1" title="Run a shell command" pattern="rm -rf dist" onReply={() => {}} />)
-    expect(screen.getByText(/Permission requested/)).toBeInTheDocument()
+    const { container } = render(<PermissionDialog id="p1" title="Run a shell command" pattern="rm -rf dist" onReply={() => {}} />)
+    expect(screen.getByRole("group", { name: "Permission request" })).toBeInTheDocument()
     expect(screen.getByText("Run a shell command")).toBeInTheDocument()
-    expect(screen.getByText("rm -rf dist")).toBeInTheDocument()
+    expect(container.querySelector(".permission-pattern")?.textContent).toBe("rm -rf dist")
   })
 
   it("joins array patterns with a comma", () => {
-    render(<PermissionDialog id="p1" title="Edit files" pattern={["src/**", "test/**"]} onReply={() => {}} />)
-    expect(screen.getByText("src/**, test/**")).toBeInTheDocument()
+    const { container } = render(<PermissionDialog id="p1" title="Edit files" pattern={["src/**", "test/**"]} onReply={() => {}} />)
+    expect(container.querySelector(".permission-pattern")?.textContent).toBe("src/**, test/**")
+  })
+
+  it("boxes each word of the pattern so a line never breaks after a hyphen (#750)", () => {
+    const { container } = render(<PermissionDialog id="p1" title="Run a command" pattern="git log --all -- src" onReply={() => {}} />)
+    const tokens = Array.from(container.querySelectorAll(".permission-token"), (el) => el.textContent)
+    expect(tokens).toEqual(["git", "log", "--all", "--", "src"])
   })
 
   it("omits the pattern element when none is given", () => {
@@ -28,6 +34,22 @@ describe("PermissionDialog", () => {
       <PermissionDialog id="p1" title="Run a command" pattern={["git status"]} always={["git *"]} onReply={() => {}} />,
     )
     expect(screen.getByRole("button", { name: "Allow always" })).toHaveAttribute("title", "Saves a rule for: git *")
+  })
+
+  it("shows the rule beside Allow always, and nothing when there is none (#750)", () => {
+    const { container, rerender } = render(
+      <PermissionDialog id="p1" title="Run a command" pattern={["git status"]} always={["git *"]} onReply={() => {}} />,
+    )
+    expect(container.querySelector(".permission-option-detail")?.textContent).toBe("git *")
+    rerender(<PermissionDialog id="p1" title="Run a command" pattern={["git status"]} onReply={() => {}} />)
+    expect(container.querySelector(".permission-option-detail")).toBeNull()
+  })
+
+  it("lists the narrowest grant first and fills only that one (#750)", () => {
+    render(<PermissionDialog id="p1" title="Run a command" always={["git *"]} onReply={() => {}} />)
+    const buttons = screen.getAllByRole("button")
+    expect(buttons.map((b) => b.getAttribute("title") ? "Allow always" : b.textContent)).toEqual(["Allow once", "Allow always", "Reject"])
+    expect(buttons.map((b) => b.classList.contains("is-primary"))).toEqual([true, false, false])
   })
 
   it("has no tooltip on Allow always when the request names nothing to save", () => {

@@ -47,16 +47,51 @@
   --surface-input:      linear-gradient(0deg, var(--color-bg-input), var(--color-bg-input)), var(--color-bg-panel);
   --color-border:       var(--vscode-input-border, transparent);
   --color-border-focus: var(--vscode-foreground); /* intentional: text colour, not focusBorder blue */
-  --color-accent:       var(--vscode-focusBorder);
+
+  /* === Accent ===
+     The panel's accent is the theme's text colour, not its accent hue, so the
+     hues left on screen are the ones that carry meaning: links, diff green
+     and red, warning amber, the status dot (#748). Text links and text
+     selection stay on the theme's own colours, and a high-contrast theme
+     keeps its accent (see the override after `:root`).
+       --accent       full-strength strokes and marks: a tick, a checked
+                      marker, the context ring, an input's focus border, a
+                      keyboard focus outline
+       --accent-line  the same at reduced strength: a card that asks for an
+                      answer, a stripe, a hovered thumbnail
+       --accent-fill  the primary button, with --accent-on-fill as its text
+       --selection-*  the highlighted row of a list; translucent, so it shows
+                      on whichever popover surface it lies */
+  --accent:             var(--vscode-foreground);
+  --accent-line:        color-mix(in srgb, var(--vscode-foreground) 55%, transparent);
+  --accent-fill:        var(--vscode-foreground);
+  --accent-fill-hover:  color-mix(in srgb, var(--vscode-foreground) 86%, var(--color-bg-panel));
+  --accent-on-fill:     var(--color-bg-panel);
+  --selection-bg:       color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+  --selection-fg:       var(--vscode-foreground);
+  /* The border of a secondary button, by VS Code's own chain: the secondary
+     border first, then the general one. `button.border` alone is wrong: Dark
+     2026 sets it to the primary button's blue and gives secondary buttons
+     `button.secondaryBorder` (#751). Themes that fill their secondary buttons
+     and define neither keep the transparent fallback. */
+  --secondary-border:   var(--vscode-button-secondaryBorder, var(--vscode-button-border, transparent));
+  /* The primary button's border follows its neutral fill, not the theme's
+     primary border, which is the theme's accent hue. */
+  --accent-fill-border: transparent;
+  /* The edge of a control that has no fill of its own. */
+  --hairline:           color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
 
   /* === Hover backgrounds ===
      Three distinct surfaces share a hover treatment across the webview.
      Tweaking how a category feels (e.g. "soften icon hovers") is a one-line
-     change here. The `.history-new` button intentionally opts out — its
-     green tint is part of its meaning, not a generic hover. */
+     change here. */
   --hover-bg-pill: var(--vscode-button-secondaryHoverBackground);
   --hover-bg-icon: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   --hover-bg-row:  var(--vscode-list-hoverBackground);
+  /* For a row on a surface the theme's list hover was not chosen for: on the
+     input surface of the request cards that colour comes out darker than the
+     card. A wash of the text colour lifts on any surface. */
+  --hover-bg-wash: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
 
   /* === Fixed UI colors (theme-independent) ===
      Status dots and the recurring scrollbar-thumb grey used in multiple
@@ -135,6 +170,23 @@
   --gap: var(--space-3);
 }
 
+/* A high-contrast theme keeps its own accent: there the hue is the signal,
+   and a fill in the text colour could not be told from text (#748). VS Code
+   puts the theme kind on the webview's body. */
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --accent:            var(--vscode-focusBorder);
+  --accent-line:       var(--vscode-focusBorder);
+  --accent-fill:       var(--vscode-button-background);
+  --accent-fill-hover: var(--vscode-button-hoverBackground);
+  --accent-on-fill:    var(--vscode-button-foreground);
+  --selection-bg:      var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  --selection-fg:      var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+  --hairline:          var(--vscode-contrastBorder, var(--vscode-focusBorder));
+  --hover-bg-wash:     var(--vscode-list-hoverBackground);
+  --accent-fill-border: var(--vscode-button-border, transparent);
+}
+
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -156,7 +208,7 @@ button {
    that need a different inset (e.g. .review-file's -1px) still win on
    specificity. */
 button:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -452,7 +504,7 @@ button:focus-visible {
   padding: 1px 8px;
   /* See `.btn`: a theme may draw its secondary buttons with a border and no
      fill, and the pill would be bare text there (#746). */
-  border: 1px solid var(--vscode-button-border, transparent);
+  border: 1px solid var(--secondary-border);
   border-radius: var(--radius-lg);
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
@@ -674,8 +726,8 @@ button:focus-visible {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  /* All uppercase micro-labels track at 0.05em (see .question-header,
-     .mention-section, .agents-popover-*). */
+  /* All uppercase micro-labels track at 0.05em (see .mention-section,
+     .agents-popover-*). */
   letter-spacing: 0.05em;
   cursor: default;
 }
@@ -714,8 +766,8 @@ button:focus-visible {
    highlight — a separate :hover rule would double-highlight during
    keyboard navigation with a resting cursor. */
 .model-picker-row.active {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
+  background: var(--selection-bg);
+  color: var(--selection-fg);
 }
 .model-picker-name {
   flex: 1 1 auto;
@@ -736,7 +788,7 @@ button:focus-visible {
   font-size: 10px;
 }
 .model-picker-row.active .model-picker-last-variant {
-  background: color-mix(in srgb, var(--vscode-list-activeSelectionForeground) 16%, transparent);
+  background: color-mix(in srgb, var(--selection-fg) 16%, transparent);
   color: inherit;
 }
 .model-picker-provider {
@@ -758,10 +810,10 @@ button:focus-visible {
 }
 .model-picker-row .codicon-check {
   font-size: 14px;
-  color: var(--vscode-textLink-foreground);
+  color: var(--accent);
 }
 .model-picker-row.active .codicon-check {
-  color: var(--vscode-list-activeSelectionForeground);
+  color: var(--selection-fg);
 }
 .model-picker-empty {
   padding: 12px;
@@ -855,7 +907,7 @@ button:focus-visible {
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--vscode-textLink-foreground);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
@@ -863,7 +915,7 @@ button:focus-visible {
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .history-new:hover {
-  background: color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent);
+  background: var(--selection-bg);
 }
 .history-new .codicon {
   flex: 0 0 auto;
@@ -886,7 +938,7 @@ button:focus-visible {
   outline: none;
 }
 .history-search:focus {
-  border-color: var(--vscode-focusBorder);
+  border-color: var(--accent);
 }
 .history-list {
   margin-top: 6px;
@@ -910,7 +962,7 @@ button:focus-visible {
   background: var(--hover-bg-row);
 }
 .history-item.is-active {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  background: var(--selection-bg);
 }
 .history-item.is-active::before {
   content: "";
@@ -920,7 +972,7 @@ button:focus-visible {
   bottom: 4px;
   width: 2px;
   border-radius: 1px;
-  background: var(--vscode-focusBorder, var(--vscode-textLink-foreground));
+  background: var(--accent-line);
 }
 .history-open {
   display: flex;
@@ -968,7 +1020,7 @@ button:focus-visible {
 }
 .history-action:focus-visible {
   opacity: 1;
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
 }
 .history-action:hover {
   background: var(--hover-bg-icon);
@@ -1370,7 +1422,7 @@ button:focus-visible {
   border-color: var(--color-border);
 }
 .msg.role-user.is-editable[data-edit-phase="view"]:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 /* Placeholder freeze for editing. The bubble's flow box is locked to
@@ -1487,7 +1539,7 @@ button:focus-visible {
   margin-left: 4px;
   padding: 0 5px;
   /* See `.btn` (#746). */
-  border: 1px solid var(--vscode-button-border, transparent);
+  border: 1px solid var(--secondary-border);
   border-radius: var(--radius-sm);
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
@@ -1532,7 +1584,7 @@ button:focus-visible {
 }
 .msg-usage:focus-visible {
   opacity: 1;
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 /* The breakdown is an overlay, never an inline expansion: hovering must not
@@ -2105,72 +2157,126 @@ button:focus-visible {
   color: var(--vscode-descriptionForeground);
 }
 
-/* ===== Permission dialog ===== */
-.permission {
-  position: sticky;
-  bottom: 0;
-  z-index: var(--z-overlay);
-  margin: 0 10px 8px;
-  padding: 10px;
-  border: 1px solid var(--vscode-focusBorder);
-  border-left: 3px solid var(--vscode-focusBorder);
-  background: var(--vscode-editorWidget-background);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-dock);
-}
-.permission-title { font-weight: 600; margin-bottom: 6px; }
-.permission-body { font-size: 12px; margin-bottom: 8px; }
-.permission-pattern {
-  display: block;
-  background: var(--vscode-textCodeBlock-background);
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  margin-top: 4px;
-  font-family: var(--vscode-editor-font-family);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.permission-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-
-/* ===== Question dialog ===== */
+/* ===== Request cards: permission and question =====
+   Styled after the request cards in Claude's own VS Code panel (#750): no
+   title icon, a bold line that says what is asked, the input in monospace
+   and in full, and the choices as full-width rows in a hairline with the
+   first one filled. Both cards take the composer's surface, border and
+   radius, so the docked stack reads as one family. */
+.permission,
 .question {
   position: sticky;
   bottom: 0;
   z-index: var(--z-overlay);
   margin: 0 10px 8px;
   padding: 10px;
-  border: 1px solid var(--vscode-focusBorder);
-  border-left: 3px solid var(--vscode-focusBorder);
-  background: var(--vscode-editorWidget-background);
+  border: var(--bubble-border-width) solid var(--color-border);
   border-radius: var(--radius);
+  background: var(--surface-input);
   box-shadow: var(--shadow-dock);
-  max-height: 60vh;
+  font-size: 12px;
+  transition: border-color 0.12s ease;
+}
+.permission:focus-within,
+.question:focus-within {
+  border-color: var(--accent-line);
+}
+.permission-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+/* A permission is decided on the whole command, so it wraps and scrolls
+   rather than being cut to one line. */
+.permission-pattern {
+  display: block;
+  max-height: 112px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  /* The editor background with a hairline, as the reference card insets its
+     input. The panel colour is not an inset on a theme whose input and side
+     bar share one background, as Dark 2026's do (#751). */
+  background: var(--vscode-editor-background, var(--color-bg-panel));
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
   overflow-y: auto;
 }
-.question-title { font-weight: 600; margin-bottom: 8px; }
-.question-body { display: flex; flex-direction: column; gap: 12px; margin-bottom: 10px; }
-.question-item { display: flex; flex-direction: column; gap: 6px; }
-.question-header {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--vscode-descriptionForeground);
+/* Each word of the pattern is one box, so a line breaks between words only. A
+   browser otherwise breaks after any hyphen, and no wrapping property stops
+   it: `--all --` ended one line on `-` and began the next with `-`. A word
+   longer than the whole line still wraps inside its box. */
+.permission-token {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
-.question-text { font-size: 12px; line-height: 1.4; }
-.question-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
-.question-option {
+.permission-actions {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.permission-option {
+  display: flex;
+  align-items: baseline;
   gap: 8px;
   width: 100%;
   padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.permission-option:hover { background: var(--hover-bg-wash); }
+.permission-option.is-primary {
+  background: var(--accent-fill);
+  box-shadow: none;
+  color: var(--accent-on-fill);
+  font-weight: 600;
+}
+.permission-option.is-primary:hover { background: var(--accent-fill-hover); }
+/* The rule "Allow always" would save, so the grant is read before it is given. */
+.permission-option-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ===== Question dialog ===== */
+.question {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.question-body { display: flex; flex-direction: column; gap: 14px; margin-bottom: 10px; }
+.question-item { display: flex; flex-direction: column; gap: 6px; }
+.question-header {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 500;
+}
+.question-text { font-size: 13px; font-weight: 500; line-height: 1.35; }
+.question-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 4px 6px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -2178,68 +2284,68 @@ button:focus-visible {
   text-align: left;
   cursor: pointer;
 }
-.question-option:hover { background: var(--hover-bg-row); }
-.question-option.is-checked {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
-}
+.question-option:hover { background: var(--hover-bg-wash); }
+/* The marker alone carries the checked state: a filled row would compete with
+   the hover wash on the row beside it. */
 .question-option-marker {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   margin-top: 1px;
-  border: 1px solid var(--vscode-descriptionForeground);
-  color: var(--vscode-foreground);
-  font-size: 10px;
+  border: 1.5px solid var(--vscode-descriptionForeground);
+  color: var(--accent);
   line-height: 1;
 }
 .question-option-marker.circle { border-radius: var(--radius-pill); }
-.question-option-marker.square { border-radius: var(--radius-sm); }
-.question-option-marker .codicon { font-size: 11px; }
-.question-option.is-checked .question-option-marker {
-  border-color: var(--vscode-focusBorder);
-  color: var(--vscode-focusBorder);
+.question-option-marker.square { border-radius: 3px; }
+.question-option-marker .codicon { font-size: 12px; }
+.question-option.is-checked .question-option-marker { border-color: var(--accent); }
+.question-option.is-checked .question-option-marker.square {
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--accent-on-fill);
 }
 /* The dot is drawn, not typed: a `●` glyph sits on the font's baseline, so its
-   ink lands off-center inside the 14px circle and shifts with font fallback. A
-   6px disc on the 12px content box is centered exactly — 3px per side. */
+   ink lands off-center inside the circle and shifts with font fallback. A 7px
+   disc on the 13px content box is centered exactly, 3px per side. */
 .question-option.is-checked .question-option-marker.circle::after {
   content: "";
   display: block;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--radius-pill);
   background: currentColor;
 }
 .question-option-text { display: flex; flex-direction: column; min-width: 0; }
-.question-option-label { font-size: 12px; font-weight: 600; }
+.question-option-label { font-size: 12px; font-weight: 500; line-height: 1.5; }
 .question-option-desc {
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .question-custom {
   width: 100%;
   min-height: 36px;
-  margin-top: 2px;
+  margin-top: 4px;
   padding: 6px 8px;
-  border: 1px solid var(--vscode-input-border, transparent);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: var(--vscode-input-background);
+  background: var(--vscode-editor-background, var(--color-bg-panel));
   color: var(--vscode-input-foreground);
   font-family: inherit;
   font-size: 12px;
-  resize: vertical;
+  resize: none;
   outline: none;
 }
-.question-custom:focus { border-color: var(--vscode-focusBorder); }
-/* An option is checked, so the typed text is not the answer: dim the field
-   until the "Other…" radio is picked again. The text itself is kept. */
+.question-custom:focus { border-color: var(--accent); }
+/* An option is checked, so the typed text is not the answer: the field stays
+   out of the way until "Other…" is picked again. It is hidden, not removed,
+   so the text it holds is kept. */
 .question-custom:disabled {
-  opacity: .5;
-  cursor: default;
+  display: none;
 }
 .question-actions {
   display: flex;
@@ -2350,7 +2456,7 @@ button:focus-visible {
   color: var(--color-diff-del);
 }
 .review-bulk-action:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
 }
 .review-bulk-action .codicon {
   font-size: 13px;
@@ -2456,7 +2562,7 @@ button:focus-visible {
 }
 .review-file-action:focus-visible {
   opacity: 1;
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
 }
 .review-file-action .codicon {
   font-size: 13px;
@@ -2588,7 +2694,7 @@ button:focus-visible {
   opacity: 0.5;
 }
 .review-file:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
 /* Kind styling is intentionally confined to the M/U/D/R letter — the filename
@@ -2706,13 +2812,15 @@ button:focus-visible {
   box-sizing: border-box;
 }
 .promptbox-backdrop .mention-chip {
-  background: var(--vscode-editor-wordHighlightStrongBackground, rgba(80, 140, 255, 0.22));
+  background: var(--selection-bg);
   border-radius: var(--radius-sm);
-  box-shadow: 0 0 0 1px var(--vscode-editor-wordHighlightStrongBorder, rgba(80, 140, 255, 0.4));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-line) 40%, transparent);
 }
+/* A selected chip is a text selection, so it takes the theme's selection
+   colour like the rest of the textarea; only its ring is the accent. */
 .promptbox-backdrop .mention-chip-selected {
-  background: var(--vscode-editor-selectionBackground, rgba(80, 140, 255, 0.45));
-  box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(80, 140, 255, 0.9));
+  background: var(--vscode-editor-selectionBackground, var(--selection-bg));
+  box-shadow: 0 0 0 1px var(--accent-line);
 }
 /* Web links while composing. The backdrop's glyphs are transparent (the
    textarea above paints them), so the underline is the only paint we can add —
@@ -2795,7 +2903,7 @@ button:focus-visible {
 .promptbox-row .spacer { flex: 1; }
 
 .context-usage {
-  --context-usage-color: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+  --context-usage-color: var(--accent);
   --context-usage-track: var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35));
   position: relative;
   display: inline-flex;
@@ -3278,7 +3386,7 @@ button:focus-visible {
   background-position: 0 0, 0 4px, 4px -4px, -4px 0;
 }
 .image-thumb-open:hover {
-  border-color: var(--vscode-focusBorder, var(--vscode-widget-border));
+  border-color: var(--accent-line);
 }
 .image-thumb-open img {
   display: block;
@@ -3421,15 +3529,15 @@ button:focus-visible {
   font-size: 12px;
 }
 .mention-hit.active {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
+  background: var(--selection-bg);
+  color: var(--selection-fg);
 }
 .mention-name {
   color: var(--vscode-foreground);
   font-weight: 500;
 }
 .mention-hit.active .mention-name {
-  color: var(--vscode-list-activeSelectionForeground);
+  color: var(--selection-fg);
 }
 .mention-path {
   color: var(--vscode-descriptionForeground);
@@ -3441,7 +3549,7 @@ button:focus-visible {
   min-width: 0;
 }
 .mention-hit.active .mention-path {
-  color: var(--vscode-list-activeSelectionForeground);
+  color: var(--selection-fg);
   opacity: 0.8;
 }
 .mention-category {
@@ -3459,7 +3567,7 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 .mention-hit.active .mention-category-meta {
-  color: var(--vscode-list-activeSelectionForeground);
+  color: var(--selection-fg);
   opacity: 0.8;
 }
 .mention-popover .codicon {
@@ -3582,12 +3690,11 @@ button:focus-visible {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
   /* A theme may leave the secondary fill transparent and draw its buttons
-     with `button.border` instead; Dark Modern does since VS Code 1.143, and
-     without the border every secondary button is bare text there. Themes
-     that fill their buttons define no border, so the fallback keeps them as
-     they were. Padding is one pixel under the visual inset so the border
-     does not grow the button (#746). */
-  border: 1px solid var(--vscode-button-border, transparent);
+     with a border instead; Dark Modern and Dark 2026 do since VS Code 1.143,
+     and without the border every secondary button is bare text there.
+     Padding is one pixel under the visual inset so the border does not grow
+     the button (#746). */
+  border: 1px solid var(--secondary-border);
   padding: 3px 9px;
   border-radius: var(--radius-sm);
   font-size: 11px;
@@ -3658,10 +3765,11 @@ button:focus-visible {
 }
 .btn:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .btn.primary {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
+  border-color: var(--accent-fill-border);
+  background: var(--accent-fill);
+  color: var(--accent-on-fill);
 }
-.btn.primary:hover { background: var(--vscode-button-hoverBackground); }
+.btn.primary:hover { background: var(--accent-fill-hover); }
 .btn.danger {
   background: var(--vscode-inputValidation-errorBackground, #a1260d);
   color: white;

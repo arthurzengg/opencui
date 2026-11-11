@@ -21,14 +21,14 @@ function q(overrides: Partial<QuestionInfo> = {}): QuestionInfo {
 describe("QuestionDialog", () => {
   it("renders header, question, options and descriptions", () => {
     render(<QuestionDialog id="q1" questions={[q()]} onReply={() => {}} onReject={() => {}} />)
-    expect(screen.getByText(/Question from the assistant/)).toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "Question from the assistant" })).toBeInTheDocument()
     expect(screen.getByText("Library")).toBeInTheDocument()
     expect(screen.getByText("Which library?")).toBeInTheDocument()
     expect(screen.getByText("React")).toBeInTheDocument()
     expect(screen.getByText("the incumbent")).toBeInTheDocument()
   })
 
-  it("pluralizes the title for multiple questions", () => {
+  it("pluralizes the card's name for multiple questions", () => {
     render(
       <QuestionDialog
         id="q1"
@@ -37,7 +37,7 @@ describe("QuestionDialog", () => {
         onReject={() => {}}
       />,
     )
-    expect(screen.getByText(/Questions from the assistant/)).toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "Questions from the assistant" })).toBeInTheDocument()
   })
 
   it("disables Send until every question has an answer", async () => {
