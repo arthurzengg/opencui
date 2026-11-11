@@ -69,6 +69,8 @@
   --accent-on-fill:     var(--color-bg-panel);
   --selection-bg:       color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
   --selection-fg:       var(--vscode-foreground);
+  /* The edge of a control that has no fill of its own. */
+  --hairline:           color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
 
   /* === Hover backgrounds ===
      Three distinct surfaces share a hover treatment across the webview.
@@ -77,6 +79,10 @@
   --hover-bg-pill: var(--vscode-button-secondaryHoverBackground);
   --hover-bg-icon: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   --hover-bg-row:  var(--vscode-list-hoverBackground);
+  /* For a row on a surface the theme's list hover was not chosen for: on the
+     input surface of the request cards that colour comes out darker than the
+     card. A wash of the text colour lifts on any surface. */
+  --hover-bg-wash: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
 
   /* === Fixed UI colors (theme-independent) ===
      Status dots and the recurring scrollbar-thumb grey used in multiple
@@ -167,6 +173,8 @@ body.vscode-high-contrast-light {
   --accent-on-fill:    var(--vscode-button-foreground);
   --selection-bg:      var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
   --selection-fg:      var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+  --hairline:          var(--vscode-contrastBorder, var(--vscode-focusBorder));
+  --hover-bg-wash:     var(--vscode-list-hoverBackground);
 }
 
 html, body, #root {
@@ -2139,51 +2147,104 @@ button:focus-visible {
   color: var(--vscode-descriptionForeground);
 }
 
-/* ===== Permission dialog ===== */
-.permission {
-  position: sticky;
-  bottom: 0;
-  z-index: var(--z-overlay);
-  margin: 0 10px 8px;
-  padding: 10px;
-  border: 1px solid var(--accent-line);
-  border-left: 3px solid var(--accent-line);
-  background: var(--vscode-editorWidget-background);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-dock);
-}
-.permission-title { font-weight: 600; margin-bottom: 6px; }
-.permission-body { font-size: 12px; margin-bottom: 8px; }
-.permission-pattern {
-  display: block;
-  background: var(--vscode-textCodeBlock-background);
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  margin-top: 4px;
-  font-family: var(--vscode-editor-font-family);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.permission-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-
-/* ===== Question dialog ===== */
+/* ===== Request cards: permission and question =====
+   Styled after the request cards in Claude's own VS Code panel (#750): no
+   title icon, a bold line that says what is asked, the input in monospace
+   and in full, and the choices as full-width rows in a hairline with the
+   first one filled. Both cards take the composer's surface, border and
+   radius, so the docked stack reads as one family. */
+.permission,
 .question {
   position: sticky;
   bottom: 0;
   z-index: var(--z-overlay);
   margin: 0 10px 8px;
   padding: 10px;
-  border: 1px solid var(--accent-line);
-  border-left: 3px solid var(--accent-line);
-  background: var(--vscode-editorWidget-background);
+  border: var(--bubble-border-width) solid var(--color-border);
   border-radius: var(--radius);
+  background: var(--surface-input);
   box-shadow: var(--shadow-dock);
+  font-size: 12px;
+  transition: border-color 0.12s ease;
+}
+.permission:focus-within,
+.question:focus-within {
+  border-color: var(--accent-line);
+}
+.permission-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+/* A permission is decided on the whole command, so it wraps and scrolls
+   rather than being cut to one line. */
+.permission-pattern {
+  display: block;
+  max-height: 112px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-panel);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+/* Each word of the pattern is one box, so a line breaks between words only. A
+   browser otherwise breaks after any hyphen, and no wrapping property stops
+   it: `--all --` ended one line on `-` and began the next with `-`. A word
+   longer than the whole line still wraps inside its box. */
+.permission-token {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.permission-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.permission-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.permission-option:hover { background: var(--hover-bg-wash); }
+.permission-option.is-primary {
+  background: var(--accent-fill);
+  box-shadow: none;
+  color: var(--accent-on-fill);
+  font-weight: 600;
+}
+.permission-option.is-primary:hover { background: var(--accent-fill-hover); }
+/* The rule "Allow always" would save, so the grant is read before it is given. */
+.permission-option-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ===== Question dialog ===== */
+.question {
   max-height: 60vh;
   overflow-y: auto;
 }
