@@ -257,6 +257,47 @@ export const SCENARIOS = [
     },
   },
   {
+    name: "usage-breakdown",
+    file: "usage-breakdown.gif",
+    width: 340,
+    height: 420,
+    async run(page) {
+      await seed(page)
+      await page.host({ type: "userMessage", id: "u0", text: "Explain the abort flow" })
+      await page.host({ type: "assistantStart", id: "a0" })
+      await page.host({ type: "textDelta", id: "a0", delta: "Stop is two-sided: the host flags `aborting` and the reducer drops late deltas." })
+      await page.host({
+        type: "assistantDone",
+        id: "a0",
+        usage: { model: "anthropic/claude-opus-5-5", cost: 0.1184, tokens: { input: 18200, output: 940, reasoning: 310, cacheRead: 52000, cacheWrite: 1200 } },
+      })
+      await page.host({ type: "sessionIdle" })
+      await page.wait(500)
+      const composer = await page.rect("textarea")
+      await page.move(composer.x + 60, composer.y + 10, 10)
+      await page.startRecording()
+      await page.wait(500)
+      await page.hover(".msg-usage", 0, 520)
+      await page.wait(1000)
+      // Into the breakdown: it stays open while the pointer is inside it. The
+      // pointer travels down the gap between the labels and the values, so it
+      // never covers a figure.
+      const rows = await page.rect(".msg-usage-popover")
+      const gap = rows.x + rows.w * 0.47
+      await page.moveVia([[gap, rows.y - 4], [gap, rows.y + rows.h * 0.32]], 240)
+      await page.wait(700)
+      await page.move(gap, rows.y + rows.h * 0.62, 480)
+      await page.wait(900)
+      await page.move(composer.x + 60, composer.y + 10, 420)
+      await page.wait(700)
+      return { frames: await page.stopRecording() }
+    },
+  },
+  // No longer in the README, but the README published with 1.18.0 links to
+  // this file from the store listings, which load images from the repository.
+  // Remove the scenario and the file once a release has shipped a README
+  // without it.
+  {
     name: "context-usage",
     file: "context-usage.png",
     width: 340,
