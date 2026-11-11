@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { buildTrace, mergeStatus, preferAction, pickPath } from "../../webview/src/components/ToolCard"
 import { toolHeadline } from "../../webview/src/components/ToolCard"
+import { toolChanges } from "../../webview/src/review-extract"
 import type { ToolUpdate } from "../../webview/src/protocol"
 
 function update(partial: Partial<ToolUpdate> & { tool: string }): ToolUpdate {
@@ -59,6 +60,15 @@ describe("buildTrace", () => {
     )
     expect(trace.edits).toHaveLength(1)
     expect(trace.edits[0]?.action).toBe("created")
+  })
+
+  it("counts a written file's lines as the review card does, a trailing newline ending the last line (#746)", () => {
+    const counts = (content: string) => {
+      const write = update({ tool: "write", input: { filePath: "new.ts", content }, metadata: { exists: false } })
+      return [buildTrace([write], []).edits[0]?.additions, toolChanges(write, "s")[0]?.additions]
+    }
+    expect(counts("a\nb\n")).toEqual([2, 2])
+    expect(counts("a\nb")).toEqual([2, 2])
   })
 
   it("routes todowrite to trace.todos and out of others", () => {

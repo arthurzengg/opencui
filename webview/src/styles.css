@@ -99,6 +99,16 @@
   --bubble-padding:      var(--space-1);
   --bubble-text-padding: var(--space-1);
   --composer-edge-gap:   var(--space-4);
+  /* Top padding of `.messages`. The sticky user bubble covers a band this
+     tall above itself, so the two must move together. */
+  --messages-pad-top:    10px;
+  /* The edit hint sits in the bubble's top right corner. The text column ends
+     `--bubble-text-gutter` from the bubble's padding edge so a full line never
+     runs under the hint. `.user-text` and the edit-mode textarea and backdrop
+     all use it, so entering edit mode does not re-wrap the message (#746). */
+  --bubble-hint-inset:   6px;
+  --bubble-hint-size:    18px;
+  --bubble-text-gutter:  calc(var(--bubble-hint-inset) + var(--bubble-hint-size) + var(--space-1) - var(--bubble-padding));
   /* Height of the blur ramp above the bottom dock. `.messages` reserves it on
      top of the dock height and `.turn:last-child` subtracts it, so the newest
      turn still lands at the top of the view with its last line clear of the
@@ -438,8 +448,11 @@ button:focus-visible {
   width: 100%;
   max-width: 100%;
   min-height: 22px;
-  padding: 2px 9px;
-  border: 0;
+  /* One pixel under the visual inset: the border below takes it. */
+  padding: 1px 8px;
+  /* See `.btn`: a theme may draw its secondary buttons with a border and no
+     fill, and the pill would be bare text there (#746). */
+  border: 1px solid var(--vscode-button-border, transparent);
   border-radius: var(--radius-lg);
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
@@ -1092,7 +1105,7 @@ button:focus-visible {
   scrollbar-gutter: stable;
   /* Bottom: the dock's measured height plus the blur ramp above it, so the
      last line scrolls clear of the glass instead of dissolving under it. */
-  padding: 10px 12px calc(4px + var(--bottom-dock-fade) + var(--bottom-dock-height, 0px));
+  padding: var(--messages-pad-top) 12px calc(4px + var(--bottom-dock-fade) + var(--bottom-dock-height, 0px));
   /* Firefox: thin transparent scrollbar that brightens on hover. */
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -1169,12 +1182,33 @@ button:focus-visible {
   background: var(--surface-input);
   border: var(--bubble-border-width) solid var(--color-border);
   border-radius: var(--radius);
+  /* Not a drop shadow: a copy of the bubble's shape in the panel colour, one
+     corner radius up, which fills the notches outside the rounded top corners
+     so the transcript does not show through them under the cover below. */
+  box-shadow: 0 calc(-1 * var(--radius)) 0 0 var(--color-bg-panel);
   word-break: break-word;
   /* Animate only paint changes. Size-affecting properties stay out of this
      transition so entering/exiting edit mode cannot briefly resize the row. */
   transition:
     background-color 0.18s ease,
     border-color 0.18s ease;
+}
+/* A sticky box pins at the top of the scroller's content box, not its padding
+   box, so the scroller's top padding stays a transparent band between the
+   header and the pinned bubble and the transcript reads through it while it
+   scrolls. The bubble covers that band itself. At rest the cover lies over
+   the gap above the bubble, which is empty and wider than the band, so it
+   paints nothing visible. `pointer-events: none` keeps the band from acting
+   as part of the click-to-edit bubble (#746). */
+.msg.role-user::before {
+  content: "";
+  position: absolute;
+  right: calc(-1 * var(--bubble-border-width));
+  bottom: calc(100% + var(--bubble-border-width));
+  left: calc(-1 * var(--bubble-border-width));
+  height: var(--messages-pad-top);
+  background: var(--color-bg-panel);
+  pointer-events: none;
 }
 /* All rules in this block target the non-view edit phase. Keeping them keyed
    to `[data-edit-phase]` makes it clear the overlay owns edit-mode chrome. */
@@ -1203,6 +1237,7 @@ button:focus-visible {
 .msg.role-user:not([data-edit-phase="view"]) .promptbox textarea {
   min-height: 24px;
   padding: var(--bubble-text-padding);
+  padding-right: var(--bubble-text-gutter);
 }
 /* The backdrop must keep character-for-character wrap parity with the
    textarea it paints behind. Its base padding is the bottom composer's
@@ -1213,6 +1248,7 @@ button:focus-visible {
    textarea must be mirrored here. */
 .msg.role-user:not([data-edit-phase="view"]) .promptbox .promptbox-backdrop {
   padding: var(--bubble-text-padding);
+  padding-right: var(--bubble-text-gutter);
 }
 /* Fade + slide the action row in when entering edit mode so the buttons
    don't pop into existence below the textarea. The animation only runs
@@ -1262,6 +1298,7 @@ button:focus-visible {
      the first character to jump because the textarea introduces its own
      internal padding. */
   padding: var(--bubble-text-padding);
+  padding-right: var(--bubble-text-gutter);
   /* Cap the visible height of the rendered user message at the same height
      used by the in-place edit textarea (.promptbox textarea max-height).
      Both reference --message-max-height so the rendered-message view, the
@@ -1349,7 +1386,6 @@ button:focus-visible {
      which reads as a second white-to-gray flash. */
   border: var(--bubble-border-width) solid var(--color-border);
   background: var(--surface-input);
-  box-shadow: none;
   overflow: visible;
   transition: none;
   z-index: var(--z-overlay);
@@ -1379,13 +1415,13 @@ button:focus-visible {
 }
 .user-edit-hint {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--bubble-hint-inset);
+  right: var(--bubble-hint-inset);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: var(--bubble-hint-size);
+  height: var(--bubble-hint-size);
   color: var(--vscode-descriptionForeground);
   opacity: 0.5;
   pointer-events: none;
@@ -1449,8 +1485,9 @@ button:focus-visible {
    opaque than the badge label to read as an actionable affordance. */
 .msg-retry {
   margin-left: 4px;
-  padding: 1px 6px;
-  border: 0;
+  padding: 0 5px;
+  /* See `.btn` (#746). */
+  border: 1px solid var(--vscode-button-border, transparent);
   border-radius: var(--radius-sm);
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
@@ -2434,6 +2471,12 @@ button:focus-visible {
 .review-stat.del,
 .review-file-stat.del {
   color: var(--color-diff-del);
+}
+/* Hidden rather than removed: each row is its own grid, so dropping the cell
+   would move the other count out of its column (#746). */
+.review-stat.is-zero,
+.review-file-stat.is-zero {
+  visibility: hidden;
 }
 .review-body-clip {
   display: grid;
@@ -3538,12 +3581,18 @@ button:focus-visible {
 .btn {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
-  border: none;
-  padding: 4px 10px;
+  /* A theme may leave the secondary fill transparent and draw its buttons
+     with `button.border` instead; Dark Modern does since VS Code 1.143, and
+     without the border every secondary button is bare text there. Themes
+     that fill their buttons define no border, so the fallback keeps them as
+     they were. Padding is one pixel under the visual inset so the border
+     does not grow the button (#746). */
+  border: 1px solid var(--vscode-button-border, transparent);
+  padding: 3px 9px;
   border-radius: var(--radius-sm);
   font-size: 11px;
 }
-.btn.compact { padding: 2px 7px; }
+.btn.compact { padding: 1px 6px; }
 /* Circular icon-only variant for the PromptBox Send / Stop action. The button
    carries no text — content is a centered SVG — and the accessible name is
    provided by `aria-label`. */
@@ -3617,13 +3666,14 @@ button:focus-visible {
   background: var(--vscode-inputValidation-errorBackground, #a1260d);
   color: white;
 }
-.btn.subtle { opacity: 0.7; background: transparent; }
+.btn.subtle { opacity: 0.7; background: transparent; border-color: transparent; }
 .btn.subtle:hover { background: var(--hover-bg-row); }
 .btn.link {
   background: transparent;
+  border-color: transparent;
   color: var(--vscode-textLink-foreground);
   text-decoration: underline;
-  padding: 2px 0;
+  padding: 1px 0;
 }
 .btn.link:hover { color: var(--vscode-textLink-activeForeground); }
 .btn:disabled { opacity: 0.5; cursor: default; }

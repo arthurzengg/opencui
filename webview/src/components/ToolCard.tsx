@@ -522,8 +522,14 @@ function diffStats(update: ToolUpdate): { additions?: number; deletions?: number
 }
 
 export function writeLines(update: ToolUpdate): number | undefined {
-  if (typeof update.input?.content !== "string") return undefined
-  return update.input.content.split("\n").length
+  const content = update.input?.content
+  if (typeof content !== "string") return undefined
+  if (content === "") return 0
+  // A trailing newline ends the last line, it does not start another one. The
+  // review card's synthesized patch counts the same way, and the two sit on
+  // one screen (#746).
+  const lines = content.split("\n").length
+  return content.endsWith("\n") ? lines - 1 : lines
 }
 
 export function lineRange(update: ToolUpdate): string | undefined {

@@ -13,6 +13,14 @@ type DiffHunk = {
   id: string
 }
 
+/**
+ * A zero count is not drawn, a red "-0" reads as a change that is not there,
+ * but it keeps its slot so the other count stays in its column (#746).
+ */
+function statClass(base: string, count: number): string {
+  return count ? base : `${base} is-zero`
+}
+
 export function ReviewPanel({
   messages,
   reviewRevision,
@@ -92,8 +100,8 @@ export function ReviewPanel({
           <span className="review-summary" title={onlyChange?.path}>
             {onlyChange ? (displayNames.get(onlyChange.path) ?? basename(onlyChange.path)) : `${pendingChanges.length} files`}
           </span>
-          <span className="review-stat add">+{additions}</span>
-          <span className="review-stat del">-{deletions}</span>
+          <span className={statClass("review-stat add", additions)}>+{additions}</span>
+          <span className={statClass("review-stat del", deletions)}>-{deletions}</span>
         </button>
         <div className="review-bulk-actions">
           {isSingle ? (
@@ -170,8 +178,8 @@ export function ReviewPanel({
                   >
                     <span className="review-file-kind" aria-label={kindLabel(change.kind)}>{kindLetter(change.kind)}</span>
                     <span className="review-file-name">{displayNames.get(change.path) ?? basename(change.path)}</span>
-                    <span className="review-file-stat add">+{change.additions}</span>
-                    <span className="review-file-stat del">-{change.deletions}</span>
+                    <span className={statClass("review-file-stat add", change.additions)}>+{change.additions}</span>
+                    <span className={statClass("review-file-stat del", change.deletions)}>-{change.deletions}</span>
                     <button
                       className="review-file-action accept"
                       onClick={(event) => { stop(event); act("accepted") }}
