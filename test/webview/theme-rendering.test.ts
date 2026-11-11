@@ -1,0 +1,36 @@
+import { describe, it, expect } from "vitest"
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
+
+const css = readFileSync(resolve(__dirname, "../../webview/src/styles.css"), "utf8")
+
+function ruleBody(selector: string): string {
+  let from = 0
+  while (true) {
+    const open = css.indexOf(`\n${selector} {`, from)
+    if (open < 0) throw new Error(`rule not found: ${selector}`)
+    if (css[open - 1] === ",") {
+      from = open + 1
+      continue
+    }
+    const close = css.indexOf("}", open)
+    return css.slice(open, close)
+  }
+}
+
+// Dark Modern in VS Code 1.143 leaves `button.secondaryBackground` transparent
+// and draws its buttons with `button.border`. A surface that borrows the
+// secondary fill without that border is bare text there (#746).
+describe("surfaces on the secondary button fill", () => {
+  const surfaces = [".btn", ".selector-trigger", ".msg-retry"]
+
+  it.each(surfaces)("%s draws the theme's button border", (selector) => {
+    const body = ruleBody(selector)
+    expect(body).toContain("background: var(--vscode-button-secondaryBackground)")
+    expect(body).toContain("border: 1px solid var(--vscode-button-border, transparent)")
+  })
+
+  it("has no other surface on that fill", () => {
+    expect(css.split("background: var(--vscode-button-secondaryBackground)").length - 1).toBe(surfaces.length)
+  })
+})

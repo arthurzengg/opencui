@@ -438,8 +438,11 @@ button:focus-visible {
   width: 100%;
   max-width: 100%;
   min-height: 22px;
-  padding: 2px 9px;
-  border: 0;
+  /* One pixel under the visual inset: the border below takes it. */
+  padding: 1px 8px;
+  /* See `.btn`: a theme may draw its secondary buttons with a border and no
+     fill, and the pill would be bare text there (#746). */
+  border: 1px solid var(--vscode-button-border, transparent);
   border-radius: var(--radius-lg);
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
@@ -1449,8 +1452,9 @@ button:focus-visible {
    opaque than the badge label to read as an actionable affordance. */
 .msg-retry {
   margin-left: 4px;
-  padding: 1px 6px;
-  border: 0;
+  padding: 0 5px;
+  /* See `.btn` (#746). */
+  border: 1px solid var(--vscode-button-border, transparent);
   border-radius: var(--radius-sm);
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
@@ -3538,12 +3542,18 @@ button:focus-visible {
 .btn {
   background: var(--vscode-button-secondaryBackground);
   color: var(--vscode-button-secondaryForeground);
-  border: none;
-  padding: 4px 10px;
+  /* A theme may leave the secondary fill transparent and draw its buttons
+     with `button.border` instead; Dark Modern does since VS Code 1.143, and
+     without the border every secondary button is bare text there. Themes
+     that fill their buttons define no border, so the fallback keeps them as
+     they were. Padding is one pixel under the visual inset so the border
+     does not grow the button (#746). */
+  border: 1px solid var(--vscode-button-border, transparent);
+  padding: 3px 9px;
   border-radius: var(--radius-sm);
   font-size: 11px;
 }
-.btn.compact { padding: 2px 7px; }
+.btn.compact { padding: 1px 6px; }
 /* Circular icon-only variant for the PromptBox Send / Stop action. The button
    carries no text — content is a centered SVG — and the accessible name is
    provided by `aria-label`. */
@@ -3617,13 +3627,14 @@ button:focus-visible {
   background: var(--vscode-inputValidation-errorBackground, #a1260d);
   color: white;
 }
-.btn.subtle { opacity: 0.7; background: transparent; }
+.btn.subtle { opacity: 0.7; background: transparent; border-color: transparent; }
 .btn.subtle:hover { background: var(--hover-bg-row); }
 .btn.link {
   background: transparent;
+  border-color: transparent;
   color: var(--vscode-textLink-foreground);
   text-decoration: underline;
-  padding: 2px 0;
+  padding: 1px 0;
 }
 .btn.link:hover { color: var(--vscode-textLink-activeForeground); }
 .btn:disabled { opacity: 0.5; cursor: default; }
