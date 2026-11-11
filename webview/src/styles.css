@@ -747,8 +747,8 @@ button:focus-visible {
    highlight — a separate :hover rule would double-highlight during
    keyboard navigation with a resting cursor. */
 .model-picker-row.active {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
+  background: var(--selection-bg);
+  color: var(--selection-fg);
 }
 .model-picker-name {
   flex: 1 1 auto;
@@ -769,7 +769,7 @@ button:focus-visible {
   font-size: 10px;
 }
 .model-picker-row.active .model-picker-last-variant {
-  background: color-mix(in srgb, var(--vscode-list-activeSelectionForeground) 16%, transparent);
+  background: color-mix(in srgb, var(--selection-fg) 16%, transparent);
   color: inherit;
 }
 .model-picker-provider {
@@ -791,10 +791,10 @@ button:focus-visible {
 }
 .model-picker-row .codicon-check {
   font-size: 14px;
-  color: var(--vscode-textLink-foreground);
+  color: var(--accent);
 }
 .model-picker-row.active .codicon-check {
-  color: var(--vscode-list-activeSelectionForeground);
+  color: var(--selection-fg);
 }
 .model-picker-empty {
   padding: 12px;
@@ -888,7 +888,7 @@ button:focus-visible {
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--vscode-textLink-foreground);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
@@ -896,7 +896,7 @@ button:focus-visible {
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 .history-new:hover {
-  background: color-mix(in srgb, var(--vscode-textLink-foreground) 14%, transparent);
+  background: var(--selection-bg);
 }
 .history-new .codicon {
   flex: 0 0 auto;
@@ -943,7 +943,7 @@ button:focus-visible {
   background: var(--hover-bg-row);
 }
 .history-item.is-active {
-  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  background: var(--selection-bg);
 }
 .history-item.is-active::before {
   content: "";
@@ -953,7 +953,7 @@ button:focus-visible {
   bottom: 4px;
   width: 2px;
   border-radius: 1px;
-  background: var(--vscode-focusBorder, var(--vscode-textLink-foreground));
+  background: var(--accent-line);
 }
 .history-open {
   display: flex;
@@ -3454,15 +3454,15 @@ button:focus-visible {
   font-size: 12px;
 }
 .mention-hit.active {
-  background: var(--vscode-list-activeSelectionBackground);
-  color: var(--vscode-list-activeSelectionForeground);
+  background: var(--selection-bg);
+  color: var(--selection-fg);
 }
 .mention-name {
   color: var(--vscode-foreground);
   font-weight: 500;
 }
 .mention-hit.active .mention-name {
-  color: var(--vscode-list-activeSelectionForeground);
+  color: var(--selection-fg);
 }
 .mention-path {
   color: var(--vscode-descriptionForeground);
@@ -3474,7 +3474,7 @@ button:focus-visible {
   min-width: 0;
 }
 .mention-hit.active .mention-path {
-  color: var(--vscode-list-activeSelectionForeground);
+  color: var(--selection-fg);
   opacity: 0.8;
 }
 .mention-category {
@@ -3492,7 +3492,7 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 .mention-hit.active .mention-category-meta {
-  color: var(--vscode-list-activeSelectionForeground);
+  color: var(--selection-fg);
   opacity: 0.8;
 }
 .mention-popover .codicon {
