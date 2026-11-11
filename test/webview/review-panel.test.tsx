@@ -102,6 +102,16 @@ describe("ReviewPanel", () => {
     expect(container.querySelector(".review-stat.del")?.textContent).toBe("-1")
   })
 
+  it("keeps a zero count in its slot without drawing it (#746)", () => {
+    const messages = [
+      createMessage("m1", { filePath: "new.ts", content: "line1\n" }),
+      editMessage("m2", { filePath: "b.ts", patch: "@@ -1 +1 @@\n-a\n+b", additions: 1, deletions: 1 }),
+    ]
+    const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)
+    const stats = Array.from(container.querySelectorAll(".review-file-stat"), (el) => [el.textContent, el.classList.contains("is-zero")])
+    expect(stats).toEqual([["+1", false], ["-0", true], ["+1", false], ["-1", false]])
+  })
+
   it("applies the kind-created class for a new file", () => {
     const messages = [createMessage("m1", { filePath: "new.ts", content: "line1\nline2\nline3" })]
     const { container } = render(<ReviewPanel reviewRevision={0} messages={messages} reviewedHunks={{}} />)

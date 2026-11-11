@@ -65,3 +65,9 @@ describe("user bubble text and the edit hint", () => {
     expect(hint).toContain("width: var(--bubble-hint-size)")
   })
 })
+
+describe("review card counts", () => {
+  it("hides a zero count instead of removing its cell, which would shift the other count (#746)", () => {
+    expect(css).toContain(".review-stat.is-zero,\n.review-file-stat.is-zero {\n  visibility: hidden;\n}")
+  })
+})

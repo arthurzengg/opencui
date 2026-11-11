@@ -2472,6 +2472,12 @@ button:focus-visible {
 .review-file-stat.del {
   color: var(--color-diff-del);
 }
+/* Hidden rather than removed: each row is its own grid, so dropping the cell
+   would move the other count out of its column (#746). */
+.review-stat.is-zero,
+.review-file-stat.is-zero {
+  visibility: hidden;
+}
 .review-body-clip {
   display: grid;
   grid-template-rows: 1fr;
