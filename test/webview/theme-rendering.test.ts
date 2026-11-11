@@ -48,3 +48,20 @@ describe("sticky user bubble", () => {
     expect(cover).toContain("pointer-events: none")
   })
 })
+
+// The hint is absolutely positioned over the bubble's top right corner, so
+// the text has to stop short of it, by the same amount in the edit-mode
+// textarea and backdrop or entering edit mode re-wraps the message (#746).
+describe("user bubble text and the edit hint", () => {
+  it("ends the text column clear of the hint in view and edit mode alike", () => {
+    const columns = [
+      ".msg.role-user .user-text",
+      '.msg.role-user:not([data-edit-phase="view"]) .promptbox textarea',
+      '.msg.role-user:not([data-edit-phase="view"]) .promptbox .promptbox-backdrop',
+    ]
+    for (const rule of columns) expect(ruleBody(rule)).toContain("padding-right: var(--bubble-text-gutter)")
+    const hint = ruleBody(".user-edit-hint")
+    expect(hint).toContain("right: var(--bubble-hint-inset)")
+    expect(hint).toContain("width: var(--bubble-hint-size)")
+  })
+})

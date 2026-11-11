@@ -102,6 +102,13 @@
   /* Top padding of `.messages`. The sticky user bubble covers a band this
      tall above itself, so the two must move together. */
   --messages-pad-top:    10px;
+  /* The edit hint sits in the bubble's top right corner. The text column ends
+     `--bubble-text-gutter` from the bubble's padding edge so a full line never
+     runs under the hint. `.user-text` and the edit-mode textarea and backdrop
+     all use it, so entering edit mode does not re-wrap the message (#746). */
+  --bubble-hint-inset:   6px;
+  --bubble-hint-size:    18px;
+  --bubble-text-gutter:  calc(var(--bubble-hint-inset) + var(--bubble-hint-size) + var(--space-1) - var(--bubble-padding));
   /* Height of the blur ramp above the bottom dock. `.messages` reserves it on
      top of the dock height and `.turn:last-child` subtracts it, so the newest
      turn still lands at the top of the view with its last line clear of the
@@ -1230,6 +1237,7 @@ button:focus-visible {
 .msg.role-user:not([data-edit-phase="view"]) .promptbox textarea {
   min-height: 24px;
   padding: var(--bubble-text-padding);
+  padding-right: var(--bubble-text-gutter);
 }
 /* The backdrop must keep character-for-character wrap parity with the
    textarea it paints behind. Its base padding is the bottom composer's
@@ -1240,6 +1248,7 @@ button:focus-visible {
    textarea must be mirrored here. */
 .msg.role-user:not([data-edit-phase="view"]) .promptbox .promptbox-backdrop {
   padding: var(--bubble-text-padding);
+  padding-right: var(--bubble-text-gutter);
 }
 /* Fade + slide the action row in when entering edit mode so the buttons
    don't pop into existence below the textarea. The animation only runs
@@ -1289,6 +1298,7 @@ button:focus-visible {
      the first character to jump because the textarea introduces its own
      internal padding. */
   padding: var(--bubble-text-padding);
+  padding-right: var(--bubble-text-gutter);
   /* Cap the visible height of the rendered user message at the same height
      used by the in-place edit textarea (.promptbox textarea max-height).
      Both reference --message-max-height so the rendered-message view, the
@@ -1405,13 +1415,13 @@ button:focus-visible {
 }
 .user-edit-hint {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--bubble-hint-inset);
+  right: var(--bubble-hint-inset);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: var(--bubble-hint-size);
+  height: var(--bubble-hint-size);
   color: var(--vscode-descriptionForeground);
   opacity: 0.5;
   pointer-events: none;
