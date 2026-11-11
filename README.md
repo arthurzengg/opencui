@@ -32,8 +32,8 @@
   <sub><b>Manage MCP servers</b></sub>
 </td>
 <td align="center">
-  <img src="media/screenshots/context-usage.png" alt="Context-window usage" width="340"><br>
-  <sub><b>Context-window usage</b></sub>
+  <img src="media/screenshots/usage-breakdown.gif" alt="Cost and token breakdown" width="340"><br>
+  <sub><b>Cost and token breakdown</b></sub>
 </td>
 </tr>
 </table>
@@ -48,6 +48,7 @@
 - **Slash commands** — `/compact`, `/init`, `/undo`, `/redo`, `/fork`, `/new`, and your workspace's custom opencode commands, from a picker that opens on `/`.
 - **MCP servers and AI providers** managed from the panel — `/mcp` adds local or remote servers and connects or authenticates them; `/provider` connects any provider opencode supports by API key or OAuth, and the model picker reflects the change on next open.
 - **Chat history per workspace**, including sessions started from the opencode TUI or another client in the same project; opening one makes it a regular conversation with edit and rewind.
+- **Cost and token breakdown** under each finished reply — the cost at rest; hover it for the model and the tokens split into input, output, reasoning, and cache reads and writes.
 - **Context-window usage ring** in the composer — amber at 85%, red at 95%, hover for the token count against the model's limit.
 
 ## Setup
