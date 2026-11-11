@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-11-11
+
+### Changed
+
+- The panel's accent is now the theme's text colour instead of its accent hue. Primary buttons are filled with the text colour, the highlighted row in the model picker, the `@` and `/` pickers and the history list is a soft wash, and the context ring, ticks and keyboard focus outlines follow. The composer's `@file` chip lost its tint. Text links, text selection and the diff, warning and status colours stay on the theme, and a high-contrast theme keeps its own accent (#748, #749).
+- The permission and question cards are restyled after the request cards in Claude's own VS Code panel. Both lose their emoji icon and accent bar and sit on the composer's surface. The permission card shows the whole command instead of cutting it to one line, and lists its choices as full-width rows: Allow once first and emphasised, where Allow always used to be, then Allow always with the rule it would save beside it, then Reject. The question card opens with the question itself, uses smaller drawn radios and checkboxes, and shows its free-text field only once "Other…" is picked (#750, #749).
+
+### Fixed
+
+- On Dark 2026 and Dark Modern, the default dark themes of VS Code 1.143, secondary buttons and the model selector had no shape: those themes leave the secondary button fill transparent and draw a border instead, which the panel did not draw. Copy, Skip, Retry and the selector now take the theme's secondary button border (#746, #747, #751).
+- Scrolled text showed through the strip between the header and a pinned user message. The bubble now covers that strip (#746, #747).
+- A user message's first line could run under the edit icon in the bubble's corner. The text now ends short of it, and entering edit mode wraps the message the same way (#746, #747).
+- A created file showed one more added line in the process trace than in the review card, because a trailing newline was counted as a line, and the review card printed a red `-0` for a change with no deletions (#746, #747).
+
 ## [1.17.3] - 2026-11-09
 
 ### Changed
