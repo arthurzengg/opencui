@@ -2739,13 +2739,15 @@ button:focus-visible {
   box-sizing: border-box;
 }
 .promptbox-backdrop .mention-chip {
-  background: var(--vscode-editor-wordHighlightStrongBackground, rgba(80, 140, 255, 0.22));
+  background: var(--selection-bg);
   border-radius: var(--radius-sm);
-  box-shadow: 0 0 0 1px var(--vscode-editor-wordHighlightStrongBorder, rgba(80, 140, 255, 0.4));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-line) 40%, transparent);
 }
+/* A selected chip is a text selection, so it takes the theme's selection
+   colour like the rest of the textarea; only its ring is the accent. */
 .promptbox-backdrop .mention-chip-selected {
-  background: var(--vscode-editor-selectionBackground, rgba(80, 140, 255, 0.45));
-  box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(80, 140, 255, 0.9));
+  background: var(--vscode-editor-selectionBackground, var(--selection-bg));
+  box-shadow: 0 0 0 1px var(--accent-line);
 }
 /* Web links while composing. The backdrop's glyphs are transparent (the
    textarea above paints them), so the underline is the only paint we can add —

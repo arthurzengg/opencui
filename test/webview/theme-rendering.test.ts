@@ -71,3 +71,43 @@ describe("review card counts", () => {
     expect(css).toContain(".review-stat.is-zero,\n.review-file-stat.is-zero {\n  visibility: hidden;\n}")
   })
 })
+
+// The panel's accent is the theme's text colour, not its accent hue (#748).
+// A high-contrast theme keeps its own accent through one override block, and
+// keyboard focus outlines stay on the theme's focus colour everywhere.
+describe("neutral accent", () => {
+  const start = css.indexOf("\nbody.vscode-high-contrast,")
+  const end = css.indexOf("}", start)
+  const highContrast = css.slice(start, end)
+  const rest = css.slice(0, start) + css.slice(end)
+
+  it("derives the accent tokens from the theme's text colour", () => {
+    const root = ruleBody(":root")
+    for (const token of ["--accent:", "--accent-line:", "--accent-fill:", "--selection-bg:"]) {
+      const declaration = root.split("\n").find((line) => line.trim().startsWith(token))
+      expect(declaration, token).toContain("var(--vscode-foreground)")
+    }
+  })
+
+  it("reads the theme's accent colours only in the high-contrast override", () => {
+    const themeAccent = [
+      "--vscode-button-background",
+      "--vscode-button-hoverBackground",
+      "--vscode-button-foreground",
+      "--vscode-list-activeSelectionBackground",
+      "--vscode-list-activeSelectionForeground",
+      "--vscode-progressBar-background",
+    ]
+    for (const token of themeAccent) expect(rest, token).not.toContain(token)
+    expect(highContrast).toContain("--accent-fill:       var(--vscode-button-background);")
+    expect(highContrast).toContain("--accent:            var(--vscode-focusBorder);")
+    expect(highContrast).toContain("--selection-bg:      var(--vscode-list-activeSelectionBackground")
+  })
+
+  it("keeps the theme's focus colour for keyboard focus outlines and nothing else", () => {
+    const uses = rest.split("\n").filter((line) => line.includes("--vscode-focusBorder"))
+    expect(uses.length).toBeGreaterThan(0)
+    for (const line of uses) expect(line).toContain("outline:")
+  })
+})
+
