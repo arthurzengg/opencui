@@ -112,3 +112,25 @@ describe("neutral accent", () => {
   })
 })
 
+
+
+// The request cards follow Claude's own (#750): type-led, no pictograph.
+describe("request cards", () => {
+  it("carry no emoji in their markup", () => {
+    const sources = ["PermissionDialog.tsx", "QuestionDialog.tsx"].map((file) =>
+      readFileSync(resolve(__dirname, "../../webview/src/components", file), "utf8"),
+    )
+    for (const source of sources) expect(source).not.toMatch(/\p{Extended_Pictographic}/u)
+  })
+
+  it("break the permission pattern between words only", () => {
+    const token = ruleBody(".permission-token")
+    expect(token).toContain("display: inline-block")
+    expect(token).toContain("max-width: 100%")
+  })
+
+  it("hide the question's free-text field while an option holds the answer", () => {
+    expect(ruleBody(".question-custom:disabled")).toContain("display: none")
+    expect(ruleBody(".question-custom")).toContain("resize: none")
+  })
+})

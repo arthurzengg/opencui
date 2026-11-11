@@ -100,8 +100,10 @@ export function QuestionDialog({ id, questions, onReply, onReject }: Props) {
   }
 
   return (
-    <div className="question">
-      <div className="question-title">❓ Question{questions.length > 1 ? "s" : ""} from the assistant</div>
+    // No title line and no icon, after the request cards in Claude's own VS
+    // Code panel (#750): the question is the card's first line, and the name
+    // lives on the group for assistive tech.
+    <div className="question" role="group" aria-label={`Question${questions.length > 1 ? "s" : ""} from the assistant`}>
       <div className="question-body">
         {questions.map((q, i) => (
           <QuestionItem

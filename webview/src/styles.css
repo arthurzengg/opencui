@@ -716,8 +716,8 @@ button:focus-visible {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  /* All uppercase micro-labels track at 0.05em (see .question-header,
-     .mention-section, .agents-popover-*). */
+  /* All uppercase micro-labels track at 0.05em (see .mention-section,
+     .agents-popover-*). */
   letter-spacing: 0.05em;
   cursor: default;
 }
@@ -2248,24 +2248,21 @@ button:focus-visible {
   max-height: 60vh;
   overflow-y: auto;
 }
-.question-title { font-weight: 600; margin-bottom: 8px; }
-.question-body { display: flex; flex-direction: column; gap: 12px; margin-bottom: 10px; }
+.question-body { display: flex; flex-direction: column; gap: 14px; margin-bottom: 10px; }
 .question-item { display: flex; flex-direction: column; gap: 6px; }
 .question-header {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-weight: 500;
 }
-.question-text { font-size: 12px; line-height: 1.4; }
-.question-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.question-text { font-size: 13px; font-weight: 500; line-height: 1.35; }
+.question-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .question-option {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 6px 8px;
+  padding: 4px 6px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -2273,68 +2270,68 @@ button:focus-visible {
   text-align: left;
   cursor: pointer;
 }
-.question-option:hover { background: var(--hover-bg-row); }
-.question-option.is-checked {
-  background: var(--selection-bg);
-}
+.question-option:hover { background: var(--hover-bg-wash); }
+/* The marker alone carries the checked state: a filled row would compete with
+   the hover wash on the row beside it. */
 .question-option-marker {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   margin-top: 1px;
-  border: 1px solid var(--vscode-descriptionForeground);
-  color: var(--vscode-foreground);
-  font-size: 10px;
+  border: 1.5px solid var(--vscode-descriptionForeground);
+  color: var(--accent);
   line-height: 1;
 }
 .question-option-marker.circle { border-radius: var(--radius-pill); }
-.question-option-marker.square { border-radius: var(--radius-sm); }
-.question-option-marker .codicon { font-size: 11px; }
-.question-option.is-checked .question-option-marker {
-  border-color: var(--accent);
-  color: var(--accent);
+.question-option-marker.square { border-radius: 3px; }
+.question-option-marker .codicon { font-size: 12px; }
+.question-option.is-checked .question-option-marker { border-color: var(--accent); }
+.question-option.is-checked .question-option-marker.square {
+  border-color: var(--accent-fill);
+  background: var(--accent-fill);
+  color: var(--accent-on-fill);
 }
 /* The dot is drawn, not typed: a `●` glyph sits on the font's baseline, so its
-   ink lands off-center inside the 14px circle and shifts with font fallback. A
-   6px disc on the 12px content box is centered exactly — 3px per side. */
+   ink lands off-center inside the circle and shifts with font fallback. A 7px
+   disc on the 13px content box is centered exactly, 3px per side. */
 .question-option.is-checked .question-option-marker.circle::after {
   content: "";
   display: block;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: var(--radius-pill);
   background: currentColor;
 }
 .question-option-text { display: flex; flex-direction: column; min-width: 0; }
-.question-option-label { font-size: 12px; font-weight: 600; }
+.question-option-label { font-size: 12px; font-weight: 500; line-height: 1.5; }
 .question-option-desc {
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .question-custom {
   width: 100%;
   min-height: 36px;
-  margin-top: 2px;
+  margin-top: 4px;
   padding: 6px 8px;
-  border: 1px solid var(--vscode-input-border, transparent);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: var(--vscode-input-background);
+  background: var(--color-bg-panel);
   color: var(--vscode-input-foreground);
   font-family: inherit;
   font-size: 12px;
-  resize: vertical;
+  resize: none;
   outline: none;
 }
 .question-custom:focus { border-color: var(--accent); }
-/* An option is checked, so the typed text is not the answer: dim the field
-   until the "Other…" radio is picked again. The text itself is kept. */
+/* An option is checked, so the typed text is not the answer: the field stays
+   out of the way until "Other…" is picked again. It is hidden, not removed,
+   so the text it holds is kept. */
 .question-custom:disabled {
-  opacity: .5;
-  cursor: default;
+  display: none;
 }
 .question-actions {
   display: flex;
