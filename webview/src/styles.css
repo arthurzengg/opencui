@@ -99,6 +99,9 @@
   --bubble-padding:      var(--space-1);
   --bubble-text-padding: var(--space-1);
   --composer-edge-gap:   var(--space-4);
+  /* Top padding of `.messages`. The sticky user bubble covers a band this
+     tall above itself, so the two must move together. */
+  --messages-pad-top:    10px;
   /* Height of the blur ramp above the bottom dock. `.messages` reserves it on
      top of the dock height and `.turn:last-child` subtracts it, so the newest
      turn still lands at the top of the view with its last line clear of the
@@ -1095,7 +1098,7 @@ button:focus-visible {
   scrollbar-gutter: stable;
   /* Bottom: the dock's measured height plus the blur ramp above it, so the
      last line scrolls clear of the glass instead of dissolving under it. */
-  padding: 10px 12px calc(4px + var(--bottom-dock-fade) + var(--bottom-dock-height, 0px));
+  padding: var(--messages-pad-top) 12px calc(4px + var(--bottom-dock-fade) + var(--bottom-dock-height, 0px));
   /* Firefox: thin transparent scrollbar that brightens on hover. */
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -1172,12 +1175,33 @@ button:focus-visible {
   background: var(--surface-input);
   border: var(--bubble-border-width) solid var(--color-border);
   border-radius: var(--radius);
+  /* Not a drop shadow: a copy of the bubble's shape in the panel colour, one
+     corner radius up, which fills the notches outside the rounded top corners
+     so the transcript does not show through them under the cover below. */
+  box-shadow: 0 calc(-1 * var(--radius)) 0 0 var(--color-bg-panel);
   word-break: break-word;
   /* Animate only paint changes. Size-affecting properties stay out of this
      transition so entering/exiting edit mode cannot briefly resize the row. */
   transition:
     background-color 0.18s ease,
     border-color 0.18s ease;
+}
+/* A sticky box pins at the top of the scroller's content box, not its padding
+   box, so the scroller's top padding stays a transparent band between the
+   header and the pinned bubble and the transcript reads through it while it
+   scrolls. The bubble covers that band itself. At rest the cover lies over
+   the gap above the bubble, which is empty and wider than the band, so it
+   paints nothing visible. `pointer-events: none` keeps the band from acting
+   as part of the click-to-edit bubble (#746). */
+.msg.role-user::before {
+  content: "";
+  position: absolute;
+  right: calc(-1 * var(--bubble-border-width));
+  bottom: calc(100% + var(--bubble-border-width));
+  left: calc(-1 * var(--bubble-border-width));
+  height: var(--messages-pad-top);
+  background: var(--color-bg-panel);
+  pointer-events: none;
 }
 /* All rules in this block target the non-view edit phase. Keeping them keyed
    to `[data-edit-phase]` makes it clear the overlay owns edit-mode chrome. */
@@ -1352,7 +1376,6 @@ button:focus-visible {
      which reads as a second white-to-gray flash. */
   border: var(--bubble-border-width) solid var(--color-border);
   background: var(--surface-input);
-  box-shadow: none;
   overflow: visible;
   transition: none;
   z-index: var(--z-overlay);

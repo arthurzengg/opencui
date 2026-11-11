@@ -34,3 +34,17 @@ describe("surfaces on the secondary button fill", () => {
     expect(css.split("background: var(--vscode-button-secondaryBackground)").length - 1).toBe(surfaces.length)
   })
 })
+
+// A sticky box pins at the top of the scroller's content box, so the
+// scroller's top padding is a band the transcript scrolls through in plain
+// view between the header and the pinned bubble (#746).
+describe("sticky user bubble", () => {
+  it("covers the scroller's top padding above itself without taking clicks", () => {
+    expect(ruleBody(".messages")).toContain("padding: var(--messages-pad-top) ")
+    const cover = ruleBody(".msg.role-user::before")
+    expect(cover).toContain("height: var(--messages-pad-top)")
+    expect(cover).toContain("bottom: calc(100% + var(--bubble-border-width))")
+    expect(cover).toContain("background: var(--color-bg-panel)")
+    expect(cover).toContain("pointer-events: none")
+  })
+})
