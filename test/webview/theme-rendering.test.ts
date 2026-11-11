@@ -18,16 +18,27 @@ function ruleBody(selector: string): string {
   }
 }
 
-// Dark Modern in VS Code 1.143 leaves `button.secondaryBackground` transparent
-// and draws its buttons with `button.border`. A surface that borrows the
-// secondary fill without that border is bare text there (#746).
+// The default dark themes of VS Code 1.143 leave `button.secondaryBackground`
+// transparent and draw secondary buttons with a border. A surface that borrows
+// the secondary fill without that border is bare text there (#746).
 describe("surfaces on the secondary button fill", () => {
   const surfaces = [".btn", ".selector-trigger", ".msg-retry"]
 
-  it.each(surfaces)("%s draws the theme's button border", (selector) => {
+  it.each(surfaces)("%s draws the theme's secondary button border", (selector) => {
     const body = ruleBody(selector)
     expect(body).toContain("background: var(--vscode-button-secondaryBackground)")
-    expect(body).toContain("border: 1px solid var(--vscode-button-border, transparent)")
+    expect(body).toContain("border: 1px solid var(--secondary-border)")
+  })
+
+  // `button.border` alone is the primary button's border: Dark 2026 sets it to
+  // the theme's blue, which ringed the model selector and every secondary
+  // button (#751). VS Code's own secondary buttons use this chain.
+  it("resolves the secondary border before the general one, and keeps the primary button off both", () => {
+    expect(ruleBody(":root")).toContain(
+      "--secondary-border:   var(--vscode-button-secondaryBorder, var(--vscode-button-border, transparent));",
+    )
+    expect(ruleBody(".btn.primary")).toContain("border-color: var(--accent-fill-border)")
+    expect(ruleBody(":root")).toContain("--accent-fill-border: transparent;")
   })
 
   it("has no other surface on that fill", () => {
