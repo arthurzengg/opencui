@@ -73,8 +73,7 @@ describe("review card counts", () => {
 })
 
 // The panel's accent is the theme's text colour, not its accent hue (#748).
-// A high-contrast theme keeps its own accent through one override block, and
-// keyboard focus outlines stay on the theme's focus colour everywhere.
+// A high-contrast theme keeps its own accent through one override block.
 describe("neutral accent", () => {
   const start = css.indexOf("\nbody.vscode-high-contrast,")
   const end = css.indexOf("}", start)
@@ -97,6 +96,7 @@ describe("neutral accent", () => {
       "--vscode-list-activeSelectionBackground",
       "--vscode-list-activeSelectionForeground",
       "--vscode-progressBar-background",
+      "--vscode-focusBorder",
     ]
     for (const token of themeAccent) expect(rest, token).not.toContain(token)
     expect(highContrast).toContain("--accent-fill:       var(--vscode-button-background);")
@@ -104,10 +104,11 @@ describe("neutral accent", () => {
     expect(highContrast).toContain("--selection-bg:      var(--vscode-list-activeSelectionBackground")
   })
 
-  it("keeps the theme's focus colour for keyboard focus outlines and nothing else", () => {
-    const uses = rest.split("\n").filter((line) => line.includes("--vscode-focusBorder"))
-    expect(uses.length).toBeGreaterThan(0)
-    for (const line of uses) expect(line).toContain("outline:")
+  // A button keeps focus after a click, and the next key press, a bare
+  // modifier included, reveals its outline. In the theme's blue that read as
+  // an accent the panel no longer has.
+  it("draws keyboard focus outlines in the accent", () => {
+    expect(ruleBody("button:focus-visible")).toContain("outline: 1px solid var(--accent);")
   })
 })
 

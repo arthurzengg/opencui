@@ -51,11 +51,12 @@
   /* === Accent ===
      The panel's accent is the theme's text colour, not its accent hue, so the
      hues left on screen are the ones that carry meaning: links, diff green
-     and red, warning amber, the status dot (#748). Text links, keyboard focus
-     outlines and text selection stay on the theme's own colours, and a
-     high-contrast theme keeps its accent (see the override after `:root`).
+     and red, warning amber, the status dot (#748). Text links and text
+     selection stay on the theme's own colours, and a high-contrast theme
+     keeps its accent (see the override after `:root`).
        --accent       full-strength strokes and marks: a tick, a checked
-                      marker, the context ring, an input's focus border
+                      marker, the context ring, an input's focus border, a
+                      keyboard focus outline
        --accent-line  the same at reduced strength: a card that asks for an
                       answer, a stripe, a hovered thumbnail
        --accent-fill  the primary button, with --accent-on-fill as its text
@@ -189,7 +190,7 @@ button {
    that need a different inset (e.g. .review-file's -1px) still win on
    specificity. */
 button:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -1001,7 +1002,7 @@ button:focus-visible {
 }
 .history-action:focus-visible {
   opacity: 1;
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
 }
 .history-action:hover {
   background: var(--hover-bg-icon);
@@ -1403,7 +1404,7 @@ button:focus-visible {
   border-color: var(--color-border);
 }
 .msg.role-user.is-editable[data-edit-phase="view"]:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 /* Placeholder freeze for editing. The bubble's flow box is locked to
@@ -1565,7 +1566,7 @@ button:focus-visible {
 }
 .msg-usage:focus-visible {
   opacity: 1;
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
 /* The breakdown is an overlay, never an inline expansion: hovering must not
@@ -2383,7 +2384,7 @@ button:focus-visible {
   color: var(--color-diff-del);
 }
 .review-bulk-action:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
 }
 .review-bulk-action .codicon {
   font-size: 13px;
@@ -2489,7 +2490,7 @@ button:focus-visible {
 }
 .review-file-action:focus-visible {
   opacity: 1;
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
 }
 .review-file-action .codicon {
   font-size: 13px;
@@ -2621,7 +2622,7 @@ button:focus-visible {
   opacity: 0.5;
 }
 .review-file:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
 /* Kind styling is intentionally confined to the M/U/D/R letter — the filename
