@@ -134,6 +134,18 @@
   --bubble-padding:      var(--space-1);
   --bubble-text-padding: var(--space-1);
   --composer-edge-gap:   var(--space-4);
+  /* The composer's distance from the panel's side edges. The header popovers
+     take the same inset, so their edges line up with the composer's. */
+  --panel-gutter:        var(--space-5);
+  /* One geometry for the header popovers and the composer's pickers (#756):
+     the composer's width up to a cap on a wide panel, one gap from the
+     anchor, and rows inset and rounded the same way in each. */
+  --popover-max-width:   420px;
+  --popover-gap:         var(--space-1);
+  --popover-pad:         var(--space-1);
+  --popover-row-pad:     var(--space-1) var(--space-3);
+  --popover-row-radius:  var(--radius-sm);
+  --popover-row-line:    16px;
   /* Top padding of `.messages`. The sticky user bubble covers a band this
      tall above itself, so the two must move together. */
   --messages-pad-top:    10px;
@@ -558,23 +570,10 @@ button:focus-visible {
    controls, and inset rounded rows. Zones own their padding (the popover
    has none) so the search and agent-row dividers run edge to edge. */
 .model-picker-popover {
-  position: absolute;
-  /* `top: 100%` is the bottom of .statusbar; the +4px is a small visual
-     gap. `right: 10px` matches .statusbar's right padding so the popover's
-     right edge lands inside the sidebar, the same place the History
-     popover lands. */
-  top: calc(100% + 4px);
-  right: 10px;
-  z-index: var(--z-popover);
-  width: min(340px, calc(100vw - 20px));
   max-height: min(460px, calc(100vh - 70px));
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  border-radius: var(--radius-lg);
   background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
-  box-shadow: var(--shadow-popover);
 }
 .model-picker {
   display: flex;
@@ -694,7 +693,7 @@ button:focus-visible {
   /* Reserve the gutter even while the list fits: expanding a group would
      otherwise summon the scrollbar and shift every row's text left (#556). */
   scrollbar-gutter: stable;
-  padding: var(--space-1) var(--space-2) var(--space-2);
+  padding: var(--popover-pad);
   /* Same fade-in-on-hover scrollbar as .mention-popover — a permanently
      visible thumb reads as chrome, not content. */
   scrollbar-width: thin;
@@ -753,12 +752,13 @@ button:focus-visible {
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: 5px var(--space-3);
+  padding: var(--popover-row-pad);
   border: 0;
-  border-radius: var(--radius);
+  border-radius: var(--popover-row-radius);
   background: transparent;
   color: inherit;
   font-size: 12px;
+  line-height: var(--popover-row-line);
   text-align: left;
   cursor: pointer;
 }
@@ -864,27 +864,36 @@ button:focus-visible {
   font-size: 14px;
   opacity: 0.8;
 }
-.history-popover {
+/* Both header popovers span the composer's width below the bar (#756). Past
+   the cap, the auto margin keeps them against the right edge, under their
+   triggers. */
+.history-popover,
+.model-picker-popover {
   position: absolute;
-  top: calc(100% + 2px);
-  right: 10px;
+  top: calc(100% + var(--popover-gap));
+  left: var(--panel-gutter);
+  right: var(--panel-gutter);
+  max-width: var(--popover-max-width);
+  margin-left: auto;
   z-index: var(--z-popover);
-  width: min(360px, calc(100vw - 20px));
-  max-height: min(420px, calc(100vh - 70px));
   display: flex;
   flex-direction: column;
-  padding: 8px;
-  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
   border-radius: var(--radius);
-  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
   box-shadow: var(--shadow-popover);
+}
+.history-popover {
+  max-height: min(420px, calc(100vh - 70px));
+  padding: var(--popover-pad);
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
 }
 .history-popover-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 4px 6px;
+  /* The title starts where the rows' text does. */
+  padding: var(--space-2) var(--space-1) var(--space-1) var(--space-3);
 }
 .history-popover-title {
   color: var(--vscode-descriptionForeground);
@@ -925,7 +934,7 @@ button:focus-visible {
   flex: 0 0 auto;
 }
 .history-search {
-  margin-top: 6px;
+  margin-top: var(--space-1);
   width: 100%;
   height: 26px;
   padding: 3px 8px;
@@ -941,7 +950,7 @@ button:focus-visible {
   border-color: var(--accent);
 }
 .history-list {
-  margin-top: 6px;
+  margin-top: var(--space-1);
   overflow-y: auto;
 }
 .history-empty {
@@ -955,8 +964,8 @@ button:focus-visible {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  padding: 2px 4px 2px 8px;
-  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1) 0 var(--space-3);
+  border-radius: var(--popover-row-radius);
 }
 .history-item:hover {
   background: var(--hover-bg-row);
@@ -978,12 +987,12 @@ button:focus-visible {
   display: flex;
   align-items: center;
   min-width: 0;
-  padding: 3px 0;
+  padding: var(--space-1) 0;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
-  line-height: 1.2;
+  line-height: var(--popover-row-line);
 }
 .history-title {
   flex: 1 1 auto;
@@ -992,7 +1001,7 @@ button:focus-visible {
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 12px;
-  line-height: 1.2;
+  line-height: var(--popover-row-line);
 }
 /* The date and the row's actions share one cell (#756): the date shows at
    rest, the actions take its place on hover or focus, and the cell is as wide
@@ -2885,6 +2894,9 @@ button:focus-visible {
 .promptbox {
   padding: var(--bubble-padding);
   background: transparent;
+  /* How far the pickers' host sits inside the composer's outer edge: the
+     card's padding and border. The pickers reach back out by this much. */
+  --picker-outset: calc(var(--bubble-padding) + var(--bubble-border-width));
 }
 .promptbox--bottom {
   margin: 0;
@@ -2894,9 +2906,11 @@ button:focus-visible {
 }
 .promptbox--top {
   margin: 0;
-  /* Horizontal gap matches `.bottom-composer` (12px) so the empty-state chatbox
-     is the same width as the docked one. */
-  padding: var(--composer-edge-gap) 12px 4px;
+  /* Horizontal gap matches `.bottom-composer` so the empty-state chatbox is
+     the same width as the docked one. */
+  padding: var(--composer-edge-gap) var(--panel-gutter) 4px;
+  /* The picker's host sits inside the input's border here. */
+  --picker-outset: 1px;
 }
 /* The empty-state ("new chat") composer rests one line taller than the docked
    bottom composer: nothing else is on screen yet, so a roomier input reads as
@@ -3257,7 +3271,7 @@ button:focus-visible {
   font-family: var(--vscode-editor-font-family);
 }
 .bottom-composer {
-  padding: var(--composer-edge-gap) 12px var(--composer-edge-gap);
+  padding: var(--composer-edge-gap) var(--panel-gutter) var(--composer-edge-gap);
   background: transparent;
   pointer-events: none;
 }
@@ -3580,17 +3594,20 @@ button:focus-visible {
   gap: var(--space-1);
 }
 
+/* The composer's pickers span the composer, edge to edge, above it (#756).
+   Their host is the textarea's wrapper, inside the card's padding and border,
+   so they reach back out by --picker-outset on each side. */
 .mention-popover {
   position: absolute;
-  bottom: calc(100% + 4px);
+  bottom: calc(100% + var(--picker-outset) + var(--popover-gap));
   --popover-from: 4px;
-  left: 8px;
-  right: auto;
-  width: min(240px, calc(100% - 16px));
+  left: calc(-1 * var(--picker-outset));
+  right: calc(-1 * var(--picker-outset));
+  max-width: var(--popover-max-width);
   max-height: 220px;
   overflow-y: auto;
   margin: 0;
-  padding: 4px 0;
+  padding: var(--popover-pad);
   list-style: none;
   background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
@@ -3639,26 +3656,26 @@ button:focus-visible {
 .promptbox--edit .mention-popover,
 .promptbox--top .mention-popover {
   bottom: auto;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--popover-gap));
   --popover-from: -4px;
 }
 .promptbox--top .mention-popover {
   top: 26px;
 }
-/* The `/` command picker is a touch wider than the @-file picker (command
-   descriptions need the room) and never shows a horizontal scrollbar — long
+/* The `/` command picker never shows a horizontal scrollbar: long
    descriptions ellipsize via .mention-path instead of forcing a scroll. */
 .command-popover {
-  width: min(320px, calc(100% - 16px));
   overflow-x: hidden;
 }
 .mention-hit {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 4px 10px;
+  padding: var(--popover-row-pad);
+  border-radius: var(--popover-row-radius);
   cursor: pointer;
   font-size: 12px;
+  line-height: var(--popover-row-line);
 }
 .mention-hit.active {
   background: var(--selection-bg);
@@ -3687,7 +3704,6 @@ button:focus-visible {
 .mention-category {
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
 }
 .mention-category-label {
   flex: 1;
@@ -3722,9 +3738,9 @@ button:focus-visible {
 .mention-section {
   display: flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: var(--popover-row-pad);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--vscode-descriptionForeground);
@@ -3761,7 +3777,7 @@ button:focus-visible {
 }
 .mention-browser > ul {
   margin: 0;
-  padding: 4px 0;
+  padding: var(--popover-pad);
   list-style: none;
 }
 .mention-browser .mention-hit {
@@ -3788,7 +3804,8 @@ button:focus-visible {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 5px 10px;
+  /* Its text starts where the rows' text does. */
+  padding: 5px calc(var(--popover-pad) + var(--space-3));
   background: transparent;
   border: 0;
   color: var(--vscode-descriptionForeground);

@@ -116,6 +116,34 @@ describe("process trace", () => {
   })
 })
 
+// History, the saved rules, the model picker and the composer's pickers share
+// one geometry (#756): the composer's width up to a cap, one gap from the
+// anchor, and one row shape. Each used to have its own.
+describe("popover geometry", () => {
+  it("insets the header popovers by the gutter the composer uses", () => {
+    expect(css).toContain(
+      ".history-popover,\n.model-picker-popover {\n  position: absolute;\n  top: calc(100% + var(--popover-gap));\n  left: var(--panel-gutter);\n  right: var(--panel-gutter);\n  max-width: var(--popover-max-width);",
+    )
+    for (const selector of [".bottom-composer", ".promptbox--top"]) {
+      expect(ruleBody(selector), selector).toMatch(/padding: var\(--composer-edge-gap\) var\(--panel-gutter\)/)
+    }
+  })
+
+  it("stretches the composer's pickers to the composer's edges", () => {
+    const picker = ruleBody(".mention-popover")
+    expect(picker).toContain("left: calc(-1 * var(--picker-outset));")
+    expect(picker).toContain("right: calc(-1 * var(--picker-outset));")
+    expect(picker).toContain("max-width: var(--popover-max-width);")
+    for (const selector of [".mention-popover", ".command-popover"]) {
+      expect(ruleBody(selector), selector).not.toMatch(/\n\s+width:/)
+    }
+  })
+
+  it.each([".history-item", ".model-picker-row", ".mention-hit"])("gives %s the shared row shape", (selector) => {
+    expect(ruleBody(selector)).toContain("border-radius: var(--popover-row-radius);")
+  })
+})
+
 // The panel's accent is the theme's text colour, not its accent hue (#748).
 // A high-contrast theme keeps its own accent through one override block.
 describe("neutral accent", () => {
