@@ -57,7 +57,7 @@ describe("progressive blur under the bottom dock (#643)", () => {
       ".bottom-dock > .bottom-dock-glass + .queued-messages",
     ].join(",\n")
     expect(ruleBody(leading)).toMatch(/margin-top:\s*var\(--composer-edge-gap\);/)
-    expect(ruleBody(".bottom-composer")).toMatch(/padding:\s*var\(--composer-edge-gap\) 12px/)
+    expect(ruleBody(".bottom-composer")).toMatch(/padding:\s*var\(--composer-edge-gap\) var\(--panel-gutter\)/)
   })
 
   // The gap between a docked card and the composer is the composer's own edge

@@ -31,7 +31,25 @@ describe("process counts leave subagent work to its dispatch row", () => {
       { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "a.ts" } }, actor: explore },
       { type: "tool", update: { callID: "c2", tool: "read", status: "completed", input: { filePath: "b.ts" } }, actor: explore },
     ]
-    expect(processSummary(blocks)).toBe("1 tool")
+    expect(processSummary(blocks)).toBe("Used 1 tool")
     expect(processTitle(blocks, true).title).toBe("Used 1 tool")
+  })
+})
+
+describe("collapsed summary", () => {
+  it("names every part by its verb, then its count (#756)", () => {
+    const call = (callID: string, tool: string, input: Record<string, unknown>): ChatBlock => ({
+      type: "tool",
+      update: { callID, tool, status: "completed", input },
+    })
+    const blocks = [
+      call("c1", "read", { filePath: "a.ts" }),
+      call("c2", "edit", { filePath: "b.ts", oldString: "x", newString: "y" }),
+      call("c3", "grep", { pattern: "subscribe" }),
+      call("c4", "glob", { pattern: "**/*.ts" }),
+      call("c5", "bash", { command: "bun run test" }),
+      call("c6", "webfetch", { url: "https://example.com" }),
+    ]
+    expect(processSummary(blocks)).toBe("Read 1 · Edited 1 · Searched 2 · Ran 1 · Fetched 1")
   })
 })

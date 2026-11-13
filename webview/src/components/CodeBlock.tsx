@@ -109,7 +109,7 @@ function CodeBlockImpl({ code, language }: Props) {
             {copied ? "Copied" : "Copy"}
           </button>
           <button
-            className="btn compact primary"
+            className="btn compact"
             onClick={onApply}
             title={isShell ? "Send to integrated terminal" : "Apply to active file"}
           >

@@ -27,34 +27,40 @@ afterEach(() => {
 
 const advance = (ms: number) => act(() => vi.advanceTimersByTime(ms))
 
+// A running row is marked by the spinner in its icon column, named "running"
+// for assistive tech, and by its elapsed time once the grace period is over.
+const spinner = () => screen.queryByRole("img", { name: "running" })
+const elapsed = () => document.querySelector(".trace-elapsed")?.textContent
+
 describe("running tool row elapsed time (#561)", () => {
-  it("shows plain 'running' inside the grace period", () => {
+  it("shows the spinner alone inside the grace period", () => {
     render(<ToolTrace tools={[{ update: bash("running") }]} />)
     advance(1000)
-    expect(screen.getByText("running")).toBeTruthy()
-    expect(screen.queryByText(/·/)).toBeNull()
+    expect(spinner()).toBeTruthy()
+    expect(elapsed()).toBeUndefined()
   })
 
-  it("ticks an elapsed suffix past the grace period", () => {
+  it("ticks the elapsed time past the grace period", () => {
     render(<ToolTrace tools={[{ update: bash("running") }]} />)
     advance(3000)
-    expect(screen.getByText("running · 3s")).toBeTruthy()
+    expect(elapsed()).toBe("3s")
     advance(1000)
-    expect(screen.getByText("running · 4s")).toBeTruthy()
+    expect(elapsed()).toBe("4s")
   })
 
   it("formats long runs through formatElapsed", () => {
     render(<ToolTrace tools={[{ update: bash("running") }]} />)
     advance(75_000)
-    expect(screen.getByText("running · 1m")).toBeTruthy()
+    expect(elapsed()).toBe("1m")
   })
 
-  it("drops the marker entirely when the tool completes", () => {
+  it("drops the spinner and the time when the tool completes", () => {
     const { rerender } = render(<ToolTrace tools={[{ update: bash("running") }]} />)
     advance(5000)
-    expect(screen.getByText("running · 5s")).toBeTruthy()
+    expect(elapsed()).toBe("5s")
     rerender(<ToolTrace tools={[{ update: bash("completed") }]} />)
-    expect(screen.queryByText(/running/)).toBeNull()
+    expect(spinner()).toBeNull()
+    expect(elapsed()).toBeUndefined()
   })
 
   it("does not count pending time toward the clock", () => {
@@ -62,16 +68,18 @@ describe("running tool row elapsed time (#561)", () => {
     // before it starts; the clock must measure running time only.
     const { rerender } = render(<ToolTrace tools={[{ update: bash("pending") }]} />)
     advance(10_000)
+    expect(spinner()).toBeNull()
     rerender(<ToolTrace tools={[{ update: bash("running") }]} />)
     advance(2000)
-    expect(screen.getByText("running · 2s")).toBeTruthy()
+    expect(elapsed()).toBe("2s")
   })
 
   it("applies the same treatment to a running edit row", () => {
     render(<ToolTrace tools={[{ update: edit("running") }]} />)
     advance(1000)
-    expect(screen.getByText("running")).toBeTruthy()
+    expect(spinner()).toBeTruthy()
+    expect(elapsed()).toBeUndefined()
     advance(4000)
-    expect(screen.getByText("running · 5s")).toBeTruthy()
+    expect(elapsed()).toBe("5s")
   })
 })

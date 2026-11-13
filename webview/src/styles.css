@@ -134,6 +134,18 @@
   --bubble-padding:      var(--space-1);
   --bubble-text-padding: var(--space-1);
   --composer-edge-gap:   var(--space-4);
+  /* The composer's distance from the panel's side edges. The header popovers
+     take the same inset, so their edges line up with the composer's. */
+  --panel-gutter:        var(--space-5);
+  /* One geometry for the header popovers and the composer's pickers (#756):
+     the composer's width up to a cap on a wide panel, one gap from the
+     anchor, and rows inset and rounded the same way in each. */
+  --popover-max-width:   420px;
+  --popover-gap:         var(--space-1);
+  --popover-pad:         var(--space-1);
+  --popover-row-pad:     var(--space-1) var(--space-3);
+  --popover-row-radius:  var(--radius-sm);
+  --popover-row-line:    16px;
   /* Top padding of `.messages`. The sticky user bubble covers a band this
      tall above itself, so the two must move together. */
   --messages-pad-top:    10px;
@@ -558,23 +570,10 @@ button:focus-visible {
    controls, and inset rounded rows. Zones own their padding (the popover
    has none) so the search and agent-row dividers run edge to edge. */
 .model-picker-popover {
-  position: absolute;
-  /* `top: 100%` is the bottom of .statusbar; the +4px is a small visual
-     gap. `right: 10px` matches .statusbar's right padding so the popover's
-     right edge lands inside the sidebar, the same place the History
-     popover lands. */
-  top: calc(100% + 4px);
-  right: 10px;
-  z-index: var(--z-popover);
-  width: min(340px, calc(100vw - 20px));
   max-height: min(460px, calc(100vh - 70px));
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
-  border-radius: var(--radius-lg);
   background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
-  box-shadow: var(--shadow-popover);
 }
 .model-picker {
   display: flex;
@@ -694,7 +693,7 @@ button:focus-visible {
   /* Reserve the gutter even while the list fits: expanding a group would
      otherwise summon the scrollbar and shift every row's text left (#556). */
   scrollbar-gutter: stable;
-  padding: var(--space-1) var(--space-2) var(--space-2);
+  padding: var(--popover-pad);
   /* Same fade-in-on-hover scrollbar as .mention-popover — a permanently
      visible thumb reads as chrome, not content. */
   scrollbar-width: thin;
@@ -753,12 +752,13 @@ button:focus-visible {
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: 5px var(--space-3);
+  padding: var(--popover-row-pad);
   border: 0;
-  border-radius: var(--radius);
+  border-radius: var(--popover-row-radius);
   background: transparent;
   color: inherit;
   font-size: 12px;
+  line-height: var(--popover-row-line);
   text-align: left;
   cursor: pointer;
 }
@@ -864,27 +864,36 @@ button:focus-visible {
   font-size: 14px;
   opacity: 0.8;
 }
-.history-popover {
+/* Both header popovers span the composer's width below the bar (#756). Past
+   the cap, the auto margin keeps them against the right edge, under their
+   triggers. */
+.history-popover,
+.model-picker-popover {
   position: absolute;
-  top: calc(100% + 2px);
-  right: 10px;
+  top: calc(100% + var(--popover-gap));
+  left: var(--panel-gutter);
+  right: var(--panel-gutter);
+  max-width: var(--popover-max-width);
+  margin-left: auto;
   z-index: var(--z-popover);
-  width: min(360px, calc(100vw - 20px));
-  max-height: min(420px, calc(100vh - 70px));
   display: flex;
   flex-direction: column;
-  padding: 8px;
-  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
   border-radius: var(--radius);
-  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
   box-shadow: var(--shadow-popover);
+}
+.history-popover {
+  max-height: min(420px, calc(100vh - 70px));
+  padding: var(--popover-pad);
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
+  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
 }
 .history-popover-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 4px 6px;
+  /* The title starts where the rows' text does. */
+  padding: var(--space-2) var(--space-1) var(--space-1) var(--space-3);
 }
 .history-popover-title {
   color: var(--vscode-descriptionForeground);
@@ -925,7 +934,7 @@ button:focus-visible {
   flex: 0 0 auto;
 }
 .history-search {
-  margin-top: 6px;
+  margin-top: var(--space-1);
   width: 100%;
   height: 26px;
   padding: 3px 8px;
@@ -941,7 +950,7 @@ button:focus-visible {
   border-color: var(--accent);
 }
 .history-list {
-  margin-top: 6px;
+  margin-top: var(--space-1);
   overflow-y: auto;
 }
 .history-empty {
@@ -952,11 +961,11 @@ button:focus-visible {
 .history-item {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px 2px 8px;
-  border-radius: var(--radius-sm);
+  gap: 8px;
+  padding: 0 var(--space-1) 0 var(--space-3);
+  border-radius: var(--popover-row-radius);
 }
 .history-item:hover {
   background: var(--hover-bg-row);
@@ -977,14 +986,13 @@ button:focus-visible {
 .history-open {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
-  padding: 3px 0;
+  padding: var(--space-1) 0;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
-  line-height: 1.2;
+  line-height: var(--popover-row-line);
 }
 .history-title {
   flex: 1 1 auto;
@@ -993,54 +1001,96 @@ button:focus-visible {
   white-space: nowrap;
   text-overflow: ellipsis;
   font-size: 12px;
-  line-height: 1.2;
+  line-height: var(--popover-row-line);
+}
+/* The date and the row's actions share one cell (#756): the date shows at
+   rest, the actions take its place on hover or focus, and the cell is as wide
+   as the wider of the two, so the title keeps one width either way. Columns
+   reserved for the hidden actions left the date mid-row beside blank space. */
+.history-tail {
+  display: grid;
+  align-items: center;
+  justify-items: end;
+}
+.history-tail > * {
+  grid-area: 1 / 1;
 }
 .history-date {
-  flex: 0 0 auto;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
   line-height: 1.2;
+  white-space: nowrap;
+  /* Faded out it still lies over the actions in the shared cell, and an
+     element below full opacity paints above its siblings, so it would take
+     their clicks. */
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+/* Faded, not removed: the buttons stay in the tab order and the
+   accessibility tree, and focusing one reveals the group. */
+.history-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.history-item:hover .history-actions,
+.history-item:focus-within .history-actions,
+.history-item.is-editing .history-actions,
+.history-item.is-confirming .history-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.history-item:hover .history-date,
+.history-item:focus-within .history-date,
+.history-item.is-confirming .history-date {
+  opacity: 0;
 }
 .history-action {
-  padding: 3px 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 3px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
-  line-height: 1.2;
-  opacity: 0;
-  transition: opacity 0.12s ease;
+  line-height: 1;
 }
-.history-item:hover .history-action,
-.history-item:focus-within .history-action,
-.history-item.is-editing .history-action,
-.history-item.is-confirming .history-action {
-  opacity: 1;
+.history-action .codicon {
+  font-size: 13px;
 }
 .history-action:focus-visible {
-  opacity: 1;
   outline: 1px solid var(--accent);
 }
 .history-action:hover {
   background: var(--hover-bg-icon);
   color: var(--vscode-foreground);
 }
-.history-action.danger {
-  /* Reserve enough width to fit either "Delete" or "Confirm" so the row
-     columns don't shift when toggling between the two states. */
-  min-width: 52px;
-  text-align: center;
-}
 .history-action.danger:hover,
 .history-action.danger.is-confirming {
   color: var(--color-error);
 }
 .history-action.danger.is-confirming {
+  padding: 0 6px;
   background: var(--vscode-inputValidation-errorBackground, rgba(248, 81, 73, 0.18));
 }
 @media (hover: none) {
-  .history-action {
+  /* Nothing reveals the actions without a pointer, so both stay visible. */
+  .history-tail {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .history-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .history-item .history-date {
     opacity: 1;
   }
 }
@@ -1964,40 +2014,101 @@ button:focus-visible {
 }
 .codeblock-body pre, .codeblock-body code { background: transparent !important; }
 
-/* ===== Trace ===== */
+/* ===== Trace =====
+   One grid for the whole trace (#756): an icon column, a verb column as wide
+   as the longest verb in it, and the rest. Every section and every row is a
+   subgrid of it, so the icons share one column and the details another,
+   whatever the lengths of the verbs. The verb column is capped: a tool with
+   no verb of its own shows its name there, and one long name would push
+   every row's detail aside. A subagent's rows are a grid of their own,
+   indented under the row that dispatched them. */
+.trace,
+.trace-subagent {
+  --trace-icon-size: 14px;
+  --trace-line: 16px;
+  display: grid;
+  grid-template-columns: var(--trace-icon-size) fit-content(88px) minmax(0, 1fr);
+  column-gap: 6px;
+  font-size: 12px;
+  line-height: var(--trace-line);
+}
 .trace {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  row-gap: 8px;
   margin: 8px 0 10px;
 }
 .process-body .trace {
   margin-top: 4px;
 }
-
-.trace-edits {
-  display: flex;
-  flex-direction: column;
-}
-.edit-row {
+.trace-edits,
+.trace-reads,
+.trace-others,
+.trace-dispatch,
+.edit-row,
+.other-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: start;
+}
+.trace-todos,
+.trace-subagent,
+.trace-subagent-label {
+  grid-column: 1 / -1;
+}
+/* As tall as a row's first line, so the glyph centres on that line when the
+   row wraps (the Read row does). */
+.trace-icon {
+  grid-column: 1;
+  display: inline-flex;
   align-items: center;
-  gap: 0 6px;
-  width: 100%;
-  min-width: 0;
-  padding: 4px 2px;
+  justify-content: center;
+  width: var(--trace-icon-size);
+  height: var(--trace-line);
+  color: var(--vscode-descriptionForeground);
+}
+.trace-icon.codicon {
+  font-size: 13px;
+}
+.status-error > .trace-icon {
+  color: var(--color-error);
+}
+@media (prefers-reduced-motion: reduce) {
+  .trace-icon.codicon-modifier-spin {
+    animation: none;
+  }
+}
+/* How long a running call has taken. Fixed-width digits keep the row from
+   jiggling on each tick (#561). */
+.trace-elapsed {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.edit-row {
+  /* The margin gives back what the padding takes, so the row's tracks stay
+     on the trace's columns and only its hover fill reaches past them. */
+  margin-inline: -2px;
+  padding: 3px 2px;
   border: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: inherit;
+  line-height: inherit;
   text-align: left;
 }
 .edit-row:hover {
   background: var(--hover-bg-row);
 }
-.edit-row.status-running {
-  opacity: 0.7;
+.edit-main {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
 }
 .edit-row.kind-created .edit-name {
   color: var(--color-diff-add);
@@ -2010,8 +2121,9 @@ button:focus-visible {
   color: var(--color-diff-renamed);
 }
 .edit-name {
+  flex: 1 1 auto;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 500;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -2024,17 +2136,8 @@ button:focus-visible {
 }
 .edit-add { color: var(--color-diff-add); }
 .edit-del { color: var(--color-diff-del); }
-.edit-running {
-  opacity: 0.65;
-  font-style: italic;
-  font-size: 11px;
-  /* The elapsed counter ticks every second; fixed-width digits keep the row
-     from jiggling on each tick (#561). */
-  font-variant-numeric: tabular-nums;
-}
 .edit-error {
-  grid-column: 1 / -1;
-  margin-top: 2px;
+  grid-column: 2 / -1;
   color: var(--color-error);
   font-size: 11px;
   overflow: hidden;
@@ -2043,29 +2146,27 @@ button:focus-visible {
 }
 
 .trace-reads {
+  color: var(--vscode-descriptionForeground);
+}
+.trace-reads-label {
+  grid-column: 2;
+  color: var(--vscode-foreground);
+}
+/* The count leads the files inside one wrapping line, so a long list wraps
+   file by file after it and never drops below it as a block. */
+.trace-reads-list {
+  grid-column: 3;
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 4px 6px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 12px;
-}
-.trace-reads-label {
-  flex: 0 0 auto;
-  font-weight: 600;
-  color: var(--vscode-foreground);
+  gap: 0 6px;
+  min-width: 0;
 }
 .trace-reads-count {
   flex: 0 0 auto;
   font-family: var(--vscode-editor-font-family);
   font-size: 10px;
   opacity: 0.6;
-}
-.trace-reads-list {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0 6px;
-  min-width: 0;
 }
 .trace-read-chip {
   display: inline-flex;
@@ -2076,6 +2177,7 @@ button:focus-visible {
   background: transparent;
   color: var(--vscode-textLink-foreground);
   font-size: 12px;
+  line-height: inherit;
 }
 .trace-read-chip:hover .trace-read-name {
   color: var(--vscode-textLink-activeForeground);
@@ -2093,26 +2195,36 @@ button:focus-visible {
   color: var(--vscode-descriptionForeground);
 }
 
-.trace-others {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 12px;
+.trace-others,
+.trace-dispatch {
+  row-gap: 3px;
 }
 .other-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
   color: var(--vscode-descriptionForeground);
 }
 .other-row.status-error {
   color: var(--color-error);
 }
+/* Regular weight: the icon column anchors the row now, and a column of bold
+   verbs outweighed what they acted on. A name longer than the column's cap
+   ellipsizes; the row's tooltip carries it in full. */
 .other-action {
-  flex: 0 0 auto;
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--vscode-foreground);
-  font-weight: 600;
+}
+.other-row.status-error .other-action {
+  color: inherit;
+}
+.other-body {
+  grid-column: 3;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
 }
 .other-detail {
   min-width: 0;
@@ -2122,13 +2234,6 @@ button:focus-visible {
   font-family: var(--vscode-editor-font-family);
   font-size: 11px;
 }
-.other-meta {
-  flex: 0 0 auto;
-  opacity: 0.75;
-  font-style: italic;
-  /* Same tabular-nums rationale as .edit-running (#561). */
-  font-variant-numeric: tabular-nums;
-}
 .other-error {
   min-width: 0;
   color: var(--color-error);
@@ -2136,19 +2241,13 @@ button:focus-visible {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* A subagent's calls sit under the row that dispatched it, indented the
-   way the process body is. A group with no dispatch row names its agent. */
-.trace-dispatch {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
+/* A subagent's calls sit under the row that dispatched it, on a rule that
+   drops from that row's icon and with their own icons under its verb. A
+   group with no dispatch row names its agent. */
 .trace-subagent {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-left: 4px;
-  padding-left: 10px;
+  row-gap: 6px;
+  margin-left: calc(var(--trace-icon-size) / 2 - 1px);
+  padding-left: calc(var(--trace-icon-size) / 2 + 6px);
   border-left: 1px solid var(--vscode-panel-border);
 }
 .trace-subagent-label {
@@ -2525,8 +2624,47 @@ button:focus-visible {
   font-family: var(--vscode-editor-font-family);
   font-size: 11px;
 }
-.review-file-stat.add { grid-area: add; }
-.review-file-stat.del { grid-area: del; }
+/* The counts and the row's actions share one cell, as the date and the
+   actions of a history row do (#756): the counts sit at the right edge at
+   rest and the actions take their place on hover or keyboard focus. */
+.review-file-tail {
+  grid-area: tail;
+  display: grid;
+  align-items: center;
+  justify-items: end;
+}
+.review-file-tail > * {
+  grid-area: 1 / 1;
+}
+.review-file-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* See .history-date: faded out, it would take the actions' clicks. */
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.review-file-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+/* :focus-visible, not :focus-within: a clicked row keeps focus, and its
+   counts would stay hidden for as long as it did. */
+.review-file:hover .review-file-actions,
+.review-file:focus-visible .review-file-actions,
+.review-file:has(:focus-visible) .review-file-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.review-file:hover .review-file-stats,
+.review-file:focus-visible .review-file-stats,
+.review-file:has(:focus-visible) .review-file-stats {
+  opacity: 0;
+}
 .review-file-action {
   display: inline-flex;
   align-items: center;
@@ -2542,14 +2680,7 @@ button:focus-visible {
   font-family: inherit;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
-}
-.review-file-action.accept { grid-area: keep; }
-.review-file-action.reject { grid-area: undo; }
-.review-file:hover .review-file-action,
-.review-file:focus-within .review-file-action {
-  opacity: 1;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 .review-file-action:hover {
   background: var(--hover-bg-icon);
@@ -2561,14 +2692,24 @@ button:focus-visible {
   color: var(--color-diff-del);
 }
 .review-file-action:focus-visible {
-  opacity: 1;
   outline: 1px solid var(--accent);
 }
 .review-file-action .codicon {
   font-size: 13px;
 }
 @media (hover: none) {
-  .review-file-action { opacity: 1; }
+  /* Nothing reveals the actions without a pointer, so both stay visible. */
+  .review-file-tail {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .review-file-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .review-file .review-file-stats {
+    opacity: 1;
+  }
 }
 .review-stat.add,
 .review-file-stat.add {
@@ -2578,8 +2719,8 @@ button:focus-visible {
 .review-file-stat.del {
   color: var(--color-diff-del);
 }
-/* Hidden rather than removed: each row is its own grid, so dropping the cell
-   would move the other count out of its column (#746). */
+/* Hidden rather than removed: each row lays its counts out on its own, so
+   dropping one would move the other out of its column (#746). */
 .review-stat.is-zero,
 .review-file-stat.is-zero {
   visibility: hidden;
@@ -2650,8 +2791,8 @@ button:focus-visible {
 .review-file {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
-  grid-template-areas: "kind name add del keep undo";
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "kind name tail";
   align-items: center;
   gap: 0 6px;
   width: 100%;
@@ -2753,6 +2894,9 @@ button:focus-visible {
 .promptbox {
   padding: var(--bubble-padding);
   background: transparent;
+  /* How far the pickers' host sits inside the composer's outer edge: the
+     card's padding and border. The pickers reach back out by this much. */
+  --picker-outset: calc(var(--bubble-padding) + var(--bubble-border-width));
 }
 .promptbox--bottom {
   margin: 0;
@@ -2762,9 +2906,11 @@ button:focus-visible {
 }
 .promptbox--top {
   margin: 0;
-  /* Horizontal gap matches `.bottom-composer` (12px) so the empty-state chatbox
-     is the same width as the docked one. */
-  padding: var(--composer-edge-gap) 12px 4px;
+  /* Horizontal gap matches `.bottom-composer` so the empty-state chatbox is
+     the same width as the docked one. */
+  padding: var(--composer-edge-gap) var(--panel-gutter) 4px;
+  /* The picker's host sits inside the input's border here. */
+  --picker-outset: 1px;
 }
 /* The empty-state ("new chat") composer rests one line taller than the docked
    bottom composer: nothing else is on screen yet, so a roomier input reads as
@@ -3125,7 +3271,7 @@ button:focus-visible {
   font-family: var(--vscode-editor-font-family);
 }
 .bottom-composer {
-  padding: var(--composer-edge-gap) 12px var(--composer-edge-gap);
+  padding: var(--composer-edge-gap) var(--panel-gutter) var(--composer-edge-gap);
   background: transparent;
   pointer-events: none;
 }
@@ -3448,17 +3594,20 @@ button:focus-visible {
   gap: var(--space-1);
 }
 
+/* The composer's pickers span the composer, edge to edge, above it (#756).
+   Their host is the textarea's wrapper, inside the card's padding and border,
+   so they reach back out by --picker-outset on each side. */
 .mention-popover {
   position: absolute;
-  bottom: calc(100% + 4px);
+  bottom: calc(100% + var(--picker-outset) + var(--popover-gap));
   --popover-from: 4px;
-  left: 8px;
-  right: auto;
-  width: min(240px, calc(100% - 16px));
+  left: calc(-1 * var(--picker-outset));
+  right: calc(-1 * var(--picker-outset));
+  max-width: var(--popover-max-width);
   max-height: 220px;
   overflow-y: auto;
   margin: 0;
-  padding: 4px 0;
+  padding: var(--popover-pad);
   list-style: none;
   background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
@@ -3507,26 +3656,26 @@ button:focus-visible {
 .promptbox--edit .mention-popover,
 .promptbox--top .mention-popover {
   bottom: auto;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--popover-gap));
   --popover-from: -4px;
 }
 .promptbox--top .mention-popover {
   top: 26px;
 }
-/* The `/` command picker is a touch wider than the @-file picker (command
-   descriptions need the room) and never shows a horizontal scrollbar — long
+/* The `/` command picker never shows a horizontal scrollbar: long
    descriptions ellipsize via .mention-path instead of forcing a scroll. */
 .command-popover {
-  width: min(320px, calc(100% - 16px));
   overflow-x: hidden;
 }
 .mention-hit {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 4px 10px;
+  padding: var(--popover-row-pad);
+  border-radius: var(--popover-row-radius);
   cursor: pointer;
   font-size: 12px;
+  line-height: var(--popover-row-line);
 }
 .mention-hit.active {
   background: var(--selection-bg);
@@ -3555,7 +3704,6 @@ button:focus-visible {
 .mention-category {
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
 }
 .mention-category-label {
   flex: 1;
@@ -3590,9 +3738,9 @@ button:focus-visible {
 .mention-section {
   display: flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: var(--popover-row-pad);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--vscode-descriptionForeground);
@@ -3629,7 +3777,7 @@ button:focus-visible {
 }
 .mention-browser > ul {
   margin: 0;
-  padding: 4px 0;
+  padding: var(--popover-pad);
   list-style: none;
 }
 .mention-browser .mention-hit {
@@ -3656,7 +3804,8 @@ button:focus-visible {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 5px 10px;
+  /* Its text starts where the rows' text does. */
+  padding: 5px calc(var(--popover-pad) + var(--space-3));
   background: transparent;
   border: 0;
   color: var(--vscode-descriptionForeground);

@@ -178,26 +178,32 @@ export function ReviewPanel({
                   >
                     <span className="review-file-kind" aria-label={kindLabel(change.kind)}>{kindLetter(change.kind)}</span>
                     <span className="review-file-name">{displayNames.get(change.path) ?? basename(change.path)}</span>
-                    <span className={statClass("review-file-stat add", change.additions)}>+{change.additions}</span>
-                    <span className={statClass("review-file-stat del", change.deletions)}>-{change.deletions}</span>
-                    <button
-                      className="review-file-action accept"
-                      onClick={(event) => { stop(event); act("accepted") }}
-                      onKeyDown={stop}
-                      aria-label={`Keep changes in ${basename(change.path)}`}
-                      title="Keep all changes in this file"
-                    >
-                      <span className="codicon codicon-check" aria-hidden="true" />
-                    </button>
-                    <button
-                      className="review-file-action reject"
-                      onClick={(event) => { stop(event); act("rejected") }}
-                      onKeyDown={stop}
-                      aria-label={`Undo changes in ${basename(change.path)}`}
-                      title="Undo all changes in this file"
-                    >
-                      <span className="codicon codicon-discard" aria-hidden="true" />
-                    </button>
+                    <span className="review-file-tail">
+                      <span className="review-file-stats">
+                        <span className={statClass("review-file-stat add", change.additions)}>+{change.additions}</span>
+                        <span className={statClass("review-file-stat del", change.deletions)}>-{change.deletions}</span>
+                      </span>
+                      <span className="review-file-actions">
+                        <button
+                          className="review-file-action accept"
+                          onClick={(event) => { stop(event); act("accepted") }}
+                          onKeyDown={stop}
+                          aria-label={`Keep changes in ${basename(change.path)}`}
+                          title="Keep all changes in this file"
+                        >
+                          <span className="codicon codicon-check" aria-hidden="true" />
+                        </button>
+                        <button
+                          className="review-file-action reject"
+                          onClick={(event) => { stop(event); act("rejected") }}
+                          onKeyDown={stop}
+                          aria-label={`Undo changes in ${basename(change.path)}`}
+                          title="Undo all changes in this file"
+                        >
+                          <span className="codicon codicon-discard" aria-hidden="true" />
+                        </button>
+                      </span>
+                    </span>
                   </div>
                 )
               })}

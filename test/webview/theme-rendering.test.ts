@@ -83,6 +83,67 @@ describe("review card counts", () => {
   })
 })
 
+// A history row's date and a review row's counts share one cell with the row's
+// actions (#756). Columns reserved for the hidden actions left the date and
+// the counts mid-row, and truncated names beside blank space.
+describe("row actions", () => {
+  it("reserves no column for actions that are hidden at rest", () => {
+    expect(ruleBody(".history-item")).toContain("grid-template-columns: minmax(0, 1fr) auto;")
+    expect(ruleBody(".review-file")).toContain('grid-template-areas: "kind name tail";')
+    for (const selector of [".history-tail > *", ".review-file-tail > *"]) {
+      expect(ruleBody(selector), selector).toContain("grid-area: 1 / 1")
+    }
+  })
+
+  it("keeps the faded date and counts from taking the clicks meant for the actions under them", () => {
+    for (const selector of [".history-date", ".review-file-stats"]) {
+      expect(ruleBody(selector), selector).toContain("pointer-events: none")
+    }
+  })
+})
+
+// The trace is one grid and every section and row a subgrid of it, so the
+// icons share a column and the details another whatever the verbs' lengths
+// (#756). A row laid out on its own would start its detail where its verb ends.
+describe("process trace", () => {
+  it("lays every section and row out on the trace's columns", () => {
+    const onTheGrid = [".trace-edits", ".trace-reads", ".trace-others", ".trace-dispatch", ".edit-row", ".other-row"]
+    expect(css).toContain(`${onTheGrid.join(",\n")} {\n  display: grid;\n  grid-template-columns: subgrid;\n  grid-column: 1 / -1;`)
+  })
+
+  it("stops the running spinner under reduced motion", () => {
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.trace-icon\.codicon-modifier-spin \{\s*animation: none;/)
+  })
+})
+
+// History, the saved rules, the model picker and the composer's pickers share
+// one geometry (#756): the composer's width up to a cap, one gap from the
+// anchor, and one row shape. Each used to have its own.
+describe("popover geometry", () => {
+  it("insets the header popovers by the gutter the composer uses", () => {
+    expect(css).toContain(
+      ".history-popover,\n.model-picker-popover {\n  position: absolute;\n  top: calc(100% + var(--popover-gap));\n  left: var(--panel-gutter);\n  right: var(--panel-gutter);\n  max-width: var(--popover-max-width);",
+    )
+    for (const selector of [".bottom-composer", ".promptbox--top"]) {
+      expect(ruleBody(selector), selector).toMatch(/padding: var\(--composer-edge-gap\) var\(--panel-gutter\)/)
+    }
+  })
+
+  it("stretches the composer's pickers to the composer's edges", () => {
+    const picker = ruleBody(".mention-popover")
+    expect(picker).toContain("left: calc(-1 * var(--picker-outset));")
+    expect(picker).toContain("right: calc(-1 * var(--picker-outset));")
+    expect(picker).toContain("max-width: var(--popover-max-width);")
+    for (const selector of [".mention-popover", ".command-popover"]) {
+      expect(ruleBody(selector), selector).not.toMatch(/\n\s+width:/)
+    }
+  })
+
+  it.each([".history-item", ".model-picker-row", ".mention-hit"])("gives %s the shared row shape", (selector) => {
+    expect(ruleBody(selector)).toContain("border-radius: var(--popover-row-radius);")
+  })
+})
+
 // The panel's accent is the theme's text colour, not its accent hue (#748).
 // A high-contrast theme keeps its own accent through one override block.
 describe("neutral accent", () => {
