@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.18.1] - 2026-11-13
+
+### Changed
+
+- A history row's date and a review card row's change counts now sit at the right edge of the row, and the row's actions take their place on hover or keyboard focus, so a title or filename keeps the same width either way. The actions used to hold columns of their own, which left the date and the counts mid-row and cut filenames short beside blank space in a narrow panel. History actions are icon buttons, and Delete still asks for a second click. The saved permission rules list follows (#756, #757).
+- The open process trace has a leading icon on every row, regular-weight verbs, and details that start in one column. A running call shows a spinner and its elapsed time instead of the italic word "running", and reduced motion stops the spinner. A tool name longer than the verb column is cut short there, with the full text in the row's tooltip. The collapsed summary uses one grammar, verb then count: "Read 2 · Edited 1 · Searched 1 · Ran 1" (#756, #757).
+- Chat history, the saved permission rules, the model picker and the `/` and `@` pickers share one geometry: the composer's width, capped at 420px on a wide panel, with the same gap from their anchor, the composer's corner radius, and rows inset and rounded the same way (#756, #757).
+- Apply and Run on a code block are plain buttons, like Copy. The filled style is left to Send and to a card's Submit (#756, #757).
+- The README shows the cost and token breakdown under a reply in place of the context-usage image, and its GIFs are recorded again on Dark 2026 with the current rows, popovers and trace (#754, #755, #757).
+
 ## [1.18.0] - 2026-11-11
 
 ### Changed
