@@ -952,9 +952,9 @@ button:focus-visible {
 .history-item {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   padding: 2px 4px 2px 8px;
   border-radius: var(--radius-sm);
 }
@@ -977,7 +977,6 @@ button:focus-visible {
 .history-open {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
   padding: 3px 0;
   border: 0;
@@ -995,52 +994,94 @@ button:focus-visible {
   font-size: 12px;
   line-height: 1.2;
 }
+/* The date and the row's actions share one cell (#756): the date shows at
+   rest, the actions take its place on hover or focus, and the cell is as wide
+   as the wider of the two, so the title keeps one width either way. Columns
+   reserved for the hidden actions left the date mid-row beside blank space. */
+.history-tail {
+  display: grid;
+  align-items: center;
+  justify-items: end;
+}
+.history-tail > * {
+  grid-area: 1 / 1;
+}
 .history-date {
-  flex: 0 0 auto;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
   line-height: 1.2;
+  white-space: nowrap;
+  /* Faded out it still lies over the actions in the shared cell, and an
+     element below full opacity paints above its siblings, so it would take
+     their clicks. */
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+/* Faded, not removed: the buttons stay in the tab order and the
+   accessibility tree, and focusing one reveals the group. */
+.history-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.history-item:hover .history-actions,
+.history-item:focus-within .history-actions,
+.history-item.is-editing .history-actions,
+.history-item.is-confirming .history-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.history-item:hover .history-date,
+.history-item:focus-within .history-date,
+.history-item.is-confirming .history-date {
+  opacity: 0;
 }
 .history-action {
-  padding: 3px 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 3px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
-  line-height: 1.2;
-  opacity: 0;
-  transition: opacity 0.12s ease;
+  line-height: 1;
 }
-.history-item:hover .history-action,
-.history-item:focus-within .history-action,
-.history-item.is-editing .history-action,
-.history-item.is-confirming .history-action {
-  opacity: 1;
+.history-action .codicon {
+  font-size: 13px;
 }
 .history-action:focus-visible {
-  opacity: 1;
   outline: 1px solid var(--accent);
 }
 .history-action:hover {
   background: var(--hover-bg-icon);
   color: var(--vscode-foreground);
 }
-.history-action.danger {
-  /* Reserve enough width to fit either "Delete" or "Confirm" so the row
-     columns don't shift when toggling between the two states. */
-  min-width: 52px;
-  text-align: center;
-}
 .history-action.danger:hover,
 .history-action.danger.is-confirming {
   color: var(--color-error);
 }
 .history-action.danger.is-confirming {
+  padding: 0 6px;
   background: var(--vscode-inputValidation-errorBackground, rgba(248, 81, 73, 0.18));
 }
 @media (hover: none) {
-  .history-action {
+  /* Nothing reveals the actions without a pointer, so both stay visible. */
+  .history-tail {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .history-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .history-item .history-date {
     opacity: 1;
   }
 }
@@ -2525,8 +2566,47 @@ button:focus-visible {
   font-family: var(--vscode-editor-font-family);
   font-size: 11px;
 }
-.review-file-stat.add { grid-area: add; }
-.review-file-stat.del { grid-area: del; }
+/* The counts and the row's actions share one cell, as the date and the
+   actions of a history row do (#756): the counts sit at the right edge at
+   rest and the actions take their place on hover or keyboard focus. */
+.review-file-tail {
+  grid-area: tail;
+  display: grid;
+  align-items: center;
+  justify-items: end;
+}
+.review-file-tail > * {
+  grid-area: 1 / 1;
+}
+.review-file-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* See .history-date: faded out, it would take the actions' clicks. */
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.review-file-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+/* :focus-visible, not :focus-within: a clicked row keeps focus, and its
+   counts would stay hidden for as long as it did. */
+.review-file:hover .review-file-actions,
+.review-file:focus-visible .review-file-actions,
+.review-file:has(:focus-visible) .review-file-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.review-file:hover .review-file-stats,
+.review-file:focus-visible .review-file-stats,
+.review-file:has(:focus-visible) .review-file-stats {
+  opacity: 0;
+}
 .review-file-action {
   display: inline-flex;
   align-items: center;
@@ -2542,14 +2622,7 @@ button:focus-visible {
   font-family: inherit;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
-}
-.review-file-action.accept { grid-area: keep; }
-.review-file-action.reject { grid-area: undo; }
-.review-file:hover .review-file-action,
-.review-file:focus-within .review-file-action {
-  opacity: 1;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 .review-file-action:hover {
   background: var(--hover-bg-icon);
@@ -2561,14 +2634,24 @@ button:focus-visible {
   color: var(--color-diff-del);
 }
 .review-file-action:focus-visible {
-  opacity: 1;
   outline: 1px solid var(--accent);
 }
 .review-file-action .codicon {
   font-size: 13px;
 }
 @media (hover: none) {
-  .review-file-action { opacity: 1; }
+  /* Nothing reveals the actions without a pointer, so both stay visible. */
+  .review-file-tail {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .review-file-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .review-file .review-file-stats {
+    opacity: 1;
+  }
 }
 .review-stat.add,
 .review-file-stat.add {
@@ -2578,8 +2661,8 @@ button:focus-visible {
 .review-file-stat.del {
   color: var(--color-diff-del);
 }
-/* Hidden rather than removed: each row is its own grid, so dropping the cell
-   would move the other count out of its column (#746). */
+/* Hidden rather than removed: each row lays its counts out on its own, so
+   dropping one would move the other out of its column (#746). */
 .review-stat.is-zero,
 .review-file-stat.is-zero {
   visibility: hidden;
@@ -2650,8 +2733,8 @@ button:focus-visible {
 .review-file {
   position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
-  grid-template-areas: "kind name add del keep undo";
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "kind name tail";
   align-items: center;
   gap: 0 6px;
   width: 100%;

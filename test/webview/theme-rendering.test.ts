@@ -83,6 +83,25 @@ describe("review card counts", () => {
   })
 })
 
+// A history row's date and a review row's counts share one cell with the row's
+// actions (#756). Columns reserved for the hidden actions left the date and
+// the counts mid-row, and truncated names beside blank space.
+describe("row actions", () => {
+  it("reserves no column for actions that are hidden at rest", () => {
+    expect(ruleBody(".history-item")).toContain("grid-template-columns: minmax(0, 1fr) auto;")
+    expect(ruleBody(".review-file")).toContain('grid-template-areas: "kind name tail";')
+    for (const selector of [".history-tail > *", ".review-file-tail > *"]) {
+      expect(ruleBody(selector), selector).toContain("grid-area: 1 / 1")
+    }
+  })
+
+  it("keeps the faded date and counts from taking the clicks meant for the actions under them", () => {
+    for (const selector of [".history-date", ".review-file-stats"]) {
+      expect(ruleBody(selector), selector).toContain("pointer-events: none")
+    }
+  })
+})
+
 // The panel's accent is the theme's text colour, not its accent hue (#748).
 // A high-contrast theme keeps its own accent through one override block.
 describe("neutral accent", () => {

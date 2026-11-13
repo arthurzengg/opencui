@@ -43,7 +43,12 @@ export function useDismissableMenu(options: DismissableMenuOptions = {}): {
     // pointerdown can remove that height before the browser delivers the
     // bubble's click, so click-to-edit never sees the activation.
     const onClick = (event: MouseEvent) => {
-      if (ref.current?.contains(event.target as Node)) return
+      // The path as dispatched, not `contains(target)`: a handler inside the
+      // menu may have replaced the clicked node before the click reaches the
+      // window (a history row's Rename swaps its actions for Save and Cancel),
+      // and a detached target would read as a click outside.
+      const menu = ref.current
+      if (menu && event.composedPath().includes(menu)) return
       setOpen(false)
     }
     // Escape marks itself consumed and listens on `document` (which bubbles

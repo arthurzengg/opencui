@@ -881,14 +881,14 @@ describe("StatusBar: one history list (#660)", () => {
     expect(onDeleteConversation).not.toHaveBeenCalled()
   })
 
-  it("gives every row the same actions so the date column lines up (#662)", async () => {
+  it("gives an unopened session the same Rename and Delete as a saved conversation (#662)", async () => {
     const user = userEvent.setup()
     render(<StatusBar {...baseProps} conversations={conversations} externalSessions={externalSessions} />)
     await user.click(screen.getByRole("button", { name: /chat history/i }))
     const rows = Array.from(document.querySelectorAll(".history-item"))
     expect(rows).toHaveLength(3)
     for (const row of rows) {
-      expect(Array.from(row.querySelectorAll(".history-action")).map((b) => b.textContent)).toEqual(["Rename", "Delete"])
+      expect(Array.from(row.querySelectorAll(".history-action")).map((b) => b.getAttribute("aria-label"))).toEqual(["Rename", "Delete"])
     }
   })
 

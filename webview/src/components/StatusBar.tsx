@@ -346,12 +346,21 @@ function ChatHistoryMenu({
                           }
                         }}
                       />
-                      <button className="history-action" onClick={commitRename}>
-                        Save
-                      </button>
-                      <button className="history-action" onClick={() => setRenaming(undefined)}>
-                        Cancel
-                      </button>
+                      <span className="history-tail">
+                        <span className="history-actions">
+                          <button className="history-action" onClick={commitRename} title="Save" aria-label="Save">
+                            <span className="codicon codicon-check" aria-hidden="true" />
+                          </button>
+                          <button
+                            className="history-action"
+                            onClick={() => setRenaming(undefined)}
+                            title="Cancel"
+                            aria-label="Cancel"
+                          >
+                            <span className="codicon codicon-close" aria-hidden="true" />
+                          </button>
+                        </span>
+                      </span>
                     </>
                   ) : (
                     <>
@@ -369,22 +378,32 @@ function ChatHistoryMenu({
                         }
                       >
                         <span className="history-title">{row.title}</span>
+                      </button>
+                      <span className="history-tail">
                         <span className="history-date">{formatUpdated(row.updatedAt)}</span>
-                      </button>
-                      <button className="history-action" onClick={() => startRename(row)} title="Rename">
-                        Rename
-                      </button>
-                      <button
-                        className={`history-action danger ${isConfirming ? "is-confirming" : ""}`}
-                        onClick={() => handleDelete(row)}
-                        title={
-                          isConfirming
-                            ? "Click again to delete from opencode and this panel"
-                            : "Delete from opencode and this panel"
-                        }
-                      >
-                        {isConfirming ? "Confirm" : "Delete"}
-                      </button>
+                        <span className="history-actions">
+                          <button
+                            className="history-action"
+                            onClick={() => startRename(row)}
+                            title="Rename"
+                            aria-label="Rename"
+                          >
+                            <span className="codicon codicon-edit" aria-hidden="true" />
+                          </button>
+                          <button
+                            className={`history-action danger ${isConfirming ? "is-confirming" : ""}`}
+                            onClick={() => handleDelete(row)}
+                            title={
+                              isConfirming
+                                ? "Click again to delete from opencode and this panel"
+                                : "Delete from opencode and this panel"
+                            }
+                            aria-label={isConfirming ? "Confirm" : "Delete"}
+                          >
+                            {isConfirming ? "Confirm" : <span className="codicon codicon-trash" aria-hidden="true" />}
+                          </button>
+                        </span>
+                      </span>
                     </>
                   )}
                 </div>
@@ -445,16 +464,20 @@ function PermissionRulesMenu({
                   <span className="permission-rule-permission">{rule.permission}</span>
                   <code className="permission-rule-pattern">{rule.pattern}</code>
                 </div>
-                <span className="history-date">{formatUpdated(rule.createdAt)}</span>
-                <button
-                  type="button"
-                  className="history-action danger"
-                  onClick={() => onRemove(rule.id)}
-                  title="Remove this rule"
-                  aria-label={`Remove rule ${rule.permission} ${rule.pattern}`}
-                >
-                  Remove
-                </button>
+                <span className="history-tail">
+                  <span className="history-date">{formatUpdated(rule.createdAt)}</span>
+                  <span className="history-actions">
+                    <button
+                      type="button"
+                      className="history-action danger"
+                      onClick={() => onRemove(rule.id)}
+                      title="Remove this rule"
+                      aria-label={`Remove rule ${rule.permission} ${rule.pattern}`}
+                    >
+                      <span className="codicon codicon-trash" aria-hidden="true" />
+                    </button>
+                  </span>
+                </span>
               </div>
             ))}
           </div>
