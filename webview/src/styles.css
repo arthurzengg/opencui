@@ -2005,40 +2005,101 @@ button:focus-visible {
 }
 .codeblock-body pre, .codeblock-body code { background: transparent !important; }
 
-/* ===== Trace ===== */
+/* ===== Trace =====
+   One grid for the whole trace (#756): an icon column, a verb column as wide
+   as the longest verb in it, and the rest. Every section and every row is a
+   subgrid of it, so the icons share one column and the details another,
+   whatever the lengths of the verbs. The verb column is capped: a tool with
+   no verb of its own shows its name there, and one long name would push
+   every row's detail aside. A subagent's rows are a grid of their own,
+   indented under the row that dispatched them. */
+.trace,
+.trace-subagent {
+  --trace-icon-size: 14px;
+  --trace-line: 16px;
+  display: grid;
+  grid-template-columns: var(--trace-icon-size) fit-content(88px) minmax(0, 1fr);
+  column-gap: 6px;
+  font-size: 12px;
+  line-height: var(--trace-line);
+}
 .trace {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  row-gap: 8px;
   margin: 8px 0 10px;
 }
 .process-body .trace {
   margin-top: 4px;
 }
-
-.trace-edits {
-  display: flex;
-  flex-direction: column;
-}
-.edit-row {
+.trace-edits,
+.trace-reads,
+.trace-others,
+.trace-dispatch,
+.edit-row,
+.other-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: start;
+}
+.trace-todos,
+.trace-subagent,
+.trace-subagent-label {
+  grid-column: 1 / -1;
+}
+/* As tall as a row's first line, so the glyph centres on that line when the
+   row wraps (the Read row does). */
+.trace-icon {
+  grid-column: 1;
+  display: inline-flex;
   align-items: center;
-  gap: 0 6px;
-  width: 100%;
-  min-width: 0;
-  padding: 4px 2px;
+  justify-content: center;
+  width: var(--trace-icon-size);
+  height: var(--trace-line);
+  color: var(--vscode-descriptionForeground);
+}
+.trace-icon.codicon {
+  font-size: 13px;
+}
+.status-error > .trace-icon {
+  color: var(--color-error);
+}
+@media (prefers-reduced-motion: reduce) {
+  .trace-icon.codicon-modifier-spin {
+    animation: none;
+  }
+}
+/* How long a running call has taken. Fixed-width digits keep the row from
+   jiggling on each tick (#561). */
+.trace-elapsed {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.edit-row {
+  /* The margin gives back what the padding takes, so the row's tracks stay
+     on the trace's columns and only its hover fill reaches past them. */
+  margin-inline: -2px;
+  padding: 3px 2px;
   border: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: inherit;
+  line-height: inherit;
   text-align: left;
 }
 .edit-row:hover {
   background: var(--hover-bg-row);
 }
-.edit-row.status-running {
-  opacity: 0.7;
+.edit-main {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
 }
 .edit-row.kind-created .edit-name {
   color: var(--color-diff-add);
@@ -2051,8 +2112,9 @@ button:focus-visible {
   color: var(--color-diff-renamed);
 }
 .edit-name {
+  flex: 1 1 auto;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 500;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -2065,17 +2127,8 @@ button:focus-visible {
 }
 .edit-add { color: var(--color-diff-add); }
 .edit-del { color: var(--color-diff-del); }
-.edit-running {
-  opacity: 0.65;
-  font-style: italic;
-  font-size: 11px;
-  /* The elapsed counter ticks every second; fixed-width digits keep the row
-     from jiggling on each tick (#561). */
-  font-variant-numeric: tabular-nums;
-}
 .edit-error {
-  grid-column: 1 / -1;
-  margin-top: 2px;
+  grid-column: 2 / -1;
   color: var(--color-error);
   font-size: 11px;
   overflow: hidden;
@@ -2084,29 +2137,27 @@ button:focus-visible {
 }
 
 .trace-reads {
+  color: var(--vscode-descriptionForeground);
+}
+.trace-reads-label {
+  grid-column: 2;
+  color: var(--vscode-foreground);
+}
+/* The count leads the files inside one wrapping line, so a long list wraps
+   file by file after it and never drops below it as a block. */
+.trace-reads-list {
+  grid-column: 3;
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 4px 6px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 12px;
-}
-.trace-reads-label {
-  flex: 0 0 auto;
-  font-weight: 600;
-  color: var(--vscode-foreground);
+  gap: 0 6px;
+  min-width: 0;
 }
 .trace-reads-count {
   flex: 0 0 auto;
   font-family: var(--vscode-editor-font-family);
   font-size: 10px;
   opacity: 0.6;
-}
-.trace-reads-list {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0 6px;
-  min-width: 0;
 }
 .trace-read-chip {
   display: inline-flex;
@@ -2117,6 +2168,7 @@ button:focus-visible {
   background: transparent;
   color: var(--vscode-textLink-foreground);
   font-size: 12px;
+  line-height: inherit;
 }
 .trace-read-chip:hover .trace-read-name {
   color: var(--vscode-textLink-activeForeground);
@@ -2134,26 +2186,36 @@ button:focus-visible {
   color: var(--vscode-descriptionForeground);
 }
 
-.trace-others {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 12px;
+.trace-others,
+.trace-dispatch {
+  row-gap: 3px;
 }
 .other-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
   color: var(--vscode-descriptionForeground);
 }
 .other-row.status-error {
   color: var(--color-error);
 }
+/* Regular weight: the icon column anchors the row now, and a column of bold
+   verbs outweighed what they acted on. A name longer than the column's cap
+   ellipsizes; the row's tooltip carries it in full. */
 .other-action {
-  flex: 0 0 auto;
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--vscode-foreground);
-  font-weight: 600;
+}
+.other-row.status-error .other-action {
+  color: inherit;
+}
+.other-body {
+  grid-column: 3;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
 }
 .other-detail {
   min-width: 0;
@@ -2163,13 +2225,6 @@ button:focus-visible {
   font-family: var(--vscode-editor-font-family);
   font-size: 11px;
 }
-.other-meta {
-  flex: 0 0 auto;
-  opacity: 0.75;
-  font-style: italic;
-  /* Same tabular-nums rationale as .edit-running (#561). */
-  font-variant-numeric: tabular-nums;
-}
 .other-error {
   min-width: 0;
   color: var(--color-error);
@@ -2177,19 +2232,13 @@ button:focus-visible {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* A subagent's calls sit under the row that dispatched it, indented the
-   way the process body is. A group with no dispatch row names its agent. */
-.trace-dispatch {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
+/* A subagent's calls sit under the row that dispatched it, on a rule that
+   drops from that row's icon and with their own icons under its verb. A
+   group with no dispatch row names its agent. */
 .trace-subagent {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-left: 4px;
-  padding-left: 10px;
+  row-gap: 6px;
+  margin-left: calc(var(--trace-icon-size) / 2 - 1px);
+  padding-left: calc(var(--trace-icon-size) / 2 + 6px);
   border-left: 1px solid var(--vscode-panel-border);
 }
 .trace-subagent-label {

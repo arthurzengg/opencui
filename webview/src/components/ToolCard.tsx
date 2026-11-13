@@ -52,9 +52,10 @@ type FileOp = {
 
 type OtherOp = {
   key: string
+  /** Codicon name for the row's leading icon. */
+  icon: string
   action: string
   detail?: string
-  title?: string
   status: ToolStatus
   errorText?: string
 }
@@ -223,6 +224,26 @@ function statusLabel(status: Todo["status"]): string {
   return "pending"
 }
 
+/**
+ * A row's leading icon: what the call is at rest, a spinner while it runs.
+ * The spinner is the row's only running cue until the elapsed time shows, so
+ * it carries the state's name for assistive tech.
+ */
+function TraceIcon({ name, status }: { name: string; status: ToolStatus }) {
+  if (status === "running") {
+    return <span className="trace-icon codicon codicon-loading codicon-modifier-spin" role="img" aria-label="running" />
+  }
+  return <span className={`trace-icon codicon codicon-${status === "error" ? "error" : name}`} aria-hidden="true" />
+}
+
+const EDIT_ICONS: Record<FileAction, string> = {
+  read: "eye",
+  created: "new-file",
+  updated: "edit",
+  deleted: "trash",
+  moved: "arrow-right",
+}
+
 function EditCard({ op, onReviewFile }: { op: FileOp; onReviewFile?: (path: string) => void }) {
   const elapsed = useRunningElapsed(op.status === "running")
   const click = () => {
@@ -231,21 +252,26 @@ function EditCard({ op, onReviewFile }: { op: FileOp; onReviewFile?: (path: stri
   }
   return (
     <button className={`edit-row status-${op.status} kind-${op.action}`} onClick={click} title={op.path}>
-      <span className="edit-name">{basename(op.path)}</span>
-      {typeof op.additions === "number" && op.additions > 0 && <span className="edit-add">+{op.additions}</span>}
-      {typeof op.deletions === "number" && op.deletions > 0 && <span className="edit-del">−{op.deletions}</span>}
-      {op.status === "running" && <span className="edit-running">running{elapsed ? ` · ${elapsed}` : ""}</span>}
+      <TraceIcon name={EDIT_ICONS[op.action]} status={op.status} />
+      <span className="edit-main">
+        <span className="edit-name">{basename(op.path)}</span>
+        {typeof op.additions === "number" && op.additions > 0 && <span className="edit-add">+{op.additions}</span>}
+        {typeof op.deletions === "number" && op.deletions > 0 && <span className="edit-del">−{op.deletions}</span>}
+        {elapsed && <span className="trace-elapsed">{elapsed}</span>}
+      </span>
       {op.errorText && <span className="edit-error">{op.errorText}</span>}
     </button>
   )
 }
 
 function ReadsLine({ reads }: { reads: FileOp[] }) {
+  const running = reads.some((op) => op.status === "running")
   return (
     <div className="trace-reads">
+      <TraceIcon name={EDIT_ICONS.read} status={running ? "running" : "completed"} />
       <span className="trace-reads-label">Read</span>
-      <span className="trace-reads-count">{reads.length}</span>
       <div className="trace-reads-list">
+        <span className="trace-reads-count">{reads.length}</span>
         {reads.map((op, i) => (
           <button
             key={op.path}
@@ -266,11 +292,14 @@ function ReadsLine({ reads }: { reads: FileOp[] }) {
 function OtherRow({ op }: { op: OtherOp }) {
   const elapsed = useRunningElapsed(op.status === "running")
   return (
-    <div className={`other-row status-${op.status}`} title={op.title}>
+    <div className={`other-row status-${op.status}`} title={[op.action, op.detail].filter(Boolean).join(" ")}>
+      <TraceIcon name={op.icon} status={op.status} />
       <span className="other-action">{op.action}</span>
-      {op.detail && <span className="other-detail">{op.detail}</span>}
-      {op.status === "running" && <span className="other-meta">running{elapsed ? ` · ${elapsed}` : ""}</span>}
-      {op.errorText && <span className="other-error">{op.errorText}</span>}
+      <span className="other-body">
+        {op.detail && <span className="other-detail">{op.detail}</span>}
+        {elapsed && <span className="trace-elapsed">{elapsed}</span>}
+        {op.errorText && <span className="other-error">{op.errorText}</span>}
+      </span>
     </div>
   )
 }
@@ -346,6 +375,7 @@ export function buildTrace(updates: ToolUpdate[], patches: PatchInput[]) {
       if (!files.length) {
         others.push({
           key: update.callID,
+          icon: "diff",
           action: "Applied patch",
           status: update.status,
           errorText: update.error,
@@ -427,6 +457,7 @@ function deriveOther(update: ToolUpdate): OtherOp {
   if (update.tool === "grep") {
     return {
       key: update.callID,
+      icon: "search",
       action: "Grepped",
       detail: stringInput(update, "pattern") ?? update.title,
       status: update.status,
@@ -436,6 +467,7 @@ function deriveOther(update: ToolUpdate): OtherOp {
   if (update.tool === "glob") {
     return {
       key: update.callID,
+      icon: "search",
       action: "Searched",
       detail: stringInput(update, "pattern") ?? update.title,
       status: update.status,
@@ -445,6 +477,7 @@ function deriveOther(update: ToolUpdate): OtherOp {
   if (update.tool === "bash") {
     return {
       key: update.callID,
+      icon: "terminal",
       action: "Ran",
       detail: stringInput(update, "command") ?? update.title,
       status: update.status,
@@ -454,6 +487,7 @@ function deriveOther(update: ToolUpdate): OtherOp {
   if (update.tool === "webfetch") {
     return {
       key: update.callID,
+      icon: "globe",
       action: "Fetched",
       detail: stringInput(update, "url") ?? update.title,
       status: update.status,
@@ -463,6 +497,7 @@ function deriveOther(update: ToolUpdate): OtherOp {
   if (update.tool === "task") {
     return {
       key: update.callID,
+      icon: "robot",
       action: "Investigated",
       detail: stringInput(update, "description") ?? update.title,
       status: update.status,
@@ -475,6 +510,7 @@ function deriveOther(update: ToolUpdate): OtherOp {
 function genericOther(update: ToolUpdate): OtherOp {
   return {
     key: update.callID,
+    icon: "wrench",
     action: pastTense(update.tool),
     detail: update.title ?? stringInput(update, "description"),
     status: update.status,

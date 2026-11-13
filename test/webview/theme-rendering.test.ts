@@ -102,6 +102,20 @@ describe("row actions", () => {
   })
 })
 
+// The trace is one grid and every section and row a subgrid of it, so the
+// icons share a column and the details another whatever the verbs' lengths
+// (#756). A row laid out on its own would start its detail where its verb ends.
+describe("process trace", () => {
+  it("lays every section and row out on the trace's columns", () => {
+    const onTheGrid = [".trace-edits", ".trace-reads", ".trace-others", ".trace-dispatch", ".edit-row", ".other-row"]
+    expect(css).toContain(`${onTheGrid.join(",\n")} {\n  display: grid;\n  grid-template-columns: subgrid;\n  grid-column: 1 / -1;`)
+  })
+
+  it("stops the running spinner under reduced motion", () => {
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.trace-icon\.codicon-modifier-spin \{\s*animation: none;/)
+  })
+})
+
 // The panel's accent is the theme's text colour, not its accent hue (#748).
 // A high-contrast theme keeps its own accent through one override block.
 describe("neutral accent", () => {
