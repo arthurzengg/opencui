@@ -47,6 +47,13 @@ describe("CodeBlock", () => {
     expect(await screen.findByRole("button", { name: /^Apply$/ })).toBeInTheDocument()
   })
 
+  // A filled button on every code block spent the primary style; it is left
+  // to Send and to a card's Submit (#756).
+  it("draws Apply as a plain button", async () => {
+    render(<CodeBlock code="const x = 1" language="typescript" />)
+    expect(await screen.findByRole("button", { name: /^Apply$/ })).not.toHaveClass("primary")
+  })
+
   it("shows 'Run' button label for shell languages", async () => {
     render(<CodeBlock code="npm start" language="bash" />)
     expect(await screen.findByRole("button", { name: /^Run$/ })).toBeInTheDocument()
