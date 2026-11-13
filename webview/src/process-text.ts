@@ -156,10 +156,12 @@ export function processSummary(blocks: Block[]) {
   if (reads.size) parts.push(`Read ${reads.size}`)
   if (creates.size) parts.push(`Created ${creates.size}`)
   if (edits.size) parts.push(`Edited ${edits.size}`)
-  if (searches) parts.push(`${searches} ${searches === 1 ? "search" : "searches"}`)
-  if (runs) parts.push(`${runs} ${runs === 1 ? "command" : "commands"}`)
-  if (fetches) parts.push(`${fetches} ${fetches === 1 ? "fetch" : "fetches"}`)
-  if (!parts.length && other) parts.push(`${other} ${other === 1 ? "tool" : "tools"}`)
+  // One grammar for every part: the verb its rows carry in the open trace,
+  // then the count. "Read 2" next to "1 search" read as two lists.
+  if (searches) parts.push(`Searched ${searches}`)
+  if (runs) parts.push(`Ran ${runs}`)
+  if (fetches) parts.push(`Fetched ${fetches}`)
+  if (!parts.length && other) parts.push(`Used ${other} ${other === 1 ? "tool" : "tools"}`)
   return parts.length ? parts.join(" · ") : undefined
 }
 
