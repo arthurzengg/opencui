@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.18.2] - 2026-11-14
+
+### Fixed
+
+- Renaming a chat from the history list no longer changes its date or moves it to the top of the list. A saved chat keeps the date of its last activity. On opencode 2.x, where the server moves a session's timestamp on a rename, a chat that has not been opened in the panel is now dated by its last turn, or by its creation when it never ran one (#760, #761).
+
 ## [1.18.1] - 2026-11-13
 
 ### Changed
