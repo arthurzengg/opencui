@@ -151,6 +151,9 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
       if (req.method === "PATCH") {
         const title = (body as { title?: string } | undefined)?.title
         if (typeof title === "string") row.title = title
+        // A rename moves `time.updated` and nothing else in `time` (recorded
+        // from 2.0.24, 2.1.4 and 2.2.5).
+        row.time = { ...row.time, updated: Date.now() }
         return empty(res)
       }
       if (req.method === "DELETE") {

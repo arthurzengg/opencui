@@ -141,6 +141,10 @@ describe("opencode 2.0 adapter (#693)", () => {
     const renamed = await a.session.update("ses_4", { title: "Renamed" })
     expect(renamed.data?.title).toBe("Renamed")
     expect(server.requests.find((r) => r.method === "PATCH")).toMatchObject({ path: "/api/session/ses_4", body: { title: "Renamed" } })
+    // The server moves its own timestamp on a rename; the chat's date stays (#760).
+    const kept = await a.session.update("ses_root", { title: "Root, renamed" })
+    expect(server.sessions.find((s) => s.id === "ses_root")?.time.updated).toBeGreaterThan(10)
+    expect(kept.data?.time.updated).toBe(10)
     expect((await a.session.abort("ses_4")).data).toBe(true)
     expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: "/api/session/ses_4/interrupt" })
     expect((await a.session.delete("ses_4")).data).toBe(true)

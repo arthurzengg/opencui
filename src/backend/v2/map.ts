@@ -44,8 +44,19 @@ export function mapSession(session: SessionInfo, directory: string): Session & S
     parentID: session.parentID,
     title: session.title ?? "",
     version: "2",
-    time: { created: session.time.created, updated: session.time.updated },
+    time: { created: session.time.created, updated: lastTurn(session.time) },
   }
+}
+
+/**
+ * The history shows `updated` as the chat's date. A 2.x server moves its own
+ * `time.updated` on a rename (recorded from 2.0.24, 2.1.4 and 2.2.5; 1.x
+ * leaves it alone), so the date is read from the marks of the last turn,
+ * which a rename does not touch: `idle` is its end and `busy` its start
+ * (2.2 and later). A session that never ran keeps its creation time (#760).
+ */
+function lastTurn(time: SessionInfo["time"]): number {
+  return Math.max(time.created, time.busy ?? 0, time.idle ?? 0)
 }
 
 /**

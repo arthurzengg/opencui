@@ -30,7 +30,16 @@ const model = (over: Partial<ModelInfo> = {}): ModelInfo => ({
 describe("opencode 2.0 mappers (#693)", () => {
   it("maps a session to the listing shape the history reads", () => {
     const mapped = mapSession(session({ parentID: "ses_0" }), "/ws")
-    expect(mapped).toMatchObject({ id: "ses_1", slug: "ses_1", parentID: "ses_0", title: "Hello", directory: "/ws", time: { created: 100, updated: 200 } })
+    expect(mapped).toMatchObject({ id: "ses_1", slug: "ses_1", parentID: "ses_0", title: "Hello", directory: "/ws" })
+  })
+
+  // Session times as the servers answered them after a rename, which moved
+  // `updated` on each: 2.2.5 and 2.1.4 after a turn, 2.0.24 before any.
+  it("dates a session by its last turn, which a rename leaves alone (#760)", () => {
+    const dated = (time: SessionInfo["time"]) => mapSession(session({ time }), "/ws").time.updated
+    expect(dated({ created: 1794602992176, updated: 1794603000732, busy: 1794602994197, idle: 1794602994222 })).toBe(1794602994222)
+    expect(dated({ created: 1794603058247, updated: 1794603066296, idle: 1794603060288 })).toBe(1794603060288)
+    expect(dated({ created: 1794603071824, updated: 1794603073837 })).toBe(1794603071824)
   })
 
   it("derives idle from an outcome or an idle mark as new as the last update", () => {

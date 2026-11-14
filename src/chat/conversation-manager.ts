@@ -181,12 +181,11 @@ export class ConversationManager {
     }
   }
 
+  /** A new name is not activity: the date and the place in the list stay (#760). */
   rename(id: string, title: string): void {
     const nextTitle = title.replace(/\s+/g, " ").trim().slice(0, 80)
     if (!nextTitle) return
-    this.conversations = this.conversations.map((c) =>
-      c.id === id ? { ...c, title: nextTitle, updatedAt: Date.now() } : c,
-    )
+    this.conversations = this.conversations.map((c) => (c.id === id ? { ...c, title: nextTitle } : c))
   }
 
   /**
