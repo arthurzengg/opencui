@@ -100,6 +100,20 @@ describe("row actions", () => {
       expect(ruleBody(selector), selector).toContain("pointer-events: none")
     }
   })
+
+  // The rename input takes the title button's place in the row. With a box of
+  // its own the row changed height on entering and leaving edit mode (#764).
+  it("gives the rename input the title button's box", () => {
+    const declared = (selector: string, property: string) =>
+      ruleBody(selector)
+        .split("\n")
+        .find((line) => line.trim().startsWith(`${property}:`))
+        ?.trim()
+    for (const property of ["padding", "line-height"]) {
+      expect(declared(".history-open", property), property).toBeDefined()
+      expect(declared(".history-rename-input", property), property).toBe(declared(".history-open", property))
+    }
+  })
 })
 
 // The trace is one grid and every section and row a subgrid of it, so the
