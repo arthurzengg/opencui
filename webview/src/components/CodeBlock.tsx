@@ -49,6 +49,11 @@ function ensureLang(highlighter: HighlighterCore, lang: string): Promise<void> {
 // re-highlighting the whole (immediately superseded) snippet on each token.
 const HIGHLIGHT_DEBOUNCE_MS = 90
 
+// What the Copy button reads for a moment after a click. The button also
+// carries it as `data-reserve`, which the stylesheet sizes the button by, so
+// the wider label does not grow it (#766).
+const COPIED_LABEL = "Copied"
+
 function CodeBlockImpl({ code, language }: Props) {
   const [html, setHtml] = useState<string>("")
   const [copied, setCopied] = useState(false)
@@ -105,8 +110,8 @@ function CodeBlockImpl({ code, language }: Props) {
       <div className="codeblock-head">
         <span className="codeblock-lang">{lang}</span>
         <div className="codeblock-actions">
-          <button className="btn compact" onClick={onCopy} title="Copy">
-            {copied ? "Copied" : "Copy"}
+          <button className="btn compact codeblock-copy" data-reserve={COPIED_LABEL} onClick={onCopy} title="Copy">
+            {copied ? COPIED_LABEL : "Copy"}
           </button>
           <button
             className="btn compact"
