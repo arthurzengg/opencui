@@ -2099,6 +2099,10 @@ button:focus-visible {
 .trace-elapsed {
   flex: 0 0 auto;
   margin-left: auto;
+  /* Off the row's baseline: beside a detail in the editor font the two
+     baselines differ, and aligning them made the row half a pixel taller
+     for as long as the time showed (#766). */
+  align-self: center;
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
   font-variant-numeric: tabular-nums;

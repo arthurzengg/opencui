@@ -122,6 +122,10 @@ describe("state changes keep their box", () => {
   it("sizes the Copy button for the wider label it turns into", () => {
     expect(ruleBody(".codeblock-copy::after")).toMatch(/content: attr\(data-reserve\);\s+height: 0;\s+overflow: hidden;\s+visibility: hidden;/)
   })
+
+  it("keeps a tool row's elapsed time off the baseline, where it made the row taller", () => {
+    expect(ruleBody(".trace-elapsed")).toContain("align-self: center;")
+  })
 })
 
 // The trace is one grid and every section and row a subgrid of it, so the
