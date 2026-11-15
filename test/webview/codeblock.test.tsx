@@ -87,6 +87,8 @@ describe("CodeBlock", () => {
     })
     render(<CodeBlock code="hello" language="typescript" />)
     const copy = await screen.findByRole("button", { name: /^Copy$/ })
+    // The stylesheet sizes the button by this, so it must be the label it turns into (#766).
+    expect(copy).toHaveAttribute("data-reserve", "Copied")
     await user.click(copy)
     expect(writeText).toHaveBeenCalledWith("hello")
     expect(await screen.findByRole("button", { name: /^Copied$/ })).toBeInTheDocument()

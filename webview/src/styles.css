@@ -2008,6 +2008,20 @@ button:focus-visible {
   gap: 4px;
   flex: 0 0 auto;
 }
+/* The label reads "Copied" for a moment after a click. The hidden ::after
+   holds that wider label, so the button is sized for it up front and does
+   not grow under the pointer (#766). */
+.codeblock-copy {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+.codeblock-copy::after {
+  content: attr(data-reserve);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
 .codeblock-body {
   margin: 0;
   padding: 10px;
