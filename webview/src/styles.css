@@ -1096,17 +1096,20 @@ button:focus-visible {
 }
 .history-rename-input {
   /* Editing must look like the title itself: same font metrics, no box,
-     no focus ring. The Save/Cancel buttons appearing is the edit cue. */
+     no focus ring. The Save/Cancel buttons appearing is the edit cue.
+     The padding and line height are .history-open's, whose place the input
+     takes: a different box changes the row's height and moves every row
+     below it (#764). */
   min-width: 0;
   width: 100%;
-  padding: 3px 0;
+  padding: var(--space-1) 0;
   border: 0;
   outline: none;
   background: transparent;
   color: inherit;
   font-family: inherit;
   font-size: 12px;
-  line-height: 1.2;
+  line-height: var(--popover-row-line);
 }
 
 /* ===== Todo panel ===== */
