@@ -328,30 +328,64 @@ function ChatHistoryMenu({
                   key={row.key}
                 >
                   {isEditing ? (
-                    <>
-                      <input
-                        className="history-rename-input"
-                        value={renamingTitle}
-                        autoFocus
-                        onChange={(event) => setRenamingTitle(event.target.value)}
-                        onKeyDown={(event) => {
-                          // While IME composition is active, Enter commits
-                          // the IME candidate — don't intercept it as Save.
-                          if (event.nativeEvent.isComposing || event.keyCode === 229) return
-                          if (event.key === "Enter") commitRename()
-                          if (event.key === "Escape") {
-                            // Consume so Esc-to-stop doesn't also abort the turn.
-                            event.preventDefault()
-                            setRenaming(undefined)
-                          }
-                        }}
-                      />
-                      <span className="history-tail">
-                        <span className="history-actions">
-                          <button className="history-action" onClick={commitRename} title="Save" aria-label="Save">
+                    <input
+                      className="history-rename-input"
+                      value={renamingTitle}
+                      autoFocus
+                      onChange={(event) => setRenamingTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        // While IME composition is active, Enter commits
+                        // the IME candidate — don't intercept it as Save.
+                        if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                        if (event.key === "Enter") commitRename()
+                        if (event.key === "Escape") {
+                          // Consume so Esc-to-stop doesn't also abort the turn.
+                          event.preventDefault()
+                          setRenaming(undefined)
+                        }
+                      }}
+                    />
+                  ) : (
+                    <button
+                      className="history-open"
+                      onClick={() => {
+                        close()
+                        if (row.kind === "conversation") onOpen(row.conversation.id)
+                        else onImport?.(row.session.id)
+                      }}
+                      title={
+                        row.kind === "session"
+                          ? `${row.title} (opencode session from the TUI, web UI, or another client; opening saves it here)`
+                          : row.title
+                      }
+                    >
+                      <span className="history-title">{row.title}</span>
+                    </button>
+                  )}
+                  {/* One tail for both modes (#768). With a tail per mode
+                      React turned the actions span into the date span and
+                      back, and the opacity transition they share flashed the
+                      date over the icons each time a rename ended. The
+                      buttons are keyed so a pair is replaced, not relabelled:
+                      a reused button keeps the click's focus, and a focused
+                      row goes on showing its actions after the pointer has
+                      left. */}
+                  <span className="history-tail">
+                    <span className="history-date">{formatUpdated(row.updatedAt)}</span>
+                    <span className="history-actions">
+                      {isEditing ? (
+                        <>
+                          <button
+                            key="save"
+                            className="history-action"
+                            onClick={commitRename}
+                            title="Save"
+                            aria-label="Save"
+                          >
                             <span className="codicon codicon-check" aria-hidden="true" />
                           </button>
                           <button
+                            key="cancel"
                             className="history-action"
                             onClick={() => setRenaming(undefined)}
                             title="Cancel"
@@ -359,30 +393,11 @@ function ChatHistoryMenu({
                           >
                             <span className="codicon codicon-close" aria-hidden="true" />
                           </button>
-                        </span>
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        className="history-open"
-                        onClick={() => {
-                          close()
-                          if (row.kind === "conversation") onOpen(row.conversation.id)
-                          else onImport?.(row.session.id)
-                        }}
-                        title={
-                          row.kind === "session"
-                            ? `${row.title} (opencode session from the TUI, web UI, or another client; opening saves it here)`
-                            : row.title
-                        }
-                      >
-                        <span className="history-title">{row.title}</span>
-                      </button>
-                      <span className="history-tail">
-                        <span className="history-date">{formatUpdated(row.updatedAt)}</span>
-                        <span className="history-actions">
+                        </>
+                      ) : (
+                        <>
                           <button
+                            key="rename"
                             className="history-action"
                             onClick={() => startRename(row)}
                             title="Rename"
@@ -391,6 +406,7 @@ function ChatHistoryMenu({
                             <span className="codicon codicon-edit" aria-hidden="true" />
                           </button>
                           <button
+                            key="delete"
                             className={`history-action danger ${isConfirming ? "is-confirming" : ""}`}
                             onClick={() => handleDelete(row)}
                             title={
@@ -402,10 +418,10 @@ function ChatHistoryMenu({
                           >
                             {isConfirming ? "Confirm" : <span className="codicon codicon-trash" aria-hidden="true" />}
                           </button>
-                        </span>
-                      </span>
-                    </>
-                  )}
+                        </>
+                      )}
+                    </span>
+                  </span>
                 </div>
               )
             })}

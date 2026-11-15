@@ -101,6 +101,15 @@ describe("row actions", () => {
     }
   })
 
+  // The two share a cell, so a state that shows the actions and leaves the
+  // date alone draws one over the other (#768).
+  it("hides a history row's date in every state that shows its actions", () => {
+    const states = (target: string) =>
+      Array.from(css.matchAll(new RegExp(`^\\.history-item(\\S+) \\.${target}[, ]`, "gm")), (m) => m[1]).sort()
+    expect(states("history-actions")).toEqual([".is-confirming", ".is-editing", ":focus-within", ":hover"])
+    expect(states("history-date")).toEqual(states("history-actions"))
+  })
+
   // The rename input takes the title button's place in the row. With a box of
   // its own the row changed height on entering and leaving edit mode (#764).
   it("gives the rename input the title button's box", () => {

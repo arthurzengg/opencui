@@ -1043,8 +1043,10 @@ button:focus-visible {
   opacity: 1;
   pointer-events: auto;
 }
+/* Every state that shows the actions hides the date under them. */
 .history-item:hover .history-date,
 .history-item:focus-within .history-date,
+.history-item.is-editing .history-date,
 .history-item.is-confirming .history-date {
   opacity: 0;
 }
@@ -1092,6 +1094,10 @@ button:focus-visible {
   }
   .history-item .history-date {
     opacity: 1;
+  }
+  /* Side by side here, a hidden date would be a gap beside Save and Cancel. */
+  .history-item.is-editing .history-date {
+    display: none;
   }
 }
 .history-rename-input {

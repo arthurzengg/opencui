@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, cleanup, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { StatusBar } from "../../webview/src/components/StatusBar"
 import { AgentActivity } from "../../webview/src/components/AgentActivity"
@@ -354,6 +354,38 @@ describe("StatusBar: history popover", () => {
     expect(onRename).not.toHaveBeenCalled()
     expect(screen.queryByDisplayValue(/First chat/)).not.toBeInTheDocument()
     expect(screen.getByText("First chat")).toBeInTheDocument()
+  })
+
+  // A tail per mode made React turn the actions span into the date span and
+  // back. They share an opacity transition, so the date flashed over the
+  // icons each time a rename ended (#768).
+  it("keeps one date and one actions group on a row through a rename", async () => {
+    const user = userEvent.setup()
+    render(<StatusBar {...baseProps} conversations={conversations} />)
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    const row = screen.getByText("First chat").closest<HTMLElement>(".history-item")!
+    const date = row.querySelector(".history-date")
+    const actions = row.querySelector(".history-actions")
+    expect(date).not.toBeNull()
+    await user.click(within(row).getByRole("button", { name: /^Rename$/ }))
+    expect(row.querySelector(".history-date")).toBe(date)
+    expect(row.querySelector(".history-actions")).toBe(actions)
+    await user.click(within(row).getByRole("button", { name: /^Cancel$/ }))
+    expect(row.querySelector(".history-date")).toBe(date)
+    expect(row.querySelector(".history-actions")).toBe(actions)
+  })
+
+  // Save relabelled as Rename would keep the click's focus, and a focused row
+  // goes on showing its actions after the pointer has left.
+  it("leaves no focus on the row once a rename is saved", async () => {
+    const user = userEvent.setup()
+    render(<StatusBar {...baseProps} conversations={conversations} />)
+    await user.click(screen.getByRole("button", { name: /chat history/i }))
+    const row = screen.getByText("First chat").closest<HTMLElement>(".history-item")!
+    await user.click(within(row).getByRole("button", { name: /^Rename$/ }))
+    await user.click(within(row).getByRole("button", { name: /^Save$/ }))
+    expect(within(row).getByRole("button", { name: /^Rename$/ })).toBeInTheDocument()
+    expect(row.contains(document.activeElement)).toBe(false)
   })
 
   it("does not commit or exit edit mode on blur; Enter is the commit", async () => {
