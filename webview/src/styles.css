@@ -1027,7 +1027,10 @@ button:focus-visible {
   transition: opacity 0.12s ease;
 }
 /* Faded, not removed: the buttons stay in the tab order and the
-   accessibility tree, and focusing one reveals the group. */
+   accessibility tree, and focusing one reveals the group. Keyboard focus
+   only, as on the review rows: a clicked button keeps focus, and the row
+   stayed on its actions after an unconfirmed Delete timed out and the
+   pointer had left (#770). */
 .history-actions {
   display: inline-flex;
   align-items: center;
@@ -1037,7 +1040,7 @@ button:focus-visible {
   transition: opacity 0.12s ease;
 }
 .history-item:hover .history-actions,
-.history-item:focus-within .history-actions,
+.history-item:has(:focus-visible) .history-actions,
 .history-item.is-editing .history-actions,
 .history-item.is-confirming .history-actions {
   opacity: 1;
@@ -1045,7 +1048,7 @@ button:focus-visible {
 }
 /* Every state that shows the actions hides the date under them. */
 .history-item:hover .history-date,
-.history-item:focus-within .history-date,
+.history-item:has(:focus-visible) .history-date,
 .history-item.is-editing .history-date,
 .history-item.is-confirming .history-date {
   opacity: 0;

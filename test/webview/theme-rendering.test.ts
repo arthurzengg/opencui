@@ -102,11 +102,13 @@ describe("row actions", () => {
   })
 
   // The two share a cell, so a state that shows the actions and leaves the
-  // date alone draws one over the other (#768).
+  // date alone draws one over the other (#768). Focus means keyboard focus:
+  // on :focus-within a clicked Delete held the row on its actions after
+  // Confirm had timed out and the pointer had left (#770).
   it("hides a history row's date in every state that shows its actions", () => {
     const states = (target: string) =>
       Array.from(css.matchAll(new RegExp(`^\\.history-item(\\S+) \\.${target}[, ]`, "gm")), (m) => m[1]).sort()
-    expect(states("history-actions")).toEqual([".is-confirming", ".is-editing", ":focus-within", ":hover"])
+    expect(states("history-actions")).toEqual([".is-confirming", ".is-editing", ":has(:focus-visible)", ":hover"])
     expect(states("history-date")).toEqual(states("history-actions"))
   })
 
