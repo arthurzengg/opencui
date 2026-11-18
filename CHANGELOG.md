@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.18.3] - 2026-11-17
+
+### Fixed
+
+- Editing a chat's name in the history list no longer makes its row shorter. The row lost 3.6px for as long as the name was being edited, which moved every row below it up and back (#764, #765).
+- Ending a rename no longer flashes the row's date over the Rename and Delete icons, and starting one no longer leaves the row's right edge empty while Save and Cancel fade in. The two pairs of icons now swap in place (#768, #769).
+- A history row goes back to showing its date after Delete is clicked once and left unconfirmed. It used to stay on its Rename and Delete icons until something else was clicked (#770, #771).
+- The Copy button on a code block keeps one width. It grew by 10px while it read "Copied" and shrank back, moving its edge under the pointer (#766, #767).
+- A running tool row in the process trace no longer grows by half a pixel when its elapsed time appears, which nudged everything below it (#766, #767).
+
 ## [1.18.2] - 2026-11-14
 
 ### Fixed
