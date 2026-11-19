@@ -1596,6 +1596,22 @@ describe("ChatView harness: saved permission rules (#619)", () => {
     expect(server.permissionReplies).toHaveLength(2)
   })
 
+  it("puts an earlier request back on the card once the later one is answered (#780)", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "two commands at once" })
+    const shown = () => harness.posted.flatMap((m) => (m.type === "permission" ? [m.id] : []))
+
+    ask("perm_a", "bash", ["git status"], ["git *"])
+    await until(() => asked("perm_a"))
+    ask("perm_b", "bash", ["ls"], ["ls *"])
+    await until(() => asked("perm_b"))
+
+    await harness.send({ type: "permissionReply", id: "perm_b", response: "once" })
+    expect(shown()).toEqual(["perm_a", "perm_b", "perm_a"])
+    await harness.send({ type: "permissionReply", id: "perm_a", response: "once" })
+    expect(shown()).toHaveLength(3)
+  })
+
   it("removing a rule surfaces the ask again", async () => {
     await harness.send({ type: "mounted" })
     await harness.send({ type: "send", text: "run git" })
