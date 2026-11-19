@@ -2358,6 +2358,11 @@ export class ChatView implements vscode.WebviewViewProvider {
         // any pending idle so we don't accidentally clear busy later.
         this.continuationState.finishPending()
         this.post({ type: "sessionBusy" })
+        // A turn that begins while a Stop is settling is the server's own:
+        // opencode 2.3 reports a cancelled subagent to its parent and wakes
+        // it (recorded from 2.3.2), so the model answered after the user had
+        // stopped it. The sweep will not abort the root twice; this does.
+        if (this.aborting) void backend.api.session.abort(sessionID)
       },
       onSessionRetry: (retry) => {
         if (this.aborting) return
