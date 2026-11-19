@@ -228,8 +228,16 @@ export class SubagentTracker {
       // forever (the foreground child's `session.idle` may have fired
       // before we registered the child sessionID, or never fired at all
       // when omo keeps the session warm for resume).
+      //
+      // opencode 2.x says which it was in the result: `metadata.status` is
+      // "running" when the call returned before the child finished, which
+      // is every `subagent` call since 2.3.0 (and `background: true` on
+      // 2.2), and "completed" when a 2.2 foreground call waited for it.
+      // Read as a foreground result, a 2.3 subagent left the panel the
+      // moment it was launched (#776).
+      const returnedEarly = update.status === "completed" && readStr(update.metadata?.status) === "running"
       const isBackground =
-        merged.runInBackground === true || update.tool === "background_task"
+        merged.runInBackground === true || update.tool === "background_task" || returnedEarly
       if (dispatch.childSessionID && isBackground) {
         // Still refresh metadata + agent/model in case the terminal
         // event carries fresher values, but keep status running.

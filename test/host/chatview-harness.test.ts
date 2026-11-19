@@ -408,6 +408,22 @@ describe("ChatView harness: Stop mid-stream", () => {
     expect(assistant!.pending).toBe(false)
     expect(assistant!.blocks).toEqual([{ type: "text", text: "Working" }])
   })
+
+  // opencode 2.3 answers the Stop of a background subagent by reporting the
+  // cancellation to the parent and starting a turn on it (#776).
+  it("stops a turn the server starts while the Stop is settling", async () => {
+    await harness.send({ type: "mounted" })
+    await harness.send({ type: "send", text: "long task" })
+    server.push({ type: "message.updated", info: { id: "msg_a", role: "assistant", sessionID: SESSION_ID } })
+    await until(() => harness.posted.some((m) => m.type === "assistantStart"))
+
+    await harness.send({ type: "abort" })
+    expect(server.aborts).toEqual([SESSION_ID])
+
+    server.push({ type: "session.status", sessionID: SESSION_ID, status: { type: "busy" } })
+    await until(() => server.aborts.length === 2)
+    expect(server.aborts).toEqual([SESSION_ID, SESSION_ID])
+  })
 })
 
 describe("ChatView harness: edit-in-place revert", () => {
