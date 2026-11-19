@@ -99,6 +99,8 @@ export class ChatView implements vscode.WebviewViewProvider {
   private sessionID?: string
   private subscription?: Subscription
   private activePermissions = new Map<string, PermissionRequest>()
+  /** The request last put on the webview's card; see `showWaitingPermission`. */
+  private shownPermissionID?: string
   private permissionRules: PermissionRuleStore
   private permissionRulesUnsub?: vscode.Disposable
   /**
@@ -617,6 +619,25 @@ export class ChatView implements vscode.WebviewViewProvider {
    * After a rule is saved, answer the other asks still waiting that it now
    * covers, mirroring the batch approval the server did for its own list.
    */
+  /**
+   * The webview holds one card, and a later request replaces an earlier one
+   * on it. Once the request on the card is settled, the oldest one still
+   * open takes its place: left as it was, that one never showed again and
+   * its tool call waited forever, which parallel subagents make likely
+   * (#780). A request a saved rule covers is about to be answered and gets
+   * no card.
+   */
+  private showWaitingPermission() {
+    if (this.shownPermissionID && this.activePermissions.has(this.shownPermissionID)) return
+    const next = [...this.activePermissions.values()].find((perm) => !this.permissionRules.allows(perm.permission, perm.patterns))
+    this.shownPermissionID = next?.id
+    if (next) this.postPermission(next)
+  }
+
+  private postPermission(perm: PermissionRequest) {
+    this.post({ type: "permission", id: perm.id, title: perm.title, pattern: perm.pattern, always: alwaysPatterns(perm) })
+  }
+
   private async answerCoveredPermissions() {
     for (const [id, perm] of [...this.activePermissions]) {
       if (!this.permissionRules.allows(perm.permission, perm.patterns)) continue
@@ -1466,6 +1487,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.syncAgentWaitState()
         if (!this.sessionID) return
         if (msg.response !== "always") {
+          this.showWaitingPermission()
           await this.replyPermission(msg.id, msg.response)
           return
         }
@@ -1481,6 +1503,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         }
         await this.replyPermission(msg.id, "once")
         await this.answerCoveredPermissions()
+        this.showWaitingPermission()
         return
       }
       case "removePermissionRule":
@@ -2294,13 +2317,8 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.activePermissions.set(perm.id, perm)
         this.syncAgentWaitState()
         this.maybeNotifyHidden(`OpenCode Panel is waiting for permission: ${perm.title}`)
-        this.post({
-          type: "permission",
-          id: perm.id,
-          title: perm.title,
-          pattern: perm.pattern,
-          always: alwaysPatterns(perm),
-        })
+        this.shownPermissionID = perm.id
+        this.postPermission(perm)
       },
       onPermissionResolved: (id) => {
         // Fires for our own reply too, where `permissionReply` already did
@@ -2308,6 +2326,7 @@ export class ChatView implements vscode.WebviewViewProvider {
         this.activePermissions.delete(id)
         this.syncAgentWaitState()
         this.post({ type: "permissionResolved", id })
+        this.showWaitingPermission()
       },
       onQuestionAsked: (q) => {
         if (this.aborting) return
