@@ -44,7 +44,7 @@ export function mapSession(session: SessionInfo, directory: string): Session & S
     parentID: session.parentID,
     title: session.title ?? "",
     version: "2",
-    time: { created: session.time.created, updated: lastTurn(session.time) },
+    time: { created: session.time.created, updated: lastTurn(session.time), archived: session.time.archived },
   }
 }
 

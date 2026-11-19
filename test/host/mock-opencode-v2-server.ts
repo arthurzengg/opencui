@@ -124,6 +124,9 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
       if (query.parentID === "null") rows = rows.filter((s) => !s.parentID)
       else if (query.parentID) rows = rows.filter((s) => s.parentID === query.parentID)
       if (query.search) rows = rows.filter((s) => (s.title ?? "").toLowerCase().includes(query.search!.toLowerCase()))
+      // Archived sessions are listed unless the request says which it wants
+      // (recorded from 2.2.5 and 2.3.2).
+      if (query.archived) rows = rows.filter((s) => (s.time.archived !== undefined) === (query.archived === "true"))
       if (query.limit) rows = rows.slice(0, Number(query.limit))
       return json(res, 200, { data: rows, cursor: {} })
     }

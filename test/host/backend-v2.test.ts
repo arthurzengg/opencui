@@ -50,6 +50,20 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(children.data?.map((s) => s.id)).toEqual(["ses_child"])
   })
 
+  // Two sessions as a 2.3.2 scratch server listed them, the first archived
+  // through `PATCH /api/session/{id}`, which moved its `updated` as well;
+  // only the directory is shortened.
+  it("asks for the sessions that are not archived (#778)", async () => {
+    const tokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+    server.sessions = [
+      { id: "ses_e0e8dd0b6ffeALHkv0p9LitRgN", projectID: "global", cost: 0, tokens, time: { created: 1795052154699, updated: 1795052154761, archived: 1795052154761 }, title: "archived one", location: { directory: "/ws" } },
+      { id: "ses_e0e8dd0faffeXU58bdiS7FKIAF", projectID: "global", cost: 0, tokens, time: { created: 1795052154692, updated: 1795052154696 }, title: "kept one", location: { directory: "/ws" } },
+    ]
+    const res = await api().session.list({ roots: true, limit: 50 })
+    expect(res.data?.map((s) => s.title)).toEqual(["kept one"])
+    expect(server.requests.at(-1)?.query).toMatchObject({ archived: "false" })
+  })
+
   it("reports idle from the listing and busy from the active route or executions the stream saw", async () => {
     const a = api()
     // A fresh session has no idle mark: the listing cannot call it busy.
