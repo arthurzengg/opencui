@@ -258,6 +258,39 @@ describe("SubagentTracker.handleToolUpdate", () => {
     expect(store.get(subagentTaskIDByChildSession("ses_child_bg"))!.status).toBe("running")
   })
 
+  // The dispatch part as scratch 2.3.2 and 2.2.5 servers sent it, a local stub
+  // standing in for the model. Both name the child while running; they differ
+  // in when the call returns and in what its metadata then says of the child.
+  describe("opencode 2.x `subagent` calls (#776)", () => {
+    const input = { agent: "explore", description: "Read the readme", prompt: "scenario:bg Read readme.txt and report what it says." }
+    const dispatch = (child: string, final: "running" | "completed"): ToolUpdate[] => [
+      { callID: "call_stub_2", tool: "subagent", status: "pending", input: {} },
+      { callID: "call_stub_2", tool: "subagent", status: "running", input },
+      { callID: "call_stub_2", tool: "subagent", status: "running", input, metadata: { sessionID: child, status: "running" } },
+      { callID: "call_stub_2", tool: "subagent", status: "completed", title: "subagent", input, metadata: { sessionID: child, status: final, truncated: false } },
+    ]
+
+    it("keeps a 2.3 subagent running after its call returns, until the child is idle", async () => {
+      const child = "ses_e0ea7e32cffeYVEIQjJ3BxQSjW"
+      const { tracker, store, subscription } = setupTracker()
+      for (const update of dispatch(child, "running")) await tracker.handleToolUpdate(update)
+      expect(store.get(subagentTaskIDByChildSession(child))!.status).toBe("running")
+      expect(subscription.removed).toEqual([])
+
+      await tracker.handleChildSessionEvent({ type: "idle", sessionID: child })
+      expect(store.get(subagentTaskIDByChildSession(child))!.status).toBe("completed")
+      expect(subscription.removed).toEqual([child])
+    })
+
+    it("settles a 2.2 foreground subagent when its call returns completed", async () => {
+      const child = "ses_e0ea48135ffesQUMG5dL7SQsEe"
+      const { tracker, store, subscription } = setupTracker()
+      for (const update of dispatch(child, "completed")) await tracker.handleToolUpdate(update)
+      expect(store.get(subagentTaskIDByChildSession(child))!.status).toBe("completed")
+      expect(subscription.removed).toEqual([child])
+    })
+  })
+
   it("HONORS parent's terminal status when no child session was ever known", async () => {
     const { tracker, store } = setupTracker()
     await tracker.handleToolUpdate(makeUpdate({ callID: "c1", status: "running" }))
