@@ -1,6 +1,14 @@
+import { readFileSync } from "node:fs"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import type { SessionMessageInfo } from "@opencode/client/promise"
 import { createV2Api } from "../../src/backend/v2/api"
 import { startMockOpencodeV2, type MockOpencodeV2 } from "./mock-opencode-v2-server"
+
+// A session's log as a 2.3.2 scratch server listed it, with a local stub in
+// place of the model: a turn that launches a subagent and ends, then the turn
+// the server started when the subagent reported back.
+const recordedLog = JSON.parse(readFileSync(new URL("./recorded/v2-session-log.json", import.meta.url), "utf8")) as SessionMessageInfo[]
+const [toolStep, launchReply, reportReply] = recordedLog.filter((entry) => entry.type === "assistant").map((entry) => entry.id)
 
 let server: MockOpencodeV2
 
@@ -77,6 +85,28 @@ describe("opencode 2.0 adapter (#693)", () => {
     expect(missing.data).toBeUndefined()
     expect(missing.status).toBe(404)
     expect(String((missing.error as Error).message)).toBe("Session not found: ses_nope")
+  })
+
+  // The server lists newest first and stops at 200 entries a page; an import
+  // that took the first page as it came read upside down and cut short (#774).
+  it("reads a log longer than a page to its end, oldest first", async () => {
+    const prompt = recordedLog.find((entry) => entry.type === "user")!
+    server.messages.ses_root = Array.from({ length: 450 }, (_, i) => ({ ...prompt, id: `msg_${String(i).padStart(3, "0")}`, text: `prompt ${i}` }))
+    const res = await api().session.messages("ses_root")
+    expect(res.data?.map((m) => m.info.id)).toEqual(server.messages.ses_root.map((entry) => entry.id))
+    const pages = server.requests.filter((r) => r.path === "/api/session/ses_root/message").map((r) => r.query)
+    expect(pages).toEqual([
+      { order: "asc", limit: "200" },
+      { cursor: expect.any(String), limit: "200" },
+      { cursor: expect.any(String), limit: "200" },
+    ])
+  })
+
+  it("reads the newest entries, oldest first, when given a limit", async () => {
+    server.messages.ses_root = recordedLog
+    // The newest six entries leave out the prompt and the bookkeeping before it.
+    const res = await api().session.messages("ses_root", { limit: 6 })
+    expect(res.data?.map((m) => m.info.id)).toEqual([toolStep, launchReply, reportReply])
   })
 
   it("fills the catalogs from the 2.0 routes with the location on each request", async () => {
@@ -180,10 +210,11 @@ describe("opencode 2.0 adapter (#693)", () => {
   })
 
   it("waits for a sync prompt's turn and answers with the last assistant message", async () => {
+    server.messages.ses_root = recordedLog
     const res = await api().session.prompt("ses_root", { parts: [{ type: "text", text: "hi" }] })
     expect(server.requests.some((r) => r.path === "/api/experimental/session/ses_root/wait")).toBe(true)
-    expect(res.data?.info).toMatchObject({ id: "a1", role: "assistant" })
-    expect(res.data?.parts).toEqual([expect.objectContaining({ type: "text", text: "hello" })])
+    expect(res.data?.info).toMatchObject({ id: reportReply, role: "assistant" })
+    expect(res.data?.parts).toEqual([expect.objectContaining({ type: "text", text: "The subagent reported back. All done." })])
   })
 
   it("runs the slash commands on the recorded routes", async () => {

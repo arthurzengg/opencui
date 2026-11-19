@@ -49,6 +49,28 @@ export function createV2Api(options: { url: string; directory: string; password:
   const listSessions = async (filter: { parentID?: string | null; limit?: number; search?: string }) =>
     (await client.session.list({ directory, ...filter })).data
 
+  // A session's log comes newest first, 50 entries a page and 200 at most
+  // (recorded from 2.2.5 and 2.3.2; the default has been newest first since
+  // 2.0.24), and the host reads a transcript oldest first, as 1.x sends it.
+  // Left as it came, an imported session read upside down and stopped at 50
+  // entries (#774). A limit means the newest entries, as it does on 1.x.
+  const LOG_PAGE = 200
+  const newestEntries = async (sessionID: string, limit?: number) => {
+    const page = await client.message.list({ sessionID, limit: limit === undefined ? undefined : Math.min(limit, LOG_PAGE) })
+    return [...page.data].reverse()
+  }
+  const wholeLog = async (sessionID: string) => {
+    let page = await client.message.list({ sessionID, order: "asc", limit: LOG_PAGE })
+    const entries = [...page.data]
+    // A cursor carries the order it was issued for, and the server refuses
+    // one that arrives with an order of its own.
+    while (page.data.length === LOG_PAGE && page.cursor.next) {
+      page = await client.message.list({ sessionID, cursor: page.cursor.next, limit: LOG_PAGE })
+      entries.push(...page.data)
+    }
+    return entries
+  }
+
   // 2.0 keeps credentials on integrations, which providers and MCP servers
   // point at; 1.x keyed everything by provider. The login methods the host
   // can drive are keys and OAuth, in the integration's order, so the method
@@ -160,10 +182,9 @@ export function createV2Api(options: { url: string; directory: string; password:
           return rows.map((s) => mapSession(s, directory))
         }),
       messages: (id, options) =>
-        call(async () => {
-          const page = await client.message.list({ sessionID: id, limit: options?.limit })
-          return mapMessages(id, directory, page.data)
-        }),
+        call(async () =>
+          mapMessages(id, directory, options?.limit === undefined ? await wholeLog(id) : await newestEntries(id, options.limit)),
+        ),
       update: (id, body) =>
         call(async () => {
           await client.session.update({ sessionID: id, title: body.title })
@@ -190,8 +211,7 @@ export function createV2Api(options: { url: string; directory: string; password:
         call(async () => {
           await deliver(id, body)
           await client.session.wait({ sessionID: id })
-          const page = await client.message.list({ sessionID: id })
-          const last = mapMessages(id, directory, page.data).filter((m) => m.info.role === "assistant").at(-1)
+          const last = mapMessages(id, directory, await newestEntries(id)).filter((m) => m.info.role === "assistant").at(-1)
           if (!last) throw new Error("the turn produced no assistant message")
           return last as Awaited<ReturnType<BackendApi["session"]["prompt"]>> extends ApiResult<infer T> ? T : never
         }),
