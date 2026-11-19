@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.18.4] - 2026-11-19
+
+### Fixed
+
+- On opencode 2.x, a chat opened from the history list shows its messages in the order they were sent, and in full. The server lists a session's messages newest first and 50 entries at a time, so the chat came in upside down and cut to its newest entries. The context ring, inline edit and `/fork` read the same list and now get it in order (#774, #775).
+- On opencode 2.3, a subagent stays in the Agents list until it has finished, its tool calls show under the call that launched it, and the reply stays in progress until the subagent has reported back. Since 2.3.0 a subagent runs in the background, and the panel took its launch for its end: the row left at once, the panel went idle while the subagent was still working, and a new reply started later with no prompt. Stop also ends the turn the server starts when a stopped subagent reports its cancellation (#776, #777).
+- Archived opencode sessions no longer show in the history list. A chat saved in the panel stays in the list even when its session was archived elsewhere (#778, #779).
+- A permission request from a subagent now shows in the panel, and the answer reaches the subagent. The request used to be dropped, and the subagent waited until the turn was stopped. When several requests are open at once, each gets its turn on the card (#780, #781).
+
 ## [1.18.3] - 2026-11-17
 
 ### Fixed
