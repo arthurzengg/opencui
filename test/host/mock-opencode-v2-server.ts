@@ -83,6 +83,26 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     res.end(JSON.stringify(body))
   }
 
+  // The message log, kept here oldest first, is listed newest first, 50
+  // entries a page and 200 at most. A cursor is the entry to continue from
+  // and the order it was issued for, and cannot come with an order of its
+  // own; a page with entries carries both cursors and the page past the end
+  // is empty with null ones. Recorded from 2.2.5 and 2.3.2 servers; only the
+  // `next` direction is followed here.
+  function messagePage(res: ServerResponse, log: SessionMessageInfo[], query: Record<string, string>) {
+    if (query.cursor && query.order) return json(res, 400, { _tag: "InvalidCursorError", message: "Cursor cannot be combined with order" })
+    const limit = query.limit === undefined ? 50 : Number(query.limit)
+    if (limit > 200) return json(res, 400, { _tag: "InvalidRequestError", message: 'Expected a value less than or equal to 200\n  at ["limit"]', kind: "Query" })
+    const from = query.cursor ? (JSON.parse(Buffer.from(query.cursor, "base64url").toString()) as { id: string; order: "asc" | "desc" }) : undefined
+    const order = from?.order ?? query.order ?? "desc"
+    const ordered = order === "asc" ? log : [...log].reverse()
+    const start = from ? ordered.findIndex((entry) => entry.id === from.id) + 1 : 0
+    const data = ordered.slice(start, start + limit)
+    const cursor = (entry: SessionMessageInfo | undefined, direction: "previous" | "next") =>
+      entry ? Buffer.from(JSON.stringify({ id: entry.id, order, direction })).toString("base64url") : null
+    return json(res, 200, { data, cursor: { previous: cursor(data[0], "previous"), next: cursor(data.at(-1), "next") } })
+  }
+
   function handle(req: IncomingMessage, res: ServerResponse) {
     let raw = ""
     req.on("data", (chunk) => (raw += chunk))
@@ -184,7 +204,7 @@ export async function startMockOpencodeV2(password = "test-password"): Promise<M
     if (messages && req.method === "GET") {
       const rows = state.messages[messages[1]!]
       if (!rows) return notFound(res, "Session", messages[1]!)
-      return json(res, 200, { data: rows, cursor: {} })
+      return messagePage(res, rows, query)
     }
     // Replies answer 204 with no body, as the server does.
     if (/^\/api\/session\/[^/]+\/permission\/[^/]+\/reply$/.test(path) && req.method === "POST") return empty(res)
