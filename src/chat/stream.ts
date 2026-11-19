@@ -269,6 +269,12 @@ export type SessionStreamState = {
   childSessions: Set<string>
   /** assistantEnd dedup for child sessions (parent has its own set). */
   childAssistantFinished: Set<string>
+  /**
+   * Every session seen created under this one, at any depth. A request for
+   * the user's answer can come from any of them, and unlike `childSessions`
+   * membership does not end when the tracker settles a subagent.
+   */
+  descendants: Set<string>
 }
 
 export function createSessionStreamState(sessionID: string): SessionStreamState {
@@ -285,6 +291,7 @@ export function createSessionStreamState(sessionID: string): SessionStreamState 
     pendingFinish: new Map(),
     childSessions: new Set(),
     childAssistantFinished: new Set(),
+    descendants: new Set(),
   }
 }
 
@@ -342,7 +349,15 @@ export function subscribeSession(
     pendingFinish,
     childSessions,
     childAssistantFinished,
+    descendants,
   } = options.state ?? createSessionStreamState(sessionID)
+
+  // A subagent asks under its own session (recorded from 2.2.5 and 2.3.2),
+  // and the request is the user's to answer in this panel all the same.
+  // Taken for the open session only, it was dropped and the subagent waited
+  // forever (#780).
+  const inFamily = (id: unknown) =>
+    id === sessionID || (typeof id === "string" && (descendants.has(id) || childSessions.has(id)))
 
   let watchdogTimer: ReturnType<typeof setTimeout> | null = null
   let busyTracked = false
@@ -392,6 +407,10 @@ export function subscribeSession(
     // the child for routing — even if the parent's `task` tool metadata
     // never publishes the child sessionID, we still capture the child's
     // tool/patch events.
+    if (type === "session.created" || type === "session.updated") {
+      const info = props?.info
+      if (typeof info?.id === "string" && (info.parentID === sessionID || descendants.has(info.parentID))) descendants.add(info.id)
+    }
     if ((type === "session.created" || type === "session.updated") && handlers.onChildSessionDiscovered) {
       const info = props?.info
       if (info && typeof info === "object" && typeof info.id === "string" && info.parentID === sessionID) {
@@ -612,6 +631,14 @@ export function subscribeSession(
       }
       case "message.part.delta":
         childCb({ type: "busy", sessionID: childSid })
+        return
+      case "permission.updated":
+      case "permission.asked":
+      case "permission.replied":
+      case "question.asked":
+      case "question.replied":
+      case "question.rejected":
+        // Answered through the parent route, which takes them for the whole family.
         return
       case "session.updated":
       case "session.created":
@@ -875,7 +902,7 @@ export function subscribeSession(
   }
 
   function onPermissionUpdated(p: any) {
-    if (!p || p.sessionID !== sessionID) return
+    if (!p || !inFamily(p.sessionID)) return
     const permission = typeof p.permission === "string" ? p.permission : typeof p.type === "string" ? p.type : ""
     const pattern = p.pattern ?? p.patterns
     handlers.onPermissionNeeded?.({
@@ -889,7 +916,7 @@ export function subscribeSession(
   }
 
   function onPermissionResolved(p: any) {
-    if (!p || p.sessionID !== sessionID) return
+    if (!p || !inFamily(p.sessionID)) return
     // The ask event carries a full request (keyed `id`) while the reply event
     // names the same permission `permissionID` (opencode <=1.17) or
     // `requestID` (>=1.18) — each shape carries exactly one of these keys.
@@ -899,7 +926,7 @@ export function subscribeSession(
   }
 
   function onQuestionAsked(p: any) {
-    if (!p || p.sessionID !== sessionID) return
+    if (!p || !inFamily(p.sessionID)) return
     handlers.onQuestionAsked?.({
       id: p.id,
       sessionID: p.sessionID,
@@ -908,7 +935,7 @@ export function subscribeSession(
   }
 
   function onQuestionResolved(p: any) {
-    if (!p || p.sessionID !== sessionID) return
+    if (!p || !inFamily(p.sessionID)) return
     const id = p.requestID ?? p.id
     if (!id) return
     handlers.onQuestionResolved?.(id)

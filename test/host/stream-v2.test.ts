@@ -127,6 +127,62 @@ describe("subscribeSession over opencode 2.0 (#684)", () => {
     subscription.abort()
   })
 
+  // The created, asked and replied events are a 2.3.2 scratch server's, with a
+  // local stub as the model and shell commands set to ask: a subagent starts
+  // under the open session, asks under its own, and is answered. The parent's
+  // id is this test's and the directory is shortened; the unrelated and the
+  // nested sessions are the same events with their ids changed.
+  it("takes a subagent's permission request for the open session and answers it on the child's route (#780)", async () => {
+    const backend = { url: server.url, api: createV2Api({ url: server.url, directory: "/ws", password: server.password }), directory: "/ws" } as Backend
+    const permissions: Array<{ id: string; permission?: string; patterns?: string[]; always?: string[] }> = []
+    const resolved: string[] = []
+    const subscription = subscribeSession(
+      backend,
+      S,
+      { onTextDelta: () => {}, onPermissionNeeded: (p) => permissions.push(p), onPermissionResolved: (id) => resolved.push(id) },
+      { watchdogMs: 10_000 },
+    )
+    await subscription.ready
+    await server.awaitClient()
+
+    const child = "ses_e0e8ab733ffeWv2zsFeMPezBLc"
+    const request = "per_1f1754f1e001sdv2ve81dmi3xs"
+    const created = (sessionID: string, parentID: string | undefined) => ({
+      id: "evt_1f17548ce001XgOYPeBKVY9yvV",
+      created: 1795052357838,
+      type: "session.created",
+      location: { directory: "/ws" },
+      data: { sessionID, slug: "misty-pixel", version: "2.3.2", projectID: "global", parentID, location: { directory: "/ws" }, subpath: "", title: "Read the readme", agent: "explore", model: { id: "stub-1", providerID: "stub", variant: "default" } },
+      durable: { aggregateID: sessionID, seq: 0, version: 1 },
+    })
+    const asked = (id: string, sessionID: string) => ({
+      id: "evt_1f1754f1f001W2ZgUMOOWal2bV",
+      created: 1795052359455,
+      type: "permission.asked",
+      location: { directory: "/ws" },
+      data: { id, sessionID, action: "shell", resources: ["echo child-says-hi"], save: ["echo *"], source: { type: "tool", messageID: "msg_1f17548da0010j3z2TYu7Id2Xu", id: "call_stub_185" } },
+    })
+
+    server.push(created("ses_unrelated", undefined))
+    server.push(asked("per_unrelated", "ses_unrelated"))
+    server.push(created(child, S))
+    server.push(asked(request, child))
+    await until(() => permissions.length === 1)
+    expect(permissions[0]).toMatchObject({ id: request, permission: "shell", patterns: ["echo child-says-hi"], always: ["echo *"] })
+
+    await backend.api.permission.reply(request, "once")
+    expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: `/api/session/${child}/permission/${request}/reply`, body: { decision: "once" } })
+    server.push({ id: "evt_1f17558ce001b7QCE57Kh0o7g3", created: 1795052361934, type: "permission.replied", location: { directory: "/ws" }, data: { sessionID: child, requestID: request, reply: "once" } })
+    await until(() => resolved.length === 1)
+    expect(resolved).toEqual([request])
+
+    server.push(created("ses_nested", child))
+    server.push(asked("per_nested", "ses_nested"))
+    await until(() => permissions.length === 2)
+    expect(permissions.map((p) => p.id)).toEqual([request, "per_nested"])
+    subscription.abort()
+  })
+
   // The watchdog polls session.status when events stop; 2.0 has no status
   // route, so the adapter derives it from the session listing.
   it("recovers a lost idle through the derived status when events stop", async () => {
