@@ -32,6 +32,18 @@ describe("externalSessionSummaries", () => {
     }))
     expect(externalSessionSummaries(many, new Set())).toHaveLength(50)
   })
+
+  // Two sessions as a 1.19.6 scratch server listed them, the first archived
+  // through `PATCH /session/{id}`; only the directory is shortened. A 1.x
+  // listing has no filter for the mark.
+  it("leaves an archived session out (#778)", () => {
+    const tokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
+    const listed = [
+      { id: "ses_e0e8dcf0fffeQFA3drqxzJAqGM", slug: "brave-wolf", projectID: "global", directory: "/ws", path: "", cost: 0, tokens, title: "archived one", version: "1.19.6", time: { created: 1795052155120, updated: 1795052155120, archived: 1795052155179 } },
+      { id: "ses_e0e8dcf1fffebCMPWis3zO1Kzh", slug: "lucky-garden", projectID: "global", directory: "/ws", path: "", cost: 0, tokens, title: "kept one", version: "1.19.6", time: { created: 1795052155104, updated: 1795052155104 } },
+    ]
+    expect(externalSessionSummaries(listed, new Set()).map((s) => s.title)).toEqual(["kept one"])
+  })
 })
 
 describe("importedMessages", () => {

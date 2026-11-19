@@ -46,7 +46,7 @@ export function createV2Api(options: { url: string; directory: string; password:
   const translator = createEventTranslator()
   const unknown = <T>(what: string, id: string): Promise<ApiResult<T>> =>
     Promise.resolve({ error: new Error(`${what} ${id} was not seen on this connection`), status: 404 })
-  const listSessions = async (filter: { parentID?: string | null; limit?: number; search?: string }) =>
+  const listSessions = async (filter: { parentID?: string | null; limit?: number; search?: string; archived?: boolean }) =>
     (await client.session.list({ directory, ...filter })).data
 
   // A session's log comes newest first, 50 entries a page and 200 at most
@@ -174,10 +174,15 @@ export function createV2Api(options: { url: string; directory: string; password:
       create: () => call(async () => mapSession(await client.session.create(location), directory)),
       list: (options) =>
         call(async () => {
+          // Archiving moves a session's `time.updated`, so unfiltered, a
+          // session archived a moment ago leads the listing and takes one
+          // of the rows asked for (recorded from 2.2.5 and 2.3.2). 2.0.24
+          // has no such filter; the mark on the session covers it there.
           const rows = await listSessions({
             parentID: options?.roots ? null : undefined,
             limit: options?.limit,
             search: options?.search,
+            archived: false,
           })
           return rows.map((s) => mapSession(s, directory))
         }),

@@ -8,7 +8,7 @@ export type SessionInfo = {
   id: string
   parentID?: string
   title?: string
-  time?: { created?: number; updated?: number }
+  time?: { created?: number; updated?: number; archived?: number }
 }
 
 /** The slice of a `session.messages()` item this module consumes. */
@@ -47,7 +47,9 @@ export const MAX_EXTERNAL_SESSIONS = 50
 
 /**
  * Sessions worth offering in the history popover: top-level (subagent child
- * sessions carry a `parentID`) and not already bound to a saved conversation.
+ * sessions carry a `parentID`), not already bound to a saved conversation,
+ * and not archived, which is how opencode's own lists treat them and what
+ * `opencode run --archived` is for (#778).
  * Newest first, capped so a long-lived project doesn't flood the popover.
  * The fetch already asks the server for `roots` and `limit` (#617); the filter
  * and cap here are the fallback for servers that ignore those parameters.
@@ -57,7 +59,7 @@ export function externalSessionSummaries(
   boundSessionIDs: ReadonlySet<string>,
 ): ExternalSessionSummary[] {
   return sessions
-    .filter((s) => s.id && !s.parentID && !boundSessionIDs.has(s.id))
+    .filter((s) => s.id && !s.parentID && !s.time?.archived && !boundSessionIDs.has(s.id))
     .map((s) => ({
       id: s.id,
       title: s.title?.trim() || "Untitled session",

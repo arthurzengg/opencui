@@ -42,6 +42,13 @@ describe("opencode 2.0 mappers (#693)", () => {
     expect(dated({ created: 1794603071824, updated: 1794603073837 })).toBe(1794603071824)
   })
 
+  // The times of a session archived on a 2.3.2 scratch server. 2.0.24 cannot
+  // filter its listing by the mark, so the history reads it off the session.
+  it("carries a session's archive mark (#778)", () => {
+    const mapped = mapSession(session({ time: { created: 1795052154699, updated: 1795052154761, archived: 1795052154761 } }), "/ws")
+    expect(mapped.time.archived).toBe(1795052154761)
+  })
+
   it("derives idle from an outcome or an idle mark as new as the last update", () => {
     const statuses = mapSessionStatus([
       session({ id: "done", outcome: "succeeded" }),
