@@ -29,6 +29,7 @@ import type {
   ExternalSessionSummary,
   Inbound,
   Outbound,
+  PermissionSubagent,
   ToolUpdate as WireToolUpdate,
   Selection,
   ReviewChange,
@@ -635,7 +636,26 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   private postPermission(perm: PermissionRequest) {
-    this.post({ type: "permission", id: perm.id, title: perm.title, pattern: perm.pattern, always: alwaysPatterns(perm) })
+    this.post({
+      type: "permission",
+      id: perm.id,
+      title: perm.title,
+      pattern: perm.pattern,
+      always: alwaysPatterns(perm),
+      subagent: this.askingSubagent(perm),
+    })
+  }
+
+  /**
+   * With several agents at work, what to answer can depend on who asks, so a
+   * subagent's request names it from the task that launched it (#784). A
+   * session with no such task (a subagent's own subagent) is still marked,
+   * with nothing known about it.
+   */
+  private askingSubagent(perm: PermissionRequest): PermissionSubagent | undefined {
+    if (!perm.childSessionID) return undefined
+    const task = this.taskStore?.getByChildSession(perm.childSessionID)
+    return { agent: task?.subagent, task: task?.title }
   }
 
   private async answerCoveredPermissions() {

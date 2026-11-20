@@ -34,6 +34,12 @@ describe("reducer — permission flow", () => {
     expect(state.pendingPermission).toEqual({ id: "p", title: "Run", pattern: ["git status"], always: ["git *"] })
   })
 
+  it("permission carries the asking subagent for the card (#784)", () => {
+    const subagent = { agent: "explore", task: "Read the readme" }
+    const state = reducer(initialChatState, { type: "permission", id: "p", title: "Run", subagent })
+    expect(state.pendingPermission?.subagent).toEqual(subagent)
+  })
+
   it("permissionRules replaces the list and survives reset and clear (#619)", () => {
     const rules = [{ id: "r1", permission: "bash", pattern: "git *", createdAt: 1 }]
     const withRules = reducer(initialChatState, { type: "permissionRules", rules })

@@ -2310,6 +2310,19 @@ button:focus-visible {
 .question:focus-within {
   border-color: var(--accent-line);
 }
+/* Who asks, when it is a subagent: its kind, then the task it was given, in
+   the weight and colour of the trace's subagent label. It wraps like the
+   title, since the answer can depend on it. */
+.permission-source {
+  margin-bottom: 2px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.permission-source-agent {
+  font-weight: 600;
+}
 .permission-title {
   font-size: 13px;
   font-weight: 600;

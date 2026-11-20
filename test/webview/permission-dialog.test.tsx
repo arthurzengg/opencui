@@ -52,6 +52,24 @@ describe("PermissionDialog", () => {
     expect(buttons.map((b) => b.classList.contains("is-primary"))).toEqual([true, false, false])
   })
 
+  it("names the subagent that asks, and its task, above the title (#784)", () => {
+    const card = (subagent?: { agent?: string; task?: string }) => (
+      <PermissionDialog id="p1" title="Permission needed: shell" pattern={["echo child-says-hi"]} subagent={subagent} onReply={() => {}} />
+    )
+    const { container, rerender } = render(card({ agent: "explore", task: "Read the readme" }))
+    const source = container.querySelector(".permission-source")!
+    expect(source.textContent).toBe("Explore agent · Read the readme")
+    expect(source.nextElementSibling).toBe(container.querySelector(".permission-title"))
+
+    // A session the host could not tie to a launch is still a subagent.
+    rerender(card({}))
+    expect(container.querySelector(".permission-source")?.textContent).toBe("Subagent")
+
+    // The main agent's card has no such line.
+    rerender(card())
+    expect(container.querySelector(".permission-source")).toBeNull()
+  })
+
   it("has no tooltip on Allow always when the request names nothing to save", () => {
     render(<PermissionDialog id="p1" title="Run a command" onReply={() => {}} />)
     expect(screen.getByRole("button", { name: "Allow always" })).not.toHaveAttribute("title")

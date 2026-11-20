@@ -613,6 +613,11 @@ export function formatAgent(slug: string): string {
   return prettifyToken(slug)
 }
 
+/** How a subagent is named wherever its work or its requests show; one whose kind is unknown is still a subagent. */
+export function subagentLabel(slug?: string): string {
+  return slug ? `${formatAgent(slug)} agent` : "Subagent"
+}
+
 function stripProvider(name: string): string {
   return name.replace(/^(anthropic|openai|google|meta|mistral|cohere|fireworks|together|deepseek|xai|x-ai|groq)[/.:-]/i, "")
 }

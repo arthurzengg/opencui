@@ -3,7 +3,7 @@ import type { ReviewChangeActor, Todo, ToolStatus, ToolUpdate } from "../protoco
 import { basename, isRecord, patchKind } from "../review-extract"
 import { vscode } from "../vscode"
 import { formatElapsed } from "./AgentActivity"
-import { formatAgent } from "./StatusBar"
+import { subagentLabel } from "./StatusBar"
 
 /**
  * Grace period before a running row starts showing elapsed time. Most tools
@@ -157,14 +157,10 @@ function SubagentRows({
   if (!hasRows(trace)) return null
   return (
     <div className="trace-subagent">
-      {labelled && <div className="trace-subagent-label">{agentLabel(work.actor)}</div>}
+      {labelled && <div className="trace-subagent-label">{subagentLabel(work.actor.subagent)}</div>}
       <TraceRows trace={trace} onReviewFile={onReviewFile} />
     </div>
   )
-}
-
-function agentLabel(actor: ReviewChangeActor) {
-  return actor.subagent ? `${formatAgent(actor.subagent)} agent` : "Subagent"
 }
 
 /**

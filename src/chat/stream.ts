@@ -15,6 +15,8 @@ export type ToolUpdate = {
 
 export type PermissionRequest = {
   id: string
+  /** The session that asks, when it is a subagent's and not the open one. */
+  childSessionID?: string
   title: string
   pattern?: string | string[]
   /** The permission key (`bash`, `edit`, `external_directory`, ...) and the patterns asked for. */
@@ -907,6 +909,7 @@ export function subscribeSession(
     const pattern = p.pattern ?? p.patterns
     handlers.onPermissionNeeded?.({
       id: p.id,
+      childSessionID: p.sessionID === sessionID ? undefined : p.sessionID,
       title: p.title ?? `Permission needed: ${permission || "unknown"}`,
       pattern,
       permission,

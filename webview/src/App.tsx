@@ -473,6 +473,7 @@ export default function App() {
             title={state.pendingPermission.title}
             pattern={state.pendingPermission.pattern}
             always={state.pendingPermission.always}
+            subagent={state.pendingPermission.subagent}
             onReply={replyPermission}
           />
         )}
