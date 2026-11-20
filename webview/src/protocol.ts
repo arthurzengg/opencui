@@ -26,6 +26,16 @@ export type ReviewChangeActor = {
   callID?: string
 }
 
+/**
+ * The subagent behind a permission request (#784): its kind (`explore`) and
+ * the task it was given. Both are missing for a session the host could not
+ * tie to the call that launched it, which is still a subagent.
+ */
+export type PermissionSubagent = {
+  agent?: string
+  task?: string
+}
+
 export type ReviewChange = {
   source: string
   path: string
@@ -535,8 +545,11 @@ export type Outbound =
    * (continuation took over) or `sessionIdle` (defer timed out).
    */
   | { type: "continuationPending"; pending: boolean }
-  /** `always` is what an "Allow always" answer would save as rules (#619). */
-  | { type: "permission"; id: string; title: string; pattern?: string | string[]; always?: string[] }
+  /**
+   * `always` is what an "Allow always" answer would save as rules (#619).
+   * `subagent` is set when a subagent asks, and absent for the main agent.
+   */
+  | { type: "permission"; id: string; title: string; pattern?: string | string[]; always?: string[]; subagent?: PermissionSubagent }
   /**
    * A permission was answered. Also fires for our own reply (opencode echoes
    * `permission.replied` back), which the webview has already acted on — the

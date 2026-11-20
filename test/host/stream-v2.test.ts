@@ -168,7 +168,7 @@ describe("subscribeSession over opencode 2.0 (#684)", () => {
     server.push(created(child, S))
     server.push(asked(request, child))
     await until(() => permissions.length === 1)
-    expect(permissions[0]).toMatchObject({ id: request, permission: "shell", patterns: ["echo child-says-hi"], always: ["echo *"] })
+    expect(permissions[0]).toMatchObject({ id: request, childSessionID: child, permission: "shell", patterns: ["echo child-says-hi"], always: ["echo *"] })
 
     await backend.api.permission.reply(request, "once")
     expect(server.requests.at(-1)).toMatchObject({ method: "POST", path: `/api/session/${child}/permission/${request}/reply`, body: { decision: "once" } })
