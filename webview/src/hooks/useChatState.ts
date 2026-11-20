@@ -12,6 +12,7 @@ import type {
   ConversationSummary,
   ExternalSessionSummary,
   PermissionRuleInfo,
+  PermissionSubagent,
   DirEntry,
   EditorContextRef,
   FileSearchHit,
@@ -91,7 +92,7 @@ export type ChatState = {
    * same reason as `idleNonce`.
    */
   reviewRevision: number
-  pendingPermission?: { id: string; title: string; pattern?: string | string[]; always?: string[] }
+  pendingPermission?: { id: string; title: string; pattern?: string | string[]; always?: string[]; subagent?: PermissionSubagent }
   /** Workspace-level, not per conversation: survives `reset` and `clear` (#619). */
   permissionRules: PermissionRuleInfo[]
   pendingQuestion?: { id: string; questions: QuestionInfo[] }
@@ -464,7 +465,7 @@ export function reducer(state: ChatState, action: Action): ChatState {
       if (state.aborting) return state
       return {
         ...state,
-        pendingPermission: { id: action.id, title: action.title, pattern: action.pattern, always: action.always },
+        pendingPermission: { id: action.id, title: action.title, pattern: action.pattern, always: action.always, subagent: action.subagent },
       }
     case "permissionResolved":
     case "clearPermission":

@@ -1,9 +1,14 @@
+import type { PermissionSubagent } from "../protocol"
+import { subagentLabel } from "./StatusBar"
+
 type Props = {
   id: string
   title: string
   pattern?: string | string[]
   /** What "Allow always" saves as rules (#619); shown beside the choice and in its tooltip. */
   always?: string[]
+  /** Set when a subagent asks; the card then says which one, and what it was sent to do (#784). */
+  subagent?: PermissionSubagent
   onReply: (id: string, response: "once" | "always" | "reject") => void
 }
 
@@ -12,11 +17,17 @@ type Props = {
  * icon, a bold line that says what is asked, the pattern in full, and the
  * choices as stacked rows with the narrowest grant first and filled.
  */
-export function PermissionDialog({ id, title, pattern, always, onReply }: Props) {
+export function PermissionDialog({ id, title, pattern, always, subagent, onReply }: Props) {
   const patternStr = Array.isArray(pattern) ? pattern.join(", ") : pattern
   const rules = always?.length ? always.join(", ") : undefined
   return (
     <div className="permission" role="group" aria-label="Permission request">
+      {subagent && (
+        <div className="permission-source">
+          <span className="permission-source-agent">{subagentLabel(subagent.agent)}</span>
+          {subagent.task && ` · ${subagent.task}`}
+        </div>
+      )}
       <div className="permission-title">{title}</div>
       {patternStr && (
         <code className="permission-pattern">
