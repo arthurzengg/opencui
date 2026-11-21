@@ -15,6 +15,30 @@ function fakeBinary(script: string): string {
   return file
 }
 
+describe("startOpencodeServer config mode (#788)", () => {
+  // The stand-in records the two variables it was started with.
+  async function spawnedWith(configMode: "isolated" | "user", port: number) {
+    const out = join(mkdtempSync(join(tmpdir(), "opencui-spawn-env-")), "env")
+    const bin = fakeBinary(`printf '%s|%s' "\${OPENCODE_PURE-unset}" "\${OPENCODE_CONFIG_CONTENT-unset}" > "${out}"\necho "opencode server listening on http://127.0.0.1:${port}"\nexec sleep 10`)
+    const handle = await startOpencodeServer(bin, { hostname: "127.0.0.1", port, timeout: 5000, configMode })
+    handle.close()
+    return readFileSync(out, "utf8")
+  }
+
+  it("starts opencode without external plugins in isolated mode, and leaves them on in user mode", async () => {
+    const inherited = process.env.OPENCODE_PURE
+    delete process.env.OPENCODE_PURE
+    try {
+      // An empty inline config alone left the user's plugins running: opencode
+      // merges it over their config files (recorded from 1.19.6).
+      expect(await spawnedWith("isolated", 43231)).toBe("1|{}")
+      expect(await spawnedWith("user", 43232)).toBe("unset|unset")
+    } finally {
+      if (inherited !== undefined) process.env.OPENCODE_PURE = inherited
+    }
+  })
+})
+
 describe("startOpencodeServer exit notification", () => {
   it("notifies onExit listeners when the process dies AFTER startup", async () => {
     const bin = fakeBinary('echo "opencode server listening on http://127.0.0.1:43210"\nsleep 0.2')
