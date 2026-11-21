@@ -1943,34 +1943,39 @@ describe("ChatView harness: subagent tool blocks name their dispatch call", () =
 // as the 2.x adapter hands them to the router, with a local stub as the model
 // and shell commands set to ask. The parent's id is this test's; the main
 // agent's request and the nested session are the same events with their ids
-// changed.
+// changed. `ask` replays the request for a session.
+async function launchRecordedSubagent() {
+  await harness.send({ type: "mounted" })
+  await harness.send({ type: "send", text: "read the readme" })
+  const child = "ses_e0e8ab733ffeWv2zsFeMPezBLc"
+  const message = "msg_1f175473c001e3Tq3rp0wci4Bt"
+  const input = { agent: "explore", description: "Read the readme", prompt: "scenario:perm Read readme.txt and report what it says." }
+  const dispatch = (state: Record<string, unknown>) =>
+    server.push({ type: "message.part.updated", part: { id: "call_stub_184", sessionID: SESSION_ID, messageID: message, type: "tool", callID: "call_stub_184", tool: "subagent", state } })
+  const ask = (id: string, sessionID: string) =>
+    server.push({ type: "permission.asked", id, sessionID, permission: "shell", patterns: ["echo child-says-hi"], always: ["echo *"], title: "Permission needed: shell", metadata: {}, messageID: "msg_1f17548da0010j3z2TYu7Id2Xu", callID: "call_stub_185", time: { created: 1795052359455 } })
+  const card = (id: string) =>
+    harness.posted.find((m): m is Extract<Outbound, { type: "permission" }> => m.type === "permission" && m.id === id)
+
+  server.push({ type: "message.updated", info: { id: message, sessionID: SESSION_ID, role: "assistant", time: { created: 1795052357440 }, modelID: "stub-1", providerID: "stub", mode: "build", parentID: "" } })
+  dispatch({ status: "running", input, time: { start: 1795052357773 } })
+  server.push({ type: "session.created", info: { id: child, parentID: SESSION_ID, title: "Read the readme", agent: "explore" } })
+  // 2.3 returns the call at once and the subagent works on, so its request
+  // arrives after the call that launched it has completed.
+  dispatch({
+    status: "completed",
+    input,
+    output: `The subagent is working in the background (sessionID: ${child}). You will receive a <subagent> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID.`,
+    title: "subagent",
+    metadata: { sessionID: child, status: "running", truncated: false },
+    time: { start: 1795052357773, end: 1795052357841 },
+  })
+  return { child, ask, card }
+}
+
 describe("ChatView harness: a subagent's permission request names it (#784)", () => {
   it("sends the asking subagent's kind and task with the request, and none for the main agent", async () => {
-    await harness.send({ type: "mounted" })
-    await harness.send({ type: "send", text: "read the readme" })
-    const child = "ses_e0e8ab733ffeWv2zsFeMPezBLc"
-    const message = "msg_1f175473c001e3Tq3rp0wci4Bt"
-    const input = { agent: "explore", description: "Read the readme", prompt: "scenario:perm Read readme.txt and report what it says." }
-    const dispatch = (state: Record<string, unknown>) =>
-      server.push({ type: "message.part.updated", part: { id: "call_stub_184", sessionID: SESSION_ID, messageID: message, type: "tool", callID: "call_stub_184", tool: "subagent", state } })
-    const ask = (id: string, sessionID: string) =>
-      server.push({ type: "permission.asked", id, sessionID, permission: "shell", patterns: ["echo child-says-hi"], always: ["echo *"], title: "Permission needed: shell", metadata: {}, messageID: "msg_1f17548da0010j3z2TYu7Id2Xu", callID: "call_stub_185", time: { created: 1795052359455 } })
-    const card = (id: string) =>
-      harness.posted.find((m): m is Extract<Outbound, { type: "permission" }> => m.type === "permission" && m.id === id)
-
-    server.push({ type: "message.updated", info: { id: message, sessionID: SESSION_ID, role: "assistant", time: { created: 1795052357440 }, modelID: "stub-1", providerID: "stub", mode: "build", parentID: "" } })
-    dispatch({ status: "running", input, time: { start: 1795052357773 } })
-    server.push({ type: "session.created", info: { id: child, parentID: SESSION_ID, title: "Read the readme", agent: "explore" } })
-    // 2.3 returns the call at once and the subagent works on, so its request
-    // arrives after the call that launched it has completed.
-    dispatch({
-      status: "completed",
-      input,
-      output: `The subagent is working in the background (sessionID: ${child}). You will receive a <subagent> message when it goes idle, and again after each later round of work.\nDO NOT sleep, poll, proactively check on its progress, or duplicate this subagent's work.\nWork on non-overlapping tasks, or briefly tell the user what you launched and end your response.\nTo send it follow-ups or change its instructions while it runs, call subagent again with this sessionID.`,
-      title: "subagent",
-      metadata: { sessionID: child, status: "running", truncated: false },
-      time: { start: 1795052357773, end: 1795052357841 },
-    })
+    const { child, ask, card } = await launchRecordedSubagent()
     ask("per_1f1754f1e001sdv2ve81dmi3xs", child)
     await until(() => !!card("per_1f1754f1e001sdv2ve81dmi3xs"))
     expect(card("per_1f1754f1e001sdv2ve81dmi3xs")!.subagent).toEqual({ agent: "explore", task: "Read the readme" })
@@ -1985,5 +1990,31 @@ describe("ChatView harness: a subagent's permission request names it (#784)", ()
     await until(() => !!card("per_nested"))
     expect(card("per_nested")!.subagent).toBeDefined()
     expect(card("per_nested")!.subagent).toEqual({})
+  })
+})
+
+describe("ChatView harness: the row that waits is the asker's (#786)", () => {
+  const status = (kind: "main" | "subagent") => harness.taskStore.list().filter((t) => t.kind === kind).at(-1)?.status
+
+  it("marks the subagent's row while its request is open and leaves the Main row running", async () => {
+    const { child, ask, card } = await launchRecordedSubagent()
+    ask("per_1f1754f1e001sdv2ve81dmi3xs", child)
+    await until(() => status("subagent") === "waiting")
+    expect(status("main")).toBe("running")
+    const snap = harness.posted.filter((m): m is Extract<Outbound, { type: "agentsStatus" }> => m.type === "agentsStatus").at(-1)!
+    expect(snap.status.tasks.find((t) => t.kind === "subagent")?.status).toBe("waiting")
+
+    await until(() => !!card("per_1f1754f1e001sdv2ve81dmi3xs"))
+    await harness.send({ type: "permissionReply", id: "per_1f1754f1e001sdv2ve81dmi3xs", response: "once" })
+    await until(() => status("subagent") === "running")
+    expect(status("main")).toBe("running")
+  })
+
+  it("shows the wait on the Main row for a session that has no row of its own", async () => {
+    const { child, ask } = await launchRecordedSubagent()
+    server.push({ type: "session.created", info: { id: "ses_nested", parentID: child, title: "Read the readme", agent: "explore" } })
+    ask("per_nested", "ses_nested")
+    await until(() => status("main") === "waiting")
+    expect(status("subagent")).toBe("running")
   })
 })

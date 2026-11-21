@@ -307,16 +307,30 @@ export class ChatView implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Recompute "is this turn blocked on the user?" from the pending
-   * permission + question maps and mirror it onto the Main task row.
-   * Must be called after every mutation of either map — the popover
-   * renders `waiting` as "waiting for input", and before this wiring
-   * nothing ever set that status, so a permission-blocked turn showed
-   * as `running`.
+   * Recompute "who is blocked on the user?" from the pending permission +
+   * question maps and mirror it onto the task rows. Must be called after
+   * every mutation of either map — the popover renders `waiting` as
+   * "waiting for input", and before this wiring nothing ever set that
+   * status, so a permission-blocked turn showed as `running`.
+   *
+   * The row that waits is the asker's (#786): a subagent's request marks
+   * the subagent's row and leaves the Main row running. A session with no
+   * row of its own (a subagent's own subagent) has only the Main row to
+   * show the wait on.
    */
   private syncAgentWaitState() {
-    const pending = this.activePermissions.size + this.activeQuestions.size
-    void this.subagentDispatch.setMainWaiting(pending > 0)
+    const askers = [
+      ...[...this.activePermissions.values()].map((perm) => perm.childSessionID),
+      ...[...this.activeQuestions.values()].map((question) => question.sessionID),
+    ]
+    const waitingChildren = new Set<string>()
+    let mainWaiting = false
+    for (const session of askers) {
+      if (session && this.taskStore?.getByChildSession(session)) waitingChildren.add(session)
+      else mainWaiting = true
+    }
+    void this.subagentDispatch.setMainWaiting(mainWaiting)
+    void this.subagentDispatch.setSubagentsWaiting(waitingChildren)
     this.syncAttention()
   }
 
