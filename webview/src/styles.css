@@ -4115,4 +4115,44 @@ body.vscode-light {
     box-shadow: var(--glass-shadow-low);
     pointer-events: none;
   }
+  /* Bottom dock: its blur does the work, and the cards on it turn
+     translucent. The composer looks the same before the first message. */
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock-glass {
+    background: linear-gradient(
+      to bottom,
+      transparent,
+      color-mix(in srgb, var(--color-bg-panel) var(--glass-dock-alpha), transparent) var(--bottom-dock-fade)
+    );
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock-glass::after {
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--bottom,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--top .promptbox-input,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .permission,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .question,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .review-panel {
+    background: var(--glass-sheen), color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
+    border-color: var(--glass-edge);
+    box-shadow: var(--glass-shine), var(--glass-shadow-low);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--bottom:focus-within,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--top .promptbox-input:focus-within {
+    border-color: var(--color-border-focus);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .permission:focus-within,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .question:focus-within {
+    border-color: var(--accent-line);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .queued-row {
+    background: color-mix(in srgb, var(--vscode-editorWidget-background) var(--glass-card-alpha), transparent);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .context-usage-ring {
+    /* The ring's hole was a disc in the composer's colour; cut it out instead
+       so the glass shows through. */
+    mask: radial-gradient(closest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .context-usage-ring::after {
+    display: none;
+  }
 }

@@ -36,9 +36,9 @@ describe("glass surfaces (#790)", () => {
   // A backdrop-filter makes its element the backdrop root of what is inside it
   // and the containing block of its fixed descendants: on the pinned question
   // the image preview would be confined to the bubble, and on a bubble being
-  // edited the pickers would blur nothing.
+  // edited or on the composer the pickers would blur nothing.
   it("keeps the filter off the elements that hold the pickers and the image preview", () => {
-    for (const host of [".msg.role-user", ".user-edit-layer"]) {
+    for (const host of [".msg.role-user", ".user-edit-layer", ".promptbox--bottom"]) {
       expect(declarations(host)).not.toContain("backdrop-filter")
     }
     expect(declarations(".msg.role-user::before")).toContain("backdrop-filter")
