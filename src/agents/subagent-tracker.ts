@@ -187,7 +187,9 @@ export class SubagentTracker {
         model: merged.model,
         runInBackground: merged.runInBackground,
         title: titleForDispatch(update, merged),
-        status: "running",
+        // The launching call keeps reporting while its subagent waits on the
+        // user; that is not the answer the row waits for (#786).
+        status: existing?.status === "waiting" ? "waiting" : "running",
         startedAt: existing?.startedAt ?? now,
         updatedAt: now,
       }
@@ -297,19 +299,14 @@ export class SubagentTracker {
     const now = Date.now()
     switch (event.type) {
       case "busy":
-        // Don't bounce a terminal task back to running — once
-        // errored/completed, a stray busy is ignored.
-        if (existing.status === "error" || existing.status === "completed" || existing.status === "cancelled") {
-          return
-        }
-        // Already running: skip the write. Busy signals arrive per streamed
-        // token (message.part.delta et al.), and each store.update() is a
-        // full workspaceState persist + onDidChange broadcast + agentsStatus
-        // IPC post. Nothing reads updatedAt on a live row (AgentsRow derives
-        // elapsed from startedAt) — the only transition left to make here is
-        // waiting -> running.
-        if (existing.status === "running") return
-        await this.store.update(taskID, { status: "running", updatedAt: now })
+        // Activity in the child changes nothing on its row. A running row is
+        // already right and a settled one must not come back. A waiting row
+        // waits for the user's answer, not for the session to move: with one
+        // call asking and another streaming, the subagent still needs the
+        // user, and ChatView puts the row back to running once the request
+        // is answered (#786). Busy signals arrive per streamed token
+        // (message.part.delta et al.), so this also spares a workspaceState
+        // persist and an agentsStatus post for each.
         return
       case "idle":
         // Final state. Drop the child session from the interest set so
