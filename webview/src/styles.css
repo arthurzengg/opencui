@@ -3977,3 +3977,79 @@ button:focus-visible {
 }
 .btn.link:hover { color: var(--vscode-textLink-activeForeground); }
 .btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ===== Glass surfaces (#790) =====
+   Every surface that floats over the transcript is frosted glass: a
+   translucent tint of its own colour over the blurred, saturated backdrop,
+   a thin edge and a highlight along the top.
+
+   Everything here overrides the opaque rules above and nothing else, so the
+   two guards leave today's surfaces in place: the media query for the
+   reduced-transparency setting, and the selector prefix for high-contrast
+   themes. Tints start from the panel colour because a theme's input colour
+   may itself be translucent (#528).
+
+   A surface that floats alone carries its own backdrop-filter. A card in the
+   bottom dock only turns translucent, because the dock already blurs
+   everything under it.
+
+   A backdrop-filter makes its element the backdrop root of everything inside
+   it and the containing block of its fixed descendants. The pinned question
+   holds the image preview and, while it is edited, the pickers, so its
+   filter is on `::before` and never on the element. The dock's cards carry
+   no filter for the same reason. */
+:root {
+  --glass-blur: 12px;
+  --glass-sat: 190%;
+  --glass-popover-alpha: 52%;
+  --glass-card-alpha: 34%;
+  --glass-dock-alpha: 30%;
+  --glass-band-alpha: 40%;
+  --glass-edge: color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
+  --glass-shine: inset 0 1px 0 0 rgba(255, 255, 255, 0.09);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 46%);
+  --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.36), 0 2px 6px rgba(0, 0, 0, 0.22);
+  --glass-shadow-low: 0 6px 18px rgba(0, 0, 0, 0.24);
+}
+body.vscode-light {
+  --glass-popover-alpha: 58%;
+  --glass-card-alpha: 40%;
+  --glass-dock-alpha: 34%;
+  --glass-band-alpha: 44%;
+  --glass-edge: color-mix(in srgb, var(--vscode-foreground) 11%, transparent);
+  --glass-shine: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 55%);
+  --glass-shadow: 0 12px 32px rgba(24, 32, 56, 0.16), 0 2px 6px rgba(24, 32, 56, 0.08);
+  --glass-shadow-low: 0 6px 18px rgba(24, 32, 56, 0.1);
+}
+@media not all and (prefers-reduced-transparency: reduce) {
+  /* Popovers: history, saved rules, model picker, the composer's pickers and
+     the Agents list. */
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .history-popover,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .model-picker-popover,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .agents-popover {
+    --glass-surface: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .mention-popover {
+    --glass-surface: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .history-popover,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .model-picker-popover,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .agents-popover,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .mention-popover {
+    --popover-row-radius: var(--radius);
+    background: var(--glass-sheen), color-mix(in srgb, var(--glass-surface) var(--glass-popover-alpha), transparent);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    border-color: var(--glass-edge);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--glass-shine), var(--glass-shadow);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .model-picker-search-wrap {
+    border-bottom-color: var(--glass-edge);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .mention-breadcrumb {
+    /* Stays opaque: rows scroll under it, and a filter nested inside the
+       picker's own does not blur them. */
+    border-bottom-color: var(--glass-edge);
+  }
+}
