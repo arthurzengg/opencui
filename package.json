@@ -150,11 +150,11 @@
           "type": "string",
           "enum": ["isolated", "user"],
           "enumDescriptions": [
-            "Ignore the user's opencode config and plugins — use an empty config for predictable extension behavior.",
-            "Load the user's normal opencode config, agents, and plugins from disk."
+            "Run opencode without your plugins, so the panel behaves the same whatever you have installed. Takes effect on opencode 1.x. Your opencode config files still load.",
+            "Load your opencode plugins too, as opencode does in the terminal."
           ],
           "default": "isolated",
-          "description": "Whether the opencode server started by OpenCode Panel loads the user's opencode config or runs with an empty isolated config."
+          "description": "Whether the opencode server started by OpenCode Panel loads your opencode plugins. Your opencode config files load in both modes."
         },
         "opencui.context.enabled": {
           "type": "boolean",
