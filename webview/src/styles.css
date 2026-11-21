@@ -4052,4 +4052,67 @@ body.vscode-light {
        picker's own does not blur them. */
     border-bottom-color: var(--glass-edge);
   }
+  /* Pinned question. The band above it becomes a frosted strip owned by the
+     scroller, so the bubble no longer has to cover it. */
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .messages {
+    padding-top: 0;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .messages::before {
+    content: "";
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: var(--z-bubble-sticky);
+    height: var(--messages-pad-top);
+    margin: 0 -12px;
+    background: color-mix(in srgb, var(--color-bg-panel) var(--glass-band-alpha), transparent);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user {
+    top: var(--messages-pad-top);
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user::before {
+    top: calc(-1 * var(--bubble-border-width));
+    bottom: calc(-1 * var(--bubble-border-width));
+    z-index: -1;
+    height: auto;
+    border: var(--bubble-border-width) solid var(--glass-edge);
+    border-radius: inherit;
+    background: var(--glass-sheen), color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    box-shadow: var(--glass-shine), var(--glass-shadow-low);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user.is-editable[data-edit-phase="view"]:hover {
+    background: transparent;
+    border-color: transparent;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user.is-editable[data-edit-phase="view"]:hover::before {
+    background:
+      var(--glass-sheen),
+      linear-gradient(0deg, var(--hover-bg-wash), var(--hover-bg-wash)),
+      color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user:not([data-edit-phase="view"])::before {
+    display: none;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .user-edit-layer {
+    background: transparent;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .user-edit-layer::before {
+    /* Inside the border: the layer paints its focus border first, and a
+       filter over it would blur the border away. */
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: calc(var(--radius) - var(--bubble-border-width));
+    background: var(--glass-sheen), color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    box-shadow: var(--glass-shadow-low);
+    pointer-events: none;
+  }
 }
