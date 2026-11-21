@@ -485,12 +485,17 @@ describe("SubagentTracker.handleChildSessionEvent", () => {
     expect(after.updatedAt).toBe(before.updatedAt)
   })
 
-  it("a `busy` event still promotes a waiting task back to running", async () => {
+  it("activity in the child does not end a wait for the user (#786)", async () => {
     const { tracker, store } = await bootstrapPromoted()
     const taskID = subagentTaskIDByChildSession("ses_child_1")
     await store.update(taskID, { status: "waiting" })
     await tracker.handleChildSessionEvent({ type: "busy", sessionID: "ses_child_1" })
-    expect(store.get(taskID)!.status).toBe("running")
+    expect(store.get(taskID)!.status).toBe("waiting")
+    // Nor does the launching call, which keeps reporting while its subagent waits.
+    await tracker.handleToolUpdate(
+      makeUpdate({ callID: "c1", status: "running", metadata: { sessionId: "ses_child_1", agent: "oracle", run_in_background: false } }),
+    )
+    expect(store.get(taskID)!.status).toBe("waiting")
   })
 
   it("an `assistantEnd` event backfills the model when omo metadata didn't carry one", async () => {

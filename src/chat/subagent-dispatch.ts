@@ -150,4 +150,19 @@ export class SubagentDispatch {
       updatedAt: Date.now(),
     })
   }
+
+  /**
+   * The same two transitions for the open session's subagent rows: the ones
+   * whose session has a request open wait, and the rest go back to running.
+   */
+  async setSubagentsWaiting(childSessionIDs: ReadonlySet<string>): Promise<void> {
+    const store = this.deps.taskStore
+    const sessionID = this.deps.getSessionID()
+    if (!store || !sessionID) return
+    for (const task of store.activeSubagentsForSession(sessionID)) {
+      const waiting = !!task.childSessionID && childSessionIDs.has(task.childSessionID)
+      if (waiting === (task.status === "waiting")) continue
+      await store.update(task.id, { status: waiting ? "waiting" : "running", updatedAt: Date.now() })
+    }
+  }
 }
