@@ -4155,4 +4155,31 @@ body.vscode-light {
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .context-usage-ring::after {
     display: none;
   }
+  /* Small overlays: the usage breakdown, the context tooltip and the image
+     preview. */
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg-usage-popover,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .context-usage::before {
+    background: color-mix(
+      in srgb,
+      var(--vscode-editorWidget-background, var(--vscode-sideBar-background)) var(--glass-popover-alpha),
+      transparent
+    );
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    border-color: var(--glass-edge);
+    box-shadow: var(--glass-shine), var(--glass-shadow-low);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg-usage {
+    /* The breakdown lingers for 0.24s after the pointer leaves. The chip must
+       stay at full opacity that long: below it the chip is a backdrop root
+       and the breakdown would blur nothing. */
+    transition: opacity 0s linear 0.24s;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg-usage:hover,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg-usage:focus-visible {
+    transition-delay: 0s;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .image-preview-overlay {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(16px) saturate(var(--glass-sat));
+  }
 }
