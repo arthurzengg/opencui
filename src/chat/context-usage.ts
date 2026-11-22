@@ -1,7 +1,9 @@
 import type { Backend } from "../server"
 import type { ContextUsage } from "../protocol"
+import { NEWEST_PAGE, knowsSession, sessionCost } from "./session-cost"
 
 type ContextUsageMessageInfo = {
+  id?: string
   role?: string
   providerID?: string
   modelID?: string
@@ -42,14 +44,20 @@ async function fetchProviders(backend: Backend): Promise<ContextUsageProvider[]>
 }
 
 export async function readContextUsage(backend: Backend, sessionID: string): Promise<ContextUsage | undefined> {
+  // The whole log the first time, so that the cost counts every message; the
+  // newest page after that, since this runs after every step.
+  const page = knowsSession(sessionID) ? { limit: NEWEST_PAGE } : undefined
   const [messagesRes, providers] = await Promise.all([
-    backend.api.session.messages(sessionID, { limit: 100 }),
+    backend.api.session.messages(sessionID, page),
     fetchProviders(backend),
   ])
   if (messagesRes.error) throw new Error(`session.messages failed: ${JSON.stringify(messagesRes.error)}`)
 
   const messages = (messagesRes.data ?? []) as ContextUsageMessage[]
-  return contextUsageFromMessages(messages, providers)
+  const usage = contextUsageFromMessages(messages, providers)
+  if (!usage) return undefined
+  const cost = await sessionCost(backend, sessionID, messages)
+  return { ...usage, cost: cost > 0 ? cost : undefined }
 }
 
 export function contextUsageFromMessages(

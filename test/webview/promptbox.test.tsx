@@ -98,6 +98,20 @@ describe("PromptBox", () => {
     expect(indicator).toHaveAttribute("data-tooltip", "50K / 200K · 25%")
   })
 
+  // The session's spend was only in the native title; the tooltip the panel
+  // draws showed tokens and percent (#792).
+  it("shows what the session has spent in the context tooltip", () => {
+    render(
+      <PromptBox
+        busy={false}
+        onSend={vi.fn()}
+        onAbort={vi.fn()}
+        contextUsage={{ tokens: 50_000, limit: 200_000, percent: 25, model: "anthropic/claude-sonnet-5-5", cost: 5.9879 }}
+      />,
+    )
+    expect(screen.getByRole("status", { name: /context 25% used/i })).toHaveAttribute("data-tooltip", "50K / 200K · 25% · $5.99 spent")
+  })
+
   it("keeps context usage out of edit composers", () => {
     render(
       <PromptBox

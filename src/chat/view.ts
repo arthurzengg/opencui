@@ -1321,11 +1321,15 @@ export class ChatView implements vscode.WebviewViewProvider {
       return
     }
     const request = ++this.contextUsageRequest
+    const conversationID = this.manager.getActiveID()
     try {
       const activeBackend = backend ?? await this.servers.ensure()
       const usage = await readContextUsage(activeBackend, sessionID)
       if (request !== this.contextUsageRequest || this.sessionID !== sessionID) return
-      this.post({ type: "contextUsage", usage })
+      // A turn that was edited or undone is gone from the server, and what it
+      // cost with it; the conversation's record keeps that (#792).
+      const spent = usage ? this.manager.trackSpend(conversationID, usage.cost ?? 0) : 0
+      this.post({ type: "contextUsage", usage: usage && { ...usage, cost: spent > 0 ? spent : undefined } })
     } catch (e) {
       log("context usage refresh failed", e)
     }

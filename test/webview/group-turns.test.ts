@@ -56,4 +56,14 @@ describe("groupTurns", () => {
     expect(out[1]?.user?.id).toBe("u1")
     expect(out[1]?.assistants.map((m) => m.id)).toEqual(["a3"])
   })
+
+  // The server stores each step of a turn as its own message; the turn's last
+  // reply shows what all of them used (#792).
+  it("gives each turn the usage of all its steps", () => {
+    const step = (id: string, cost: number): Message => ({ ...assistant(id), usage: { cost, tokens: { input: 1, output: 10, reasoning: 0 } } })
+    const out = groupTurns([user("u1"), step("a1", 0.2), step("a2", 0.05), user("u2"), step("a3", 0.01)])
+    expect(out[0]?.usage?.cost).toBeCloseTo(0.25, 6)
+    expect(out[0]?.usage?.tokens?.output).toBe(20)
+    expect(out[1]?.usage?.cost).toBe(0.01)
+  })
 })
