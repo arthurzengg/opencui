@@ -3979,9 +3979,10 @@ button:focus-visible {
 .btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ===== Glass surfaces (#790) =====
-   Every surface that floats over the transcript is frosted glass: a
-   translucent tint of its own colour over the blurred, saturated backdrop,
-   a thin edge and a highlight along the top.
+   Every surface that floats over the transcript is glass: a translucent tint
+   of its own colour over the blurred, saturated backdrop, a thin edge and a
+   highlight along the top. It is a flat pane: no gradient across it, no glow
+   inside the edge, and no more shadow than the opaque surface it replaces.
 
    Everything here overrides the opaque rules above and nothing else, so the
    two guards leave today's surfaces in place: the media query for the
@@ -4000,27 +4001,27 @@ button:focus-visible {
    no filter for the same reason. */
 :root {
   --glass-blur: 12px;
+  --glass-blur-popover: 8px;
   --glass-sat: 190%;
-  --glass-popover-alpha: 52%;
-  --glass-card-alpha: 34%;
+  --glass-popover-alpha: 44%;
+  --glass-card-alpha: 26%;
   --glass-dock-alpha: 30%;
   --glass-band-alpha: 40%;
+  --glass-radius: var(--radius-lg);
   --glass-edge: color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
-  --glass-shine: inset 0 1px 0 0 rgba(255, 255, 255, 0.09);
-  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 46%);
-  --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.36), 0 2px 6px rgba(0, 0, 0, 0.22);
-  --glass-shadow-low: 0 6px 18px rgba(0, 0, 0, 0.24);
+  --glass-shine: inset 0 1px 0 0 rgba(255, 255, 255, 0.16);
+  --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  --glass-shadow-low: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 body.vscode-light {
-  --glass-popover-alpha: 58%;
-  --glass-card-alpha: 40%;
+  --glass-popover-alpha: 50%;
+  --glass-card-alpha: 30%;
   --glass-dock-alpha: 34%;
   --glass-band-alpha: 44%;
   --glass-edge: color-mix(in srgb, var(--vscode-foreground) 11%, transparent);
   --glass-shine: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
-  --glass-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 55%);
-  --glass-shadow: 0 12px 32px rgba(24, 32, 56, 0.16), 0 2px 6px rgba(24, 32, 56, 0.08);
-  --glass-shadow-low: 0 6px 18px rgba(24, 32, 56, 0.1);
+  --glass-shadow: 0 8px 24px rgba(24, 32, 56, 0.14);
+  --glass-shadow-low: 0 4px 12px rgba(24, 32, 56, 0.08);
 }
 @media not all and (prefers-reduced-transparency: reduce) {
   /* Popovers: history, saved rules, model picker, the composer's pickers and
@@ -4038,10 +4039,10 @@ body.vscode-light {
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .agents-popover,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .mention-popover {
     --popover-row-radius: var(--radius);
-    background: var(--glass-sheen), color-mix(in srgb, var(--glass-surface) var(--glass-popover-alpha), transparent);
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    background: color-mix(in srgb, var(--glass-surface) var(--glass-popover-alpha), transparent);
+    backdrop-filter: blur(var(--glass-blur-popover)) saturate(var(--glass-sat));
     border-color: var(--glass-edge);
-    border-radius: var(--radius-lg);
+    border-radius: var(--glass-radius);
     box-shadow: var(--glass-shine), var(--glass-shadow);
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .model-picker-search-wrap {
@@ -4070,9 +4071,11 @@ body.vscode-light {
     pointer-events: none;
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user {
+    --glass-surface-blur: 4px;
     top: var(--messages-pad-top);
     background: transparent;
     border-color: transparent;
+    border-radius: var(--glass-radius);
     box-shadow: none;
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user::before {
@@ -4082,8 +4085,8 @@ body.vscode-light {
     height: auto;
     border: var(--bubble-border-width) solid var(--glass-edge);
     border-radius: inherit;
-    background: var(--glass-sheen), color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    background: color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
+    backdrop-filter: blur(var(--glass-surface-blur)) saturate(var(--glass-sat));
     box-shadow: var(--glass-shine), var(--glass-shadow-low);
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user.is-editable[data-edit-phase="view"]:hover {
@@ -4092,7 +4095,6 @@ body.vscode-light {
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user.is-editable[data-edit-phase="view"]:hover::before {
     background:
-      var(--glass-sheen),
       linear-gradient(0deg, var(--hover-bg-wash), var(--hover-bg-wash)),
       color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
   }
@@ -4101,6 +4103,7 @@ body.vscode-light {
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .user-edit-layer {
     background: transparent;
+    border-radius: var(--glass-radius);
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .user-edit-layer::before {
     /* Inside the border: the layer paints its focus border first, and a
@@ -4109,9 +4112,9 @@ body.vscode-light {
     position: absolute;
     inset: 0;
     z-index: -1;
-    border-radius: calc(var(--radius) - var(--bubble-border-width));
-    background: var(--glass-sheen), color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    border-radius: calc(var(--glass-radius) - var(--bubble-border-width));
+    background: color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
+    backdrop-filter: blur(var(--glass-surface-blur)) saturate(var(--glass-sat));
     box-shadow: var(--glass-shadow-low);
     pointer-events: none;
   }
@@ -4132,8 +4135,9 @@ body.vscode-light {
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .permission,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .question,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .review-panel {
-    background: var(--glass-sheen), color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
+    background: color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
     border-color: var(--glass-edge);
+    border-radius: var(--glass-radius);
     box-shadow: var(--glass-shine), var(--glass-shadow-low);
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--bottom:focus-within,
