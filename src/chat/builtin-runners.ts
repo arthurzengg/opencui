@@ -20,7 +20,7 @@ export type BuiltinRunnerDeps = {
   setSessionID: (id: string) => void
   hasSubscription: () => boolean
   attachSubscription: (backend: Backend, sessionID: string) => Promise<void>
-  /** Post the typed-invocation bubble and key the Agents popover for the turn. */
+  /** Post the typed-invocation bubble and key the task rows for the turn. */
   beginBuiltinTurn: (display: string) => Promise<void>
   /**
    * Settle a turn that failed after {@link beginBuiltinTurn}: a call that

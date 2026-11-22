@@ -397,10 +397,9 @@ export type SessionRetryInfo = {
 
 /**
  * Snapshot of live main-agent + subagent activity for the currently-active
- * conversation, driven by the host-side AgentTaskStore. The webview header
- * renders an `Agents` pill that is hidden when `total === 0` and breathes
- * green while `running > 0`. Clicking the pill opens a popover that lists
- * `tasks` grouped by kind.
+ * conversation, driven by the host-side AgentTaskStore. The trace reads the
+ * subagent tasks for its agent rows: which one waits on the user, which
+ * failed, which still runs after its call returned (#796).
  */
 export type AgentsStatusInfo = {
   running: number

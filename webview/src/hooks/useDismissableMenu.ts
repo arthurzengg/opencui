@@ -7,7 +7,7 @@ type DismissableMenuOptions = {
 
 /**
  * Shared open/close state for the inline popover menus in the status bar
- * (Model/Agent selector, Agents pill, Chat history). Owns either local
+ * (Model/Agent selector, Chat history). Owns either local
  * open state or a controlled open value, the ref for the outer container,
  * and the click + Escape listeners
  * that dismiss the popover when the user clicks outside or hits Escape.

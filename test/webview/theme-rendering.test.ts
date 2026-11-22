@@ -144,7 +144,7 @@ describe("state changes keep their box", () => {
 // (#756). A row laid out on its own would start its detail where its verb ends.
 describe("process trace", () => {
   it("lays every section and row out on the trace's columns", () => {
-    const onTheGrid = [".trace-edits", ".trace-reads", ".trace-others", ".trace-dispatch", ".edit-row", ".other-row"]
+    const onTheGrid = [".trace-edits", ".trace-reads", ".trace-others", ".edit-row", ".other-row"]
     expect(css).toContain(`${onTheGrid.join(",\n")} {\n  display: grid;\n  grid-template-columns: subgrid;\n  grid-column: 1 / -1;`)
   })
 

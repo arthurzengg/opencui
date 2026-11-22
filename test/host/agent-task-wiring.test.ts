@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { taskTitleFromUpdate, summarizeAgentTasks } from "../../src/agents/summary"
+import { SUBAGENT_TOOLS, taskTitleFromUpdate, summarizeAgentTasks } from "../../src/agents/summary"
+import { AGENT_TOOLS } from "../../webview/src/agent-row"
 import { SubagentDispatch, summarizePrompt } from "../../src/chat/subagent-dispatch"
 import type { ToolUpdate } from "../../src/chat/stream"
 import { AgentTaskStore, type AgentTask, type Memento } from "../../src/agents/task-store"
@@ -79,8 +80,7 @@ describe("summarizeAgentTasks", () => {
   })
 
   it("keeps total === tasks.length and total === running + waiting + error", () => {
-    // AgentActivity renders nothing at total 0 and renders the popover rows
-    // unconditionally past that guard — both rely on these two identities.
+    // The counts describe exactly the rows sent: settled tasks are in neither.
     const result = summarizeAgentTasks([
       task({ id: "a", status: "running" }),
       task({ id: "b", status: "waiting" }),
@@ -90,6 +90,12 @@ describe("summarizeAgentTasks", () => {
     ])
     expect(result.total).toBe(result.tasks.length)
     expect(result.total).toBe(result.running + result.waiting + result.error)
+  })
+
+  // The webview draws a subagent's call as an agent row, the host tracks it
+  // as a task: both must agree on which calls those are (#796).
+  it("names the same dispatch calls as the webview", () => {
+    expect([...AGENT_TOOLS].sort()).toEqual([...SUBAGENT_TOOLS].sort())
   })
 
   // The trace finds a subagent's row by the call that started it (#796).

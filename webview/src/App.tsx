@@ -3,13 +3,10 @@ import { useChatState } from "./hooks/useChatState"
 import type { Message } from "./hooks/useChatState"
 import { useQueueFlush } from "./hooks/useQueueFlush"
 import { useEscapeToStop } from "./hooks/useEscapeToStop"
-import { useEntrance } from "./hooks/useEntrance"
-import { useLatch } from "./hooks/useLatch"
 import { createBottomGlide, nestedScrollerTakesWheelUp, prefersReducedMotion } from "./bottom-glide"
 import type { Attachment } from "./protocol"
 import { MessageView } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
-import { hasSubagentWork } from "./components/AgentActivity"
 import { QueuedMessages } from "./components/QueuedMessages"
 import { StatusBar, type HeaderPopoverID } from "./components/StatusBar"
 import { PermissionDialog } from "./components/PermissionDialog"
@@ -18,6 +15,7 @@ import { ReviewPanel } from "./components/ReviewPanel"
 import { IndexStatus } from "./components/IndexStatus"
 import { promptHistory } from "./prompt-history"
 import { turnUsage } from "./usage-format"
+import { AgentTasksContext } from "./trace-context"
 import { startRefraction } from "./glass-refraction"
 
 export default function App() {
@@ -199,27 +197,17 @@ export default function App() {
   // not on every coalesced streaming frame.
   const turns = useMemo(() => groupTurns(state.messages), [state.messages])
   const lastTurnKey = turns[turns.length - 1]?.key
-  // Main-only turns get no pill and keep their breathing thinking line: the
-  // line goes quiet only in the message that hosts the pill. Subagents come
-  // in waves with the main agent thinking between them, so once one has run
-  // the pill stays for the rest of the turn; the key goes null when the turn
-  // settles (no rows at all), which drops the latch.
-  const showAgentActivity = useLatch(
-    (state.agentsStatus?.total ?? 0) > 0 ? lastTurnKey ?? null : null,
-    hasSubagentWork(state.agentsStatus),
-  )
-  const { busy, activeProcessID, agentActivityMessageID } = useMemo(() => {
+  const { busy, activeProcessID } = useMemo(() => {
     const busy = state.busy || state.messages.some((m) => m.pending)
     const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
-    const agentActivityMessageID = showAgentActivity
-      ? activeProcessID ?? state.messages.findLast((m) => m.role === "assistant")?.id
-      : undefined
-    return { busy, activeProcessID, agentActivityMessageID }
-  }, [state.messages, state.busy, showAgentActivity])
-  // The pill follows the active assistant message, so it remounts at every
-  // step of a turn; only the message it appeared in plays the entrance (#674).
-  const agentActivityEntering = useEntrance(agentActivityMessageID ?? null)
+    return { busy, activeProcessID }
+  }, [state.messages, state.busy])
   const promptHistoryEntries = useMemo(() => promptHistory(state.messages), [state.messages])
+  // The agent rows in the trace read their live state from these (#796).
+  const agentTasks = useMemo(
+    () => (state.agentsStatus?.tasks ?? []).filter((task) => task.kind === "subagent"),
+    [state.agentsStatus],
+  )
 
   // Active exactly when the Stop button is clickable.
   useEscapeToStop(busy && !state.aborting, abort)
@@ -243,7 +231,7 @@ export default function App() {
   useEffect(() => () => glide.stop(), [glide])
 
   // Height that changes without a message change (the Process box folding
-  // between steps, the Agents pill) would otherwise wait for the next chunk
+  // between steps, an agent row gaining its second line) would otherwise wait for the next chunk
   // and land as one jump. ResizeObserver reports after layout and before
   // paint. Only while a turn is live: when idle, expanding a block near the
   // bottom should grow downward, not push the transcript up.
@@ -319,6 +307,7 @@ export default function App() {
   } as CSSProperties
 
   return (
+    <AgentTasksContext.Provider value={agentTasks}>
     <div className="app" style={appStyle}>
       <StatusBar
         connected={state.connected}
@@ -456,8 +445,6 @@ export default function App() {
                 onReviewFile={openReviewFile}
                 onEditMessage={editMessage}
                 onRetry={handleRetry}
-                agentActivity={m.id === agentActivityMessageID ? state.agentsStatus : undefined}
-                agentActivityEntering={m.id === agentActivityEntering}
                 retry={m.id === activeProcessID ? state.retry : undefined}
                 onOpenLink={openLink}
               />
@@ -525,6 +512,7 @@ export default function App() {
         )}
       </div>
     </div>
+    </AgentTasksContext.Provider>
   )
 }
 

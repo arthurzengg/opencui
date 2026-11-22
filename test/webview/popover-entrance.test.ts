@@ -38,7 +38,7 @@ function animationOf(list: Rule[], selector: string): string | undefined {
   return value
 }
 
-const HEADER_POPOVERS = [".history-popover", ".model-picker-popover", ".agents-popover"]
+const HEADER_POPOVERS = [".history-popover", ".model-picker-popover"]
 
 describe("popover entrance (#670)", () => {
   it("fades the popover in from a small offset", () => {

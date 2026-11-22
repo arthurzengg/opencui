@@ -4,7 +4,7 @@ import { SubagentTracker } from "../agents/subagent-tracker"
 import type { ToolUpdate } from "./stream"
 
 /**
- * Reduce a user prompt to a short title for the Agents popover. Lives
+ * Reduce a user prompt to a short title for its Main task row. Lives
  * here because `recordMainTaskStart` is the only host-side caller.
  */
 export function summarizePrompt(text: string): string {

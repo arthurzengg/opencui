@@ -13,7 +13,7 @@ export type AgentTaskKind = "main" | "subagent"
 
 /**
  * Subset of opencode/omo metadata we mirror onto a task record so the
- * Agents popover can show *what kind* of subagent is running and on
+ * agent rows can show *what kind* of subagent is running and on
  * which model. All fields are best-effort — opencode's built-in `task`
  * tool may not populate every field, and third-party plugins might
  * write nothing at all. Consumers MUST treat each field as optional.
@@ -77,7 +77,7 @@ export type ActiveStatus = "running" | "waiting"
 export const ACTIVE_STATUSES: ReadonlyArray<AgentTaskStatus> = ["running", "waiting"]
 
 /**
- * Statuses the Agents popover shows. Active work plus `error` so a
+ * Statuses that reach the webview. Active work plus `error` so a
  * failed task stays visible until the user starts the next turn. Exported
  * so call sites (e.g. `summarizeAgentTasks` in `src/agents/summary.ts`) iterate
  * the same set and `isAttentionStatus` narrows the union, instead of
@@ -187,10 +187,10 @@ export class AgentTaskStore {
    * Rows loaded as running/waiting belong to a previous extension-host
    * process. The panel spawns its own opencode server, so no turn survives
    * the host — whatever these rows were tracking died with it. Settle them
-   * to `cancelled` at load; without this, a reload mid-turn left the pill
-   * pulsing "N running" with live growing timers until the next send in
-   * that conversation. Terminal rows (including `error`, which the popover
-   * deliberately keeps until the next turn) are untouched.
+   * to `cancelled` at load; without this, a reload mid-turn left the rows
+   * reading "running" with live growing timers until the next send in
+   * that conversation. Terminal rows (including `error`, which is
+   * deliberately kept until the next turn) are untouched.
    */
   private settleLoadedActive(): void {
     const now = Date.now()

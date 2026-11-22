@@ -1,8 +1,8 @@
-import { Fragment, memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { RetryStatus } from "./RetryStatus"
 import { useLivePhase } from "../hooks/useLivePhase"
 import type { Block, Message } from "../hooks/useChatState"
-import type { AgentsStatusInfo, Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit, SessionRetryInfo } from "../protocol"
+import type { Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit, SessionRetryInfo } from "../protocol"
 import { findTokenRanges, makeAttachmentLabel } from "../mention-tokens"
 import {
   answerStartIndex,
@@ -22,9 +22,10 @@ import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
 import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace } from "./ToolCard"
+import { agentsNote } from "../agent-row"
+import { AgentTasksContext, TurnContext } from "../trace-context"
 import { ICON_SIZE } from "../design-tokens"
 import { sameUsage, usageBreakdown, usageDetail, usageSummary, type UsageRow } from "../usage-format"
-import { AgentActivity } from "./AgentActivity"
 
 /**
  * Discriminated edit lifecycle for user-message bubbles.
@@ -52,8 +53,6 @@ type MessageViewProps = {
   onBeginEdit?: (id: string) => void
   onEndEdit?: (id: string) => void
   onRetry?: (assistantID: string) => void
-  agentActivity?: AgentsStatusInfo
-  agentActivityEntering?: boolean
   /** Provider retry opencode is waiting on; rendered in place of the thinking indicator (#611). */
   retry?: SessionRetryInfo
   searchFiles?: (query: string) => Promise<FileSearchHit[]>
@@ -80,8 +79,6 @@ export function sameMessageViewProps(prev: MessageViewProps, next: MessageViewPr
     prev.processOnly === next.processOnly &&
     prev.busy === next.busy &&
     sameUsage(prev.turnUsage, next.turnUsage) &&
-    prev.agentActivity === next.agentActivity &&
-    prev.agentActivityEntering === next.agentActivityEntering &&
     prev.retry === next.retry &&
     prev.conversations === next.conversations &&
     prev.activeConversationID === next.activeConversationID
@@ -101,8 +98,6 @@ function MessageViewComponent({
   onBeginEdit,
   onEndEdit,
   onRetry,
-  agentActivity,
-  agentActivityEntering,
   retry,
   searchFiles,
   listDir,
@@ -138,11 +133,10 @@ function MessageViewComponent({
   return (
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
-      {renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}
-      <AgentActivity status={agentActivity} entering={agentActivityEntering} />
+      <TurnScope message={message}>{renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}</TurnScope>
       {retry && message.pending && <RetryStatus retry={retry} onOpenLink={onOpenLink} />}
       {!retry && message.pending && message.blocks.length === 0 && (
-        <ThinkingLine quiet={(agentActivity?.total ?? 0) > 0} />
+        <ThinkingLine />
       )}
       {(() => {
         // Stopped state overrides error: a message can carry both
@@ -559,6 +553,14 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
   )
 }
 
+/** Tells the agent rows inside whether this message is still being written and whether the user stopped it (#796). */
+function TurnScope({ message, children }: { message: Message; children: ReactNode }) {
+  const live = Boolean(message.pending)
+  const stopped = Boolean(message.stopped) || /^aborted$/i.test(message.error ?? "")
+  const turn = useMemo(() => ({ live, stopped }), [live, stopped])
+  return <TurnContext.Provider value={turn}>{children}</TurnContext.Provider>
+}
+
 function ProcessPanel({
   blocks,
   pending,
@@ -595,6 +597,9 @@ function ProcessPanel({
   const headline = processTitle(blocks, pending)
   const summary = pending ? undefined : processSummary(blocks)
   const title = summary ?? headline.title
+  // A live block that is folded hides its agents' rows; its head says how many are at work (#796).
+  const tasks = useContext(AgentTasksContext)
+  const agents = pending && !open ? agentsNote(tasks) : undefined
   // The head shows that block's first line, so the body carries only the rest.
   const headlined = summary === undefined ? headline.source : -1
 
@@ -602,6 +607,7 @@ function ProcessPanel({
     <div className={`process ${open ? "is-open" : ""}`}>
       <button className="process-head" onClick={toggle} aria-expanded={open}>
         <span className="process-title">{title}</span>
+        {agents && <span className={`process-agents${agents.waiting ? " is-waiting" : ""}`}>{agents.text}</span>}
         <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
       </button>
       {/* The clip wrapper stays mounted; the grid clips it to 0fr when
@@ -620,15 +626,11 @@ function ProcessPanel({
  * ProcessPanel there is no openKey/defaultOpen churn: it starts collapsed
  * and stays wherever the user toggled it.
  */
-/**
- * The pre-token placeholder. Quiet beside the Agents pill, whose dot is
- * already breathing for this turn; on its own it breathes on the shared
- * clock (#621).
- */
-function ThinkingLine({ quiet }: { quiet: boolean }) {
-  const phase = useLivePhase(!quiet)
+/** The pre-token placeholder. It breathes on the shared clock (#621). */
+function ThinkingLine() {
+  const phase = useLivePhase(true)
   return (
-    <div className={`thinking-dots${quiet ? "" : " live-breathe"}`} style={phase} role="status" aria-label="Thinking">
+    <div className="thinking-dots live-breathe" style={phase} role="status" aria-label="Thinking">
       thinking
     </div>
   )

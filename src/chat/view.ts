@@ -2092,7 +2092,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
 
     // A command is a real main-agent turn (it can spawn subagents), so it must
-    // key the Agents popover identically to a prompt. Finish is handled by the
+    // key its task rows identically to a prompt. Finish is handled by the
     // shared SSE onAssistantEnd / onSessionIdle paths.
     await this.subagentDispatch.recordMainTaskStart(display)
 
@@ -2162,7 +2162,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     await this.builtinRunners.run(command, backend)
   }
 
-  /** Post the typed-invocation bubble and key the Agents popover for a built-in turn. */
+  /** Post the typed-invocation bubble and key the task rows for a built-in turn. */
   private async beginBuiltinTurn(display: string) {
     this.turnActive = true
     this.redoStack = [] // a /compact or /init turn diverges the history
