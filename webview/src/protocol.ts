@@ -74,6 +74,8 @@ export type ToolUpdate = {
   metadata?: Record<string, unknown>
   output?: string
   error?: string
+  /** When the call started and ended, in epoch ms, as the server recorded it. */
+  time?: { start: number; end?: number }
 }
 
 export type QuestionOption = { label: string; description: string }
@@ -334,14 +336,18 @@ export type IndexStatusInfo = {
 }
 
 /**
- * One agent task as seen by the webview popover. The host strips
- * conversationID / sessionID / messageID / parentTaskID / callID before
- * sending because the popover only needs to render — it doesn't action
- * on those fields.
+ * One agent task as the webview sees it. The host strips conversationID /
+ * sessionID / messageID / parentTaskID before sending: the webview only
+ * renders these.
  */
 export type AgentsTaskInfo = {
   id: string
   kind: "main" | "subagent"
+  /**
+   * The parent's call that started a subagent, when the host knows it. The
+   * trace finds the task's row by it (#796).
+   */
+  callID?: string
   title: string
   /**
    * Only currently-active states reach the wire. The host filters out

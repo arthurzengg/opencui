@@ -10,6 +10,14 @@ import { relativeToCwd } from "./paths"
  * workspace folder rather than opencode's internal directory (which can differ
  * when opencode runs against a worktree root).
  */
+/** A tool part's `state.time`, kept only when it holds a start. Both server lines send `{ start, end? }`. */
+export function callTime(value: unknown): ToolUpdate["time"] {
+  if (!value || typeof value !== "object") return undefined
+  const { start, end } = value as { start?: unknown; end?: unknown }
+  if (typeof start !== "number") return undefined
+  return typeof end === "number" ? { start, end } : { start }
+}
+
 export function toWire(update: ToolUpdate, cwd: string): WireToolUpdate {
   const input = update.input ? { ...update.input } : undefined
   const metadata = update.metadata ? normalizeWireMetadata(update.metadata, cwd) : undefined
@@ -36,6 +44,7 @@ export function toWire(update: ToolUpdate, cwd: string): WireToolUpdate {
     metadata,
     output: update.output,
     error: update.error,
+    time: update.time,
   }
 }
 

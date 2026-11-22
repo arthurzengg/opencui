@@ -92,6 +92,15 @@ describe("summarizeAgentTasks", () => {
     expect(result.total).toBe(result.running + result.waiting + result.error)
   })
 
+  // The trace finds a subagent's row by the call that started it (#796).
+  it("sends a subagent's dispatching call, and none for the main row", () => {
+    const result = summarizeAgentTasks([
+      task({ id: "main:c:s:t", callID: "call_main" }),
+      task({ id: "subagent:child:ses_c1", kind: "subagent", callID: "call_task", subagent: "explore" }),
+    ])
+    expect(result.tasks.map((t) => t.callID)).toEqual([undefined, "call_task"])
+  })
+
   it("drops cancelled tasks (user-initiated aborts) and completed tasks", () => {
     const result = summarizeAgentTasks([
       task({ id: "a", status: "cancelled" }),

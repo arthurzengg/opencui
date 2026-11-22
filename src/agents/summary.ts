@@ -61,6 +61,7 @@ export function summarizeAgentTasks(
     items.push({
       id: task.id,
       kind: task.kind,
+      callID: task.kind === "subagent" ? task.callID : undefined,
       title: task.title,
       status: task.status,
       error: task.error,

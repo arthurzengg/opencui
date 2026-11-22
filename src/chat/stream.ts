@@ -1,6 +1,7 @@
 import type { Backend } from "../server"
 import type { SessionRetryInfo } from "../protocol"
 import { log } from "../output"
+import { callTime } from "./wire-format"
 
 export type ToolUpdate = {
   callID: string
@@ -11,6 +12,8 @@ export type ToolUpdate = {
   metadata?: Record<string, unknown>
   output?: string
   error?: string
+  /** When the call started and ended, in epoch ms, as the server recorded it. */
+  time?: { start: number; end?: number }
 }
 
 export type PermissionRequest = {
@@ -615,6 +618,7 @@ export function subscribeSession(
                 metadata: part.state.metadata,
                 output: part.state.output,
                 error: part.state.error,
+                time: callTime(part.state.time),
               },
             })
           }
@@ -856,6 +860,7 @@ export function subscribeSession(
           metadata: part.state.metadata,
           output: part.state.output,
           error: part.state.error,
+          time: callTime(part.state.time),
         })
       }
       if (isTerminal) maybeFlushPendingFinish(messageID)

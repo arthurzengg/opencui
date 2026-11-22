@@ -1,6 +1,6 @@
 import type { ChatBlock, ChatMessage, ExternalSessionSummary } from "../protocol"
 import { relativeToCwd } from "./paths"
-import { toWire } from "./wire-format"
+import { callTime, toWire } from "./wire-format"
 import type { ToolUpdate } from "./stream"
 
 /** The slice of the SDK's Session shape this module consumes. */
@@ -36,6 +36,7 @@ type ServerPart = {
     metadata?: Record<string, unknown>
     output?: string
     error?: string
+    time?: unknown
   }
   files?: unknown[]
   mime?: string
@@ -177,6 +178,7 @@ function assistantBlocks(parts: ServerPart[], cwd: string): ChatBlock[] {
           metadata: state.metadata,
           output: state.output,
           error: state.error,
+          time: callTime(state.time),
         }
         blocks.push({ type: "tool", update: toWire(update, cwd) })
         break
