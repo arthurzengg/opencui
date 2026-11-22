@@ -3984,6 +3984,12 @@ button:focus-visible {
    highlight along the top. It is a flat pane: no gradient across it, no glow
    inside the edge, and no more shadow than the opaque surface it replaces.
 
+   The pinned question also bends its backdrop a little along the edge. CSS
+   cannot do that, so glass-refraction.ts builds an SVG filter for each
+   bubble's exact box and hands it over as `--glass-refraction`; until it is
+   set the bubble is plain frosted glass. The popovers and the dock's cards
+   do not bend: their blur hides a bend this small.
+
    Everything here overrides the opaque rules above and nothing else, so the
    two guards leave today's surfaces in place: the media query for the
    reduced-transparency setting, and the selector prefix for high-contrast
@@ -4071,6 +4077,8 @@ body.vscode-light {
     pointer-events: none;
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user {
+    /* The blur under the bend. glass-refraction.ts reads it, and builds no
+       filter where this rule does not apply. */
     --glass-surface-blur: 4px;
     top: var(--messages-pad-top);
     background: transparent;
@@ -4086,7 +4094,7 @@ body.vscode-light {
     border: var(--bubble-border-width) solid var(--glass-edge);
     border-radius: inherit;
     background: color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
-    backdrop-filter: blur(var(--glass-surface-blur)) saturate(var(--glass-sat));
+    backdrop-filter: var(--glass-refraction, blur(var(--glass-surface-blur)) saturate(var(--glass-sat)));
     box-shadow: var(--glass-shine), var(--glass-shadow-low);
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg.role-user.is-editable[data-edit-phase="view"]:hover {

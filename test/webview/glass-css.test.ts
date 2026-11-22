@@ -44,4 +44,11 @@ describe("glass surfaces (#790)", () => {
     expect(declarations(".msg.role-user::before")).toContain("backdrop-filter")
     expect(declarations(".user-edit-layer::before")).toContain("backdrop-filter")
   })
+
+  // The two names glass-refraction.ts shares with the stylesheet: a rename on
+  // one side leaves the pinned question without its bend and nothing fails.
+  it("names the blur the refraction script reads and takes its filter back", () => {
+    expect(declarations(".msg.role-user")).toMatch(/--glass-surface-blur: \d/)
+    expect(declarations(".msg.role-user::before")).toContain("backdrop-filter: var(--glass-refraction,")
+  })
 })

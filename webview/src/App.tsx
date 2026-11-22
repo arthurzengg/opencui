@@ -17,8 +17,10 @@ import { QuestionDialog } from "./components/QuestionDialog"
 import { ReviewPanel } from "./components/ReviewPanel"
 import { IndexStatus } from "./components/IndexStatus"
 import { promptHistory } from "./prompt-history"
+import { startRefraction } from "./glass-refraction"
 
 export default function App() {
+  useEffect(() => startRefraction(document.body), [])
   const {
     state,
     send,
