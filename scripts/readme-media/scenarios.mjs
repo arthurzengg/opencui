@@ -58,14 +58,31 @@ export async function seed(page, { selection = SELECTION, conversations = CONVER
   await page.wait(300)
 }
 
-/** One finished turn, so the composer sits in its bottom dock. */
+const PRIOR_ANSWER = `In \`src/chat/stream.ts\`: \`subscribe()\` opens \`/global/event\` and normalizes each event before the reducer sees it.
+
+- **Routing**: events are keyed by session, so a subagent's events reach the same router.
+- **Reconnect**: a dropped stream is reopened and the session state is read back.
+
+\`\`\`ts
+const stream = await backend.api.events({ signal })
+for await (const event of stream) route(event)
+\`\`\`
+
+Nothing in the webview talks to the server; the host forwards what the panel needs.`
+
+/**
+ * One finished turn, so the composer sits in its bottom dock. The answer is
+ * longer than the panel: the surfaces are glass, and a glass surface over an
+ * empty chat looks like an opaque one.
+ */
 async function priorTurn(page) {
   await page.host({ type: "userMessage", id: "u0", text: "Where is the SSE subscription set up?" })
   await page.host({ type: "assistantStart", id: "a0" })
-  await page.host({ type: "textDelta", id: "a0", delta: "In `src/chat/stream.ts`: `subscribe()` opens `/global/event` and normalizes each event before the reducer sees it." })
+  await page.host({ type: "textDelta", id: "a0", delta: PRIOR_ANSWER })
   await page.host({ type: "assistantDone", id: "a0", usage: { cost: 0.03, tokens: { input: 4200, output: 160, reasoning: 0 } } })
   await page.host({ type: "sessionIdle" })
-  await page.wait(400)
+  // The code block's grammar loads after the text; recording starts once it has coloured.
+  await page.wait(900)
 }
 
 async function waitFor(page, expression, timeout = 15000) {
@@ -265,14 +282,14 @@ export const SCENARIOS = [
       await seed(page)
       await page.host({ type: "userMessage", id: "u0", text: "Explain the abort flow" })
       await page.host({ type: "assistantStart", id: "a0" })
-      await page.host({ type: "textDelta", id: "a0", delta: "Stop is two-sided: the host flags `aborting` and the reducer drops late deltas." })
+      await page.host({ type: "textDelta", id: "a0", delta: ANSWER })
       await page.host({
         type: "assistantDone",
         id: "a0",
         usage: { model: "anthropic/claude-opus-5-5", cost: 0.1184, tokens: { input: 18200, output: 940, reasoning: 310, cacheRead: 52000, cacheWrite: 1200 } },
       })
       await page.host({ type: "sessionIdle" })
-      await page.wait(500)
+      await page.wait(900)
       const composer = await page.rect("textarea")
       await page.move(composer.x + 60, composer.y + 10, 10)
       await page.startRecording()
