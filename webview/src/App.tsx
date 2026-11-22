@@ -17,6 +17,7 @@ import { QuestionDialog } from "./components/QuestionDialog"
 import { ReviewPanel } from "./components/ReviewPanel"
 import { IndexStatus } from "./components/IndexStatus"
 import { promptHistory } from "./prompt-history"
+import { turnUsage } from "./usage-format"
 import { startRefraction } from "./glass-refraction"
 
 export default function App() {
@@ -450,6 +451,7 @@ export default function App() {
                 message={m}
                 processOpen={m.id === activeProcessID}
                 processOnly={m.pending || i < turn.assistants.length - 1}
+                turnUsage={i === turn.assistants.length - 1 ? turn.usage : undefined}
                 busy={busy}
                 onReviewFile={openReviewFile}
                 onEditMessage={editMessage}
@@ -526,7 +528,8 @@ export default function App() {
   )
 }
 
-type Turn = { user?: Message; assistants: Message[]; key: string }
+/** `usage` is what the turn's steps used together; its last reply shows it. */
+type Turn = { user?: Message; assistants: Message[]; key: string; usage?: Message["usage"] }
 
 /**
  * Group a flat message list into per-turn buckets: each user message starts a
@@ -548,5 +551,6 @@ export function groupTurns(messages: Message[]): Turn[] {
     }
   }
   if (current) turns.push(current)
+  for (const turn of turns) turn.usage = turnUsage(turn.assistants.map((m) => m.usage))
   return turns
 }

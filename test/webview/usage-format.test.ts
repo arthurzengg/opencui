@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { tokenTotal, usageSummary, usageBreakdown, usageDetail } from "../../webview/src/usage-format"
+import { tokenTotal, turnUsage, usageSummary, usageBreakdown, usageDetail } from "../../webview/src/usage-format"
 
 describe("usageSummary", () => {
   it("shows only the cost when the model reports one", () => {
@@ -60,5 +60,27 @@ describe("usageBreakdown", () => {
 describe("usageDetail", () => {
   it("flattens the same rows into the accessible label", () => {
     expect(usageDetail({ model: "m", cost: 0.0051, tokens: { input: 100, output: 50, reasoning: 0 } })).toBe("m, Cost $0.0051, Tokens 150, Input 100, Output 50")
+  })
+})
+
+// Recorded from a 1.18.30 session: three steps of one turn, each an assistant
+// message with its own usage. The provider billed all three (#792).
+describe("turnUsage", () => {
+  const steps = [
+    { model: "anthropic/claude-sonnet-5-5", cost: 0.0377, tokens: { input: 4, output: 327, reasoning: 369, cacheRead: 94721, cacheWrite: 8513 } },
+    { model: "anthropic/claude-sonnet-5-5", cost: 0.0579, tokens: { input: 2, output: 167, reasoning: 650, cacheRead: 103234, cacheWrite: 15770 } },
+    { model: "anthropic/claude-sonnet-5-5", cost: 0.0248, tokens: { input: 2, output: 627, reasoning: 296, cacheRead: 129929, cacheWrite: 1041 } },
+  ]
+
+  it("adds up every step of the turn, not only the last", () => {
+    const usage = turnUsage(steps)!
+    expect(usage.cost).toBeCloseTo(0.1204, 6)
+    expect(usage.tokens).toEqual({ input: 8, output: 1121, reasoning: 1315, cacheRead: 327884, cacheWrite: 25324 })
+    expect(usage.model).toBe("anthropic/claude-sonnet-5-5")
+  })
+
+  it("skips a step that reported nothing, such as a stopped one", () => {
+    expect(turnUsage([steps[0], undefined, steps[2], undefined])!.cost).toBeCloseTo(0.0625, 6)
+    expect(turnUsage([undefined])).toBeUndefined()
   })
 })

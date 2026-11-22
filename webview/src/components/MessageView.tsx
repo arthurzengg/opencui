@@ -23,7 +23,7 @@ import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
 import { ToolTrace } from "./ToolCard"
 import { ICON_SIZE } from "../design-tokens"
-import { usageBreakdown, usageDetail, usageSummary, type UsageRow } from "../usage-format"
+import { sameUsage, usageBreakdown, usageDetail, usageSummary, type UsageRow } from "../usage-format"
 import { AgentActivity } from "./AgentActivity"
 
 /**
@@ -45,6 +45,8 @@ type MessageViewProps = {
   processOpen: boolean
   processOnly: boolean
   busy?: boolean
+  /** What the whole turn used, given to its last reply: the chip shows the turn, not its last step (#792). */
+  turnUsage?: Message["usage"]
   onReviewFile?: (path: string) => void
   onEditMessage?: (id: string, text: string, mentions?: string[], attachments?: Attachment[], conversationMentions?: ConversationMention[]) => void
   onBeginEdit?: (id: string) => void
@@ -77,6 +79,7 @@ export function sameMessageViewProps(prev: MessageViewProps, next: MessageViewPr
     prev.processOpen === next.processOpen &&
     prev.processOnly === next.processOnly &&
     prev.busy === next.busy &&
+    sameUsage(prev.turnUsage, next.turnUsage) &&
     prev.agentActivity === next.agentActivity &&
     prev.agentActivityEntering === next.agentActivityEntering &&
     prev.retry === next.retry &&
@@ -92,6 +95,7 @@ function MessageViewComponent({
   processOpen,
   processOnly,
   busy,
+  turnUsage,
   onReviewFile,
   onEditMessage,
   onBeginEdit,
@@ -178,7 +182,7 @@ function MessageViewComponent({
         working at the same time. Once the conversation settles, the chips
         all appear at once for review.
       */}
-      {!busy && !processOnly && message.usage && <UsageChip usage={message.usage} />}
+      {!busy && !processOnly && (turnUsage ?? message.usage) && <UsageChip usage={(turnUsage ?? message.usage)!} />}
     </div>
   )
 }

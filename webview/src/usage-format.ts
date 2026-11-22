@@ -20,6 +20,51 @@ export function usageSummary(usage: UsageDelta | undefined): string | undefined 
   return usage.model || undefined
 }
 
+/**
+ * What a whole turn used. The server stores each step of a turn as a message
+ * of its own, with its own usage, and the provider bills every one of them;
+ * the last step alone is a small part of a turn that ran tools.
+ */
+export function turnUsage(steps: ReadonlyArray<UsageDelta | undefined>): UsageDelta | undefined {
+  const used = steps.filter((step): step is UsageDelta => step !== undefined)
+  const last = used[used.length - 1]
+  if (!last || used.length === 1) return last
+  const priced = used.filter((step) => typeof step.cost === "number")
+  const counted = used.flatMap((step) => (step.tokens ? [step.tokens] : []))
+  const sum = (pick: (tokens: NonNullable<UsageDelta["tokens"]>) => number | undefined) =>
+    counted.reduce((total, tokens) => total + (pick(tokens) ?? 0), 0)
+  return {
+    model: last.model,
+    providerID: last.providerID,
+    modelID: last.modelID,
+    cost: priced.length ? priced.reduce((total, step) => total + (step.cost ?? 0), 0) : undefined,
+    tokens: counted.length
+      ? {
+          input: sum((t) => t.input),
+          output: sum((t) => t.output),
+          reasoning: sum((t) => t.reasoning),
+          cacheRead: sum((t) => t.cacheRead),
+          cacheWrite: sum((t) => t.cacheWrite),
+        }
+      : undefined,
+  }
+}
+
+/** Whether two usages show the same figures. A turn's usage is summed anew on every render. */
+export function sameUsage(a: UsageDelta | undefined, b: UsageDelta | undefined): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return (
+    a.model === b.model &&
+    a.cost === b.cost &&
+    a.tokens?.input === b.tokens?.input &&
+    a.tokens?.output === b.tokens?.output &&
+    a.tokens?.reasoning === b.tokens?.reasoning &&
+    a.tokens?.cacheRead === b.tokens?.cacheRead &&
+    a.tokens?.cacheWrite === b.tokens?.cacheWrite
+  )
+}
+
 export type UsageRow = { label: string; value: string }
 
 export type UsageBreakdown = {
