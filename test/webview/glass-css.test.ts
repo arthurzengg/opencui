@@ -41,8 +41,28 @@ describe("glass surfaces (#790)", () => {
     for (const host of [".msg.role-user", ".user-edit-layer", ".promptbox--bottom"]) {
       expect(declarations(host)).not.toContain("backdrop-filter")
     }
-    expect(declarations(".msg.role-user::before")).toContain("backdrop-filter")
-    expect(declarations(".user-edit-layer::before")).toContain("backdrop-filter")
+    for (const glass of [".msg.role-user::before", ".user-edit-layer::before", ".promptbox--bottom::before"]) {
+      expect(declarations(glass)).toContain("backdrop-filter")
+    }
+  })
+
+  // The owner asked for the blur above the composer to go: the transcript
+  // stays sharp down to the cards, and each card blurs what is behind it.
+  it("switches the dock's blur ramp off", () => {
+    expect(declarations(".bottom-dock-glass")).not.toContain("backdrop-filter")
+    for (const layer of [".bottom-dock-glass::before", ".bottom-dock-glass::after"]) {
+      expect(declarations(layer)).toContain("display: none")
+    }
+  })
+
+  // A card that animates in is below full opacity on the way, which makes it
+  // a backdrop root: a filter on a child would blur nothing until the
+  // animation ends, and the transcript would snap out of focus behind it.
+  it("puts the filter of a card that animates in on the card itself", () => {
+    for (const card of [".bottom-dock > .permission", ".bottom-dock > .question", ".queued-messages"]) {
+      expect(declarations(card)).toContain("backdrop-filter")
+    }
+    expect(declarations(".queued-row")).not.toContain("backdrop-filter")
   })
 
   // The two names glass-refraction.ts shares with the stylesheet: a rename on

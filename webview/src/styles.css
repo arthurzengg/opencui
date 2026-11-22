@@ -3990,28 +3990,27 @@ button:focus-visible {
    set the bubble is plain frosted glass. The popovers and the dock's cards
    do not bend: their blur hides a bend this small.
 
+   Nothing is blurred outside a surface. The transcript stays sharp up to
+   each edge, the dock's blur ramp included: it is switched off here.
+
    Everything here overrides the opaque rules above and nothing else, so the
    two guards leave today's surfaces in place: the media query for the
    reduced-transparency setting, and the selector prefix for high-contrast
    themes. Tints start from the panel colour because a theme's input colour
    may itself be translucent (#528).
 
-   A surface that floats alone carries its own backdrop-filter. A card in the
-   bottom dock only turns translucent, because the dock already blurs
-   everything under it.
-
    A backdrop-filter makes its element the backdrop root of everything inside
    it and the containing block of its fixed descendants. The pinned question
-   holds the image preview and, while it is edited, the pickers, so its
-   filter is on `::before` and never on the element. The dock's cards carry
-   no filter for the same reason. */
+   and the composer hold the image preview and the pickers, so their filter
+   is on `::before` and never on the element. Every other surface carries
+   its own. */
 :root {
   --glass-blur: 12px;
   --glass-blur-popover: 8px;
   --glass-sat: 190%;
   --glass-popover-alpha: 44%;
   --glass-card-alpha: 26%;
-  --glass-dock-alpha: 30%;
+  --glass-dock-alpha: 48%;
   --glass-band-alpha: 40%;
   --glass-radius: var(--radius-lg);
   --glass-edge: color-mix(in srgb, var(--vscode-foreground) 15%, transparent);
@@ -4022,7 +4021,7 @@ button:focus-visible {
 body.vscode-light {
   --glass-popover-alpha: 50%;
   --glass-card-alpha: 30%;
-  --glass-dock-alpha: 34%;
+  --glass-dock-alpha: 54%;
   --glass-band-alpha: 44%;
   --glass-edge: color-mix(in srgb, var(--vscode-foreground) 11%, transparent);
   --glass-shine: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
@@ -4126,29 +4125,59 @@ body.vscode-light {
     box-shadow: var(--glass-shadow-low);
     pointer-events: none;
   }
-  /* Bottom dock: its blur does the work, and the cards on it turn
-     translucent. The composer looks the same before the first message. */
+  /* Bottom dock. The transcript stays sharp down to the cards: the blur ramp
+     above the dock is off and each card blurs what is behind it. What is
+     left of the dock's layer is a fade to the panel colour under the
+     composer's lower edge, so the transcript does not show again in the gap
+     below it. */
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock-glass {
-    background: linear-gradient(
-      to bottom,
-      transparent,
-      color-mix(in srgb, var(--color-bg-panel) var(--glass-dock-alpha), transparent) var(--bottom-dock-fade)
-    );
+    top: auto;
+    height: calc(var(--composer-edge-gap) + 24px);
+    background: linear-gradient(to bottom, transparent, var(--color-bg-panel) 24px);
   }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock-glass::before,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock-glass::after {
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    display: none;
   }
-  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--bottom,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--top .promptbox-input,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .permission,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .question,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .review-panel {
-    background: color-mix(in srgb, var(--color-bg-panel) var(--glass-card-alpha), transparent);
+    background: color-mix(in srgb, var(--color-bg-panel) var(--glass-dock-alpha), transparent);
     border-color: var(--glass-edge);
     border-radius: var(--glass-radius);
     box-shadow: var(--glass-shine), var(--glass-shadow-low);
   }
-  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--bottom:focus-within,
+  /* These animate in as a whole, so the filter is on the card: on a child it
+     would sample nothing while the card is below full opacity. */
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .permission,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .question,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .review-panel,
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .queued-messages {
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  }
+  /* The composer holds the pickers, the context tooltip and the image
+     preview, so its glass is on `::before`, like the pinned question's. */
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--bottom {
+    position: relative;
+    isolation: isolate;
+    background: transparent;
+    border-color: transparent;
+    border-radius: var(--glass-radius);
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--bottom::before {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--bubble-border-width));
+    z-index: -1;
+    border: var(--bubble-border-width) solid var(--glass-edge);
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--color-bg-panel) var(--glass-dock-alpha), transparent);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    box-shadow: var(--glass-shine), var(--glass-shadow-low);
+    pointer-events: none;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--bottom:focus-within::before,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .promptbox--top .promptbox-input:focus-within {
     border-color: var(--color-border-focus);
   }
@@ -4156,8 +4185,11 @@ body.vscode-light {
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .bottom-dock > .question:focus-within {
     border-color: var(--accent-line);
   }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .queued-messages {
+    border-radius: var(--radius-sm);
+  }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .queued-row {
-    background: color-mix(in srgb, var(--vscode-editorWidget-background) var(--glass-card-alpha), transparent);
+    background: color-mix(in srgb, var(--vscode-editorWidget-background) var(--glass-dock-alpha), transparent);
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .context-usage-ring {
     /* The ring's hole was a disc in the composer's colour; cut it out instead
