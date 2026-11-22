@@ -8,6 +8,7 @@
 
 import type { ChatBlock as Block } from "./protocol"
 import { toolHeadline } from "./components/ToolCard"
+import { isAgentTool } from "./agent-row"
 
 export function hasProcessBlocks(blocks: Block[]) {
   return blocks.some((b) => {
@@ -112,6 +113,7 @@ export function processSummary(blocks: Block[]) {
   let searches = 0
   let runs = 0
   let fetches = 0
+  let agents = 0
   let other = 0
 
   for (const update of tools) {
@@ -149,6 +151,7 @@ export function processSummary(blocks: Block[]) {
     if (update.tool === "grep" || update.tool === "glob") { searches++; continue }
     if (update.tool === "bash") { runs++; continue }
     if (update.tool === "webfetch") { fetches++; continue }
+    if (isAgentTool(update.tool)) { agents++; continue }
     other++
   }
 
@@ -161,6 +164,9 @@ export function processSummary(blocks: Block[]) {
   if (searches) parts.push(`Searched ${searches}`)
   if (runs) parts.push(`Ran ${runs}`)
   if (fetches) parts.push(`Fetched ${fetches}`)
+  // The agents a turn started did part of its work; a summary without them
+  // reads as if the turn had done less (#796).
+  if (agents) parts.push(`${agents} ${agents === 1 ? "agent" : "agents"}`)
   if (!parts.length && other) parts.push(`Used ${other} ${other === 1 ? "tool" : "tools"}`)
   return parts.length ? parts.join(" · ") : undefined
 }

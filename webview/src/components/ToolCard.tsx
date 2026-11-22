@@ -1,9 +1,21 @@
-import { useEffect, useState } from "react"
+import { useContext, useEffect, useState, type ReactNode } from "react"
 import type { ReviewChangeActor, Todo, ToolStatus, ToolUpdate } from "../protocol"
 import { basename, isRecord, patchKind } from "../review-extract"
 import { vscode } from "../vscode"
-import { formatElapsed } from "./AgentActivity"
-import { subagentLabel } from "./StatusBar"
+import {
+  agentKind,
+  agentModel,
+  agentState,
+  agentTask,
+  callDuration,
+  findAgentTask,
+  formatDuration,
+  isAgentTool,
+  wasInterrupted,
+  type AgentState,
+} from "../agent-row"
+import { AgentTasksContext, TurnContext } from "../trace-context"
+import { formatAgent, formatModel, subagentLabel } from "./StatusBar"
 
 /**
  * Grace period before a running row starts showing elapsed time. Most tools
@@ -37,6 +49,17 @@ function useRunningElapsed(running: boolean): string | null {
   return formatElapsed(elapsedMs)
 }
 
+/** A running call's time at a glance: whole minutes past the first, since nobody watches a tool by the second. */
+export function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remMin = minutes - hours * 60
+  return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`
+}
+
 type FileAction = "read" | "created" | "updated" | "deleted" | "moved"
 
 type FileOp = {
@@ -58,6 +81,10 @@ type OtherOp = {
   detail?: string
   status: ToolStatus
   errorText?: string
+  /** The call itself, when it started a subagent: the row is an agent's, not a tool's. */
+  agent?: ToolUpdate
+  /** Closed by a stop, not by a failure. */
+  stopped?: boolean
 }
 
 type PatchInput = { files: string[]; diff?: string }
@@ -90,7 +117,7 @@ export function ToolTrace({
     <div className="trace">
       <TraceRows trace={trace} nested={nested} onReviewFile={onReviewFile} />
       {loose.map((group) => (
-        <SubagentRows key={group.key} work={group} labelled onReviewFile={onReviewFile} />
+        <AgentRow key={group.key} work={group} onReviewFile={onReviewFile} />
       ))}
     </div>
   )
@@ -124,13 +151,8 @@ function TraceRows({
         <div className="trace-others">
           {trace.others.map((op) => {
             const work = nested?.get(op.key)
-            if (!work) return <OtherRow key={op.key} op={op} />
-            return (
-              <div key={op.key} className="trace-dispatch">
-                <OtherRow op={op} />
-                <SubagentRows work={work} onReviewFile={onReviewFile} />
-              </div>
-            )
+            if (!op.agent && !work) return <OtherRow key={op.key} op={op} />
+            return <AgentRow key={op.key} op={op} work={work} onReviewFile={onReviewFile} />
           })}
         </div>
       )}
@@ -138,29 +160,149 @@ function TraceRows({
   )
 }
 
+/** One clock for a row that is timing something; it ticks only while `active`. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    setNow(Date.now())
+    const handle = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(handle)
+  }, [active])
+  return now
+}
+
+const AGENT_GLYPH: Record<Exclude<AgentState, "working" | "waiting" | "stopped">, string> = {
+  done: "check",
+  cancelled: "dash",
+  failed: "error",
+}
+const AGENT_STATE_LABEL: Record<AgentState, string> = {
+  working: "working",
+  waiting: "needs approval",
+  done: "done",
+  stopped: "stopped",
+  cancelled: "cancelled",
+  failed: "failed",
+}
+
 /**
- * One child session's calls, indented under the row that dispatched it. A
- * group the host could not tie to a dispatch row here (the child surfaced
- * before its task row, or that row sits in an earlier cluster) stands on
- * its own and names the agent instead.
+ * A subagent, as one row where it was started (#796): its task, who has it,
+ * its latest step, and the time. Its own calls stay folded until the row is
+ * clicked. A group the host could not tie to a call here (the child surfaced
+ * before its row, or that row sits in an earlier cluster) has no task to
+ * show and names the agent instead.
  */
-function SubagentRows({
+function AgentRow({
+  op,
   work,
-  labelled = false,
   onReviewFile,
 }: {
-  work: SubagentWork
-  labelled?: boolean
+  op?: OtherOp
+  work?: SubagentWork
   onReviewFile?: (path: string) => void
 }) {
-  const trace = buildTrace(work.updates, work.patches)
-  if (!hasRows(trace)) return null
+  const tasks = useContext(AgentTasksContext)
+  const turn = useContext(TurnContext)
+  const [open, setOpen] = useState(false)
+  const update = op?.agent
+  const task = findAgentTask(tasks, op?.key, work?.actor.sessionID)
+  const state: AgentState = update
+    ? agentState(update, task, turn)
+    : task?.status === "waiting"
+      ? "waiting"
+      : turn.live
+        ? "working"
+        : "done"
+  const now = useNow(state === "working")
+
+  const kind = agentKind(update, work?.actor.subagent ?? task?.subagent)
+  const who = kind ? formatAgent(kind) : undefined
+  const title = update ? agentTask(update) : subagentLabel(work?.actor.subagent)
+  const started = update?.time?.start ?? task?.startedAt
+  const took = state === "working" ? (started !== undefined ? Math.max(0, now - started) : undefined) : callDuration(update)
+  const time = took !== undefined ? formatDuration(took) : undefined
+
+  const steps = work ? buildTrace(work.updates, work.patches) : undefined
+  const canOpen = Boolean(steps && hasRows(steps))
+  const count = work?.updates.length ?? 0
+  const latest = work?.updates[count - 1]
+  const model = agentModel(update, task)
+  const meta = [model ? formatModel(model) : undefined, count ? `${count} ${count === 1 ? "step" : "steps"}` : undefined]
+    .filter(Boolean)
+    .join(" · ")
+
+  const join = (...parts: Array<string | undefined>) => parts.filter(Boolean).join(" · ") || undefined
+  let side: string | undefined
+  let line: ReactNode
+  if (state === "working") {
+    side = time
+    // The update that arrives is a finished call, so the line says what the agent last did.
+    line = join(who, latest ? stepPhrase(latest) : undefined)
+  } else if (state === "waiting") {
+    side = "Needs approval"
+    line = join(who, "Waiting for you")
+  } else if (state === "failed") {
+    side = time
+    line = (
+      <>
+        {who && `${who} · `}
+        <span className="agent-row-reason">{task?.error ?? op?.errorText ?? "Failed"}</span>
+      </>
+    )
+  } else if (state === "done") {
+    side = join(who, time)
+  } else {
+    side = join(state === "stopped" ? "Stopped" : "Cancelled", time)
+  }
+
   return (
-    <div className="trace-subagent">
-      {labelled && <div className="trace-subagent-label">{subagentLabel(work.actor.subagent)}</div>}
-      <TraceRows trace={trace} onReviewFile={onReviewFile} />
+    <div className={`agent-row is-${state}`}>
+      <button
+        type="button"
+        className="agent-row-head"
+        title={title}
+        aria-expanded={canOpen ? open : undefined}
+        aria-disabled={canOpen ? undefined : true}
+        onClick={canOpen ? () => setOpen(!open) : undefined}
+      >
+        {state === "working" ? (
+          <span className="trace-icon codicon codicon-loading codicon-modifier-spin" role="img" aria-label="working" />
+        ) : state === "waiting" ? (
+          <span className="trace-icon" role="img" aria-label="needs approval">
+            <span className="agent-row-need" />
+          </span>
+        ) : state === "stopped" ? (
+          // The icon font's stop glyphs are outlines, which read as an unticked box.
+          <span className="trace-icon" role="img" aria-label="stopped">
+            <span className="agent-row-stop" />
+          </span>
+        ) : (
+          <span className={`trace-icon codicon codicon-${AGENT_GLYPH[state]}`} role="img" aria-label={AGENT_STATE_LABEL[state]} />
+        )}
+        <span className="agent-row-title">{title}</span>
+        {side && <span className="agent-row-side">{side}</span>}
+        {line && <span className="agent-row-line">{line}</span>}
+      </button>
+      {open && steps && (
+        <div className="agent-row-steps">
+          {meta && <div className="agent-row-meta">{meta}</div>}
+          <div className="trace-subagent">
+            <TraceRows trace={steps} onReviewFile={onReviewFile} />
+          </div>
+        </div>
+      )}
     </div>
   )
+}
+
+/** A call in a few words, for the line under a working agent: the verb its row carries, then what it acted on. */
+export function stepPhrase(update: ToolUpdate): string {
+  const path = pickPath(update)
+  if (update.tool === "read" && path) return `Read ${basename(path)}`
+  if ((update.tool === "edit" || update.tool === "write") && path) return `Edited ${basename(path)}`
+  const op = deriveOther(update)
+  return [op.action, op.detail].filter(Boolean).join(" ")
 }
 
 /**
@@ -287,14 +429,16 @@ function ReadsLine({ reads }: { reads: FileOp[] }) {
 
 function OtherRow({ op }: { op: OtherOp }) {
   const elapsed = useRunningElapsed(op.status === "running")
+  // A call a stop closed is not a failure: it keeps its own icon and says so in neutral type (#796).
+  const status = op.stopped ? "stopped" : op.status
   return (
-    <div className={`other-row status-${op.status}`} title={[op.action, op.detail].filter(Boolean).join(" ")}>
-      <TraceIcon name={op.icon} status={op.status} />
+    <div className={`other-row status-${status}`} title={[op.action, op.detail].filter(Boolean).join(" ")}>
+      <TraceIcon name={op.icon} status={op.stopped ? "completed" : op.status} />
       <span className="other-action">{op.action}</span>
       <span className="other-body">
         {op.detail && <span className="other-detail">{op.detail}</span>}
         {elapsed && <span className="trace-elapsed">{elapsed}</span>}
-        {op.errorText && <span className="other-error">{op.errorText}</span>}
+        {op.stopped ? <span className="other-stopped">Stopped</span> : op.errorText && <span className="other-error">{op.errorText}</span>}
       </span>
     </div>
   )
@@ -410,6 +554,9 @@ export function buildTrace(updates: ToolUpdate[], patches: PatchInput[]) {
     }
   }
 
+  const interrupted = new Set(updates.filter(wasInterrupted).map((update) => update.callID))
+  for (const op of others) if (interrupted.has(op.key)) op.stopped = true
+
   const allOps = [...fileOps.values()]
   const edits = allOps.filter((op) => op.action !== "read")
   const reads = allOps.filter((op) => op.action === "read")
@@ -490,14 +637,15 @@ function deriveOther(update: ToolUpdate): OtherOp {
       errorText: update.error,
     }
   }
-  if (update.tool === "task") {
+  if (isAgentTool(update.tool)) {
     return {
       key: update.callID,
       icon: "robot",
-      action: "Investigated",
-      detail: stringInput(update, "description") ?? update.title,
+      action: "Agent",
+      detail: agentTask(update),
       status: update.status,
       errorText: update.error,
+      agent: update,
     }
   }
   return genericOther(update)

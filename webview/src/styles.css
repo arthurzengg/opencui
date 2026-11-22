@@ -102,8 +102,6 @@
   --color-status-err:      #f85149;
   --color-status-pending:  #58a6ff;
   --color-scrollbar-thumb: rgba(121, 121, 121, 0.4);
-  /* Green shared by the live "agents running" pill, dot, and popover rows. */
-  --color-agent-running:   #7ee787;
 
   /* === Semantic accent colors (theme token + fixed fallback) ===
      One name per meaning, one fallback hex everywhere. Body rules used to
@@ -299,8 +297,7 @@ button:focus-visible {
   }
 }
 .history-popover,
-.model-picker-popover,
-.agents-popover {
+.model-picker-popover {
   animation: popover-in 0.12s ease-out;
 }
 /* The composer's pickers swap elements as the query changes, so they animate
@@ -311,192 +308,10 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .history-popover,
   .model-picker-popover,
-  .agents-popover,
   .mention-popover.popover-enter {
     animation: none;
   }
 }
-/* ===== AgentActivity =====
-   Message-flow activity surface for live main-agent + subagent work. It
-   renders inside the active assistant message, next to the Process panel,
-   so it reads as "work for this response" instead of another header setting. */
-.agent-activity {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  margin: -4px 0 10px;
-}
-/* Only through the class: the pill remounts in each new assistant message
-   while work continues, and App marks just the one it appeared in (#674). */
-.agent-activity.is-entering {
-  animation: agent-activity-in 0.2s ease;
-}
-@keyframes agent-activity-in {
-  from { opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .agent-activity.is-entering { animation: none; }
-}
-.agents-pill {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  background: transparent;
-  border: 0;
-  /* Match .selector-trigger so the hover bubble (when it appears) has the
-     same visual weight as the model / agent trigger. Padding stays applied
-     all the time so the layout doesn't jump on hover — only the background
-     fades in. */
-  padding: 2px 9px;
-  min-height: 22px;
-  border-radius: var(--radius-lg);
-  margin: 0;
-  font: inherit;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--vscode-foreground);
-  cursor: pointer;
-  line-height: 1.5;
-  white-space: nowrap;
-  transition: background-color 0.12s ease;
-}
-.agent-activity-pill {
-  gap: 6px;
-  padding: 3px 9px;
-  border: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-editorWidget-background);
-  color: var(--vscode-foreground);
-  font-size: 11px;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
-}
-.agent-activity-name {
-  font-weight: 700;
-}
-.agent-activity-summary {
-  font-weight: 500;
-  opacity: 0.7;
-}
-.agent-activity-dot {
-  flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: var(--color-status-default);
-}
-.agents-pill:hover,
-.agents-pill.is-open {
-  background: var(--hover-bg-pill);
-}
-.agents-pill.is-idle {
-  color: var(--vscode-foreground);
-  opacity: 0.55;
-}
-.agents-pill.is-running {
-  color: var(--color-agent-running);
-}
-.agents-pill.is-running .agent-activity-dot {
-  background: var(--color-agent-running);
-}
-.agents-pill.is-error {
-  color: var(--color-error);
-}
-.agents-pill.is-error .agent-activity-dot {
-  background: var(--color-error);
-}
-.agents-pill.is-waiting {
-  color: var(--color-warn);
-}
-.agents-pill.is-waiting .agent-activity-dot {
-  background: var(--color-warn);
-}
-.agents-popover {
-  position: absolute;
-  /* Same surface vocabulary as the header popovers, but anchored to the
-     inline activity pill so it opens beside the Process panel rather than
-     from the status bar. */
-  top: calc(100% + 2px);
-  right: 10px;
-  width: min(300px, calc(100vw - 20px));
-  background: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
-  color: var(--vscode-foreground);
-  border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border));
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-popover);
-  padding: 8px 0;
-  z-index: var(--z-popover);
-  font-size: 12px;
-  /* Cap how tall the popover can grow before scrolling — without this a
-     long-running Hephaestus session can produce 20+ historical
-     subagents and the popover would otherwise stretch off the
-     bottom of the chat view. The header sticks in place; only the
-     list scrolls (see `.agents-popover-scroll` below). */
-  display: flex;
-  flex-direction: column;
-  max-height: min(420px, calc(100vh - 80px));
-  overflow: hidden;
-}
-.agent-activity-popover {
-  top: calc(100% + 4px);
-  left: 0;
-  right: auto;
-  width: min(320px, calc(100vw - 36px));
-  max-height: min(360px, calc(100vh - 140px));
-}
-.agents-popover-scroll {
-  overflow-y: auto;
-  min-height: 0;
-  /* Subtle scrollbar to match VS Code; falls back to system default. */
-  scrollbar-width: thin;
-}
-.agents-popover-title {
-  padding: 0 12px 6px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.7;
-}
-.agents-popover-section {
-  padding: 6px 12px 2px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.55;
-}
-.agents-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 12px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.agents-row-title {
-  font-weight: 500;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-.agents-row-meta {
-  opacity: 0.65;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-/* Per-subagent "agent slug · model name" sub-label. Renders only when
-   omo's tool metadata gave us something to show; main-agent rows leave
-   it undefined because the StatusBar already shows the user's primary
-   agent + model next to the selector. */
-.agents-row-detail {
-  opacity: 0.5;
-  font-size: 10.5px;
-  text-overflow: ellipsis;
-  overflow: hidden;
-  font-variant-numeric: tabular-nums;
-}
-.agents-row-running .agents-row-title { color: var(--color-agent-running); }
-.agents-row-error .agents-row-meta { color: var(--color-error); }
-.agents-row-waiting .agents-row-meta { color: var(--color-warn); }
 
 .selector-menu {
   flex: 0 1 auto;
@@ -725,8 +540,7 @@ button:focus-visible {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  /* All uppercase micro-labels track at 0.05em (see .mention-section,
-     .agents-popover-*). */
+  /* All uppercase micro-labels track at 0.05em (see .mention-section). */
   letter-spacing: 0.05em;
   cursor: default;
 }
@@ -1772,9 +1586,7 @@ button:focus-visible {
 }
 
 
-/* Quiet by default: while the Agents pill is in the same bubble its dot is
-   the one thing breathing. The placeholder only takes .live-breathe when it
-   is alone (#621). */
+/* The placeholder before the first token; it takes .live-breathe (#621). */
 .thinking-dots {
   display: inline-block;
   /* Reserve one line so the bubble doesn't nudge when the dots are replaced by
@@ -1829,6 +1641,19 @@ button:focus-visible {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* How many agents a folded live block has at work. */
+.process-agents {
+  flex: none;
+  font-weight: 400;
+  color: var(--vscode-descriptionForeground);
+}
+.process-agents::before {
+  content: "\00b7";
+  margin-right: 6px;
+}
+.process-agents.is-waiting {
+  color: var(--color-warn);
 }
 .process-caret {
   display: inline-flex;
@@ -2046,8 +1871,8 @@ button:focus-visible {
    subgrid of it, so the icons share one column and the details another,
    whatever the lengths of the verbs. The verb column is capped: a tool with
    no verb of its own shows its name there, and one long name would push
-   every row's detail aside. A subagent's rows are a grid of their own,
-   indented under the row that dispatched them. */
+   every row's detail aside. A subagent's steps are a grid of their own,
+   under its row. */
 .trace,
 .trace-subagent {
   --trace-icon-size: 14px;
@@ -2068,7 +1893,6 @@ button:focus-visible {
 .trace-edits,
 .trace-reads,
 .trace-others,
-.trace-dispatch,
 .edit-row,
 .other-row {
   display: grid;
@@ -2078,7 +1902,7 @@ button:focus-visible {
 }
 .trace-todos,
 .trace-subagent,
-.trace-subagent-label {
+.agent-row {
   grid-column: 1 / -1;
 }
 /* As tall as a row's first line, so the glyph centres on that line when the
@@ -2225,8 +2049,7 @@ button:focus-visible {
   color: var(--vscode-descriptionForeground);
 }
 
-.trace-others,
-.trace-dispatch {
+.trace-others {
   row-gap: 3px;
 }
 .other-row {
@@ -2271,19 +2094,118 @@ button:focus-visible {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-/* A subagent's calls sit under the row that dispatched it, on a rule that
-   drops from that row's icon and with their own icons under its verb. A
-   group with no dispatch row names its agent. */
+/* A call a stop closed, not a failure: neutral, with its own icon. */
+.other-row.status-stopped {
+  color: var(--vscode-descriptionForeground);
+}
+.other-stopped {
+  flex: none;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ===== Agent rows (#796) =====
+   A subagent is one row where it was started: its task in the reading font,
+   a second line with who has it and its latest step, and the time on the
+   right. State is the glyph; working and done are neutral, and colour is
+   kept for a request (warning) and a failure (error). Its own calls stay
+   folded under the row until it is clicked. The row bleeds 6px each side so
+   its hover wash has room without moving the text off the trace's columns. */
+.agent-row {
+  min-width: 0;
+  margin: 0 -6px;
+}
+.agent-row-head {
+  display: grid;
+  grid-template-columns: var(--trace-icon-size) minmax(0, 1fr) auto;
+  column-gap: 6px;
+  row-gap: 1px;
+  align-items: start;
+  width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-row-head:hover {
+  background: var(--hover-bg-wash);
+}
+.agent-row-head[aria-disabled="true"] {
+  cursor: default;
+}
+.agent-row-head[aria-disabled="true"]:hover {
+  background: transparent;
+}
+.agent-row-title {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--vscode-foreground);
+}
+.agent-row-side {
+  grid-column: 3;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.agent-row-line {
+  grid-column: 2 / -1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--vscode-descriptionForeground);
+}
+.agent-row-need {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-warn);
+}
+.agent-row-stop {
+  width: 6px;
+  height: 6px;
+  border-radius: 1.5px;
+  background: var(--vscode-descriptionForeground);
+}
+.agent-row.is-waiting .agent-row-side {
+  color: var(--color-warn);
+}
+/* A reason is read in full: it is why the work did not happen. */
+.agent-row.is-failed .agent-row-line {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.agent-row.is-failed .trace-icon,
+.agent-row-reason {
+  color: var(--color-error);
+}
+.agent-row.is-stopped .agent-row-title,
+.agent-row.is-cancelled .agent-row-title {
+  color: var(--vscode-descriptionForeground);
+}
+.agent-row-steps {
+  display: grid;
+  row-gap: 5px;
+  margin: 3px 6px 5px calc(12px + var(--trace-icon-size));
+}
+.agent-row-meta {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+}
 .trace-subagent {
   row-gap: 6px;
-  margin-left: calc(var(--trace-icon-size) / 2 - 1px);
-  padding-left: calc(var(--trace-icon-size) / 2 + 6px);
-  border-left: 1px solid var(--vscode-panel-border);
-}
-.trace-subagent-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--vscode-descriptionForeground);
 }
 
 /* ===== Request cards: permission and question =====
@@ -4029,11 +3951,9 @@ body.vscode-light {
   --glass-shadow-low: 0 4px 12px rgba(24, 32, 56, 0.08);
 }
 @media not all and (prefers-reduced-transparency: reduce) {
-  /* Popovers: history, saved rules, model picker, the composer's pickers and
-     the Agents list. */
+  /* Popovers: history, saved rules, model picker and the composer's pickers. */
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .history-popover,
-  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .model-picker-popover,
-  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .agents-popover {
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .model-picker-popover {
     --glass-surface: var(--vscode-dropdown-background, var(--vscode-sideBar-background));
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .mention-popover {
@@ -4041,7 +3961,6 @@ body.vscode-light {
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .history-popover,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .model-picker-popover,
-  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .agents-popover,
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .mention-popover {
     --popover-row-radius: var(--radius);
     background: color-mix(in srgb, var(--glass-surface) var(--glass-popover-alpha), transparent);

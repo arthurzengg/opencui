@@ -9,7 +9,7 @@ export type AgentsQuickPickItem = vscode.QuickPickItem & {
  * Open a compact QuickPick grouping active or attention-worthy agent work
  * into `Main` and `Subagents` sections. Selecting a row focuses the
  * OpenCode Panel chat; we don't currently surface retry / abort actions.
- * Scoped to the active conversation like the Agents popover — the focus
+ * Scoped to the active conversation like the trace's agent rows — the focus
  * action lands on the active chat, so listing other conversations' rows
  * here would point at work the click can't reach.
  */

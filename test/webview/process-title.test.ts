@@ -23,16 +23,24 @@ describe("processTitle on a live message", () => {
   })
 })
 
-describe("process counts leave subagent work to its dispatch row", () => {
-  it("count the parent's own calls only", () => {
+describe("process counts leave a subagent's calls to its row", () => {
+  // A turn that ran an agent used to fold to "Used 1 tool", and to "Read 1"
+  // beside a read: the agent's work vanished from the summary (#796).
+  it("count the parent's own calls, and the agents it started", () => {
     const explore = { kind: "subagent", sessionID: "ses_child", subagent: "explore", callID: "call_task" } as const
     const blocks: ChatBlock[] = [
       { type: "tool", update: { callID: "call_task", tool: "task", status: "completed", input: { description: "Find it" } } },
       { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "a.ts" } }, actor: explore },
       { type: "tool", update: { callID: "c2", tool: "read", status: "completed", input: { filePath: "b.ts" } }, actor: explore },
     ]
-    expect(processSummary(blocks)).toBe("Used 1 tool")
+    expect(processSummary(blocks)).toBe("1 agent")
     expect(processTitle(blocks, true).title).toBe("Used 1 tool")
+    const withRead: ChatBlock[] = [
+      { type: "tool", update: { callID: "c0", tool: "read", status: "completed", input: { filePath: "view.ts" } } },
+      ...blocks,
+      { type: "tool", update: { callID: "call_2", tool: "subagent", status: "completed", input: { agent: "explore", description: "Check it" } } },
+    ]
+    expect(processSummary(withRead)).toBe("Read 1 · 2 agents")
   })
 })
 

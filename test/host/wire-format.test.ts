@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { toWire } from "../../src/chat/wire-format"
+import { callTime, toWire } from "../../src/chat/wire-format"
 import type { ToolUpdate } from "../../src/chat/stream"
 
 const CWD = "/ws"
@@ -120,5 +120,15 @@ describe("toWire", () => {
       filediff: { file: "ws/c.ts" },
       files: [{ relativePath: "ws/d.ts" }],
     })
+  })
+
+  // The agent row shows how long a subagent took (#796). Recorded from a
+  // 1.18.30 `task` part: `time: { start, end }` once it has ended, `{ start }`
+  // while it runs.
+  it("keeps the call's time, and drops one that has no start", () => {
+    expect(toWire(update({ time: { start: 1763696006000, end: 1763696078000 } }), CWD).time).toEqual({ start: 1763696006000, end: 1763696078000 })
+    expect(callTime({ start: 1763696006000 })).toEqual({ start: 1763696006000 })
+    expect(callTime({ end: 5 })).toBeUndefined()
+    expect(callTime(undefined)).toBeUndefined()
   })
 })
