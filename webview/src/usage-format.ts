@@ -21,6 +21,14 @@ export function usageSummary(usage: UsageDelta | undefined): string | undefined 
 }
 
 /**
+ * A session's spend as the context tooltip shows it: to the cent, and to four
+ * places below one so a first cheap reply does not read as $0.00.
+ */
+export function spendLabel(cost: number): string {
+  return `$${cost.toFixed(cost < 0.01 ? 4 : 2)} spent`
+}
+
+/**
  * What a whole turn used. The server stores each step of a turn as a message
  * of its own, with its own usage, and the provider bills every one of them;
  * the last step alone is a small part of a turn that ran tools.

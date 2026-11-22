@@ -8,6 +8,7 @@ import {
   makeAttachmentLabel,
   makeConversationLabel,
 } from "../mention-tokens"
+import { spendLabel } from "../usage-format"
 import { parseCommandInput } from "../command-tokens"
 import { clipboardHasImage, readPastedImages } from "../paste-attachments"
 import { usePromptText } from "../hooks/usePromptText"
@@ -1120,18 +1121,17 @@ export function PromptBox({ busy, aborting = false, onSend, onQueue, onAbort, se
 function ContextUsageIndicator({ usage }: { usage?: ContextUsage }) {
   const percent = usage?.percent ?? (usage?.limit ? Math.round((usage.tokens / usage.limit) * 100) : undefined)
   const value = clampPercent(percent ?? 0)
-  const tooltip = usage
+  // The session's whole spend: every step, its subagents, removed turns (#792).
+  const spent = usage && typeof usage.cost === "number" && usage.cost > 0 ? spendLabel(usage.cost) : undefined
+  const context = usage
     ? [
         `${formatTokenCount(usage.tokens)}${usage.limit ? ` / ${formatTokenCount(usage.limit)}` : ""}`,
         percent !== undefined ? `${value}%` : undefined,
       ].filter(Boolean).join(" · ")
     : "Context usage unavailable"
+  const tooltip = [context, spent].filter(Boolean).join(" · ")
   const title = usage
-    ? [
-        `Context: ${tooltip}`,
-        usage.model,
-        typeof usage.cost === "number" && usage.cost > 0 ? `$${usage.cost.toFixed(4)} spent` : undefined,
-      ].filter(Boolean).join(" · ")
+    ? [`Context: ${context}`, usage.model, spent].filter(Boolean).join(" · ")
     : "Context usage appears after the first response"
   const className = [
     "context-usage",
