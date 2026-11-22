@@ -1,5 +1,6 @@
 import * as vscode from "vscode"
 import type { ChatMessage, ConversationMention, ConversationSummary, ReviewHunkState } from "../protocol"
+import type { Spend } from "./session-cost"
 
 export const CONVERSATIONS_KEY = "opencui.conversations"
 export const ACTIVE_CONVERSATION_KEY = "opencui.activeConversation"
@@ -10,6 +11,8 @@ export type SavedConversation = ConversationSummary & {
   sessionID?: string
   messages: ChatMessage[]
   reviewHunks?: Record<string, ReviewHunkState>
+  /** What the conversation has spent, kept so that a removed turn stays counted (#792). */
+  spend?: Spend
 }
 
 /**

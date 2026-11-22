@@ -9,6 +9,7 @@ import {
   type SavedConversation,
 } from "./conversation-store"
 import { dataUrlToBytes } from "./attachment-store"
+import { trackSpend } from "./session-cost"
 
 /**
  * The slice of ChatView state that gets stamped onto the active
@@ -197,6 +198,22 @@ export class ConversationManager {
   remove(id: string): void {
     this.conversations = this.conversations.filter((c) => c.id !== id)
     if (!this.conversations.length) this.add("New conversation")
+  }
+
+  /**
+   * Records what the server accounts for now and returns what the
+   * conversation has spent, the turns removed since included (#792). The
+   * record keeps its place in the list: a refresh is not activity.
+   */
+  trackSpend(id: string, counted: number): number {
+    const conversation = this.conversations.find((c) => c.id === id)
+    if (!conversation) return counted
+    const spend = trackSpend(conversation.spend, counted)
+    if (spend.counted !== conversation.spend?.counted || spend.removed !== conversation.spend?.removed) {
+      this.conversations = this.conversations.map((c) => (c.id === id ? { ...c, spend } : c))
+      this.schedulePersist()
+    }
+    return spend.counted + spend.removed
   }
 
   updateActive(fn: (c: SavedConversation) => SavedConversation): void {

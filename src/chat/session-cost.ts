@@ -87,3 +87,23 @@ function total(costs: Iterable<number>): number {
   for (const cost of costs) sum += cost
   return sum
 }
+
+/** What a conversation has spent, as its record keeps it. */
+export type Spend = {
+  /** What the server accounted for at the last refresh. */
+  counted: number
+  /** What turns removed since then had cost. */
+  removed: number
+}
+
+/**
+ * Carries a conversation's spend over a refresh. What the server accounts for
+ * only grows while messages are added; when it drops, turns were removed (a
+ * message edited and resent, an undo), and what they cost was still spent.
+ */
+export function trackSpend(previous: Spend | undefined, counted: number): Spend {
+  const drop = (previous?.counted ?? 0) - counted
+  // Sums of the same costs in another order differ by rounding; that is not a drop.
+  const removed = (previous?.removed ?? 0) + (drop > 1e-9 ? drop : 0)
+  return { counted, removed }
+}
