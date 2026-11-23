@@ -32,6 +32,14 @@ describe("collapsed panels are excluded from selection copy (#575)", () => {
     expect(open).toMatch(/visibility 0s(?!\s+0)/)
   })
 
+  // A reasoning window that has closed stays mounted for its fold (#798).
+  it("a closed reasoning window gets the same guard", () => {
+    const closed = ruleBody(".process-window.is-closed")
+    expect(closed).toMatch(/visibility:\s*hidden/)
+    expect(closed).toMatch(/visibility 0s 0\.2s/)
+    expect(ruleBody(".process-window")).toMatch(/visibility 0s(?!\s+0)/)
+  })
+
   it("the review panel's collapsed body gets the same guard", () => {
     const collapsed = ruleBody(".review-panel.is-collapsed .review-body-clip")
     expect(collapsed).toMatch(/visibility:\s*hidden/)

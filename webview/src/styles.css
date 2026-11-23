@@ -1815,6 +1815,63 @@ button:focus-visible {
   line-height: 1.45;
   white-space: pre-wrap;
 }
+/* ===== Live reasoning, three lines at a time (#798) =====
+   A reasoning block that is being written shows through a window three lines
+   tall, anchored at its last line: text that no longer fits leaves at the
+   top under a short fade, and the box keeps its height. The slide of a new
+   line is an animation set in ReasoningWindow. When the block ends the
+   window closes like the Process body does, on a grid row; it stays mounted
+   for that, so it is hidden from selection once closed (#575). */
+.process-window {
+  display: grid;
+  grid-template-rows: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0 0 10px;
+  transition:
+    grid-template-rows 0.2s ease,
+    margin-bottom 0.2s ease,
+    opacity 0.2s ease,
+    visibility 0s;
+}
+.process-window.is-closed {
+  grid-template-rows: 0fr;
+  margin-bottom: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.2s ease,
+    margin-bottom 0.2s ease,
+    opacity 0.2s ease,
+    visibility 0s 0.2s;
+}
+.process-window-clip {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 0;
+  /* Three lines of .process-text: 13px at 1.45. */
+  max-height: calc(3 * 1.45 * 13px);
+  overflow: hidden;
+  cursor: pointer;
+}
+.process-window-clip.is-over {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
+}
+.process-window-clip:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.process-window-text {
+  flex: none;
+}
+.process-window .process-text {
+  margin: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .process-window,
+  .process-window.is-closed { transition: none; }
+}
 /* Markdown body inside ProcessText (reasoning blocks emit headings/lists/code).
    `remarkBreaks` handles line breaks via <br>, so pre-wrap would only
    re-introduce visual gaps around block elements — reset it here. */

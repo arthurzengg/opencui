@@ -358,6 +358,54 @@ describe("MessageView (assistant role)", () => {
     expect(line.querySelector<HTMLElement>(".process-title-text")!.style.getPropertyValue("--sweep-phase")).toBe("")
   })
 
+  // Live reasoning shows through a three-line window instead of growing the
+  // box; what the window holds, and when it gives way to the full text (#798).
+  describe("the reasoning window", () => {
+    // A first-person line, so it stays a paragraph and is not read as a title.
+    const reasoning = { type: "reasoning", text: "I need to look at the abort path before changing it." }
+    const tool = { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "src/foo.ts" } } }
+    const reply = (blocks: unknown[], pending = true) => ({ id: "a1", role: "assistant", pending, blocks }) as Message
+
+    it("holds the reasoning being written, and closes when the next block arrives", () => {
+      const { container, rerender } = render(<MessageView message={reply([reasoning])} processOpen processOnly />)
+      const win = container.querySelector(".process-window")!
+      expect(win.classList.contains("is-closed")).toBe(false)
+      expect(win.querySelector(".process-text")?.textContent).toContain("abort path")
+
+      rerender(<MessageView message={reply([reasoning, tool])} processOpen processOnly />)
+      expect(container.querySelector(".process-window")).toBe(win)
+      expect(win.classList.contains("is-closed")).toBe(true)
+    })
+
+    it("gives way to all of the reasoning on a click, for the rest of the reply", () => {
+      const { container, rerender } = render(<MessageView message={reply([reasoning])} processOpen processOnly />)
+      fireEvent.click(screen.getByRole("button", { name: "Show all of the reasoning" }))
+      expect(container.querySelector(".process-window")).toBeNull()
+      expect(container.querySelector(".process-text")?.textContent).toContain("abort path")
+
+      rerender(<MessageView message={reply([reasoning, tool])} processOpen processOnly />)
+      expect(container.querySelector(".process-window")).toBeNull()
+      expect(container.querySelector(".process-text")?.textContent).toContain("abort path")
+    })
+
+    it("never holds a finished reply's reasoning: not when restored, not once its box is opened by hand", () => {
+      const restored = render(<MessageView message={reply([reasoning, tool], false)} processOpen={false} processOnly={false} />)
+      fireEvent.click(restored.container.querySelector(".process-head")!)
+      expect(restored.container.querySelector(".process-window")).toBeNull()
+      expect(restored.container.querySelector(".process-text")?.textContent).toContain("abort path")
+      restored.unmount()
+
+      // A box that lived through the turn keeps the window shut while it
+      // folds, so the fold does not start by growing; opening it shows all.
+      const { container, rerender } = render(<MessageView message={reply([reasoning, tool])} processOpen processOnly />)
+      rerender(<MessageView message={reply([reasoning, tool], false)} processOpen={false} processOnly={false} />)
+      expect(container.querySelector(".process-window.is-closed")).not.toBeNull()
+      fireEvent.click(container.querySelector(".process-head")!)
+      expect(container.querySelector(".process-window")).toBeNull()
+      expect(container.querySelector(".process-text")?.textContent).toContain("abort path")
+    })
+  })
+
   // The live line says how long the turn has run: not in its first seconds,
   // where it would only flicker, and never on a line that is no longer live (#798).
   it("the live line counts the turn's time once three seconds have passed", () => {

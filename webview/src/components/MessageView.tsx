@@ -1,4 +1,4 @@
-import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Fragment, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { RetryStatus } from "./RetryStatus"
 import { useSweepPhase } from "../hooks/useLivePhase"
 import type { Block, Message } from "../hooks/useChatState"
@@ -24,6 +24,7 @@ import { PromptBox } from "./PromptBox"
 import { formatElapsed, ToolTrace } from "./ToolCard"
 import { agentsNote } from "../agent-row"
 import { AgentTasksContext, TurnContext, TurnStartContext } from "../trace-context"
+import { prefersReducedMotion } from "../bottom-glide"
 import { ICON_SIZE } from "../design-tokens"
 import { sameUsage, usageBreakdown, usageDetail, usageSummary, type UsageRow } from "../usage-format"
 
@@ -593,8 +594,17 @@ function ProcessPanel({
     if (defaultOpen) setEverOpened(true)
   }, [defaultOpen, openKey])
 
+  // A reply that is being written shows its reasoning through a short window
+  // (ReasoningWindow). Asking for all of it lasts for this box's life: by
+  // clicking the window, or by opening a finished box by hand, which shows the
+  // full reasoning the way a restored transcript does (#798).
+  const [reasoningFull, setReasoningFull] = useState(!pending)
+
   const toggle = () => {
-    if (!open) setEverOpened(true)
+    if (!open) {
+      setEverOpened(true)
+      if (!pending) setReasoningFull(true)
+    }
     setOpen(!open)
   }
 
@@ -627,7 +637,11 @@ function ProcessPanel({
       {/* The clip wrapper stays mounted; the grid clips it to 0fr when
           collapsed so expand/collapse animates height instead of snapping. */}
       <div className="process-body-clip">
-        <div className="process-body">{everOpened && !bare ? renderBlocks(blocks, true, onReviewFile, pending, headlined) : null}</div>
+        <div className="process-body">
+          {everOpened && !bare
+            ? renderBlocks(blocks, true, onReviewFile, pending, headlined, reasoningFull ? undefined : () => setReasoningFull(true))
+            : null}
+        </div>
       </div>
     </div>
   )
@@ -745,7 +759,15 @@ function CompactionMarker({ message, onReviewFile }: { message: Message; onRevie
   )
 }
 
-function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path: string) => void, streaming = false, headlined = -1) {
+/** `onExpandReasoning` puts reasoning behind the live window; without it reasoning renders in full. */
+function renderBlocks(
+  blocks: Block[],
+  processMode = false,
+  onReviewFile?: (path: string) => void,
+  streaming = false,
+  headlined = -1,
+  onExpandReasoning?: () => void,
+) {
   const nodes: ReactNode[] = []
   let tools: Extract<Block, { type: "tool" }>[] = []
   let patches: Extract<Block, { type: "patch" }>[] = []
@@ -810,11 +832,66 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
     if (b.type === "reasoning") {
       const cleaned = stripInternalMarkers(b.text)
       if (!cleaned.trim()) return
-      nodes.push(<ProcessText key={i} text={cleaned} streaming={live} settled={!live || firstLineSettled(b.text)} inHead={i === headlined} />)
+      const text = <ProcessText key={i} text={cleaned} streaming={live} settled={!live || firstLineSettled(b.text)} inHead={i === headlined} />
+      nodes.push(onExpandReasoning ? <ReasoningWindow key={i} open={live} onExpand={onExpandReasoning}>{text}</ReasoningWindow> : text)
     }
   })
   flushTrace()
   return nodes
+}
+
+/**
+ * Live reasoning, three lines at a time (#798). The newest lines stay and
+ * older ones leave at the top, so the box keeps its height instead of pushing
+ * the transcript down and folding away at once when the step ends. When the
+ * block is no longer the one being written the window closes: the head has
+ * its gist, and all of it is one click away.
+ */
+function ReasoningWindow({ open, onExpand, children }: { open: boolean; onExpand: () => void; children: ReactNode }) {
+  const clip = useRef<HTMLDivElement>(null)
+  const text = useRef<HTMLDivElement>(null)
+  const height = useRef(0)
+  // Any render may have added text. When that pushes a line out at the top,
+  // the text is drawn where it was and slides into place, so the new line
+  // rises in. Additive: a line arriving mid-slide adds to the slide under way.
+  useLayoutEffect(() => {
+    const box = clip.current
+    const inner = text.current
+    if (!box || !inner) return
+    const now = inner.offsetHeight
+    const before = height.current
+    height.current = now
+    const room = box.clientHeight
+    const over = now > room + 1
+    box.classList.toggle("is-over", over)
+    if (!over || before === 0 || now <= before || prefersReducedMotion() || typeof inner.animate !== "function") return
+    inner.animate([{ transform: `translateY(${now - Math.max(before, room)}px)` }, { transform: "translateY(0)" }], {
+      duration: 200,
+      easing: "cubic-bezier(0.2, 0.7, 0.2, 1)",
+      composite: "add",
+    })
+  })
+  const label = "Show all of the reasoning"
+  return (
+    <div className={`process-window${open ? "" : " is-closed"}`}>
+      <div
+        ref={clip}
+        className="process-window-clip"
+        role="button"
+        tabIndex={open ? 0 : -1}
+        title={label}
+        aria-label={label}
+        onClick={onExpand}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" && e.key !== " ") return
+          e.preventDefault()
+          onExpand()
+        }}
+      >
+        <div ref={text} className="process-window-text">{children}</div>
+      </div>
+    </div>
+  )
 }
 
 /**
