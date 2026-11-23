@@ -5,7 +5,7 @@ import { useQueueFlush } from "./hooks/useQueueFlush"
 import { useEscapeToStop } from "./hooks/useEscapeToStop"
 import { createBottomGlide, nestedScrollerTakesWheelUp, prefersReducedMotion } from "./bottom-glide"
 import type { Attachment } from "./protocol"
-import { MessageView } from "./components/MessageView"
+import { MessageView, PendingReply } from "./components/MessageView"
 import { PromptBox } from "./components/PromptBox"
 import { QueuedMessages } from "./components/QueuedMessages"
 import { StatusBar, type HeaderPopoverID } from "./components/StatusBar"
@@ -449,6 +449,8 @@ export default function App() {
                 onOpenLink={openLink}
               />
             ))}
+            {/* Sent, and the server has not opened the reply yet. */}
+            {turn.key === lastTurnKey && state.busy && !state.aborting && turn.user && turn.assistants.length === 0 && <PendingReply />}
           </div>
         ))}
       </div>

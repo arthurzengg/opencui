@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
+import { act, render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MessageView } from "../../webview/src/components/MessageView"
 import type { Message } from "../../webview/src/hooks/useChatState"
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 function userMessage(text: string, opts: { id?: string; backendID?: string } = {}): Message {
   return {
@@ -325,23 +328,54 @@ describe("MessageView (user role)", () => {
 })
 
 describe("MessageView (assistant role)", () => {
-  it("renders thinking indicator when message is pending and has no blocks", () => {
-    render(
-      <MessageView
-        message={assistantMessage("", { pending: true })}
-        processOpen={false}
-        processOnly={false}
-      />,
+  // A pending reply with nothing to show is the Process head alone, titled
+  // Thinking, with nothing to open (#798).
+  it("a pending reply with no blocks is the bare Thinking line", () => {
+    const { container } = render(
+      <MessageView message={assistantMessage("", { pending: true })} processOpen processOnly />,
     )
-    expect(screen.getByText("thinking")).toBeInTheDocument()
+    const line = container.querySelector(".process.is-bare")!
+    expect(line.querySelector(".process-title")?.textContent).toBe("Thinking")
+    expect(screen.getByRole("status", { name: "Thinking" })).toBe(line)
+    expect(line.classList.contains("is-open")).toBe(false)
+    expect(line.querySelector(".process-caret")).toBeNull()
+    expect(line.querySelector<HTMLButtonElement>(".process-head")!.disabled).toBe(true)
   })
 
-  it("the thinking placeholder breathes on the shared clock (#621)", () => {
+  it("the bare Thinking line breathes on the shared clock (#621)", () => {
     const pending = assistantMessage("", { pending: true })
     const { container } = render(<MessageView message={pending} processOpen={false} processOnly={false} />)
-    const line = container.querySelector(".thinking-dots") as HTMLElement
-    expect(line.className).toContain("live-breathe")
-    expect(line.style.animationDelay).toMatch(/^-?\d+ms$/)
+    const words = container.querySelector(".process.is-bare .process-title-text") as HTMLElement
+    expect(words.className).toContain("live-breathe")
+    expect(words.style.animationDelay).toMatch(/^-?\d+ms$/)
+  })
+
+  // The first block opens the line that was already there: the same node,
+  // and its words change in place. The old words are drawn from an attribute
+  // while they leave, so the title never reads as two (#798).
+  it("the first block opens the Thinking line and changes its words in place", () => {
+    vi.useFakeTimers()
+    const tool = { type: "tool", update: { callID: "c1", tool: "read", status: "running", input: { filePath: "src/foo.ts" } } }
+    const reply = (blocks: unknown[]) => ({ id: "a1", role: "assistant", pending: true, blocks }) as Message
+    const { container, rerender } = render(<MessageView message={reply([])} processOpen processOnly />)
+    const line = container.querySelector(".process")!
+    const head = line.querySelector(".process-head")!
+
+    rerender(<MessageView message={reply([tool])} processOpen processOnly />)
+    expect(container.querySelector(".process")).toBe(line)
+    expect(line.querySelector(".process-head")).toBe(head)
+    expect(line.classList.contains("is-bare")).toBe(false)
+    expect(line.classList.contains("is-open")).toBe(true)
+    expect(line.querySelector(".process-caret")).not.toBeNull()
+    const title = line.querySelector(".process-title")!
+    expect(title.textContent).not.toContain("Thinking")
+    expect(title.querySelector(".process-title-out")?.getAttribute("data-text")).toBe("Thinking")
+    expect(title.querySelector(".process-title-text")!.classList.contains("is-entering")).toBe(true)
+
+    act(() => {
+      vi.advanceTimersByTime(250)
+    })
+    expect(title.querySelector(".process-title-out")).toBeNull()
   })
 
   /** Each table's rows as [label, value] pairs, in order. */

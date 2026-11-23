@@ -133,11 +133,8 @@ function MessageViewComponent({
   return (
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
-      <TurnScope message={message}>{renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}</TurnScope>
+      <TurnScope message={message}>{renderMessageBlocks(message, processOpen, processOnly, onReviewFile, !retry)}</TurnScope>
       {retry && message.pending && <RetryStatus retry={retry} onOpenLink={onOpenLink} />}
-      {!retry && message.pending && message.blocks.length === 0 && (
-        <ThinkingLine />
-      )}
       {(() => {
         // Stopped state overrides error: a message can carry both
         //   1) the new `stopped: true` flag (set by my reducer fix), OR
@@ -510,11 +507,18 @@ export function renderUserText(text: string, knownLabels: Set<string>): ReactNod
   return out
 }
 
-function renderMessageBlocks(message: Message, processOpen: boolean, processOnly: boolean, onReviewFile?: (path: string) => void) {
+/**
+ * `placeholder` lets a pending reply with nothing to show yet draw the panel's
+ * head alone, titled Thinking: the line is there from the first frame, and
+ * the first block opens the same panel instead of replacing a separate
+ * element (#798). A provider retry takes that place instead (#611).
+ */
+function renderMessageBlocks(message: Message, processOpen: boolean, processOnly: boolean, onReviewFile?: (path: string) => void, placeholder = true) {
   if (message.role !== "assistant") return renderBlocks(message.blocks, false, onReviewFile)
   const pending = Boolean(message.pending)
+  const waiting = pending && placeholder
   if (processOnly) {
-    if (!hasProcessBlocks(message.blocks)) return null
+    if (!hasProcessBlocks(message.blocks) && !waiting) return null
     return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
@@ -539,7 +543,7 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
     if (hasProcessBlocks(process)) {
       panel = <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}`} defaultOpen={false} onReviewFile={onReviewFile} />
     }
-  } else if (hasProcessBlocks(message.blocks)) {
+  } else if (hasProcessBlocks(message.blocks) || waiting) {
     // Ends on activity/reasoning — no distinct answer to surface yet, so the
     // whole message is the live process.
     panel = <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
@@ -594,6 +598,8 @@ function ProcessPanel({
     setOpen(!open)
   }
 
+  // Nothing to open yet: the head stands alone as the reply's first line (#798).
+  const bare = !hasProcessBlocks(blocks)
   const headline = processTitle(blocks, pending)
   const summary = pending ? undefined : processSummary(blocks)
   const title = summary ?? headline.title
@@ -604,17 +610,74 @@ function ProcessPanel({
   const headlined = summary === undefined ? headline.source : -1
 
   return (
-    <div className={`process ${open ? "is-open" : ""}`}>
-      <button className="process-head" onClick={toggle} aria-expanded={open}>
-        <span className="process-title">{title}</span>
+    <div
+      className={`process${open && !bare ? " is-open" : ""}${bare ? " is-bare" : ""}`}
+      role={bare ? "status" : undefined}
+      aria-label={bare ? "Thinking" : undefined}
+    >
+      {/* One element whether or not there is a body, so the words keep their
+          place and can change in place when the first block arrives. */}
+      <button className="process-head" onClick={toggle} aria-expanded={bare ? undefined : open} disabled={bare}>
+        <TitleSwap text={title} breathing={bare && pending} />
         {agents && <span className={`process-agents${agents.waiting ? " is-waiting" : ""}`}>{agents.text}</span>}
-        <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
+        {!bare && <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>}
       </button>
       {/* The clip wrapper stays mounted; the grid clips it to 0fr when
           collapsed so expand/collapse animates height instead of snapping. */}
       <div className="process-body-clip">
-        <div className="process-body">{everOpened ? renderBlocks(blocks, true, onReviewFile, pending, headlined) : null}</div>
+        <div className="process-body">{everOpened && !bare ? renderBlocks(blocks, true, onReviewFile, pending, headlined) : null}</div>
       </div>
+    </div>
+  )
+}
+
+/** How long the old words stay drawn; a little past their 140 ms exit in styles.css. */
+const TITLE_LEAVE_MS = 200
+
+/**
+ * The head's words. When they change, the old ones leave upward while the new
+ * ones arrive from below, inside the row's own height (#798). The old words
+ * are drawn from an attribute, not as text: they are no longer content, so a
+ * selection does not copy them and nothing that reads the title sees two.
+ */
+function TitleSwap({ text, breathing }: { text: string; breathing: boolean }) {
+  const [shown, setShown] = useState({ text, changes: 0 })
+  const [leaving, setLeaving] = useState<string | null>(null)
+  if (text !== shown.text) {
+    setShown({ text, changes: shown.changes + 1 })
+    setLeaving(shown.text)
+  }
+  useEffect(() => {
+    if (leaving === null) return
+    const handle = window.setTimeout(() => setLeaving(null), TITLE_LEAVE_MS)
+    return () => window.clearTimeout(handle)
+  }, [leaving, shown.changes])
+  const phase = useLivePhase(breathing)
+  return (
+    <span className="process-title process-title-swap">
+      {leaving !== null && <span key={`out-${shown.changes}`} className="process-title-out" data-text={leaving} aria-hidden="true" />}
+      <span
+        key={shown.changes}
+        className={`process-title-text${shown.changes ? " is-entering" : ""}${breathing ? " live-breathe" : ""}`}
+        style={phase}
+      >
+        {text}
+      </span>
+    </span>
+  )
+}
+
+const NO_BLOCKS: Block[] = []
+
+/**
+ * The line that stands for a reply the server has not opened yet, so a sent
+ * prompt is answered at once (#798). It is the head a pending reply starts
+ * with, in the same place, so the reply taking over changes nothing on screen.
+ */
+export function PendingReply() {
+  return (
+    <div className="msg role-assistant pending-reply">
+      <ProcessPanel blocks={NO_BLOCKS} pending openKey="pending-reply" defaultOpen={false} />
     </div>
   )
 }
@@ -626,16 +689,6 @@ function ProcessPanel({
  * ProcessPanel there is no openKey/defaultOpen churn: it starts collapsed
  * and stays wherever the user toggled it.
  */
-/** The pre-token placeholder. It breathes on the shared clock (#621). */
-function ThinkingLine() {
-  const phase = useLivePhase(true)
-  return (
-    <div className="thinking-dots live-breathe" style={phase} role="status" aria-label="Thinking">
-      thinking
-    </div>
-  )
-}
-
 function CompactionMarker({ message, onReviewFile }: { message: Message; onReviewFile?: (path: string) => void }) {
   const [open, setOpen] = useState(false)
   // Same lazy-mount latch as ProcessPanel: the summary body only renders

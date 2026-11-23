@@ -273,8 +273,8 @@ button:focus-visible {
    Every running-state indicator uses this one period and keyframe, and
    joins the cycle at the current phase through an inline animation-delay
    from useLivePhase, so dots that appear at different times breathe in
-   step. Only dots and the "thinking" placeholder carry the class; labels
-   and colours stay still. */
+   step. Only dots and the bare "Thinking" line carry the class; other
+   labels and colours stay still. */
 .live-breathe {
   animation: live-breathe var(--live-breathe-period) ease-in-out infinite;
 }
@@ -1586,17 +1586,6 @@ button:focus-visible {
 }
 
 
-/* The placeholder before the first token; it takes .live-breathe (#621). */
-.thinking-dots {
-  display: inline-block;
-  /* Reserve one line so the bubble doesn't nudge when the dots are replaced by
-     the first streamed token. */
-  min-height: 1.5em;
-  padding: 6px 2px;
-  color: var(--vscode-foreground);
-  font-style: italic;
-  opacity: 0.7;
-}
 /* Provider retry opencode is waiting on, shown where the thinking dots were (#611). */
 .retry-status {
   min-height: 1.5em;
@@ -1641,6 +1630,65 @@ button:focus-visible {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* ===== One line from send to done (#798) =====
+   The head is there before the reply has a block (.is-bare: nothing to open
+   yet) and stays where it is; only its words change. The old words leave
+   upward as the new ones come from below, both clipped to the row, which
+   keeps its 18px so nothing under it moves. The old words are drawn from an
+   attribute: they are not content any more. */
+.process.is-bare .process-head {
+  cursor: default;
+}
+.process-title-swap {
+  position: relative;
+  display: grid;
+}
+.process-title-text {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.process-title-text.is-entering {
+  animation: process-title-in 0.18s 0.06s ease-out both;
+}
+.process-title-out {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation: process-title-out 0.14s ease-in forwards;
+}
+.process-title-out::before {
+  content: attr(data-text);
+}
+@keyframes process-title-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@keyframes process-title-out {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+/* The line arriving: with the prompt, and again under a finished step. The
+   first reply of a turn takes over the line that was already waiting, so it
+   does not arrive a second time. */
+.pending-reply > .process,
+.msg.role-assistant + .msg.role-assistant > .process.is-bare {
+  animation: process-line-in 0.16s ease-out;
+}
+@keyframes process-line-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .process-title-out { display: none; }
+  .process-title-text.is-entering,
+  .pending-reply > .process,
+  .msg.role-assistant + .msg.role-assistant > .process.is-bare { animation: none; }
 }
 /* How many agents a folded live block has at work. */
 .process-agents {

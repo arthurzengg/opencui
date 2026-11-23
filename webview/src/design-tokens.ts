@@ -35,8 +35,7 @@ export const Z = {
   /** Floating UI within the chat: mention popover (open), prompt action row,
    *  review panel, the editing bubble while expanded. */
   overlay: 4,
-  /** Top-of-screen dropdowns: model/agent selector, history list,
-   *  thinking-dots indicator. */
+  /** Top-of-screen dropdowns: model/agent selector, history list. */
   popover: 20,
   /** Full-screen modal layer: image preview lightbox. */
   modal: 1000,

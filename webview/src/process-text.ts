@@ -87,7 +87,9 @@ export function processTitle(blocks: Block[], streaming = false): ProcessTitle {
   // blocks don't count as work and shouldn't drive the headline.
   const tools = ownToolUpdates(blocks).filter((update) => !isSystemReminderTool(update.tool))
   if (tools.length) return { title: toolHeadline(tools), source: -1 }
-  return { title: "Working", source: -1 }
+  // A live block with nothing to name yet: the line says what the model is
+  // doing, and the same word stands in before the reply has any block (#798).
+  return { title: streaming ? "Thinking" : "Working", source: -1 }
 }
 
 /**

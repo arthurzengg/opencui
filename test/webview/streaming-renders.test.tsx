@@ -127,7 +127,7 @@ describe("live process title", () => {
   it("holds the fallback until the streaming first line completes, then shows that line once", () => {
     vi.useFakeTimers()
     const { container, rerender } = render(<MessageView message={live("Let me look at the")} processOpen processOnly={false} />)
-    expect(container.querySelector(".process-title")?.textContent).toBe("Working")
+    expect(container.querySelector(".process-title")?.textContent).toBe("Thinking")
     expect(container.querySelector(".process-text-title")).toBeNull()
     expect(container.querySelector(".process-text")?.textContent).toContain("Let me look at the")
 
