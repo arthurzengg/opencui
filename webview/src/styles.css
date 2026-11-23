@@ -1450,16 +1450,23 @@ button:focus-visible {
   border-radius: var(--radius-sm);
   font-size: 10px;
   line-height: 16px;
-  color: var(--vscode-descriptionForeground);
-  opacity: 0.6;
+  /* Dimmed through the colour, never `opacity`: the chip holds its breakdown,
+     and a glass surface blurs nothing while an element above it is below full
+     opacity or has an opacity transition running, its delay included (#800). */
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 60%, transparent);
   cursor: default;
+  /* Back to rest on the breakdown's schedule, so the two leave together. */
+  transition: color 0.12s ease 0.12s, border-color 0.12s ease 0.12s;
+}
+.msg-usage:hover,
+.msg-usage:focus-visible {
+  color: var(--vscode-descriptionForeground);
+  transition-delay: 0s;
 }
 .msg-usage:hover {
-  opacity: 1;
   border-color: var(--vscode-editorWidget-border, var(--color-border));
 }
 .msg-usage:focus-visible {
-  opacity: 1;
   outline: 1px solid var(--accent);
   outline-offset: 1px;
 }
@@ -3000,6 +3007,7 @@ button:focus-visible {
   .msg-usage-row {
     animation: none;
   }
+  .msg-usage,
   .msg-usage-popover {
     transition: none;
   }
@@ -4279,16 +4287,6 @@ body.vscode-light {
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     border-color: var(--glass-edge);
     box-shadow: var(--glass-shine), var(--glass-shadow-low);
-  }
-  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg-usage {
-    /* The breakdown lingers for 0.24s after the pointer leaves. The chip must
-       stay at full opacity that long: below it the chip is a backdrop root
-       and the breakdown would blur nothing. */
-    transition: opacity 0s linear 0.24s;
-  }
-  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg-usage:hover,
-  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .msg-usage:focus-visible {
-    transition-delay: 0s;
   }
   body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .image-preview-overlay {
     background: rgba(0, 0, 0, 0.5);

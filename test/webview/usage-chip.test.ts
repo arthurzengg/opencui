@@ -41,6 +41,19 @@ describe("usage chip stylesheet", () => {
     expect(ruleBody(".msg-usage-popover.is-below")).toContain("top: calc(100% + 6px)")
   })
 
+  // The breakdown is glass, and jsdom cannot see what it blurs: while the chip
+  // above it was below full opacity, or only had an opacity transition
+  // running, the transcript showed through sharp for the 0.12s the breakdown
+  // lingers after the pointer leaves (#800).
+  it("dims the chip through its colour and puts no opacity on the element that holds the breakdown", () => {
+    const chipRules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, selectors]) =>
+      selectors.split(",").some((selector) => /\.msg-usage(:[a-z-]+)?$/.test(selector.trim())),
+    )
+    expect(chipRules.length).toBeGreaterThan(0)
+    for (const [, , body] of chipRules) expect(body).not.toContain("opacity")
+    expect(ruleBody(".msg-usage")).toContain("color: color-mix(")
+  })
+
   it("lays the rows out as a label/value grid with right-aligned tabular values (#742)", () => {
     expect(ruleBody(".msg-usage-table")).toContain("display: grid")
     const value = ruleBody(".msg-usage-value")
