@@ -30,6 +30,7 @@
   --radius-pill: 50%;
   /* One clock for every running-state indicator (#621); see useLivePhase. */
   --live-breathe-period: 1.6s;
+  --thinking-sweep-period: 2.4s;
 
   /* === Z-index tiers ===
      Mirrored in `design-tokens.ts` as `Z.*` for JSX consumers. */
@@ -273,8 +274,7 @@ button:focus-visible {
    Every running-state indicator uses this one period and keyframe, and
    joins the cycle at the current phase through an inline animation-delay
    from useLivePhase, so dots that appear at different times breathe in
-   step. Only dots and the bare "Thinking" line carry the class; other
-   labels and colours stay still. */
+   step. Only dots carry the class; labels and colours stay still. */
 .live-breathe {
   animation: live-breathe var(--live-breathe-period) ease-in-out infinite;
 }
@@ -1683,6 +1683,32 @@ button:focus-visible {
 }
 @keyframes process-line-in {
   from { opacity: 0; transform: translateY(4px); }
+}
+/* ===== The light on the live line (#798) =====
+   While a reply is pending, a soft band in the text colour crosses the
+   line's words, about 1.3s across and then a rest. The words keep their own
+   grey underneath, so the label never dims the way a breathing one does.
+   The phase comes from useSweepPhase: the line is redrawn at each handover
+   and each new title, and the light must carry on, not start again. Opted
+   into, never overridden: under reduced motion and in the high-contrast
+   themes none of this applies and the words are plain text. */
+@media (prefers-reduced-motion: no-preference) {
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .process.is-live .process-title-text {
+    background: linear-gradient(100deg, currentColor 0%, currentColor 36%, var(--vscode-foreground) 50%, currentColor 64%, currentColor 100%) 100% 0 / 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: thinking-sweep var(--thinking-sweep-period) cubic-bezier(0.4, 0, 0.3, 1) var(--sweep-phase, 0s) infinite;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .process.is-live .process-title-text.is-entering {
+    animation:
+      process-title-in 0.18s 0.06s ease-out both,
+      thinking-sweep var(--thinking-sweep-period) cubic-bezier(0.4, 0, 0.3, 1) var(--sweep-phase, 0s) infinite;
+  }
+}
+@keyframes thinking-sweep {
+  0% { background-position: 100% 0; }
+  55%, 100% { background-position: 0% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .process-title-out { display: none; }

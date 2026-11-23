@@ -1,6 +1,6 @@
 import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { RetryStatus } from "./RetryStatus"
-import { useLivePhase } from "../hooks/useLivePhase"
+import { useSweepPhase } from "../hooks/useLivePhase"
 import type { Block, Message } from "../hooks/useChatState"
 import type { Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit, SessionRetryInfo } from "../protocol"
 import { findTokenRanges, makeAttachmentLabel } from "../mention-tokens"
@@ -611,14 +611,14 @@ function ProcessPanel({
 
   return (
     <div
-      className={`process${open && !bare ? " is-open" : ""}${bare ? " is-bare" : ""}`}
+      className={`process${open && !bare ? " is-open" : ""}${bare ? " is-bare" : ""}${pending ? " is-live" : ""}`}
       role={bare ? "status" : undefined}
       aria-label={bare ? "Thinking" : undefined}
     >
       {/* One element whether or not there is a body, so the words keep their
           place and can change in place when the first block arrives. */}
       <button className="process-head" onClick={toggle} aria-expanded={bare ? undefined : open} disabled={bare}>
-        <TitleSwap text={title} breathing={bare && pending} />
+        <TitleSwap text={title} live={pending} />
         {agents && <span className={`process-agents${agents.waiting ? " is-waiting" : ""}`}>{agents.text}</span>}
         {!bare && <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>}
       </button>
@@ -640,7 +640,7 @@ const TITLE_LEAVE_MS = 200
  * are drawn from an attribute, not as text: they are no longer content, so a
  * selection does not copy them and nothing that reads the title sees two.
  */
-function TitleSwap({ text, breathing }: { text: string; breathing: boolean }) {
+function TitleSwap({ text, live }: { text: string; live: boolean }) {
   const [shown, setShown] = useState({ text, changes: 0 })
   const [leaving, setLeaving] = useState<string | null>(null)
   if (text !== shown.text) {
@@ -652,13 +652,14 @@ function TitleSwap({ text, breathing }: { text: string; breathing: boolean }) {
     const handle = window.setTimeout(() => setLeaving(null), TITLE_LEAVE_MS)
     return () => window.clearTimeout(handle)
   }, [leaving, shown.changes])
-  const phase = useLivePhase(breathing)
+  // While the reply is pending a light crosses the words (styles.css).
+  const phase = useSweepPhase(live, shown.changes)
   return (
     <span className="process-title process-title-swap">
       {leaving !== null && <span key={`out-${shown.changes}`} className="process-title-out" data-text={leaving} aria-hidden="true" />}
       <span
         key={shown.changes}
-        className={`process-title-text${shown.changes ? " is-entering" : ""}${breathing ? " live-breathe" : ""}`}
+        className={`process-title-text${shown.changes ? " is-entering" : ""}`}
         style={phase}
       >
         {text}

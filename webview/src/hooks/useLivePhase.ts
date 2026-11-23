@@ -17,3 +17,22 @@ export function livePhaseStyle(now: number = performance.now()): CSSProperties {
 export function useLivePhase(active: boolean): CSSProperties | undefined {
   return useMemo(() => (active ? livePhaseStyle() : undefined), [active])
 }
+
+/** Period of the light that crosses the live line; mirrors `--thinking-sweep-period` in styles.css. */
+export const THINKING_SWEEP_MS = 2400
+
+/**
+ * The same shared clock for the light on the live line (#798). The line under
+ * a sent prompt, the reply that takes it over, and each new title are
+ * different elements; without a common phase the light would start again at
+ * every one of them. `element` names the element the style is for, so the
+ * phase is taken again when a new one is drawn. It travels in a custom
+ * property, not an inline animation-delay: the label can carry a second
+ * animation (its words arriving), and an inline delay would apply to both.
+ */
+export function useSweepPhase(active: boolean, element: unknown): CSSProperties | undefined {
+  return useMemo(
+    () => (active ? ({ "--sweep-phase": `${-Math.round(performance.now() % THINKING_SWEEP_MS)}ms` } as CSSProperties) : undefined),
+    [active, element],
+  )
+}

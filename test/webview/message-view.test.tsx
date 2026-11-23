@@ -342,12 +342,19 @@ describe("MessageView (assistant role)", () => {
     expect(line.querySelector<HTMLButtonElement>(".process-head")!.disabled).toBe(true)
   })
 
-  it("the bare Thinking line breathes on the shared clock (#621)", () => {
-    const pending = assistantMessage("", { pending: true })
-    const { container } = render(<MessageView message={pending} processOpen={false} processOnly={false} />)
-    const words = container.querySelector(".process.is-bare .process-title-text") as HTMLElement
-    expect(words.className).toContain("live-breathe")
-    expect(words.style.animationDelay).toMatch(/^-?\d+ms$/)
+  // The light is for a pending reply only, and each drawn title joins the
+  // shared clock so it does not start again at a handover (#798).
+  it("only a pending reply's line is live, phased on the shared clock", () => {
+    const tool = { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "src/foo.ts" } } }
+    const step = (pending: boolean) => ({ id: "a1", role: "assistant", pending, blocks: [tool] }) as Message
+    const { container, rerender } = render(<MessageView message={step(true)} processOpen processOnly />)
+    const line = container.querySelector(".process")!
+    expect(line.classList.contains("is-live")).toBe(true)
+    expect(line.querySelector<HTMLElement>(".process-title-text")!.style.getPropertyValue("--sweep-phase")).toMatch(/^-?\d+ms$/)
+
+    rerender(<MessageView message={step(false)} processOpen={false} processOnly={false} />)
+    expect(line.classList.contains("is-live")).toBe(false)
+    expect(line.querySelector<HTMLElement>(".process-title-text")!.style.getPropertyValue("--sweep-phase")).toBe("")
   })
 
   // The first block opens the line that was already there: the same node,
