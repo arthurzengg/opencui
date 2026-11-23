@@ -30,6 +30,7 @@
   --radius-pill: 50%;
   /* One clock for every running-state indicator (#621); see useLivePhase. */
   --live-breathe-period: 1.6s;
+  --thinking-sweep-period: 2.4s;
 
   /* === Z-index tiers ===
      Mirrored in `design-tokens.ts` as `Z.*` for JSX consumers. */
@@ -273,8 +274,7 @@ button:focus-visible {
    Every running-state indicator uses this one period and keyframe, and
    joins the cycle at the current phase through an inline animation-delay
    from useLivePhase, so dots that appear at different times breathe in
-   step. Only dots and the "thinking" placeholder carry the class; labels
-   and colours stay still. */
+   step. Only dots carry the class; labels and colours stay still. */
 .live-breathe {
   animation: live-breathe var(--live-breathe-period) ease-in-out infinite;
 }
@@ -1586,17 +1586,6 @@ button:focus-visible {
 }
 
 
-/* The placeholder before the first token; it takes .live-breathe (#621). */
-.thinking-dots {
-  display: inline-block;
-  /* Reserve one line so the bubble doesn't nudge when the dots are replaced by
-     the first streamed token. */
-  min-height: 1.5em;
-  padding: 6px 2px;
-  color: var(--vscode-foreground);
-  font-style: italic;
-  opacity: 0.7;
-}
 /* Provider retry opencode is waiting on, shown where the thinking dots were (#611). */
 .retry-status {
   min-height: 1.5em;
@@ -1641,6 +1630,109 @@ button:focus-visible {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+/* ===== One line from send to done (#798) =====
+   The head is there before the reply has a block (.is-bare: nothing to open
+   yet) and stays where it is; only its words change. The old words leave
+   upward as the new ones come from below, both clipped to the row, which
+   keeps its 18px so nothing under it moves. The old words are drawn from an
+   attribute: they are not content any more. */
+.process.is-bare .process-head {
+  cursor: default;
+}
+.process-title-swap {
+  position: relative;
+  display: grid;
+}
+.process-title-text {
+  grid-area: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.process-title-text.is-entering {
+  animation: process-title-in 0.18s 0.06s ease-out both;
+}
+.process-title-out {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  animation: process-title-out 0.14s ease-in forwards;
+}
+.process-title-out::before {
+  content: attr(data-text);
+}
+@keyframes process-title-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+@keyframes process-title-out {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+/* The line arriving: with the prompt, and again under a finished step. The
+   first reply of a turn takes over the line that was already waiting, so it
+   does not arrive a second time. */
+.pending-reply > .process,
+.msg.role-assistant + .msg.role-assistant > .process.is-bare {
+  animation: process-line-in 0.16s ease-out;
+}
+@keyframes process-line-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+/* ===== The light on the live line (#798) =====
+   While a reply is pending, a soft band in the text colour crosses the
+   line's words, about 1.3s across and then a rest. The words keep their own
+   grey underneath, so the label never dims the way a breathing one does.
+   The phase comes from useSweepPhase: the line is redrawn at each handover
+   and each new title, and the light must carry on, not start again. Opted
+   into, never overridden: under reduced motion and in the high-contrast
+   themes none of this applies and the words are plain text. */
+@media (prefers-reduced-motion: no-preference) {
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .process.is-live .process-title-text {
+    background: linear-gradient(100deg, currentColor 0%, currentColor 36%, var(--vscode-foreground) 50%, currentColor 64%, currentColor 100%) 100% 0 / 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: thinking-sweep var(--thinking-sweep-period) cubic-bezier(0.4, 0, 0.3, 1) var(--sweep-phase, 0s) infinite;
+  }
+  body:not(.vscode-high-contrast):not(.vscode-high-contrast-light) .process.is-live .process-title-text.is-entering {
+    animation:
+      process-title-in 0.18s 0.06s ease-out both,
+      thinking-sweep var(--thinking-sweep-period) cubic-bezier(0.4, 0, 0.3, 1) var(--sweep-phase, 0s) infinite;
+  }
+}
+@keyframes thinking-sweep {
+  0% { background-position: 100% 0; }
+  55%, 100% { background-position: 0% 0; }
+}
+/* How long the turn has run, on the live line only and only past the first
+   seconds (#798). It sits on the right edge, where agent rows keep their
+   time, in fixed-width digits so the row does not jiggle on each tick. */
+.process-elapsed {
+  flex: none;
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.process-elapsed.is-entering {
+  animation: process-elapsed-in 0.2s ease-out;
+}
+@keyframes process-elapsed-in {
+  from { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .process-title-out { display: none; }
+  .process-elapsed.is-entering,
+  .process-title-text.is-entering,
+  .pending-reply > .process,
+  .msg.role-assistant + .msg.role-assistant > .process.is-bare { animation: none; }
 }
 /* How many agents a folded live block has at work. */
 .process-agents {
@@ -1722,6 +1814,63 @@ button:focus-visible {
   font-size: 13px;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+/* ===== Live reasoning, three lines at a time (#798) =====
+   A reasoning block that is being written shows through a window three lines
+   tall, anchored at its last line: text that no longer fits leaves at the
+   top under a short fade, and the box keeps its height. The slide of a new
+   line is an animation set in ReasoningWindow. When the block ends the
+   window closes like the Process body does, on a grid row; it stays mounted
+   for that, so it is hidden from selection once closed (#575). */
+.process-window {
+  display: grid;
+  grid-template-rows: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0 0 10px;
+  transition:
+    grid-template-rows 0.2s ease,
+    margin-bottom 0.2s ease,
+    opacity 0.2s ease,
+    visibility 0s;
+}
+.process-window.is-closed {
+  grid-template-rows: 0fr;
+  margin-bottom: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.2s ease,
+    margin-bottom 0.2s ease,
+    opacity 0.2s ease,
+    visibility 0s 0.2s;
+}
+.process-window-clip {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 0;
+  /* Three lines of .process-text: 13px at 1.45. */
+  max-height: calc(3 * 1.45 * 13px);
+  overflow: hidden;
+  cursor: pointer;
+}
+.process-window-clip.is-over {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
+}
+.process-window-clip:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.process-window-text {
+  flex: none;
+}
+.process-window .process-text {
+  margin: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .process-window,
+  .process-window.is-closed { transition: none; }
 }
 /* Markdown body inside ProcessText (reasoning blocks emit headings/lists/code).
    `remarkBreaks` handles line breaks via <br>, so pre-wrap would only

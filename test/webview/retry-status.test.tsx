@@ -23,7 +23,7 @@ describe("MessageView retry status (#611)", () => {
         retry={{ attempt: 2, message: "Provider is overloaded", next }}
       />,
     )
-    expect(container.querySelector(".thinking-dots")).toBeNull()
+    expect(container.querySelector(".process")).toBeNull()
     expect(screen.getByRole("status").textContent).toBe(
       "Retrying (attempt 2): Provider is overloaded · next try in 12s",
     )
@@ -66,7 +66,7 @@ describe("MessageView retry status (#611)", () => {
 
   it("keeps the thinking indicator when there is no retry", () => {
     const { container } = render(<MessageView message={pending} processOpen={false} processOnly={false} />)
-    expect(container.querySelector(".thinking-dots")).not.toBeNull()
+    expect(container.querySelector(".process.is-bare")).not.toBeNull()
     expect(container.querySelector(".retry-status")).toBeNull()
   })
 

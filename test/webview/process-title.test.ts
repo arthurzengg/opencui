@@ -10,7 +10,7 @@ const read: ChatBlock = {
 
 describe("processTitle on a live message", () => {
   it("reads the streaming first line as the title only once a newline closes it", () => {
-    expect(processTitle([reasoning("Let me look at the stream")], true).title).toBe("Working")
+    expect(processTitle([reasoning("Let me look at the stream")], true).title).toBe("Thinking")
     expect(processTitle([reasoning("Let me look at the stream\nIt subscribes once.")], true)).toEqual({
       title: "Let me look at the stream",
       source: 0,

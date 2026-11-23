@@ -1,6 +1,6 @@
-import { Fragment, memo, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Fragment, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { RetryStatus } from "./RetryStatus"
-import { useLivePhase } from "../hooks/useLivePhase"
+import { useSweepPhase } from "../hooks/useLivePhase"
 import type { Block, Message } from "../hooks/useChatState"
 import type { Attachment, ConversationMention, ConversationSummary, DirEntry, FileSearchHit, SessionRetryInfo } from "../protocol"
 import { findTokenRanges, makeAttachmentLabel } from "../mention-tokens"
@@ -21,9 +21,10 @@ import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
 import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
-import { ToolTrace } from "./ToolCard"
+import { formatElapsed, ToolTrace } from "./ToolCard"
 import { agentsNote } from "../agent-row"
-import { AgentTasksContext, TurnContext } from "../trace-context"
+import { AgentTasksContext, TurnContext, TurnStartContext } from "../trace-context"
+import { prefersReducedMotion } from "../bottom-glide"
 import { ICON_SIZE } from "../design-tokens"
 import { sameUsage, usageBreakdown, usageDetail, usageSummary, type UsageRow } from "../usage-format"
 
@@ -133,11 +134,8 @@ function MessageViewComponent({
   return (
     <div className={`msg role-${message.role}`}>
       {message.ref?.label && <div className="msg-ref">{message.ref.label}</div>}
-      <TurnScope message={message}>{renderMessageBlocks(message, processOpen, processOnly, onReviewFile)}</TurnScope>
+      <TurnScope message={message}>{renderMessageBlocks(message, processOpen, processOnly, onReviewFile, !retry)}</TurnScope>
       {retry && message.pending && <RetryStatus retry={retry} onOpenLink={onOpenLink} />}
-      {!retry && message.pending && message.blocks.length === 0 && (
-        <ThinkingLine />
-      )}
       {(() => {
         // Stopped state overrides error: a message can carry both
         //   1) the new `stopped: true` flag (set by my reducer fix), OR
@@ -510,11 +508,18 @@ export function renderUserText(text: string, knownLabels: Set<string>): ReactNod
   return out
 }
 
-function renderMessageBlocks(message: Message, processOpen: boolean, processOnly: boolean, onReviewFile?: (path: string) => void) {
+/**
+ * `placeholder` lets a pending reply with nothing to show yet draw the panel's
+ * head alone, titled Thinking: the line is there from the first frame, and
+ * the first block opens the same panel instead of replacing a separate
+ * element (#798). A provider retry takes that place instead (#611).
+ */
+function renderMessageBlocks(message: Message, processOpen: boolean, processOnly: boolean, onReviewFile?: (path: string) => void, placeholder = true) {
   if (message.role !== "assistant") return renderBlocks(message.blocks, false, onReviewFile)
   const pending = Boolean(message.pending)
+  const waiting = pending && placeholder
   if (processOnly) {
-    if (!hasProcessBlocks(message.blocks)) return null
+    if (!hasProcessBlocks(message.blocks) && !waiting) return null
     return <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-only-${message.id}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
   }
 
@@ -539,7 +544,7 @@ function renderMessageBlocks(message: Message, processOpen: boolean, processOnly
     if (hasProcessBlocks(process)) {
       panel = <ProcessPanel blocks={process} pending={false} openKey={`final-${message.id}`} defaultOpen={false} onReviewFile={onReviewFile} />
     }
-  } else if (hasProcessBlocks(message.blocks)) {
+  } else if (hasProcessBlocks(message.blocks) || waiting) {
     // Ends on activity/reasoning — no distinct answer to surface yet, so the
     // whole message is the live process.
     panel = <ProcessPanel blocks={message.blocks} pending={pending} openKey={`process-${message.id}`} defaultOpen={processOpen} onReviewFile={onReviewFile} />
@@ -589,11 +594,22 @@ function ProcessPanel({
     if (defaultOpen) setEverOpened(true)
   }, [defaultOpen, openKey])
 
+  // A reply that is being written shows its reasoning through a short window
+  // (ReasoningWindow). Asking for all of it lasts for this box's life: by
+  // clicking the window, or by opening a finished box by hand, which shows the
+  // full reasoning the way a restored transcript does (#798).
+  const [reasoningFull, setReasoningFull] = useState(!pending)
+
   const toggle = () => {
-    if (!open) setEverOpened(true)
+    if (!open) {
+      setEverOpened(true)
+      if (!pending) setReasoningFull(true)
+    }
     setOpen(!open)
   }
 
+  // Nothing to open yet: the head stands alone as the reply's first line (#798).
+  const bare = !hasProcessBlocks(blocks)
   const headline = processTitle(blocks, pending)
   const summary = pending ? undefined : processSummary(blocks)
   const title = summary ?? headline.title
@@ -602,19 +618,111 @@ function ProcessPanel({
   const agents = pending && !open ? agentsNote(tasks) : undefined
   // The head shows that block's first line, so the body carries only the rest.
   const headlined = summary === undefined ? headline.source : -1
+  const since = useContext(TurnStartContext)
 
   return (
-    <div className={`process ${open ? "is-open" : ""}`}>
-      <button className="process-head" onClick={toggle} aria-expanded={open}>
-        <span className="process-title">{title}</span>
+    <div
+      className={`process${open && !bare ? " is-open" : ""}${bare ? " is-bare" : ""}${pending ? " is-live" : ""}`}
+      role={bare ? "status" : undefined}
+      aria-label={bare ? "Thinking" : undefined}
+    >
+      {/* One element whether or not there is a body, so the words keep their
+          place and can change in place when the first block arrives. */}
+      <button className="process-head" onClick={toggle} aria-expanded={bare ? undefined : open} disabled={bare}>
+        <TitleSwap text={title} live={pending} />
         {agents && <span className={`process-agents${agents.waiting ? " is-waiting" : ""}`}>{agents.text}</span>}
-        <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>
+        {!bare && <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>}
+        {pending && since !== undefined && <TurnElapsed since={since} />}
       </button>
       {/* The clip wrapper stays mounted; the grid clips it to 0fr when
           collapsed so expand/collapse animates height instead of snapping. */}
       <div className="process-body-clip">
-        <div className="process-body">{everOpened ? renderBlocks(blocks, true, onReviewFile, pending, headlined) : null}</div>
+        <div className="process-body">
+          {everOpened && !bare
+            ? renderBlocks(blocks, true, onReviewFile, pending, headlined, reasoningFull ? undefined : () => setReasoningFull(true))
+            : null}
+        </div>
       </div>
+    </div>
+  )
+}
+
+/** A quick reply never shows a counter; past this the live line says how long the turn has run. */
+const TURN_ELAPSED_GRACE_MS = 3000
+
+/**
+ * The turn's running time on the live line (#798). It ticks on the turn's own
+ * second boundaries, so the figure does not hiccup when a new step's line
+ * takes over from the last one's.
+ */
+function TurnElapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    let handle = 0
+    const wait = () => {
+      handle = window.setTimeout(() => {
+        setNow(Date.now())
+        wait()
+      }, 1000 - ((Date.now() - since) % 1000))
+    }
+    wait()
+    return () => window.clearTimeout(handle)
+  }, [since])
+  const elapsed = now - since
+  if (elapsed < TURN_ELAPSED_GRACE_MS) return null
+  // It fades in the one time it appears; a later step's line starts with it there.
+  const entering = elapsed < TURN_ELAPSED_GRACE_MS + 1000
+  return <span className={`process-elapsed${entering ? " is-entering" : ""}`}>{formatElapsed(elapsed)}</span>
+}
+
+/** How long the old words stay drawn; a little past their 140 ms exit in styles.css. */
+const TITLE_LEAVE_MS = 200
+
+/**
+ * The head's words. When they change, the old ones leave upward while the new
+ * ones arrive from below, inside the row's own height (#798). The old words
+ * are drawn from an attribute, not as text: they are no longer content, so a
+ * selection does not copy them and nothing that reads the title sees two.
+ */
+function TitleSwap({ text, live }: { text: string; live: boolean }) {
+  const [shown, setShown] = useState({ text, changes: 0 })
+  const [leaving, setLeaving] = useState<string | null>(null)
+  if (text !== shown.text) {
+    setShown({ text, changes: shown.changes + 1 })
+    setLeaving(shown.text)
+  }
+  useEffect(() => {
+    if (leaving === null) return
+    const handle = window.setTimeout(() => setLeaving(null), TITLE_LEAVE_MS)
+    return () => window.clearTimeout(handle)
+  }, [leaving, shown.changes])
+  // While the reply is pending a light crosses the words (styles.css).
+  const phase = useSweepPhase(live, shown.changes)
+  return (
+    <span className="process-title process-title-swap">
+      {leaving !== null && <span key={`out-${shown.changes}`} className="process-title-out" data-text={leaving} aria-hidden="true" />}
+      <span
+        key={shown.changes}
+        className={`process-title-text${shown.changes ? " is-entering" : ""}`}
+        style={phase}
+      >
+        {text}
+      </span>
+    </span>
+  )
+}
+
+const NO_BLOCKS: Block[] = []
+
+/**
+ * The line that stands for a reply the server has not opened yet, so a sent
+ * prompt is answered at once (#798). It is the head a pending reply starts
+ * with, in the same place, so the reply taking over changes nothing on screen.
+ */
+export function PendingReply() {
+  return (
+    <div className="msg role-assistant pending-reply">
+      <ProcessPanel blocks={NO_BLOCKS} pending openKey="pending-reply" defaultOpen={false} />
     </div>
   )
 }
@@ -626,16 +734,6 @@ function ProcessPanel({
  * ProcessPanel there is no openKey/defaultOpen churn: it starts collapsed
  * and stays wherever the user toggled it.
  */
-/** The pre-token placeholder. It breathes on the shared clock (#621). */
-function ThinkingLine() {
-  const phase = useLivePhase(true)
-  return (
-    <div className="thinking-dots live-breathe" style={phase} role="status" aria-label="Thinking">
-      thinking
-    </div>
-  )
-}
-
 function CompactionMarker({ message, onReviewFile }: { message: Message; onReviewFile?: (path: string) => void }) {
   const [open, setOpen] = useState(false)
   // Same lazy-mount latch as ProcessPanel: the summary body only renders
@@ -661,7 +759,15 @@ function CompactionMarker({ message, onReviewFile }: { message: Message; onRevie
   )
 }
 
-function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path: string) => void, streaming = false, headlined = -1) {
+/** `onExpandReasoning` puts reasoning behind the live window; without it reasoning renders in full. */
+function renderBlocks(
+  blocks: Block[],
+  processMode = false,
+  onReviewFile?: (path: string) => void,
+  streaming = false,
+  headlined = -1,
+  onExpandReasoning?: () => void,
+) {
   const nodes: ReactNode[] = []
   let tools: Extract<Block, { type: "tool" }>[] = []
   let patches: Extract<Block, { type: "patch" }>[] = []
@@ -726,11 +832,66 @@ function renderBlocks(blocks: Block[], processMode = false, onReviewFile?: (path
     if (b.type === "reasoning") {
       const cleaned = stripInternalMarkers(b.text)
       if (!cleaned.trim()) return
-      nodes.push(<ProcessText key={i} text={cleaned} streaming={live} settled={!live || firstLineSettled(b.text)} inHead={i === headlined} />)
+      const text = <ProcessText key={i} text={cleaned} streaming={live} settled={!live || firstLineSettled(b.text)} inHead={i === headlined} />
+      nodes.push(onExpandReasoning ? <ReasoningWindow key={i} open={live} onExpand={onExpandReasoning}>{text}</ReasoningWindow> : text)
     }
   })
   flushTrace()
   return nodes
+}
+
+/**
+ * Live reasoning, three lines at a time (#798). The newest lines stay and
+ * older ones leave at the top, so the box keeps its height instead of pushing
+ * the transcript down and folding away at once when the step ends. When the
+ * block is no longer the one being written the window closes: the head has
+ * its gist, and all of it is one click away.
+ */
+function ReasoningWindow({ open, onExpand, children }: { open: boolean; onExpand: () => void; children: ReactNode }) {
+  const clip = useRef<HTMLDivElement>(null)
+  const text = useRef<HTMLDivElement>(null)
+  const height = useRef(0)
+  // Any render may have added text. When that pushes a line out at the top,
+  // the text is drawn where it was and slides into place, so the new line
+  // rises in. Additive: a line arriving mid-slide adds to the slide under way.
+  useLayoutEffect(() => {
+    const box = clip.current
+    const inner = text.current
+    if (!box || !inner) return
+    const now = inner.offsetHeight
+    const before = height.current
+    height.current = now
+    const room = box.clientHeight
+    const over = now > room + 1
+    box.classList.toggle("is-over", over)
+    if (!over || before === 0 || now <= before || prefersReducedMotion() || typeof inner.animate !== "function") return
+    inner.animate([{ transform: `translateY(${now - Math.max(before, room)}px)` }, { transform: "translateY(0)" }], {
+      duration: 200,
+      easing: "cubic-bezier(0.2, 0.7, 0.2, 1)",
+      composite: "add",
+    })
+  })
+  const label = "Show all of the reasoning"
+  return (
+    <div className={`process-window${open ? "" : " is-closed"}`}>
+      <div
+        ref={clip}
+        className="process-window-clip"
+        role="button"
+        tabIndex={open ? 0 : -1}
+        title={label}
+        aria-label={label}
+        onClick={onExpand}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" && e.key !== " ") return
+          e.preventDefault()
+          onExpand()
+        }}
+      >
+        <div ref={text} className="process-window-text">{children}</div>
+      </div>
+    </div>
+  )
 }
 
 /**
