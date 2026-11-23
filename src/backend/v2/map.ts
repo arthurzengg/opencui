@@ -204,7 +204,8 @@ export function mapAgents(agents: AgentInfo[]): Agent[] {
   return agents
     .filter((a) => !a.hidden)
     .map((a) => ({
-      name: a.name,
+      // 2.0 selects agents by id, 'name' is only a display label
+      name: a.id,
       description: a.description,
       mode: a.mode,
       builtIn: false,
