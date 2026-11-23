@@ -15,7 +15,7 @@ import { ReviewPanel } from "./components/ReviewPanel"
 import { IndexStatus } from "./components/IndexStatus"
 import { promptHistory } from "./prompt-history"
 import { turnUsage } from "./usage-format"
-import { AgentTasksContext } from "./trace-context"
+import { AgentTasksContext, TurnStartContext } from "./trace-context"
 import { startRefraction } from "./glass-refraction"
 
 export default function App() {
@@ -197,6 +197,7 @@ export default function App() {
   // not on every coalesced streaming frame.
   const turns = useMemo(() => groupTurns(state.messages), [state.messages])
   const lastTurnKey = turns[turns.length - 1]?.key
+  const turnStart = useTurnStart(turns[turns.length - 1], state.busy)
   const { busy, activeProcessID } = useMemo(() => {
     const busy = state.busy || state.messages.some((m) => m.pending)
     const activeProcessID = state.messages.findLast((m) => m.role === "assistant" && m.pending)?.id
@@ -308,6 +309,7 @@ export default function App() {
 
   return (
     <AgentTasksContext.Provider value={agentTasks}>
+    <TurnStartContext.Provider value={turnStart}>
     <div className="app" style={appStyle}>
       <StatusBar
         connected={state.connected}
@@ -514,12 +516,27 @@ export default function App() {
         )}
       </div>
     </div>
+    </TurnStartContext.Provider>
     </AgentTasksContext.Provider>
   )
 }
 
 /** `usage` is what the turn's steps used together; its last reply shows it. */
 type Turn = { user?: Message; assistants: Message[]; key: string; usage?: Message["usage"] }
+
+/**
+ * When the open turn began: stamped as its prompt arrives with no reply yet.
+ * A turn that was already under way when the panel loaded, or one restored
+ * from a saved transcript, has no start the panel can vouch for, and the live
+ * line then shows no time at all (#798).
+ */
+function useTurnStart(turn: Turn | undefined, busy: boolean): number | undefined {
+  const seen = useRef<{ key?: string; at?: number }>({})
+  if (seen.current.key !== turn?.key) {
+    seen.current = { key: turn?.key, at: turn?.user && turn.assistants.length === 0 && busy ? Date.now() : undefined }
+  }
+  return seen.current.at
+}
 
 /**
  * Group a flat message list into per-turn buckets: each user message starts a

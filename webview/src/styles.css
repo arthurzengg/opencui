@@ -1710,8 +1710,26 @@ button:focus-visible {
   0% { background-position: 100% 0; }
   55%, 100% { background-position: 0% 0; }
 }
+/* How long the turn has run, on the live line only and only past the first
+   seconds (#798). It sits on the right edge, where agent rows keep their
+   time, in fixed-width digits so the row does not jiggle on each tick. */
+.process-elapsed {
+  flex: none;
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.process-elapsed.is-entering {
+  animation: process-elapsed-in 0.2s ease-out;
+}
+@keyframes process-elapsed-in {
+  from { opacity: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   .process-title-out { display: none; }
+  .process-elapsed.is-entering,
   .process-title-text.is-entering,
   .pending-reply > .process,
   .msg.role-assistant + .msg.role-assistant > .process.is-bare { animation: none; }

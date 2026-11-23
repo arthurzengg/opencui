@@ -21,9 +21,9 @@ import { ImagePreviewModal } from "./ImagePreviewModal"
 import { ImageThumbnail, type Thumbnailable } from "./ImageThumbnail"
 import { Markdown } from "./Markdown"
 import { PromptBox } from "./PromptBox"
-import { ToolTrace } from "./ToolCard"
+import { formatElapsed, ToolTrace } from "./ToolCard"
 import { agentsNote } from "../agent-row"
-import { AgentTasksContext, TurnContext } from "../trace-context"
+import { AgentTasksContext, TurnContext, TurnStartContext } from "../trace-context"
 import { ICON_SIZE } from "../design-tokens"
 import { sameUsage, usageBreakdown, usageDetail, usageSummary, type UsageRow } from "../usage-format"
 
@@ -608,6 +608,7 @@ function ProcessPanel({
   const agents = pending && !open ? agentsNote(tasks) : undefined
   // The head shows that block's first line, so the body carries only the rest.
   const headlined = summary === undefined ? headline.source : -1
+  const since = useContext(TurnStartContext)
 
   return (
     <div
@@ -621,6 +622,7 @@ function ProcessPanel({
         <TitleSwap text={title} live={pending} />
         {agents && <span className={`process-agents${agents.waiting ? " is-waiting" : ""}`}>{agents.text}</span>}
         {!bare && <span className={`process-caret ${open ? "is-open" : ""}`}>›</span>}
+        {pending && since !== undefined && <TurnElapsed since={since} />}
       </button>
       {/* The clip wrapper stays mounted; the grid clips it to 0fr when
           collapsed so expand/collapse animates height instead of snapping. */}
@@ -629,6 +631,34 @@ function ProcessPanel({
       </div>
     </div>
   )
+}
+
+/** A quick reply never shows a counter; past this the live line says how long the turn has run. */
+const TURN_ELAPSED_GRACE_MS = 3000
+
+/**
+ * The turn's running time on the live line (#798). It ticks on the turn's own
+ * second boundaries, so the figure does not hiccup when a new step's line
+ * takes over from the last one's.
+ */
+function TurnElapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    let handle = 0
+    const wait = () => {
+      handle = window.setTimeout(() => {
+        setNow(Date.now())
+        wait()
+      }, 1000 - ((Date.now() - since) % 1000))
+    }
+    wait()
+    return () => window.clearTimeout(handle)
+  }, [since])
+  const elapsed = now - since
+  if (elapsed < TURN_ELAPSED_GRACE_MS) return null
+  // It fades in the one time it appears; a later step's line starts with it there.
+  const entering = elapsed < TURN_ELAPSED_GRACE_MS + 1000
+  return <span className={`process-elapsed${entering ? " is-entering" : ""}`}>{formatElapsed(elapsed)}</span>
 }
 
 /** How long the old words stay drawn; a little past their 140 ms exit in styles.css. */

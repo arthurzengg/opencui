@@ -3,6 +3,7 @@ import { act, render, screen, cleanup, fireEvent, waitFor } from "@testing-libra
 import userEvent from "@testing-library/user-event"
 import { MessageView } from "../../webview/src/components/MessageView"
 import type { Message } from "../../webview/src/hooks/useChatState"
+import { TurnStartContext } from "../../webview/src/trace-context"
 
 afterEach(() => {
   cleanup()
@@ -355,6 +356,36 @@ describe("MessageView (assistant role)", () => {
     rerender(<MessageView message={step(false)} processOpen={false} processOnly={false} />)
     expect(line.classList.contains("is-live")).toBe(false)
     expect(line.querySelector<HTMLElement>(".process-title-text")!.style.getPropertyValue("--sweep-phase")).toBe("")
+  })
+
+  // The live line says how long the turn has run: not in its first seconds,
+  // where it would only flicker, and never on a line that is no longer live (#798).
+  it("the live line counts the turn's time once three seconds have passed", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-11-23T10:00:00Z"))
+    const since = Date.now()
+    const tool = { type: "tool", update: { callID: "c1", tool: "read", status: "completed", input: { filePath: "src/foo.ts" } } }
+    const view = (pending: boolean) => (
+      <TurnStartContext.Provider value={since}>
+        <MessageView message={{ id: "a1", role: "assistant", pending, blocks: [tool] } as Message} processOpen processOnly />
+      </TurnStartContext.Provider>
+    )
+    const { container, rerender } = render(view(true))
+    act(() => {
+      vi.advanceTimersByTime(2900)
+    })
+    expect(container.querySelector(".process-elapsed")).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
+    expect(container.querySelector(".process-elapsed")?.textContent).toBe("3s")
+    act(() => {
+      vi.advanceTimersByTime(5000)
+    })
+    expect(container.querySelector(".process-elapsed")?.textContent).toBe("8s")
+
+    rerender(view(false))
+    expect(container.querySelector(".process-elapsed")).toBeNull()
   })
 
   // The first block opens the line that was already there: the same node,
