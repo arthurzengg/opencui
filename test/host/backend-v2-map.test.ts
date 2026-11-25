@@ -135,6 +135,11 @@ describe("opencode 2.0 mappers (#693)", () => {
     expect(mapAgents(agents)).toEqual([expect.objectContaining({ name: "build", mode: "primary", description: "Default", model: { providerID: "anthropic", modelID: "claude-sonnet-5" } })])
   })
 
+  it("uses the agent id, not the display name, so switchAgent can find it", () => {
+    const agents: AgentInfo[] = [{ id: "build", name: "Build", mode: "primary", hidden: false, request: { settings: {}, headers: {} }, permissions: [] }]
+    expect(mapAgents(agents)).toEqual([expect.objectContaining({ name: "build" })])
+  })
+
   it("maps commands without a template, since 2.0 carries none", () => {
     const commands: CommandInfo[] = [{ name: "review", description: "Review changes" }]
     expect(mapCommands(commands)).toEqual([{ name: "review", description: "Review changes" }])
