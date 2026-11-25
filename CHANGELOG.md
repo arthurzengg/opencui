@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-25
+
+### Changed
+
+- Every surface that floats over the conversation is now glass: a translucent pane that blurs what scrolls behind it, with one highlight along its top edge. That covers chat history, the saved permission rules, the model picker, the `@` and `/` pickers, the pinned question, the composer, the permission, question and review cards, queued messages, the cost breakdown, the context tooltip and the image preview. The pinned question also bends the text that passes under its edge. The conversation stays sharp down to the cards: the blurred band above the composer is gone. A high-contrast theme and the system's reduced-transparency setting keep the opaque surfaces (#790, #791, #800, #801).
+- A subagent is now one row in the process trace, where it was started: its task, the kind of agent and its latest step, and its time. Click the row for its calls, its model and its step count. The row says when the agent is waiting for a permission answer, failed, was stopped with the turn, or was cancelled while the turn went on. A folded reply says how many agents are working or need approval, and its summary counts them ("Read 1 · 2 agents"). The Agents pill and its list are removed (#786, #787, #796, #797).
+- A permission request from a subagent names it: the card shows the kind of agent and its task above the request (#784, #785).
+- Thinking is one line from the moment a prompt is sent until the reply is done. It appears under the prompt at once, reads "Thinking" until there is a step to name, and then becomes the head of the process trace in place, the words cross-fading as the step changes. A soft light crosses the line while the reply is live, and the turn's elapsed time shows on it after three seconds. While the model reasons, its last three lines show under the head and fold away when it moves on; click them for the full text. Reduced motion and high-contrast themes get the line without the light (#798, #799).
+- `opencui.opencodeConfigMode` now defaults to `user`: the opencode server the panel starts loads your plugins, as opencode does in the terminal. Nothing changes for an install that never set it, because `isolated`, the old default, never turned plugins off. It does now, on opencode 1.x: if you set `isolated` yourself, your plugins stop loading in the panel, and `user` brings them back. Your opencode config files load in both modes, and on opencode 2.x `isolated` has no effect (#788, #789).
+- The README's GIFs are recorded again with the glass surfaces (#794, #795).
+
+### Fixed
+
+- The cost under a reply is the cost of the whole turn. It was the cost of the turn's last step only, a small part of a reply that took several steps. The session's total, in the context ring's tooltip, now counts every message instead of the newest 100, the subagents the session started, and turns that were edited or undone since. A request stopped mid-stream is still missing from both: the server records no usage for it (#792, #793).
+- On opencode 2.x, choosing an agent other than (default) works. The panel sent the agent's display name where the server expects its id, and every prompt failed with "Agent not found". Contributed by AlexMicael (#802).
+
 ## [1.18.4] - 2026-11-19
 
 ### Fixed
