@@ -148,12 +148,12 @@
         },
         "opencui.opencodeConfigMode": {
           "type": "string",
-          "enum": ["isolated", "user"],
+          "enum": ["user", "isolated"],
           "enumDescriptions": [
-            "Run opencode without your plugins, so the panel behaves the same whatever you have installed. Takes effect on opencode 1.x. Your opencode config files still load.",
-            "Load your opencode plugins too, as opencode does in the terminal."
+            "Load your opencode plugins, as opencode does in the terminal.",
+            "Run opencode without your plugins, so the panel behaves the same whatever you have installed. Takes effect on opencode 1.x. Your opencode config files still load."
           ],
-          "default": "isolated",
+          "default": "user",
           "description": "Whether the opencode server started by OpenCode Panel loads your opencode plugins. Your opencode config files load in both modes."
         },
         "opencui.context.enabled": {

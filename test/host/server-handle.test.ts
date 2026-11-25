@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, writeFileSync, chmodSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { startOpencodeServer, UnsupportedOpencodeError } from "../../src/server"
+import type * as vscode from "vscode"
+import { readConfigMode, startOpencodeServer, UnsupportedOpencodeError } from "../../src/server"
 
 // A stand-in opencode binary: announces readiness like the real server, then
 // exits shortly after — letting us observe the post-startup exit notification
@@ -36,6 +37,19 @@ describe("startOpencodeServer config mode (#788)", () => {
     } finally {
       if (inherited !== undefined) process.env.OPENCODE_PURE = inherited
     }
+  })
+})
+
+describe("the default config mode (#788)", () => {
+  // Until isolated mode worked, every install ran with its plugins: an update
+  // must not take them from someone who never touched the setting.
+  it("loads plugins unless the setting says isolated, as the manifest declares", () => {
+    const config = (value?: string) => ({ get: () => value }) as unknown as vscode.WorkspaceConfiguration
+    expect(readConfigMode(config(undefined))).toBe("user")
+    expect(readConfigMode(config("user"))).toBe("user")
+    expect(readConfigMode(config("isolated"))).toBe("isolated")
+    const manifest = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf8"))
+    expect(manifest.contributes.configuration.properties["opencui.opencodeConfigMode"].default).toBe("user")
   })
 })
 

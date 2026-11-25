@@ -1,6 +1,6 @@
 import * as vscode from "vscode"
 import * as path from "path"
-import type { ServerManager, Backend } from "../server"
+import { readConfigMode, type ServerManager, type Backend } from "../server"
 import type { Preferences } from "../preferences"
 import {
   subscribeSession,
@@ -1301,16 +1301,12 @@ export class ChatView implements vscode.WebviewViewProvider {
     const root = primaryWorkspaceRoot()
     if (!root) return undefined
     const all = getWorkspaceRoots()
-    const configMode =
-      vscode.workspace.getConfiguration("opencui").get<string>("opencodeConfigMode") === "user"
-        ? "user"
-        : "isolated"
     return {
       name: root.name,
       root: root.fsPath,
       isDefault: root.isDefault,
       multiRoot: all.length > 1,
-      configMode,
+      configMode: readConfigMode(vscode.workspace.getConfiguration("opencui")),
     }
   }
 
