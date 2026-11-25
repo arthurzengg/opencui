@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, writeFileSync, chmodSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { startOpencodeServer, UnsupportedOpencodeError } from "../../src/server"
+import type * as vscode from "vscode"
+import { readConfigMode, startOpencodeServer, UnsupportedOpencodeError } from "../../src/server"
 
 // A stand-in opencode binary: announces readiness like the real server, then
 // exits shortly after — letting us observe the post-startup exit notification
@@ -14,6 +15,43 @@ function fakeBinary(script: string): string {
   chmodSync(file, 0o755)
   return file
 }
+
+describe("startOpencodeServer config mode (#788)", () => {
+  // The stand-in records the two variables it was started with.
+  async function spawnedWith(configMode: "isolated" | "user", port: number) {
+    const out = join(mkdtempSync(join(tmpdir(), "opencui-spawn-env-")), "env")
+    const bin = fakeBinary(`printf '%s|%s' "\${OPENCODE_PURE-unset}" "\${OPENCODE_CONFIG_CONTENT-unset}" > "${out}"\necho "opencode server listening on http://127.0.0.1:${port}"\nexec sleep 10`)
+    const handle = await startOpencodeServer(bin, { hostname: "127.0.0.1", port, timeout: 5000, configMode })
+    handle.close()
+    return readFileSync(out, "utf8")
+  }
+
+  it("starts opencode without external plugins in isolated mode, and leaves them on in user mode", async () => {
+    const inherited = process.env.OPENCODE_PURE
+    delete process.env.OPENCODE_PURE
+    try {
+      // An empty inline config alone left the user's plugins running: opencode
+      // merges it over their config files (recorded from 1.19.6).
+      expect(await spawnedWith("isolated", 43231)).toBe("1|{}")
+      expect(await spawnedWith("user", 43232)).toBe("unset|unset")
+    } finally {
+      if (inherited !== undefined) process.env.OPENCODE_PURE = inherited
+    }
+  })
+})
+
+describe("the default config mode (#788)", () => {
+  // Until isolated mode worked, every install ran with its plugins: an update
+  // must not take them from someone who never touched the setting.
+  it("loads plugins unless the setting says isolated, as the manifest declares", () => {
+    const config = (value?: string) => ({ get: () => value }) as unknown as vscode.WorkspaceConfiguration
+    expect(readConfigMode(config(undefined))).toBe("user")
+    expect(readConfigMode(config("user"))).toBe("user")
+    expect(readConfigMode(config("isolated"))).toBe("isolated")
+    const manifest = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf8"))
+    expect(manifest.contributes.configuration.properties["opencui.opencodeConfigMode"].default).toBe("user")
+  })
+})
 
 describe("startOpencodeServer exit notification", () => {
   it("notifies onExit listeners when the process dies AFTER startup", async () => {

@@ -49,7 +49,7 @@ export class ServerManager {
   private api: BackendApi | undefined
   /** Workspace root captured at start time so subsequent `ensure()` calls return a stable Backend. */
   private workspace: WorkspaceRoot | undefined
-  private configMode: OpencodeConfigMode = "isolated"
+  private configMode: OpencodeConfigMode = "user"
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -252,9 +252,13 @@ function isOpencode2(version: string | undefined): boolean {
   return Number(version?.split(".")[0]) >= 2
 }
 
-function readConfigMode(config: vscode.WorkspaceConfiguration): OpencodeConfigMode {
-  const value = config.get<string>("opencodeConfigMode")
-  return value === "user" ? "user" : "isolated"
+/**
+ * `user` unless the setting says `isolated`: until #788 the isolated mode
+ * turned nothing off, so plugins loading is what every install already did,
+ * and an update must not take them away from someone who never chose.
+ */
+export function readConfigMode(config: vscode.WorkspaceConfiguration): OpencodeConfigMode {
+  return config.get<string>("opencodeConfigMode") === "isolated" ? "isolated" : "user"
 }
 
 function resolveBinaryPath(binaryPath: string, extensionPath: string): string {
@@ -364,13 +368,18 @@ export function startOpencodeServer(
   if (options.signal?.aborted) {
     return Promise.reject(new Error("opencode server start cancelled"))
   }
-  // `isolated` keeps the historical behavior: hand opencode an empty config so
-  // the user's `~/.config/opencode` and any local config/plugins are ignored —
-  // gives the extension predictable defaults. `user` opts back in to the
-  // user's normal opencode environment (config, agents, plugins).
+  // `isolated` runs opencode without the user's plugins, so what the panel
+  // does never depends on what they have installed: OPENCODE_PURE is 1.x's
+  // `--pure`. The empty inline config was meant to do this and never did,
+  // since opencode merges it over the user's config files and an empty
+  // object changes nothing (#788); it stays so an inline config inherited
+  // from the environment is not applied. The config files themselves still
+  // load, opencode has no switch for them. `user`, the default, leaves the
+  // plugins on.
   const env: NodeJS.ProcessEnv = { ...process.env }
   if (options.configMode === "isolated") {
     env.OPENCODE_CONFIG_CONTENT = "{}"
+    env.OPENCODE_PURE = "1"
   } else {
     delete env.OPENCODE_CONFIG_CONTENT
   }
