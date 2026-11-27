@@ -137,6 +137,12 @@ describe("state changes keep their box", () => {
   it("keeps a tool row's elapsed time off the baseline, where it made the row taller", () => {
     expect(ruleBody(".trace-elapsed")).toContain("align-self: center;")
   })
+
+  it("fits a model row's effort badge in the row's line, so picking an effort does not grow the row (#805)", () => {
+    const badge = ruleBody(".model-picker-last-variant")
+    expect(badge).toContain("padding: 1px 7px;")
+    expect(badge).toContain("line-height: calc(var(--popover-row-line) - 2px);")
+  })
 })
 
 // The trace is one grid and every section and row a subgrid of it, so the
