@@ -600,6 +600,10 @@ button:focus-visible {
   background: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
   color: var(--vscode-descriptionForeground);
   font-size: 10px;
+  /* With its 1px of padding above and below, the badge is one row line tall:
+     on the row's own line height it stood 2px over and made the row taller
+     the moment an effort was picked (#805). */
+  line-height: calc(var(--popover-row-line) - 2px);
 }
 .model-picker-row.active .model-picker-last-variant {
   background: color-mix(in srgb, var(--selection-fg) 16%, transparent);
