@@ -511,11 +511,13 @@ button:focus-visible {
   padding: var(--popover-pad);
 }
 /* Same fade-in-on-hover scrollbar as .mention-popover — a permanently
-   visible thumb reads as chrome, not content. The history and saved rules
-   lists share it: left to the webview's default, a list draws an opaque track
-   in the editor colour down the popover's glass (#807). */
+   visible thumb reads as chrome, not content. Every scroller on a glass
+   surface shares it: left to the webview's default, one draws an opaque track
+   in the editor colour down the glass (#807). */
 .model-picker-list,
-.history-list {
+.history-list,
+.question,
+.review-files {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   transition: scrollbar-color 0.18s ease;
@@ -523,7 +525,11 @@ button:focus-visible {
 .model-picker-list:hover,
 .model-picker-list:focus-within,
 .history-list:hover,
-.history-list:focus-within {
+.history-list:focus-within,
+.question:hover,
+.question:focus-within,
+.review-files:hover,
+.review-files:focus-within {
   scrollbar-color: var(--vscode-scrollbarSlider-background, var(--color-scrollbar-thumb)) transparent;
 }
 .model-picker-list::-webkit-scrollbar {
@@ -2436,6 +2442,11 @@ button:focus-visible {
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-y: auto;
+  /* The thumb stays visible here, unlike the lists': the box cuts a long
+     command between two lines, and the thumb is the only sign that the
+     command being approved goes on below. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--vscode-scrollbarSlider-background, var(--color-scrollbar-thumb)) transparent;
 }
 /* Each word of the pattern is one box, so a line breaks between words only. A
    browser otherwise breaks after any hyphen, and no wrapping property stops
@@ -2492,6 +2503,8 @@ button:focus-visible {
 .question {
   max-height: 60vh;
   overflow-y: auto;
+  /* The cards' shared `transition` would otherwise replace the scrollbar's. */
+  transition: border-color 0.12s ease, scrollbar-color 0.18s ease;
 }
 .question-body { display: flex; flex-direction: column; gap: 14px; margin-bottom: 10px; }
 .question-item { display: flex; flex-direction: column; gap: 6px; }

@@ -66,16 +66,17 @@ describe("glass surfaces (#790)", () => {
   })
 
   // VS Code hands every webview scroller a thumb on a track in the editor
-  // colour. Inside a glass popover that track is an opaque strip (#807).
-  it("gives the lists inside the header popovers a scrollbar with no track", () => {
+  // colour. On a glass surface that track is an opaque strip (#807).
+  it("leaves no scroller on a glass surface with the webview's opaque track", () => {
     const plain = css.replace(/\/\*[\s\S]*?\*\//g, "")
     const atRest = (selector: string) =>
       [...plain.matchAll(/([^{}]+) \{([^{}]*)\}/g)]
         .filter(([, selectors]) => selectors!.split(",").some((name) => name.trim() === selector))
         .map(([, , body]) => body)
         .join("\n")
-    for (const list of [".model-picker-list", ".history-list"]) {
-      expect(atRest(list), list).toContain("scrollbar-color: transparent transparent;")
+    const scrollers = [".model-picker-list", ".history-list", ".mention-popover", ".question", ".review-files", ".permission-pattern"]
+    for (const scroller of scrollers) {
+      expect(atRest(scroller), scroller).toMatch(/scrollbar-color: [^;]* transparent;/)
     }
   })
 
