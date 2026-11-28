@@ -65,6 +65,21 @@ describe("glass surfaces (#790)", () => {
     expect(declarations(".queued-row")).not.toContain("backdrop-filter")
   })
 
+  // VS Code hands every webview scroller a thumb on a track in the editor
+  // colour. On a glass surface that track is an opaque strip (#807).
+  it("leaves no scroller on a glass surface with the webview's opaque track", () => {
+    const plain = css.replace(/\/\*[\s\S]*?\*\//g, "")
+    const atRest = (selector: string) =>
+      [...plain.matchAll(/([^{}]+) \{([^{}]*)\}/g)]
+        .filter(([, selectors]) => selectors!.split(",").some((name) => name.trim() === selector))
+        .map(([, , body]) => body)
+        .join("\n")
+    const scrollers = [".model-picker-list", ".history-list", ".mention-popover", ".question", ".review-files", ".permission-pattern"]
+    for (const scroller of scrollers) {
+      expect(atRest(scroller), scroller).toMatch(/scrollbar-color: [^;]* transparent;/)
+    }
+  })
+
   // The two names glass-refraction.ts shares with the stylesheet: a rename on
   // one side leaves the pinned question without its bend and nothing fails.
   it("names the blur the refraction script reads and takes its filter back", () => {
