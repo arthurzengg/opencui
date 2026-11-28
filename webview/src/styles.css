@@ -509,14 +509,21 @@ button:focus-visible {
      otherwise summon the scrollbar and shift every row's text left (#556). */
   scrollbar-gutter: stable;
   padding: var(--popover-pad);
-  /* Same fade-in-on-hover scrollbar as .mention-popover — a permanently
-     visible thumb reads as chrome, not content. */
+}
+/* Same fade-in-on-hover scrollbar as .mention-popover — a permanently
+   visible thumb reads as chrome, not content. The history and saved rules
+   lists share it: left to the webview's default, a list draws an opaque track
+   in the editor colour down the popover's glass (#807). */
+.model-picker-list,
+.history-list {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   transition: scrollbar-color 0.18s ease;
 }
 .model-picker-list:hover,
-.model-picker-list:focus-within {
+.model-picker-list:focus-within,
+.history-list:hover,
+.history-list:focus-within {
   scrollbar-color: var(--vscode-scrollbarSlider-background, var(--color-scrollbar-thumb)) transparent;
 }
 .model-picker-list::-webkit-scrollbar {
